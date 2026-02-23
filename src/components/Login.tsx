@@ -112,12 +112,11 @@ export default function Login() {
       const userData = userDoc.data();
       const userBusinessId = userData.businessId || userData.empresa_id;
 
-      // VALIDACIÓN DE CÓDIGO DE ESPACIO:
-      // Si el usuario ya TIENE un espacio asignado, validamos que coincida con el ingresado.
+      // VALIDACIÓN ESTRICTA DE CÓDIGO DE ESPACIO
       if (userBusinessId && userBusinessId !== workspaceCode) {
-        setError('El Código de Espacio es incorrecto para esta cuenta.');
+        await auth.signOut(); // Forzamos salida si el código no coincide
+        setError('Acceso Denegado: El Código de Espacio no coincide con esta cuenta.');
         setLoading(false);
-        setCaptchaToken(null);
         return;
       }
 

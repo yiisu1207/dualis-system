@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { auth, db } from '../firebase/config';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { ArrowRight, Loader2, Chrome, Github } from 'lucide-react';
+import { ArrowRight, Loader2, Chrome, Github, ShieldCheck } from 'lucide-react';
 import ReCAPTCHA from 'react-google-recaptcha';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -151,26 +151,45 @@ export default function Register() {
 
   const inputClasses = "w-full px-4 py-3 bg-white border border-slate-300 text-slate-900 rounded-xl placeholder:text-slate-400 focus:ring-2 focus:ring-slate-900 focus:border-slate-900 focus:outline-none text-sm transition-all";
 
-  // PANTALLA DE ÉXITO
+  // PANTALLA DE ÉXITO (BÓVEDA DE SEGURIDAD)
   if (successCode) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 bg-slate-50">
-        <div className="bg-white border border-slate-200 shadow-xl rounded-[2.5rem] w-full max-w-md p-10 flex flex-col items-center text-center animate-in fade-in slide-in-from-bottom-8">
-          <Logo className="h-16 w-auto mb-6" textClassName="text-slate-900" />
-          <div className="h-12 w-12 bg-emerald-100 rounded-full flex items-center justify-center mb-4">
-            <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 bg-slate-900 overflow-hidden relative">
+        {/* Decoración de fondo de seguridad */}
+        <div className="absolute inset-0 opacity-10 pointer-events-none">
+            <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,#4f46e5_0%,transparent_50%)]"></div>
+        </div>
+
+        <div className="bg-white rounded-[3rem] w-full max-w-lg p-12 flex flex-col items-center text-center shadow-[0_0_100px_rgba(79,70,229,0.3)] relative z-10 animate-in zoom-in duration-500">
+          <div className="h-20 w-20 bg-rose-50 text-rose-600 rounded-[2rem] flex items-center justify-center mb-8 shadow-xl shadow-rose-100 animate-pulse">
+            <ShieldCheck size={40} />
           </div>
-          <h2 className="text-2xl font-black mb-2 text-slate-900">¡Empresa creada con éxito!</h2>
-          <p className="mb-6 text-slate-500 text-sm">Este es tu <b>Código de Espacio Único</b>:</p>
-          <div className="bg-slate-50 rounded-2xl px-6 py-5 text-xl font-mono font-black text-slate-900 mb-6 select-all border-2 border-dashed border-slate-200 w-full break-all">
-            {successCode}
+          
+          <h2 className="text-3xl font-black mb-4 text-slate-900 tracking-tight">¡ACCIÓN REQUERIDA!</h2>
+          <p className="mb-8 text-slate-500 text-sm leading-relaxed">
+            Tu empresa ha sido creada, pero tu acceso está **encriptado**. <br/>
+            Guarda este código ahora mismo. Sin él, **perderás tu cuenta para siempre**.
+          </p>
+
+          <div className="bg-slate-50 border-2 border-dashed border-rose-200 rounded-3xl p-8 mb-8 w-full group relative overflow-hidden">
+            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-rose-400 mb-4">Código de Espacio Único</p>
+            <div className="text-2xl font-mono font-black text-slate-900 break-all select-all tracking-wider mb-2">
+              {successCode}
+            </div>
+            <div className="text-[9px] font-bold text-slate-400 uppercase">Haz clic para seleccionar y copiar</div>
           </div>
-          <p className="mb-8 text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">Guárdalo como un tesoro, nadie de nuestro equipo te lo pedirá. Lo necesitarás para invitar a tu equipo.</p>
+
+          <div className="bg-rose-50 border border-rose-100 rounded-2xl p-6 mb-10">
+            <p className="text-xs font-bold text-rose-700 leading-relaxed uppercase tracking-tight">
+              ⚠️ NADIE de nuestro equipo te pedirá este código. Es tu llave privada. Si la pierdes, no podemos recuperarla.
+            </p>
+          </div>
+
           <button
-            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all"
+            className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:bg-slate-800 transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3"
             onClick={() => nav('/login')}
           >
-            Ir a iniciar sesión
+            ENTENDIDO, IR AL LOGIN <ArrowRight size={18} />
           </button>
         </div>
       </div>
