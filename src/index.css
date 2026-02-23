@@ -1,3 +1,7 @@
+@import 'react-day-picker/dist/style.css';
+@import 'driver.js/dist/driver.css';
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,29 +11,17 @@
   animation: float 3s ease-in-out infinite;
 }
 @keyframes float {
-  0% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-  100% {
-    transform: translateY(0);
-  }
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+  100% { transform: translateY(0); }
 }
 
 .fade-in-up {
   animation: fadeInUp 600ms ease both;
 }
 @keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .scale-appearance {
@@ -37,12 +29,183 @@
   animation: scaleAppear 320ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 @keyframes scaleAppear {
-  from {
-    opacity: 0;
-    transform: scale(0.98);
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.soft-rise {
+  animation: softRise 420ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes softRise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Fondo sutil de cuadrícula para dar textura profesional */
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+  background-size: 42px 42px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@layer base {
+  :root {
+    --font-display: 'Sora', 'DM Sans', sans-serif;
+    --font-body: 'DM Sans', sans-serif;
+    --font-family: var(--font-body);
+    
+    /* PALETA "CELESTE Y MORADITO" CLEAN */
+    --ui-bg: #f8fafc;        /* Fondo general muy claro (Slate 50) */
+    --ui-panel: #ffffff;     /* Paneles blancos puros */
+    --ui-elev: #f1f5f9;      /* Elementos elevados (Slate 100) */
+    
+    --ui-ink: #1e293b;       /* Texto principal (Slate 800) - Alto contraste */
+    --ui-muted: #64748b;     /* Texto secundario (Slate 500) */
+    --ui-border: #e2e8f0;    /* Bordes sutiles (Slate 200) */
+    
+    /* Colores de Marca */
+    --ui-accent: #7c3aed;    /* Violet-600: Acción Principal */
+    --ui-accent-hover: #6d28d9; 
+    --ui-accent-2: #0ea5e9;  /* Sky-500: Secundario/Celeste */
+    --ui-soft: rgba(124, 58, 237, 0.08); /* Fondo suave morado */
   }
-  to {
-    opacity: 1;
-    transform: scale(1);
+
+  body {
+    background: var(--ui-bg);
+    color: var(--ui-ink);
+    font-family: var(--font-body);
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    color: var(--ui-ink);
+  }
+}
+
+@layer components {
+  .app-shell {
+    min-height: 100vh;
+    background: var(--ui-bg);
+    position: relative;
+  }
+
+  .app-topbar {
+    background: var(--ui-panel);
+    border-bottom: 1px solid var(--ui-border);
+    /* Sombra suave morada */
+    box-shadow: 0 4px 20px -10px rgba(124, 58, 237, 0.05); 
+  }
+
+  .app-panel, .app-card {
+    background: var(--ui-panel);
+    border: 1px solid var(--ui-border);
+    border-radius: 16px; /* Más redondeado = más moderno */
+    box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .app-panel:hover, .app-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 24px -8px rgba(124, 58, 237, 0.1); /* Sombra morada al hover */
+    border-color: #cbd5e1;
+  }
+
+  .app-chip {
+    background: white;
+    border: 1px solid var(--ui-border);
+    color: var(--ui-muted);
+    border-radius: 9999px;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .app-input {
+    background: #ffffff;
+    border: 1px solid var(--ui-border);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    color: var(--ui-ink);
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .app-input:focus {
+    border-color: var(--ui-accent);
+    box-shadow: 0 0 0 3px var(--ui-soft);
+    outline: none;
+  }
+
+  .app-btn {
+    border-radius: 12px;
+    font-weight: 700;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.875rem;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+
+  .app-btn-primary {
+    background: linear-gradient(135deg, var(--ui-accent), #8b5cf6); /* Gradiente Morado */
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+  }
+  
+  .app-btn-primary:hover {
+    box-shadow: 0 6px 16px rgba(124, 58, 237, 0.4);
+    transform: translateY(-1px);
+  }
+
+  .app-btn-secondary {
+    background: white;
+    border: 1px solid var(--ui-border);
+    color: var(--ui-ink);
+  }
+  
+  .app-btn-secondary:hover {
+    border-color: var(--ui-accent-2); /* Hover celeste */
+    color: var(--ui-accent-2);
+    background: #f0f9ff; /* Fondo celeste muy claro */
+  }
+
+  .app-btn-ghost {
+    background: transparent;
+    color: var(--ui-muted);
+  }
+
+  .app-btn-ghost:hover {
+    background: var(--ui-elev);
+    color: var(--ui-accent);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.custom-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
 }

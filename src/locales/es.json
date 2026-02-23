@@ -1,0 +1,101 @@
+{
+  "app": {
+    "name": "DUALIS"
+  },
+  "titles": {
+    "dashboard": "Panorama Global",
+    "cobranzas": "Gestion de Cobranzas",
+    "contabilidad": "Libro Mayor",
+    "tasas": "Control Cambiario",
+    "cxp": "Cuentas por Pagar",
+    "rrhh": "Capital Humano",
+    "inventario": "Activos y Stock",
+    "vision": "Vision Lab",
+    "comparar": "Comparar Libros",
+    "help": "Ayuda y Soporte",
+    "configuracion": "Configuracion del Sistema"
+  },
+  "menu": {
+    "dashboard": "Panorama Global",
+    "cobranzas": "Gestion Cobranzas",
+    "contabilidad": "Libro Mayor",
+    "tasas": "Control Cambiario",
+    "cxp": "Cuentas x Pagar",
+    "rrhh": "Capital Humano",
+    "inventario": "Activos / Stock",
+    "vision": "Vision Lab",
+    "comparar": "Comparar Libros",
+    "help": "Ayuda y Soporte",
+    "configuracion": "Configuracion"
+  },
+  "widgets": {
+    "calc": "Calc",
+    "notes": "Notas",
+    "fx": "Tasas",
+    "timer": "Reloj",
+    "price": "Precios",
+    "todo": "Tareas",
+    "quick": "Rapido",
+    "chat": "Chat"
+  },
+  "tooltips": {
+    "calc": "Calculadora de divisas rapida",
+    "notes": "Notas rapidas del equipo",
+    "fx": "Consultar tasas del dia",
+    "timer": "Reloj de enfoque",
+    "price": "Verificador de precios",
+    "todo": "Tareas pendientes",
+    "quick": "Acciones rapidas",
+    "chat": "Chat interno"
+  },
+  "dashboard": {
+    "headerSubtitle": "Panel de Control Principal",
+    "headerTitle": "Resumen Ejecutivo",
+    "showAmounts": "Mostrar montos",
+    "hideAmounts": "Ocultar montos",
+    "terminals": {
+      "clients": "Terminal Clientes",
+      "suppliers": "Terminal Proveedores"
+    },
+    "actions": {
+      "newInvoice": "Nueva Factura",
+      "newInvoiceDesc": "Registrar Deuda / Venta",
+      "registerPayment": "Registrar Abono",
+      "registerPaymentDesc": "Ingreso de Dinero / Pago",
+      "registerExpense": "Registrar Gasto",
+      "registerExpenseDesc": "Registrar Deuda / Compra",
+      "registerSupplierPayment": "Registrar Pago",
+      "registerSupplierPaymentDesc": "Salida de Dinero / Pago"
+    },
+    "attention": {
+      "title": "Atencion Requerida",
+      "subtitle": "Resumen del dia para tomar decisiones rapidas.",
+      "overdue": "Vencidos",
+      "overdueHint": "Clientes con deuda superior a 30 dias",
+      "stock": "Stock Bajo",
+      "stockHint": "Productos con stock bajo"
+    },
+    "empty": {
+      "title": "Todo bajo control",
+      "description": "No tienes clientes con deudas criticas ni stock bajo por ahora.",
+      "cobranzas": "Ver Cobranzas",
+      "inventario": "Ver Inventario"
+    },
+    "visionLab": "Vision Lab (Analitica)",
+    "shortcuts": {
+      "title": "Accesos Directos",
+      "cobranzasDesc": "Cartera clientes",
+      "contabilidadDesc": "Registro contable",
+      "cxpDesc": "Proveedores",
+      "inventarioDesc": "Control Stock",
+      "rrhhDesc": "Nomina y Vales",
+      "configDesc": "Ajustes Sistema"
+    }
+  },
+  "language": {
+    "label": "Idioma",
+    "es": "Espanol",
+    "en": "Ingles",
+    "ar": "Arabe"
+  }
+}

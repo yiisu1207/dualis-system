@@ -3,35 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ERP System</title>
+    <title>Erp System</title>
     <link rel="icon" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="/pwa-icon-192.svg" />
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700;800&family=Inter:wght@300;400;500;600;700;800&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <link rel="stylesheet" href="/index.css">
 
     <style>
         :root {
-            --odoo-primary: #714B67;
-            --odoo-secondary: #017E84;
-            --odoo-dark: #22252B;
-            --odoo-bg: #F1F5F9;
-            --odoo-border: #E2E8F0;
-            --font-family: 'Inter', system-ui, sans-serif;
+            --odoo-primary: #0f766e;
+            --odoo-secondary: #c0841f;
+            --odoo-dark: #1b1b1b;
+            --odoo-bg: #f6f2ec;
+            --odoo-border: #e7e2d9;
+            --font-display: 'Fraunces', serif;
+            --font-body: 'Manrope', system-ui, sans-serif;
+            --font-family: var(--font-body);
+            --ui-bg: #f6f2ec;
+            --ui-panel: #ffffff;
+            --ui-elev: #fbf8f4;
+            --ui-ink: #1b1b1b;
+            --ui-muted: #6b7280;
+            --ui-border: #e7e2d9;
+            --ui-accent: #0f766e;
+            --ui-accent-2: #c0841f;
+            --ui-soft: rgba(15, 118, 110, 0.08);
         }
         .dark {
-            --odoo-bg: #0F172A;
-            --odoo-dark: #020617;
-            --odoo-border: #1E293B;
+            --odoo-bg: #0f1115;
+            --odoo-dark: #07090c;
+            --odoo-border: #1f2329;
+            --ui-bg: #0f1115;
+            --ui-panel: #151922;
+            --ui-elev: #1b202c;
+            --ui-ink: #f4f2ee;
+            --ui-muted: #9aa4b2;
+            --ui-border: #242a36;
+            --ui-accent: #20b2a2;
+            --ui-accent-2: #e1b36a;
+            --ui-soft: rgba(32, 178, 162, 0.12);
         }
         body { 
             font-family: var(--font-family); 
             background: var(--odoo-bg); 
-            color: #374151; 
+            color: var(--ui-ink); 
             overflow-y: auto;
             overflow-x: hidden;
         }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GoogleGenAI, Type } from '@google/genai';
+import { analyzeVisionJson, analyzeVisionText } from '../lib/ai-scanner';
 import { formatCurrency } from '../utils/formatters';
 
 interface VisionSectionProps {
@@ -34,70 +34,11 @@ const VisionSection: React.FC<VisionSectionProps> = ({ onImportMovements }) => {
     setExtractedData(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const textReport = await analyzeVisionText(images);
+      setAnalysis(textReport);
 
-      const parts = images.map((img) => ({
-        inlineData: { mimeType: 'image/jpeg', data: img.split(',')[1] },
-      }));
-
-      // Paso 1: Obtener reporte de texto para auditoría visual
-      const textResponse = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [
-          {
-            parts: [
-              {
-                text: 'ACTÚA COMO AUDITOR CONTABLE. Extrae los movimientos de estas fotos del libro mayor. Genera un reporte resumido de lo que ves, indicando nombres de clientes y totales.',
-              },
-              ...parts,
-            ],
-          },
-        ],
-      });
-      setAnalysis(textResponse.text);
-
-      // Paso 2: Obtener JSON estructurado para importación técnica
-      const jsonResponse = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [
-          {
-            parts: [
-              {
-                text: 'Genera una lista de movimientos en JSON. Esquema: [{ customerName, date (YYYY-MM-DD), concept, amount (number), movementType (FACTURA|ABONO), accountType (BCV|GRUPO|DIVISA) }]. Sé estricto con el formato.',
-              },
-              ...parts,
-            ],
-          },
-        ],
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                customerName: { type: Type.STRING },
-                date: { type: Type.STRING },
-                concept: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                movementType: { type: Type.STRING, description: 'FACTURA o ABONO' },
-                accountType: { type: Type.STRING, description: 'BCV, GRUPO o DIVISA' },
-              },
-              required: [
-                'customerName',
-                'date',
-                'concept',
-                'amount',
-                'movementType',
-                'accountType',
-              ],
-            },
-          },
-        },
-      });
-
-      const data = JSON.parse(jsonResponse.text);
-      setExtractedData(data);
+      const data = await analyzeVisionJson(images);
+      setExtractedData(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
       setAnalysis('⚠️ ERROR CRÍTICO: No se pudo procesar la auditoría visual.');
@@ -115,30 +56,26 @@ const VisionSection: React.FC<VisionSectionProps> = ({ onImportMovements }) => {
   };
 
   return (
-    <div className="space-y-10 animate-in fade-in duration-700">
-      <div className="flex flex-col md:flex-row justify-between items-end border-b-2 border-slate-200 pb-8">
-        <div>
-          <h1 className="text-5xl font-black text-slate-900 tracking-tighter italic uppercase leading-none">
-            Vision Auditor Lab
-          </h1>
-          <p className="text-[11px] text-slate-400 font-black uppercase tracking-[0.5em] mt-3">
-            Análisis Inteligente e Importación Directa
-          </p>
+    <div className="app-section space-y-10 animate-in fade-in duration-700">
+      <div className="flex flex-col md:flex-row justify-between items-end gap-6">
+        <div className="app-section-header">
+          <p className="app-subtitle">IA y Digitalización</p>
+          <h1 className="app-title uppercase">Vision Auditor Lab</h1>
         </div>
-        <div className="flex items-center gap-4 mt-6 md:mt-0">
+        <div className="flex items-center gap-4 mt-2 md:mt-0">
           <div className="flex gap-1.5">
             <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping"></span>
             <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span>
           </div>
-          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-100 px-4 py-2 rounded-full">
-            Sincronización Activa
+          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest app-chip px-4 py-2 rounded-full">
+            Sincronizacion Activa
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
         <div className="flex flex-col gap-8">
-          <div className="glass-panel p-12 rounded-[3.5rem] border-4 border-dashed border-slate-200 flex flex-col items-center justify-center min-h-[500px] relative hover:border-indigo-500 hover:bg-indigo-50/10 transition-all group overflow-hidden">
+          <div className="app-panel p-12 rounded-[3.5rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center min-h-[500px] relative hover:border-[var(--ui-accent)] transition-all group overflow-hidden">
             <input
               type="file"
               multiple
@@ -175,14 +112,14 @@ const VisionSection: React.FC<VisionSectionProps> = ({ onImportMovements }) => {
                       setImages([]);
                       setExtractedData(null);
                     }}
-                    className="flex-1 py-5 bg-white border-2 border-slate-100 text-slate-500 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest hover:bg-rose-50"
+                    className="flex-1 py-5 app-btn app-btn-ghost"
                   >
                     Eliminar Todo
                   </button>
                   <button
                     onClick={analyzeImages}
                     disabled={loading}
-                    className="flex-[2] py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-4 transform active:scale-95"
+                    className="flex-[2] py-5 app-btn app-btn-primary flex items-center justify-center gap-4 transform active:scale-95"
                   >
                     {loading ? (
                       <i className="fa-solid fa-atom animate-spin text-xl"></i>
@@ -198,7 +135,7 @@ const VisionSection: React.FC<VisionSectionProps> = ({ onImportMovements }) => {
                 htmlFor="multi-upload-vision-lab"
                 className="cursor-pointer flex flex-col items-center group text-center p-10"
               >
-                <div className="w-32 h-32 bg-slate-50 rounded-[3rem] flex items-center justify-center text-6xl mb-8 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-all text-slate-200">
+                <div className="w-32 h-32 bg-slate-50 rounded-[3rem] flex items-center justify-center text-6xl mb-8 group-hover:bg-[var(--ui-soft)] group-hover:text-[var(--ui-accent)] transition-all text-slate-200">
                   <i className="fa-solid fa-images"></i>
                 </div>
                 <h4 className="font-black text-slate-900 uppercase text-sm mb-3 tracking-tighter">
@@ -212,7 +149,7 @@ const VisionSection: React.FC<VisionSectionProps> = ({ onImportMovements }) => {
           </div>
 
           {extractedData && (
-            <div className="glass-panel p-10 rounded-[2.5rem] bg-emerald-600 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-5">
+            <div className="app-panel p-10 rounded-[2.5rem] bg-emerald-600 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-5">
               <h3 className="font-black text-xl mb-2 flex items-center gap-3 italic">
                 <i className="fa-solid fa-check-double"></i> ¡MOVIMIENTOS LISTOS!
               </h3>
@@ -231,7 +168,7 @@ const VisionSection: React.FC<VisionSectionProps> = ({ onImportMovements }) => {
         </div>
 
         <div className="flex flex-col gap-6 h-full">
-          <div className="glass-panel p-12 rounded-[3.5rem] bg-slate-950 text-white shadow-3xl overflow-y-auto max-h-[400px] custom-scroll relative border border-white/5">
+          <div className="app-panel p-12 rounded-[3.5rem] bg-slate-950 text-white shadow-3xl overflow-y-auto max-h-[400px] custom-scroll relative border border-white/5">
             <div className="flex items-center gap-6 mb-8 border-b border-white/10 pb-6 sticky top-0 bg-slate-950/95 backdrop-blur-md z-10">
               <span className="bg-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center text-2xl">
                 📝
@@ -246,7 +183,7 @@ const VisionSection: React.FC<VisionSectionProps> = ({ onImportMovements }) => {
           </div>
 
           {extractedData && (
-            <div className="glass-panel p-10 rounded-[3rem] bg-white shadow-2xl overflow-y-auto max-h-[420px] custom-scroll border-2 border-slate-100">
+            <div className="app-panel p-10 rounded-[3rem] bg-white shadow-2xl overflow-y-auto max-h-[420px] custom-scroll">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 border-b pb-4">
                 Previsualización de Importación
               </h3>

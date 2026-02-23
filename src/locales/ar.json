@@ -1,0 +1,101 @@
+{
+  "app": {
+    "name": "DUALIS"
+  },
+  "titles": {
+    "dashboard": "نظرة عامة",
+    "cobranzas": "التحصيل",
+    "contabilidad": "دفتر الحسابات",
+    "tasas": "التحكم في الصرف",
+    "cxp": "الدائنون",
+    "rrhh": "رأس المال البشري",
+    "inventario": "الأصول والمخزون",
+    "vision": "مختبر الرؤية",
+    "comparar": "مقارنة الدفاتر",
+    "help": "المساعدة والدعم",
+    "configuracion": "إعدادات النظام"
+  },
+  "menu": {
+    "dashboard": "نظرة عامة",
+    "cobranzas": "التحصيل",
+    "contabilidad": "دفتر الحسابات",
+    "tasas": "التحكم في الصرف",
+    "cxp": "الدائنون",
+    "rrhh": "رأس المال البشري",
+    "inventario": "الأصول / المخزون",
+    "vision": "مختبر الرؤية",
+    "comparar": "مقارنة الدفاتر",
+    "help": "المساعدة والدعم",
+    "configuracion": "الإعدادات"
+  },
+  "widgets": {
+    "calc": "حاسبة",
+    "notes": "ملاحظات",
+    "fx": "الأسعار",
+    "timer": "مؤقت",
+    "price": "الأسعار",
+    "todo": "مهام",
+    "quick": "سريع",
+    "chat": "دردشة"
+  },
+  "tooltips": {
+    "calc": "حاسبة عملات سريعة",
+    "notes": "ملاحظات الفريق السريعة",
+    "fx": "مراجعة أسعار اليوم",
+    "timer": "مؤقت التركيز",
+    "price": "فاحص الأسعار",
+    "todo": "المهام المعلقة",
+    "quick": "إجراءات سريعة",
+    "chat": "دردشة داخلية"
+  },
+  "dashboard": {
+    "headerSubtitle": "لوحة التحكم الرئيسية",
+    "headerTitle": "ملخص تنفيذي",
+    "showAmounts": "إظهار المبالغ",
+    "hideAmounts": "إخفاء المبالغ",
+    "terminals": {
+      "clients": "محطة العملاء",
+      "suppliers": "محطة الموردين"
+    },
+    "actions": {
+      "newInvoice": "فاتورة جديدة",
+      "newInvoiceDesc": "تسجيل دين / بيع",
+      "registerPayment": "تسجيل دفعة",
+      "registerPaymentDesc": "دخل / دفعة",
+      "registerExpense": "تسجيل مصروف",
+      "registerExpenseDesc": "تسجيل دين / شراء",
+      "registerSupplierPayment": "تسجيل دفع",
+      "registerSupplierPaymentDesc": "صرف / دفع"
+    },
+    "attention": {
+      "title": "يتطلب الانتباه",
+      "subtitle": "ملخص يومي لاتخاذ قرارات سريعة.",
+      "overdue": "متأخر",
+      "overdueHint": "عملاء لديهم ديون لأكثر من 30 يومًا",
+      "stock": "مخزون منخفض",
+      "stockHint": "منتجات بمخزون منخفض"
+    },
+    "empty": {
+      "title": "كل شيء تحت السيطرة",
+      "description": "لا توجد ديون حرجة أو مخزون منخفض حاليًا.",
+      "cobranzas": "عرض التحصيل",
+      "inventario": "عرض المخزون"
+    },
+    "visionLab": "مختبر الرؤية (تحليلات)",
+    "shortcuts": {
+      "title": "اختصارات",
+      "cobranzasDesc": "محفظة العملاء",
+      "contabilidadDesc": "دفتر المحاسبة",
+      "cxpDesc": "الموردون",
+      "inventarioDesc": "التحكم في المخزون",
+      "rrhhDesc": "الرواتب والسلف",
+      "configDesc": "إعدادات النظام"
+    }
+  },
+  "language": {
+    "label": "اللغة",
+    "es": "الإسبانية",
+    "en": "الإنجليزية",
+    "ar": "العربية"
+  }
+}

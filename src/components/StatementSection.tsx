@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Customer, Movement, MovementType } from '../../types';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
 
 interface StatementSectionProps {
   customers: Customer[];
@@ -32,10 +32,11 @@ const StatementSection: React.FC<StatementSectionProps> = ({ customers, movement
     return customerMovs
       .map((m) => {
         const isCharge = m.movementType === MovementType.FACTURA;
+        const amountUsd = getMovementUsdAmount(m);
         if (isCharge) {
-          runningBalance += m.amountInUSD;
+          runningBalance += amountUsd;
         } else {
-          runningBalance -= m.amountInUSD;
+          runningBalance -= amountUsd;
         }
         return { ...m, currentBalance: runningBalance };
       })
@@ -86,7 +87,7 @@ const StatementSection: React.FC<StatementSectionProps> = ({ customers, movement
 
       {selectedCustomer ? (
         <div className="glass-panel rounded-[2.5rem] overflow-hidden border-2 border-indigo-50 shadow-2xl animate-in">
-          <div className="bg-slate-900 p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="bg-white p-8 text-slate-900 flex flex-col md:flex-row justify-between items-center gap-6">
             <div>
               <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">
                 Registro del Cliente
@@ -140,12 +141,12 @@ const StatementSection: React.FC<StatementSectionProps> = ({ customers, movement
                       <td className="px-8 py-4 text-slate-700 font-semibold">{m.concept}</td>
                       <td className="px-8 py-4 text-right font-black text-rose-500">
                         {m.movementType === MovementType.FACTURA
-                          ? formatCurrency(m.amountInUSD)
+                          ? formatCurrency(getMovementUsdAmount(m))
                           : '-'}
                       </td>
                       <td className="px-8 py-4 text-right font-black text-emerald-500">
                         {m.movementType === MovementType.ABONO
-                          ? formatCurrency(m.amountInUSD)
+                          ? formatCurrency(getMovementUsdAmount(m))
                           : '-'}
                       </td>
                       <td className="px-8 py-4 text-right font-black bg-indigo-50/20 text-slate-800">
@@ -158,7 +159,7 @@ const StatementSection: React.FC<StatementSectionProps> = ({ customers, movement
             </table>
           </div>
           <div className="p-4 bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
-            Fin del Reporte • Boutique Los Ángeles ERP V9.0
+            Fin del Reporte • DUALIS V1.0
           </div>
         </div>
       ) : (
@@ -177,7 +178,7 @@ const StatementSection: React.FC<StatementSectionProps> = ({ customers, movement
             setSelectedCustomerId(null);
             setSearchTerm('');
           }}
-          className="fixed bottom-8 right-8 bg-slate-900 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase tracking-widest shadow-2xl hover:scale-110 transition-all z-40"
+          className="fixed bottom-8 right-8 bg-white text-slate-900 px-6 py-3 rounded-full font-black text-[10px] uppercase tracking-widest shadow-2xl hover:scale-110 transition-all z-40"
         >
           Limpiar Auditoría
         </button>

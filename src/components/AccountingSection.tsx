@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { NumericFormat } from 'react-number-format';
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import {
   Movement,
   MovementType,
@@ -10,7 +12,12 @@ import {
   AccountType,
   PaymentCurrency,
 } from '../../types';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
+import { AlertTriangle, BarChart3, Clock, Copy, Receipt } from 'lucide-react';
+import { buildClientStatus } from '../utils/clientStatus';
+import ClientStatusBadge from './ClientStatusBadge';
+import WhatsAppTemplateModal, { TemplateContext } from './WhatsAppTemplateModal';
+import { DEFAULT_CONFIG } from '../utils/configDefaults';
 
 interface AccountingSectionProps {
   movements: Movement[];
@@ -21,11 +28,14 @@ interface AccountingSectionProps {
   config: AppConfig;
   onUpdateMovement: (id: string, updated: Partial<Movement>) => void;
   onDeleteMovement: (id: string) => void;
+  onNavigateToCustomers?: () => void;
+  onNavigateToSuppliers?: () => void;
+  openEntityId?: string | null;
 }
 
 type ViewMode = 'DIRECTORY' | 'DETAIL';
 type TabFilter = 'ALL' | AccountType;
-type EntityTypeFilter = 'ALL' | 'CLIENTE' | 'PROVEEDOR' | 'NÓMINA';
+type EntityTypeFilter = 'ALL' | 'CLIENTE' | 'PROVEEDOR' | 'NÓMINA' | 'CATALOGO';
 
 const AccountingSection: React.FC<AccountingSectionProps> = ({
   movements,
@@ -36,6 +46,9 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
   config,
   onUpdateMovement,
   onDeleteMovement,
+  onNavigateToCustomers,
+  onNavigateToSuppliers,
+  openEntityId,
 }) => {
   // --- STATE ---
   const [viewMode, setViewMode] = useState<ViewMode>('DIRECTORY');
@@ -43,6 +56,57 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
   const [activeTab, setActiveTab] = useState<TabFilter>('ALL');
   const [entityFilter, setEntityFilter] = useState<EntityTypeFilter>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortByBalance, setSortByBalance] = useState<'none' | 'debt-desc'>('none');
+  const [receivableOnly, setReceivableOnly] = useState(false);
+  const [receivableAccountFilter, setReceivableAccountFilter] = useState<'ALL' | AccountType>('ALL');
+  const [detailRangeFilter, setDetailRangeFilter] = useState<
+    'ALL' | 'SINCE_ZERO' | 'SINCE_LAST_DEBT' | 'CUSTOM'
+  >('ALL');
+  const [detailRangeFrom, setDetailRangeFrom] = useState('');
+  const [detailRangeTo, setDetailRangeTo] = useState('');
+  const detailTableRef = useRef<HTMLDivElement | null>(null);
+  const lastSelectedEntityRef = useRef<string | null>(null);
+  const [shareMenuDetailAccount, setShareMenuDetailAccount] = useState<TabFilter>('ALL');
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [whatsAppContext, setWhatsAppContext] = useState<TemplateContext>({});
+  const [shareToast, setShareToast] = useState<string | null>(null);
+  const shareToastTimerRef = useRef<number | null>(null);
+  const messageTemplates =
+    config.messageTemplates && config.messageTemplates.length > 0
+      ? config.messageTemplates
+      : DEFAULT_CONFIG.messageTemplates || [];
+
+  useEffect(() => {
+    if (entityFilter !== 'CLIENTE') {
+      setReceivableOnly(false);
+      setReceivableAccountFilter('ALL');
+    }
+  }, [entityFilter]);
+
+  useEffect(() => {
+    if (!openEntityId) return;
+    setSelectedEntityId(openEntityId);
+    setViewMode('DETAIL');
+  }, [openEntityId]);
+
+  useEffect(() => {
+    if (viewMode !== 'DETAIL' || !selectedEntityId) return;
+    if (lastSelectedEntityRef.current !== selectedEntityId) {
+      setShareMenuDetailAccount(activeTab);
+      lastSelectedEntityRef.current = selectedEntityId;
+    }
+  }, [viewMode, selectedEntityId, activeTab]);
+
+  useEffect(() => {
+    if (!shareToast) return;
+    if (shareToastTimerRef.current) {
+      window.clearTimeout(shareToastTimerRef.current);
+    }
+    shareToastTimerRef.current = window.setTimeout(() => {
+      setShareToast(null);
+      shareToastTimerRef.current = null;
+    }, 3500);
+  }, [shareToast]);
 
   // --- EDITING STATE ---
   const [editingMovement, setEditingMovement] = useState<Movement | null>(null);
@@ -55,9 +119,15 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
   } | null>(null);
 
   // --- LOGIC: DIRECTORY (LEVEL 1) ---
-  const directoryData = useMemo(() => {
-    // 1. Get all unique Entity IDs from movements
-    const uniqueIds: string[] = Array.from(new Set(movements.map((m) => m.entityId)));
+  const allEntities = useMemo(() => {
+    // 1. Get all unique Entity IDs (movements + base directory)
+    const uniqueIds: string[] = Array.from(
+      new Set([
+        ...movements.map((m) => m.entityId),
+        ...customers.map((c) => c.id),
+        ...suppliers.map((s) => s.id),
+      ])
+    );
 
     // 2. Build summary objects
     const summaries = uniqueIds.map((id) => {
@@ -80,54 +150,228 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       const entityMovs = movements.filter((m) => m.entityId === id);
       const totalDebt = entityMovs
         .filter((m) => m.movementType === MovementType.FACTURA)
-        .reduce((sum, m) => sum + m.amountInUSD, 0);
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
       const totalPaid = entityMovs
         .filter((m) => m.movementType === MovementType.ABONO)
-        .reduce((sum, m) => sum + m.amountInUSD, 0);
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
       const globalBalance = totalDebt - totalPaid;
 
-      return { id, type, typeColor, globalBalance, lastMov: entityMovs[0]?.date };
+      const sumByAccount = (accountType: AccountType) => {
+        const accountMovs = entityMovs.filter((m) => m.accountType === accountType);
+        const accountDebt = accountMovs
+          .filter((m) => m.movementType === MovementType.FACTURA)
+          .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+        const accountPaid = accountMovs
+          .filter((m) => m.movementType === MovementType.ABONO)
+          .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+        return accountDebt - accountPaid;
+      };
+
+      const balances = {
+        bcv: sumByAccount(AccountType.BCV),
+        grupo: sumByAccount(AccountType.GRUPO),
+        divisa: sumByAccount(AccountType.DIVISA),
+      };
+
+      const sortedByDate = [...entityMovs].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+
+      const customer = type === 'CLIENTE' ? customers.find((c) => c.id === id) : null;
+      const clientStatus =
+        type === 'CLIENTE'
+          ? buildClientStatus(entityMovs, rates, new Date(), {
+              customerCreatedAt: customer?.createdAt || null,
+            })
+          : null;
+
+      return {
+        id,
+        type,
+        typeColor,
+        globalBalance,
+        balances,
+        lastMov: sortedByDate[sortedByDate.length - 1]?.date,
+        firstMov: sortedByDate[0]?.date,
+        totalDebt,
+        totalPaid,
+        tags: clientStatus?.tags || null,
+      };
     });
 
+    return summaries;
+  }, [movements, customers, suppliers, employees, rates]);
+
+  const directoryData = useMemo(() => {
     // 3. Filter by Type and Search
-    return summaries
-      .filter((s) => entityFilter === 'ALL' || s.type === entityFilter)
-      .filter((s) => s.id.toLowerCase().includes(searchTerm.toLowerCase()))
-      .sort((a, b) => b.globalBalance - a.globalBalance);
-  }, [movements, customers, suppliers, employees, searchTerm, entityFilter]);
+    let filtered = allEntities
+      .filter((s) => {
+        if (entityFilter === 'ALL') return true;
+        if (entityFilter === 'CATALOGO') return s.type === 'CLIENTE' || s.type === 'PROVEEDOR';
+        return s.type === entityFilter;
+      })
+      .filter((s) => s.id.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    if (receivableOnly) {
+      filtered = filtered.filter((s) => s.type === 'CLIENTE' && s.globalBalance > 0.01);
+    }
+
+    if (receivableAccountFilter !== 'ALL') {
+      filtered = filtered.filter(
+        (s: any) => (s.balances?.[receivableAccountFilter.toLowerCase()] || 0) > 0.01
+      );
+    }
+
+    if (sortByBalance === 'debt-desc') {
+      filtered = [...filtered].sort((a, b) => Math.abs(b.globalBalance) - Math.abs(a.globalBalance));
+    } else {
+      filtered = [...filtered].sort((a, b) => b.globalBalance - a.globalBalance);
+    }
+
+    return filtered;
+  }, [allEntities, searchTerm, entityFilter, sortByBalance, receivableOnly, receivableAccountFilter]);
+
+  const summaryTotals = useMemo(() => {
+    let receivable = 0;
+    let payable = 0;
+    let bcvReceivable = 0;
+    let grupoReceivable = 0;
+    let divisaReceivable = 0;
+
+    directoryData.forEach((entity) => {
+      if (entity.type === 'CLIENTE' && entity.globalBalance > 0) {
+        receivable += entity.globalBalance;
+      }
+      if (entity.type === 'PROVEEDOR' && entity.globalBalance > 0) {
+        payable += entity.globalBalance;
+      }
+      if (entity.type === 'CLIENTE') {
+        bcvReceivable += Math.max(0, (entity as any).balances?.bcv || 0);
+        grupoReceivable += Math.max(0, (entity as any).balances?.grupo || 0);
+        divisaReceivable += Math.max(0, (entity as any).balances?.divisa || 0);
+      }
+    });
+
+    const net = receivable - payable;
+    return { receivable, payable, net, bcvReceivable, grupoReceivable, divisaReceivable };
+  }, [directoryData]);
 
   // --- LOGIC: DETAIL VIEW (LEVEL 2) ---
   const detailData = useMemo(() => {
     if (!selectedEntityId) return [];
-
-    // 1. Filter by Entity
-    let filtered = movements.filter((m) => m.entityId === selectedEntityId);
-
-    // 2. Filter by Tab (Account Type)
-    if (activeTab !== 'ALL') {
-      filtered = filtered.filter((m) => m.accountType === activeTab);
-    }
-
-    // 3. Sort Chronologically
-    const sorted = [...filtered].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    const base = movements.filter((m) => m.entityId === selectedEntityId);
+    const scoped = filterMovementsByRange(
+      base,
+      activeTab,
+      detailRangeFilter,
+      detailRangeFrom,
+      detailRangeTo
     );
-
-    // 4. Calculate Running Balance
-    let runningBalance = 0;
-    const withBalance = sorted.map((m) => {
-      const debe = m.movementType === MovementType.FACTURA ? m.amountInUSD : 0;
-      const haber = m.movementType === MovementType.ABONO ? m.amountInUSD : 0;
-      runningBalance += debe - haber;
-      return { ...m, debe, haber, runningBalance };
-    });
-
-    // 5. Reverse to show newest on top
+    const sorted = [...scoped].sort(
+      (a, b) => new Date(a.createdAt || a.date).getTime() - new Date(b.createdAt || b.date).getTime()
+    );
+    const withBalance = buildChronoData(sorted);
     return withBalance.reverse();
-  }, [movements, selectedEntityId, activeTab]);
+  }, [
+    movements,
+    selectedEntityId,
+    activeTab,
+    rates,
+    detailRangeFilter,
+    detailRangeFrom,
+    detailRangeTo,
+  ]);
+
+  const detailChrono = useMemo(() => [...detailData].reverse(), [detailData]);
+
+  const entityMovements = useMemo(() => {
+    if (!selectedEntityId) return [] as Movement[];
+    return movements.filter((m) => m.entityId === selectedEntityId);
+  }, [movements, selectedEntityId]);
+
+  const analyticsKpis = useMemo(() => {
+    if (!entityMovements.length) {
+      return { totalHistorical: 0, ticketAverage: 0, avgPaymentDays: 3 };
+    }
+    const invoices = entityMovements.filter((m) => m.movementType === MovementType.FACTURA);
+    const totalHistorical = invoices.reduce(
+      (sum, m) => sum + getMovementUsdAmount(m, rates),
+      0
+    );
+    const ticketAverage = invoices.length ? totalHistorical / invoices.length : 0;
+    const paymentDeltas = detailChrono
+      .filter((m) => m.movementType === MovementType.ABONO && m.daysSinceLast != null)
+      .map((m: any) => m.daysSinceLast as number);
+    const avgPaymentDays = paymentDeltas.length
+      ? Math.max(
+          1,
+          Math.round(paymentDeltas.reduce((sum, value) => sum + value, 0) / paymentDeltas.length)
+        )
+      : 3;
+    return { totalHistorical, ticketAverage, avgPaymentDays };
+  }, [entityMovements, detailChrono, rates]);
+
+  const trendData = useMemo(() => {
+    const now = new Date();
+    const months: { key: string; label: string; cargos: number; abonos: number }[] = [];
+    for (let offset = 5; offset >= 0; offset -= 1) {
+      const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      months.push({
+        key,
+        label: date.toLocaleString('es-VE', { month: 'short' }),
+        cargos: 0,
+        abonos: 0,
+      });
+    }
+    const monthMap = new Map(months.map((m) => [m.key, m]));
+    entityMovements.forEach((m) => {
+      const date = new Date(m.createdAt || m.date);
+      if (Number.isNaN(date.getTime())) return;
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      const bucket = monthMap.get(key);
+      if (!bucket) return;
+      const amount = getMovementUsdAmount(m, rates);
+      if (m.movementType === MovementType.FACTURA) bucket.cargos += amount;
+      if (m.movementType === MovementType.ABONO) bucket.abonos += amount;
+    });
+    return months.map((m) => ({
+      ...m,
+      cargos: Number(m.cargos.toFixed(2)),
+      abonos: Number(m.abonos.toFixed(2)),
+    }));
+  }, [entityMovements, rates]);
+
+  const scopedBalances = useMemo(() => {
+    if (!selectedEntityId) return { bcv: 0, grupo: 0, divisa: 0, total: 0 };
+    const entityMovs = movements.filter((m) => m.entityId === selectedEntityId);
+    const scoped = filterMovementsByRange(
+      entityMovs,
+      'ALL',
+      detailRangeFilter,
+      detailRangeFrom,
+      detailRangeTo
+    );
+    const sumByAccount = (accountType: AccountType) => {
+      const accountMovs = scoped.filter((m) => m.accountType === accountType);
+      const totalDebt = accountMovs
+        .filter((m) => m.movementType === MovementType.FACTURA)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      const totalPaid = accountMovs
+        .filter((m) => m.movementType === MovementType.ABONO)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      return totalDebt - totalPaid;
+    };
+    const bcv = sumByAccount(AccountType.BCV);
+    const grupo = sumByAccount(AccountType.GRUPO);
+    const divisa = sumByAccount(AccountType.DIVISA);
+    return { bcv, grupo, divisa, total: bcv + grupo + divisa };
+  }, [selectedEntityId, movements, detailRangeFilter, detailRangeFrom, detailRangeTo, rates]);
 
   // Helper to get entity info
-  const currentEntityInfo = directoryData.find((d) => d.id === selectedEntityId);
+  const currentEntityInfo = allEntities.find((d) => d.id === selectedEntityId);
+  const currentCustomer = customers.find((c) => c.id === selectedEntityId) || null;
+  const currentSupplier = suppliers.find((s) => s.id === selectedEntityId) || null;
 
   // Helper for Context Colors
   const getContextColors = (tab: TabFilter) => {
@@ -143,12 +387,241 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     }
   };
   const contextColors = getContextColors(activeTab);
+  const totalPending = scopedBalances.total;
+  const totalPendingClass = totalPending > 0 ? 'text-rose-600' : 'text-emerald-600';
+  const trendIsSparse = entityMovements.length < 3;
+
+  const formatDateTime = (value: string) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString('es-VE', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const toDateTimeLocal = (value: string) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    const pad = (num: number) => String(num).padStart(2, '0');
+    return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(
+      parsed.getDate()
+    )}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+  };
+
+  const formatPhone = (value?: string) => (value || '').replace(/\s+/g, ' ').trim();
+  const getEntityField = (value?: string) => (value && value.trim() ? value.trim() : 'N/A');
+
+  const getInitials = (name: string) =>
+    name
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0].toUpperCase())
+      .join('');
+
+  const daysSince = (dateValue?: string) => {
+    if (!dateValue) return null;
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) return null;
+    const diffMs = Date.now() - parsed.getTime();
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  };
+
+  function resolveRangeLabel(range: 'ALL' | 'SINCE_ZERO' | 'SINCE_LAST_DEBT' | 'CUSTOM') {
+    switch (range) {
+      case 'SINCE_ZERO':
+        return 'Desde el ultimo saldo cero';
+      case 'SINCE_LAST_DEBT':
+        return 'Desde la ultima factura';
+      case 'CUSTOM':
+        return `${detailRangeFrom || 'Inicio'} - ${detailRangeTo || 'Hoy'}`;
+      case 'ALL':
+      default:
+        return 'Todo el Historial';
+    }
+  }
+
+  function filterMovementsByRange(
+    items: Movement[],
+    account: TabFilter,
+    range: 'ALL' | 'SINCE_ZERO' | 'SINCE_LAST_DEBT' | 'CUSTOM',
+    fromDate: string,
+    toDate: string
+  ) {
+    const accountScoped =
+      account === 'ALL' ? items : items.filter((m) => m.accountType === account);
+    const sorted = [...accountScoped].sort((a, b) => {
+      const aDate = new Date(a.createdAt || a.date).getTime();
+      const bDate = new Date(b.createdAt || b.date).getTime();
+      return aDate - bDate;
+    });
+
+    if (range === 'CUSTOM') {
+      return sorted.filter((m) => {
+        if (fromDate && m.date < fromDate) return false;
+        if (toDate && m.date > toDate) return false;
+        return true;
+      });
+    }
+
+    if (range === 'SINCE_LAST_DEBT') {
+      const idx = [...sorted].reverse().findIndex((m) => m.movementType === MovementType.FACTURA);
+      if (idx === -1) return sorted;
+      const startIndex = sorted.length - 1 - idx;
+      return sorted.slice(startIndex);
+    }
+
+    if (range === 'SINCE_ZERO') {
+      let running = 0;
+      let lastZeroIndex = -1;
+      sorted.forEach((m, index) => {
+        const amountUsd = getMovementUsdAmount(m, rates);
+        const debe = m.movementType === MovementType.FACTURA ? amountUsd : 0;
+        const haber = m.movementType === MovementType.ABONO ? amountUsd : 0;
+        running += debe - haber;
+        if (running <= 0) lastZeroIndex = index;
+      });
+      if (lastZeroIndex === -1) return sorted;
+      return sorted.slice(lastZeroIndex);
+    }
+
+    return sorted;
+  }
+
+  function buildChronoData(items: Movement[]) {
+    let runningBalance = 0;
+    let lastDate: Date | null = null;
+    return items.map((m) => {
+      const displayDate = m.createdAt || m.date;
+      const currentDate = new Date(displayDate);
+      const daysSinceLast = lastDate
+        ? Math.ceil((currentDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+      lastDate = currentDate;
+      const amountUsd = getMovementUsdAmount(m, rates);
+      const debe = m.movementType === MovementType.FACTURA ? amountUsd : 0;
+      const haber = m.movementType === MovementType.ABONO ? amountUsd : 0;
+      runningBalance += debe - haber;
+      return { ...m, debe, haber, runningBalance, displayDate, daysSinceLast };
+    });
+  }
+
+  const buildRowShareMessage = (entityId: string) => {
+    const entityMovs = movements.filter((m) => m.entityId === entityId);
+    const sumByAccount = (accountType: AccountType) => {
+      const accountMovs = entityMovs.filter((m) => m.accountType === accountType);
+      const totalDebt = accountMovs
+        .filter((m) => m.movementType === MovementType.FACTURA)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      const totalPaid = accountMovs
+        .filter((m) => m.movementType === MovementType.ABONO)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      return totalDebt - totalPaid;
+    };
+
+    const bcv = sumByAccount(AccountType.BCV);
+    const grupo = sumByAccount(AccountType.GRUPO);
+    const divisa = sumByAccount(AccountType.DIVISA);
+
+    return `Resumen Estado de Cuenta\nEntidad: ${entityId}\n\nSaldos Totales:\nBCV: ${formatCurrency(Math.abs(bcv), '$')}\nGRUPO: ${formatCurrency(Math.abs(grupo), '$')}\nDIVISA: ${formatCurrency(Math.abs(divisa), '$')}`;
+  };
+
+  const hexToRgb = (hex: string) => {
+    const clean = hex.replace('#', '').trim();
+    if (clean.length !== 6) return null;
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return null;
+    return [r, g, b] as [number, number, number];
+  };
+
+  const addPdfHeader = (doc: any, title: string, rightInfo: string[] = []) => {
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const brand = hexToRgb(config.theme?.primaryColor || '#0f172a') || [15, 23, 42];
+    doc.setFillColor(brand[0], brand[1], brand[2]);
+    doc.rect(0, 0, pageWidth, 26, 'F');
+
+    const logo = config.companyLogo || '';
+    if (logo) {
+      const format = logo.includes('image/png') ? 'PNG' : 'JPEG';
+      doc.setFillColor(255, 255, 255);
+      doc.rect(12, 5, 14, 14, 'F');
+      doc.addImage(logo, format, 12, 5, 14, 14);
+    }
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(11);
+    doc.text(config.companyName || 'Empresa', 30, 11);
+    doc.setFontSize(9);
+    doc.text(title, 30, 18);
+
+    if (rightInfo.length) {
+      doc.setFontSize(8);
+      rightInfo.slice(0, 4).forEach((line, idx) => {
+        doc.text(line, pageWidth - 12, 10 + idx * 4, { align: 'right' });
+      });
+    }
+
+    doc.setTextColor(0, 0, 0);
+    return 32;
+  };
+
+  const addEntityBlock = (doc: any, startY: number) => {
+    if (!selectedEntityId || !currentEntityInfo) return startY;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const boxX = 14;
+    const boxY = startY + 2;
+    const boxW = pageWidth - 28;
+    const boxH = 20;
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(boxX, boxY, boxW, boxH, 2, 2, 'F');
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(9);
+
+    const typeLabel = currentEntityInfo.type || 'ENTIDAD';
+    doc.text(`Entidad: ${selectedEntityId}`, boxX + 4, boxY + 7);
+    doc.text(`Tipo: ${typeLabel}`, boxX + 4, boxY + 12);
+
+    if (currentEntityInfo.type === 'CLIENTE' && currentCustomer) {
+      doc.text(`CI/RIF: ${getEntityField(currentCustomer.cedula)}`, boxX + 4, boxY + 17);
+      doc.text(
+        `Telefono: ${getEntityField(formatPhone(currentCustomer.telefono))}`,
+        boxX + 70,
+        boxY + 7
+      );
+      doc.text(
+        `Direccion: ${getEntityField(currentCustomer.direccion)}`,
+        boxX + 70,
+        boxY + 12
+      );
+    } else if (currentEntityInfo.type === 'PROVEEDOR' && currentSupplier) {
+      doc.text(`RIF: ${getEntityField(currentSupplier.rif)}`, boxX + 4, boxY + 17);
+      doc.text(
+        `Contacto: ${getEntityField(currentSupplier.contacto)}`,
+        boxX + 70,
+        boxY + 7
+      );
+      doc.text(
+        `Categoria: ${getEntityField(currentSupplier.categoria)}`,
+        boxX + 70,
+        boxY + 12
+      );
+    }
+
+    return boxY + boxH + 6;
+  };
 
   // --- HANDLERS ---
   const handleEditClick = (mov: Movement) => {
     setEditingMovement(mov);
+    const dateValue = mov.createdAt || `${mov.date}T00:00:00`;
     setEditForm({
-      date: mov.date,
+      date: toDateTimeLocal(dateValue),
       concept: mov.concept,
       amount: mov.amount.toString(), // Original Amount
       currency: mov.currency as string,
@@ -170,8 +643,12 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       newAmountInUSD = newAmount / newRate;
     }
 
+    const isoDate = editForm.date.includes('T')
+      ? editForm.date
+      : `${editForm.date}T00:00:00`;
     onUpdateMovement(editingMovement.id, {
-      date: editForm.date,
+      date: isoDate.split('T')[0],
+      createdAt: isoDate,
       concept: editForm.concept,
       amount: newAmount,
       currency: editForm.currency,
@@ -196,6 +673,416 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     }
   };
 
+  const buildShareMessage = () => {
+    if (!selectedEntityId) return '';
+    const entityMovs = movements.filter((m) => m.entityId === selectedEntityId);
+    const scoped = filterMovementsByRange(
+      entityMovs,
+      activeTab,
+      detailRangeFilter,
+      detailRangeFrom,
+      detailRangeTo
+    );
+    const sumByAccount = (accountType: AccountType) => {
+      const accountMovs = scoped.filter((m) => m.accountType === accountType);
+      const totalDebt = accountMovs
+        .filter((m) => m.movementType === MovementType.FACTURA)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      const totalPaid = accountMovs
+        .filter((m) => m.movementType === MovementType.ABONO)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      return totalDebt - totalPaid;
+    };
+
+    if (activeTab !== 'ALL') {
+      const total = sumByAccount(activeTab);
+      return `Resumen Estado de Cuenta\nEntidad: ${selectedEntityId}\nCuenta: ${activeTab}\n\nSaldo: ${formatCurrency(Math.abs(total), '$')}`;
+    }
+
+    const bcv = sumByAccount(AccountType.BCV);
+    const grupo = sumByAccount(AccountType.GRUPO);
+    const divisa = sumByAccount(AccountType.DIVISA);
+
+    return `Resumen Estado de Cuenta\nEntidad: ${selectedEntityId}\n\nSaldos Totales:\nBCV: ${formatCurrency(Math.abs(bcv), '$')}\nGRUPO: ${formatCurrency(Math.abs(grupo), '$')}\nDIVISA: ${formatCurrency(Math.abs(divisa), '$')}`;
+  };
+
+  const generateShareText = (clientName: string) => {
+    const totalUsd = Math.abs(scopedBalances.total);
+    const divisaUsd = Math.abs(scopedBalances.divisa);
+    const bcvBs = Math.abs(scopedBalances.bcv * (rates.bcv || 1));
+    const grupoBs = Math.abs(scopedBalances.grupo * (rates.grupo || 1));
+
+    return `Hola *${clientName}*, un gusto saludarte. 👋\n\nAdjunto te envio el resumen de tu estado de cuenta a la fecha.\n\n📉 *Saldo Total Pendiente:* ${formatCurrency(totalUsd, '$')}\n\nDesglose:\n🇺🇸 Divisa: ${formatCurrency(divisaUsd, '$')}\n🇻🇪 BCV: ${formatCurrency(bcvBs, 'Bs')}\n🟠 Grupo: ${formatCurrency(grupoBs, 'Bs')}\n\nQuedo atento a tu pago. ¡Gracias!`;
+  };
+
+  const copyShareText = async () => {
+    if (!selectedEntityId) return;
+    const message = generateShareText(selectedEntityId);
+    if (!navigator.clipboard?.writeText) {
+      window.prompt('Copia el mensaje para WhatsApp:', message);
+      return;
+    }
+    await navigator.clipboard.writeText(message);
+    setShareToast('📋 ¡Texto copiado! Pégalo en WhatsApp.');
+  };
+
+  const openWhatsAppPreview = (context: TemplateContext) => {
+    setWhatsAppContext(context);
+    setShowWhatsAppModal(true);
+  };
+
+  const handleSendWhatsApp = (message: string) => {
+    const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+    setShowWhatsAppModal(false);
+  };
+
+  const buildWhatsAppContext = (entityId: string, balance: number, lastMov?: string) => {
+    return {
+      nombre_cliente: entityId,
+      monto_deuda: formatCurrency(Math.abs(balance), '$'),
+      fecha_vencimiento: lastMov || '',
+      nombre_empresa: config.companyName || '',
+    };
+  };
+
+  const handleExportPdfSummary = async (accountOverride?: TabFilter) => {
+    if (!selectedEntityId || !currentEntityInfo) return;
+    const { default: jsPDF } = await import('jspdf');
+
+    const doc = new jsPDF();
+    const account = accountOverride || activeTab;
+    const rangeLabel = resolveRangeLabel(detailRangeFilter);
+    const rightInfo = [account === 'ALL' ? 'Cuenta: Global' : `Cuenta: ${account}`, `Rango: ${rangeLabel}`];
+    const titleSuffix = detailRangeFilter !== 'ALL' ? ` (${rangeLabel})` : '';
+    let cursorY = addPdfHeader(doc, `Estado de Cuenta Resumen${titleSuffix}`, rightInfo);
+    cursorY = addEntityBlock(doc, cursorY);
+
+    const entityMovs = movements.filter((m) => m.entityId === selectedEntityId);
+    const scoped = filterMovementsByRange(
+      entityMovs,
+      account,
+      detailRangeFilter,
+      detailRangeFrom,
+      detailRangeTo
+    );
+    const sumByAccount = (accountType: AccountType) => {
+      const accountMovs = scoped.filter((m) => m.accountType === accountType);
+      const totalDebt = accountMovs
+        .filter((m) => m.movementType === MovementType.FACTURA)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      const totalPaid = accountMovs
+        .filter((m) => m.movementType === MovementType.ABONO)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      return totalDebt - totalPaid;
+    };
+
+    doc.setFontSize(11);
+    doc.text('Saldo Total por Cuenta', 14, cursorY);
+    cursorY += 8;
+
+    if (account !== 'ALL') {
+      const total = sumByAccount(account as AccountType);
+      doc.text(`${account}: ${formatCurrency(Math.abs(total), '$')}`, 14, cursorY);
+      cursorY += 6;
+    } else {
+      const bcv = sumByAccount(AccountType.BCV);
+      const grupo = sumByAccount(AccountType.GRUPO);
+      const divisa = sumByAccount(AccountType.DIVISA);
+      doc.text(`BCV: ${formatCurrency(Math.abs(bcv), '$')}`, 14, cursorY);
+      cursorY += 6;
+      doc.text(`GRUPO: ${formatCurrency(Math.abs(grupo), '$')}`, 14, cursorY);
+      cursorY += 6;
+      doc.text(`DIVISA: ${formatCurrency(Math.abs(divisa), '$')}`, 14, cursorY);
+      cursorY += 6;
+    }
+
+    doc.save(`estado-cuenta-resumen-${selectedEntityId}.pdf`);
+    await copyShareText();
+  };
+
+  const handleExportPdfDetailed = async (accountOverride?: TabFilter) => {
+    if (!selectedEntityId || !currentEntityInfo) return;
+    const { default: jsPDF } = await import('jspdf');
+    const { default: autoTable } = await import('jspdf-autotable');
+
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const account = accountOverride || activeTab;
+    const rangeLabel = resolveRangeLabel(detailRangeFilter);
+    const rightInfo = [account === 'ALL' ? 'Cuenta: Global' : `Cuenta: ${account}`, `Rango: ${rangeLabel}`];
+    const titleSuffix = detailRangeFilter !== 'ALL' ? ` (${rangeLabel})` : '';
+    let cursorY = addPdfHeader(doc, `Estado de Cuenta Detallado${titleSuffix}`, rightInfo);
+    cursorY = addEntityBlock(doc, cursorY);
+    const entityMovs = movements.filter((m) => m.entityId === selectedEntityId);
+    const scoped = filterMovementsByRange(
+      entityMovs,
+      account,
+      detailRangeFilter,
+      detailRangeFrom,
+      detailRangeTo
+    );
+    const sorted = [...scoped].sort(
+      (a, b) => new Date(a.createdAt || a.date).getTime() - new Date(b.createdAt || b.date).getTime()
+    );
+    const chrono = buildChronoData(sorted);
+
+    const rows = chrono.map((m) => {
+      const refText =
+        m.movementType === MovementType.ABONO
+          ? `Ref: ${m.reference || 'N/A'} (Tasa: ${Number(m.rateUsed || 1).toFixed(2)})`
+          : '-';
+      return [
+        formatDateTime((m as any).displayDate || m.date),
+        m.concept,
+        refText,
+        m.debe > 0 ? m.debe.toFixed(2) : '-',
+        m.haber > 0 ? m.haber.toFixed(2) : '-',
+        m.runningBalance != null ? Number(m.runningBalance).toFixed(2) : '-',
+      ];
+    });
+
+    const totalDebe = chrono.reduce((sum, m) => sum + (m.debe || 0), 0);
+    const totalHaber = chrono.reduce((sum, m) => sum + (m.haber || 0), 0);
+
+    autoTable(doc, {
+      startY: cursorY + 2,
+      head: [[
+        'Fecha',
+        'Concepto / Descripcion',
+        'Referencia / Tasa',
+        'Deuda (+)',
+        'Abono (-)',
+        'Saldo',
+      ]],
+      body: rows.length ? rows : [['-', '-', '-', '-', '-', '-']],
+      foot: [[
+        'TOTALES',
+        '',
+        '',
+        totalDebe.toFixed(2),
+        totalHaber.toFixed(2),
+        (totalDebe - totalHaber).toFixed(2),
+      ]],
+      theme: 'striped',
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [15, 23, 42] },
+      footStyles: { fillColor: [245, 247, 250], textColor: [15, 23, 42], fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: 26 },
+        1: { cellWidth: 60 },
+        2: { cellWidth: 48 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 22 },
+        5: { cellWidth: 22 },
+      },
+    });
+
+    doc.save(`estado-cuenta-detallado-${selectedEntityId}.pdf`);
+    await copyShareText();
+  };
+
+  const handleExportImage = async (accountOverride?: TabFilter) => {
+    if (!selectedEntityId) return;
+    const { default: html2canvas } = await import('html2canvas');
+    const account = accountOverride || activeTab;
+    const entityMovs = movements.filter((m) => m.entityId === selectedEntityId);
+    const scoped = filterMovementsByRange(
+      entityMovs,
+      account,
+      detailRangeFilter,
+      detailRangeFrom,
+      detailRangeTo
+    );
+    const sorted = [...scoped].sort(
+      (a, b) => new Date(a.createdAt || a.date).getTime() - new Date(b.createdAt || b.date).getTime()
+    );
+    const chrono = buildChronoData(sorted);
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'fixed';
+    wrapper.style.left = '-10000px';
+    wrapper.style.top = '0';
+    wrapper.style.background = '#ffffff';
+    wrapper.style.padding = '24px';
+    wrapper.style.width = '900px';
+
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '12px';
+    header.style.marginBottom = '12px';
+
+    if (config.companyLogo) {
+      const img = document.createElement('img');
+      img.src = config.companyLogo;
+      img.style.width = '56px';
+      img.style.height = '56px';
+      img.style.objectFit = 'cover';
+      img.style.borderRadius = '8px';
+      header.appendChild(img);
+    }
+
+    const info = document.createElement('div');
+    info.innerHTML = `
+      <div style="font-weight: 800; font-size: 16px; color: #111827;">${
+        config.companyName || 'Empresa'
+      }</div>
+      <div style="font-size: 12px; color: #6b7280;">Estado de Cuenta: ${
+        selectedEntityId || 'Entidad'
+      }</div>
+      <div style="font-size: 12px; color: #6b7280;">Cuenta: ${
+        account === 'ALL' ? 'Global' : account
+      }</div>
+      <div style="font-size: 12px; color: #6b7280;">Rango: ${resolveRangeLabel(
+        detailRangeFilter
+      )}</div>
+    `;
+    header.appendChild(info);
+    wrapper.appendChild(header);
+
+    const tableRows = chrono
+      .map((m) => {
+        const refText =
+          m.movementType === MovementType.ABONO
+            ? `Ref: ${m.reference || 'N/A'} (Tasa: ${Number(m.rateUsed || 1).toFixed(2)})`
+            : '-';
+        return `
+          <tr>
+            <td>${formatDateTime((m as any).displayDate || m.date)}</td>
+            <td>${m.concept}</td>
+            <td>${refText}</td>
+            <td style="text-align:right;">${m.debe > 0 ? m.debe.toFixed(2) : '-'}</td>
+            <td style="text-align:right;">${m.haber > 0 ? m.haber.toFixed(2) : '-'}</td>
+            <td style="text-align:right;">${
+              m.runningBalance != null ? Number(m.runningBalance).toFixed(2) : '-'
+            }</td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    wrapper.innerHTML += `
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead>
+          <tr style="background:#0f172a;color:#ffffff;">
+            <th style="text-align:left;padding:6px;">Fecha</th>
+            <th style="text-align:left;padding:6px;">Concepto / Descripcion</th>
+            <th style="text-align:left;padding:6px;">Referencia / Tasa</th>
+            <th style="text-align:right;padding:6px;">Deuda (+)</th>
+            <th style="text-align:right;padding:6px;">Abono (-)</th>
+            <th style="text-align:right;padding:6px;">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows || ''}
+        </tbody>
+      </table>
+    `;
+
+    document.body.appendChild(wrapper);
+    const canvas = await html2canvas(wrapper, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      width: wrapper.scrollWidth,
+      height: wrapper.scrollHeight,
+      windowWidth: wrapper.scrollWidth,
+      windowHeight: wrapper.scrollHeight,
+    });
+    document.body.removeChild(wrapper);
+
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL('image/png');
+    link.download = `estado-cuenta-detallado-${selectedEntityId || 'entidad'}.png`;
+    link.click();
+    await copyShareText();
+  };
+
+  const handleExportSummaryImage = async (accountOverride?: TabFilter) => {
+    if (!selectedEntityId) return;
+    const { default: html2canvas } = await import('html2canvas');
+    const account = accountOverride || activeTab;
+    const entityMovs = movements.filter((m) => m.entityId === selectedEntityId);
+    const scoped = filterMovementsByRange(
+      entityMovs,
+      account,
+      detailRangeFilter,
+      detailRangeFrom,
+      detailRangeTo
+    );
+
+    const sumByAccount = (accountType: AccountType) => {
+      const accountMovs = scoped.filter((m) => m.accountType === accountType);
+      const totalDebt = accountMovs
+        .filter((m) => m.movementType === MovementType.FACTURA)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      const totalPaid = accountMovs
+        .filter((m) => m.movementType === MovementType.ABONO)
+        .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      return totalDebt - totalPaid;
+    };
+
+    const total =
+      account === 'ALL'
+        ? sumByAccount(AccountType.BCV) +
+          sumByAccount(AccountType.GRUPO) +
+          sumByAccount(AccountType.DIVISA)
+        : sumByAccount(account as AccountType);
+
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'fixed';
+    wrapper.style.left = '-10000px';
+    wrapper.style.top = '0';
+    wrapper.style.background = '#ffffff';
+    wrapper.style.padding = '20px';
+    wrapper.style.width = '520px';
+
+    wrapper.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        ${
+          config.companyLogo
+            ? `<img src="${config.companyLogo}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;" />`
+            : ''
+        }
+        <div>
+          <div style="font-weight:800;font-size:16px;color:#0f172a;">${
+            config.companyName || 'Empresa'
+          }</div>
+          <div style="font-size:12px;color:#64748b;">Estado de Cuenta</div>
+        </div>
+      </div>
+      <div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px;">
+        <div style="font-weight:700;font-size:12px;color:#475569;margin-bottom:6px;">Entidad</div>
+        <div style="font-weight:800;font-size:16px;color:#0f172a;">${
+          selectedEntityId
+        }</div>
+        <div style="font-size:11px;color:#64748b;">Cuenta: ${
+          account === 'ALL' ? 'Global' : account
+        }</div>
+        <div style="font-size:11px;color:#64748b;">Rango: ${resolveRangeLabel(
+          detailRangeFilter
+        )}</div>
+        <div style="display:flex;gap:12px;margin-top:12px;">
+          <div style="flex:1;background:#f8fafc;border-radius:10px;padding:8px;">
+            <div style="font-size:10px;color:#64748b;">Saldo</div>
+            <div style="font-weight:800;color:#0f172a;">${formatCurrency(
+              Math.abs(total),
+              '$'
+            )}</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(wrapper);
+    const canvas = await html2canvas(wrapper, { backgroundColor: '#ffffff', scale: 2 });
+    document.body.removeChild(wrapper);
+
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL('image/png');
+    link.download = `estado-cuenta-resumen-${selectedEntityId || 'entidad'}.png`;
+    link.click();
+    await copyShareText();
+  };
+
   // --- GENERATE PAYROLL RECEIPT (PDF) ---
   const handleGenerateReceipt = () => {
     if (!currentEntityInfo || !selectedEntityId) return;
@@ -213,8 +1100,8 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     const devengados = detailData.filter((m) => m.movementType === MovementType.FACTURA);
     const deducciones = detailData.filter((m) => m.movementType === MovementType.ABONO);
 
-    const totalDevengado = devengados.reduce((s, m) => s + m.amountInUSD, 0);
-    const totalDeducciones = deducciones.reduce((s, m) => s + m.amountInUSD, 0);
+    const totalDevengado = devengados.reduce((s, m) => s + getMovementUsdAmount(m, rates), 0);
+    const totalDeducciones = deducciones.reduce((s, m) => s + getMovementUsdAmount(m, rates), 0);
     const netoPagar = totalDevengado - totalDeducciones;
 
     // Header
@@ -266,12 +1153,22 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       // Devengado Item
       if (devengados[i]) {
         doc.text(`${devengados[i].date} - ${devengados[i].concept.substring(0, 25)}`, col1X, y);
-        doc.text(`$${devengados[i].amountInUSD.toFixed(2)}`, col1X + 75, y, { align: 'right' });
+        doc.text(
+          `$${getMovementUsdAmount(devengados[i], rates).toFixed(2)}`,
+          col1X + 75,
+          y,
+          { align: 'right' }
+        );
       }
       // Deduccion Item
       if (deducciones[i]) {
         doc.text(`${deducciones[i].date} - ${deducciones[i].concept.substring(0, 25)}`, col2X, y);
-        doc.text(`$${deducciones[i].amountInUSD.toFixed(2)}`, col2X + 75, y, { align: 'right' });
+        doc.text(
+          `$${getMovementUsdAmount(deducciones[i], rates).toFixed(2)}`,
+          col2X + 75,
+          y,
+          { align: 'right' }
+        );
       }
       y += 6;
 
@@ -326,68 +1223,178 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
 
   // --- RENDER ---
   return (
-    <div className="space-y-6 animate-in h-full flex flex-col">
+    <div className="app-section space-y-6 animate-in h-full flex flex-col">
       {/* LEVEL 1: DIRECTORY VIEW */}
       {viewMode === 'DIRECTORY' && (
         <>
-          <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-6 rounded-[1.5rem] shadow-sm border border-slate-200 dark:border-slate-700 gap-4">
-            <div>
-              <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">
-                Directorio Contable
-              </h2>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-                Saldos por Entidad
-              </p>
-            </div>
-
-            {/* FILTROS PRINCIPALES */}
-            <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
-              {(
-                [
-                  { id: 'ALL', label: 'Todo' },
-                  { id: 'CLIENTE', label: 'Clientes' },
-                  { id: 'PROVEEDOR', label: 'Proveedores' },
-                  { id: 'NÓMINA', label: 'Empleados' },
-                ] as const
-              ).map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setEntityFilter(f.id)}
-                  className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
-                    entityFilter === f.id
-                      ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Buscar..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border-none rounded-xl text-sm font-bold w-64 focus:ring-2 focus:ring-indigo-500 transition-all"
-              />
-              <i className="fa-solid fa-search absolute left-4 top-3.5 text-slate-400"></i>
+          <div className="app-panel p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div
+                className="bg-white rounded-2xl border border-slate-200 px-5 py-4 shadow-sm flex items-center gap-4 cursor-pointer hover:border-slate-300"
+                onClick={() => {
+                  if (onNavigateToCustomers) {
+                    onNavigateToCustomers();
+                    return;
+                  }
+                  setReceivableOnly(true);
+                  setEntityFilter('CLIENTE');
+                  setReceivableAccountFilter('ALL');
+                }}
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg">
+                  📉
+                </div>
+                <div className="flex-1">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Cuentas por Cobrar</div>
+                  <div className="text-2xl font-black text-emerald-600">
+                    {formatCurrency(summaryTotals.receivable, '$')}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-semibold">
+                    {formatCurrency(summaryTotals.receivable * (rates.bcv || 1), 'Bs')}
+                  </div>
+                </div>
+              </div>
+              <div
+                className="bg-white rounded-2xl border border-slate-200 px-5 py-4 shadow-sm flex items-center gap-4 cursor-pointer hover:border-slate-300"
+                onClick={() => {
+                  if (onNavigateToSuppliers) {
+                    onNavigateToSuppliers();
+                  }
+                }}
+              >
+                <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-lg">
+                  📈
+                </div>
+                <div>
+                  <div className="text-[10px] font-black uppercase text-slate-400">Cuentas por Pagar</div>
+                  <div className="text-2xl font-black text-rose-600">
+                    {formatCurrency(summaryTotals.payable, '$')}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-semibold">
+                    {formatCurrency(summaryTotals.payable * (rates.bcv || 1), 'Bs')}
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white rounded-2xl border border-slate-200 px-5 py-4 shadow-sm flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg">
+                  ⚖️
+                </div>
+                <div>
+                  <div className="text-[10px] font-black uppercase text-slate-400">Balance General</div>
+                  <div className={`text-2xl font-black ${summaryTotals.net >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                    {formatCurrency(summaryTotals.net, '$')}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-semibold">
+                    {formatCurrency(summaryTotals.net * (rates.bcv || 1), 'Bs')}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-800 rounded-[1.5rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex-1">
+          <div className="app-panel p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="app-section-header">
+              <p className="app-subtitle">Saldos por Entidad</p>
+              <h2 className="app-title">Directorio Contable</h2>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex app-chip p-1 rounded-xl">
+                {(
+                  [
+                    { id: 'ALL', label: 'Todo' },
+                    { id: 'CATALOGO', label: 'Clientes + Proveedores' },
+                    { id: 'CLIENTE', label: 'Clientes' },
+                    { id: 'PROVEEDOR', label: 'Proveedores' },
+                    { id: 'NÓMINA', label: 'Empleados' },
+                  ] as const
+                ).map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setEntityFilter(f.id)}
+                    className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
+                      entityFilter === f.id
+                        ? 'bg-white text-[var(--ui-accent)] shadow-sm'
+                        : 'text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {(
+                  [
+                    { id: 'ALL', label: 'Todos', color: 'bg-slate-100 text-slate-600' },
+                    { id: AccountType.BCV, label: 'BCV', color: 'bg-blue-50 text-blue-700' },
+                    { id: AccountType.GRUPO, label: 'Grupo', color: 'bg-orange-50 text-orange-700' },
+                    { id: AccountType.DIVISA, label: 'Divisa', color: 'bg-emerald-50 text-emerald-700' },
+                  ] as const
+                ).map((chip) => {
+                  const isActive = receivableAccountFilter === chip.id;
+                  const value =
+                    chip.id === AccountType.BCV
+                      ? formatCurrency(summaryTotals.bcvReceivable * (rates.bcv || 1), 'Bs')
+                      : chip.id === AccountType.GRUPO
+                      ? formatCurrency(summaryTotals.grupoReceivable, '$')
+                      : chip.id === AccountType.DIVISA
+                      ? formatCurrency(summaryTotals.divisaReceivable, '$')
+                      : formatCurrency(summaryTotals.receivable, '$');
+                  return (
+                    <button
+                      key={chip.id}
+                      type="button"
+                      onClick={() => {
+                        setReceivableOnly(true);
+                        setEntityFilter('CLIENTE');
+                        setReceivableAccountFilter(chip.id as 'ALL' | AccountType);
+                      }}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${chip.color} ${
+                        isActive ? 'ring-2 ring-slate-300' : 'hover:opacity-80'
+                      }`}
+                      title="Filtrar por cuenta"
+                    >
+                      {chip.label} {value}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Buscar..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="app-input pl-10 pr-4 py-3 text-sm font-bold w-64"
+                />
+                <i className="fa-solid fa-search absolute left-4 top-3.5 text-slate-400"></i>
+              </div>
+
+              <select
+                value={sortByBalance}
+                onChange={(e) => setSortByBalance(e.target.value as 'none' | 'debt-desc')}
+                className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600"
+              >
+                <option value="none">Orden: Default</option>
+                <option value="debt-desc">Mayor Deuda</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="app-panel overflow-hidden flex-1">
             <div className="overflow-y-auto custom-scroll h-full">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 dark:bg-slate-900 text-slate-400 text-[10px] uppercase font-black tracking-widest sticky top-0 z-10 border-b border-slate-200">
+                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black tracking-widest sticky top-0 z-10 border-b border-slate-200">
                   <tr>
                     <th className="px-8 py-4">Tipo</th>
                     <th className="px-8 py-4">Entidad / Nombre</th>
-                    <th className="px-8 py-4 text-right">Saldo Global ($)</th>
+                    <th className="px-8 py-4">Saldos por Cuenta</th>
                     <th className="px-8 py-4 text-center">Acción</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                <tbody className="divide-y divide-slate-100">
                   {directoryData.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="py-20 text-center text-slate-400 italic">
@@ -400,20 +1407,23 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                       // Para Nómina: Balance > 0 significa que la empresa DEBE al empleado (Azul/Verde).
                       // Para Clientes: Balance > 0 significa que el cliente DEBE a la empresa (Rojo/Cobrar).
                       const isPayroll = entity.type === 'NÓMINA';
-                      let balanceColor = '';
+                      const resolveBalanceColor = (value: number) => {
+                        if (isPayroll) {
+                          return value >= 0 ? 'text-indigo-600' : 'text-rose-600';
+                        }
+                        return value > 0.01 ? 'text-rose-600' : 'text-emerald-600';
+                      };
 
-                      if (isPayroll) {
-                        balanceColor =
-                          entity.globalBalance >= 0 ? 'text-indigo-600' : 'text-rose-600';
-                      } else {
-                        balanceColor =
-                          entity.globalBalance > 0.01 ? 'text-rose-600' : 'text-emerald-600';
-                      }
+                      const bcv = (entity as any).balances?.bcv ?? 0;
+                      const grupo = (entity as any).balances?.grupo ?? 0;
+                      const divisa = (entity as any).balances?.divisa ?? 0;
+                      const lastMovDays = daysSince(entity.lastMov);
+                      const isInactive = lastMovDays != null && lastMovDays >= 60;
 
                       return (
                         <tr
                           key={entity.id}
-                          className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group cursor-pointer"
+                          className="hover:bg-slate-50:bg-slate-700/50 transition-colors group cursor-pointer"
                           onClick={() => {
                             setSelectedEntityId(entity.id);
                             setViewMode('DETAIL');
@@ -427,26 +1437,106 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                             </span>
                           </td>
                           <td className="px-8 py-4">
-                            <p className="font-bold text-slate-700 dark:text-white text-base">
-                              {entity.id}
-                            </p>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-xs">
+                                {getInitials(entity.id)}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-bold text-slate-700 text-base">
+                                    {entity.id}
+                                  </p>
+                                  {entity.type === 'CLIENTE' && (
+                                    <ClientStatusBadge
+                                      tags={(entity as any).tags || undefined}
+                                      maxTags={1}
+                                    />
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold">
+                                  <span className={`w-2 h-2 rounded-full ${isInactive ? 'bg-slate-300' : 'bg-emerald-400'}`}></span>
+                                  <span>
+                                    {entity.lastMov
+                                      ? `Ult. mov: hace ${lastMovDays} dias`
+                                      : 'Ult. mov: sin registros'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
                           </td>
                           <td className="px-8 py-4 text-right">
-                            <div className="flex flex-col items-end">
-                              <span className={`text-lg font-black font-mono ${balanceColor}`}>
-                                {formatCurrency(entity.globalBalance)}
-                              </span>
+                            <div className="flex flex-col items-end text-[11px] font-semibold">
+                              <div
+                                className={`flex items-center gap-2 ${resolveBalanceColor(bcv)}`}
+                              >
+                                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                                <span className="uppercase text-[10px] font-black text-slate-500">BCV</span>
+                                <span className="font-mono">
+                                  {formatCurrency(Math.abs(bcv))}
+                                </span>
+                              </div>
+                              <div
+                                className={`flex items-center gap-2 ${resolveBalanceColor(grupo)}`}
+                              >
+                                <span className="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>
+                                <span className="uppercase text-[10px] font-black text-slate-500">GRUPO</span>
+                                <span className="font-mono">
+                                  {formatCurrency(Math.abs(grupo))}
+                                </span>
+                              </div>
+                              <div
+                                className={`flex items-center gap-2 ${resolveBalanceColor(divisa)}`}
+                              >
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                                <span className="uppercase text-[10px] font-black text-slate-500">DIVISA</span>
+                                <span className="font-mono">
+                                  {formatCurrency(Math.abs(divisa))}
+                                </span>
+                              </div>
                               {isPayroll && (
-                                <span className="text-[8px] font-bold text-slate-400 uppercase">
+                                <span className="text-[8px] font-bold text-slate-400 uppercase mt-1">
                                   {entity.globalBalance >= 0 ? 'Por Pagar' : 'Sobregiro'}
                                 </span>
                               )}
                             </div>
                           </td>
                           <td className="px-8 py-4 text-center">
-                            <button className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm">
-                              <i className="fa-solid fa-chevron-right"></i>
-                            </button>
+                            <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openWhatsAppPreview(
+                                    buildWhatsAppContext(entity.id, entity.globalBalance, entity.lastMov)
+                                  );
+                                }}
+                                className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-slate-900 transition-all shadow-sm"
+                                title="WhatsApp"
+                              >
+                                <i className="fa-brands fa-whatsapp"></i>
+                              </button>
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedEntityId(entity.id);
+                                  setViewMode('DETAIL');
+                                }}
+                                className="w-9 h-9 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-slate-900 transition-all shadow-sm"
+                                title="Registrar Movimiento"
+                              >
+                                <i className="fa-solid fa-plus"></i>
+                              </button>
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedEntityId(entity.id);
+                                  setViewMode('DETAIL');
+                                }}
+                                className="w-9 h-9 rounded-full bg-slate-50 text-slate-500 hover:bg-slate-600 hover:text-slate-900 transition-all shadow-sm"
+                                title="Ver Expediente"
+                              >
+                                <i className="fa-solid fa-chevron-right"></i>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -462,108 +1552,430 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       {/* LEVEL 2: DETAILED VIEW */}
       {viewMode === 'DETAIL' && selectedEntityId && currentEntityInfo && (
         <div className="flex flex-col h-full gap-6 animate-in slide-in-from-right-4">
-          {/* HEADER DETAIL */}
-          <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-            <div className="flex items-center gap-6">
-              <button
-                onClick={() => setViewMode('DIRECTORY')}
-                className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 transition-all flex items-center justify-center"
-              >
-                <i className="fa-solid fa-arrow-left"></i>
-              </button>
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight">
-                    {currentEntityInfo.id}
-                  </h2>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[9px] font-black border uppercase ${currentEntityInfo.typeColor}`}
-                  >
-                    {currentEntityInfo.type}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
-                  {currentEntityInfo.type === 'NÓMINA'
-                    ? 'Expediente de Pagos'
-                    : 'Hoja de Vida Financiera'}
-                </p>
-              </div>
+          {shareToast && (
+            <div className="app-panel px-6 py-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded-xl">
+              {shareToast}
             </div>
-
-            <div className="flex gap-4">
-              {/* GENERAR RECIBO BUTTON (Solo para Nómina) */}
-              {currentEntityInfo.type === 'NÓMINA' && (
-                <button
-                  onClick={handleGenerateReceipt}
-                  className="px-6 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-wide hover:bg-slate-700 shadow-lg flex items-center gap-2"
-                >
-                  <i className="fa-solid fa-file-invoice-dollar"></i> Generar Recibo
-                </button>
-              )}
-
-              {/* TABS DE FILTRO DE ALTO CONTRASTE */}
-              <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-xl gap-1">
-                {(['ALL', AccountType.BCV, AccountType.GRUPO, AccountType.DIVISA] as const).map(
-                  (tab) => {
-                    // Logic for High Contrast Colors based on prompt
-                    let activeClasses = '';
-                    const inactiveClasses =
-                      'text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700';
-
-                    if (activeTab === tab) {
-                      switch (tab) {
-                        case 'ALL':
-                          activeClasses = 'bg-slate-800 text-white shadow-lg';
-                          break;
-                        case AccountType.BCV:
-                          activeClasses =
-                            'bg-blue-800 text-white shadow-lg shadow-blue-200 dark:shadow-none';
-                          break;
-                        case AccountType.GRUPO:
-                          activeClasses =
-                            'bg-orange-600 text-white shadow-lg shadow-orange-200 dark:shadow-none';
-                          break;
-                        case AccountType.DIVISA:
-                          activeClasses =
-                            'bg-emerald-700 text-white shadow-lg shadow-emerald-200 dark:shadow-none';
-                          break;
-                      }
-                    }
-
-                    return (
-                      <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${
-                          activeTab === tab ? activeClasses : inactiveClasses
-                        }`}
+          )}
+          {/* HEADER DETAIL */}
+          <div className="app-panel p-8">
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
+              <div className="space-y-6">
+                <div className="flex items-center gap-6">
+                  <button
+                    onClick={() => setViewMode('DIRECTORY')}
+                    className="w-12 h-12 rounded-2xl app-btn app-btn-ghost flex items-center justify-center"
+                  >
+                    <i className="fa-solid fa-arrow-left"></i>
+                  </button>
+                  <div>
+                    <div className="flex items-center gap-3 mb-1">
+                      <h2 className="text-3xl font-black text-slate-800 tracking-tight">
+                        {currentEntityInfo.id}
+                      </h2>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[9px] font-black border uppercase ${currentEntityInfo.typeColor}`}
                       >
-                        {tab === 'ALL'
-                          ? 'Global'
-                          : tab === AccountType.BCV
-                          ? 'BCV (Azul)'
-                          : tab === AccountType.GRUPO
-                          ? 'Grupo (Naranja)'
-                          : 'Divisa (Verde)'}
-                      </button>
-                    );
-                  }
-                )}
+                        {currentEntityInfo.type}
+                      </span>
+                    </div>
+                    <p className="app-subtitle">
+                      {currentEntityInfo.type === 'NÓMINA'
+                        ? 'Expediente de Pagos'
+                        : 'Hoja de Vida Financiera'}
+                    </p>
+                    {currentEntityInfo.type === 'CLIENTE' && currentCustomer && (
+                      <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-500">
+                        <div>
+                          <span className="font-semibold text-slate-600">CI/RIF:</span>{' '}
+                          {getEntityField(currentCustomer.cedula)}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-600">Telefono:</span>{' '}
+                          {currentCustomer.telefono ? (
+                            <a
+                              href={`tel:${currentCustomer.telefono.replace(/\s+/g, '')}`}
+                              className="text-slate-700 hover:text-[var(--ui-accent)]"
+                            >
+                              {formatPhone(currentCustomer.telefono)}
+                            </a>
+                          ) : (
+                            'N/A'
+                          )}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-slate-600">Direccion:</span>{' '}
+                          {getEntityField(currentCustomer.direccion)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-4 items-center">
+                  {/* GENERAR RECIBO BUTTON (Solo para Nómina) */}
+                  {currentEntityInfo.type === 'NÓMINA' && (
+                    <button
+                      onClick={handleGenerateReceipt}
+                      className="px-6 py-2.5 app-btn app-btn-primary flex items-center gap-2"
+                    >
+                      <i className="fa-solid fa-file-invoice-dollar"></i> Generar Recibo
+                    </button>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      Periodo / Rango
+                    </label>
+                    <select
+                      className="px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600"
+                      value={detailRangeFilter}
+                      onChange={(e) =>
+                        setDetailRangeFilter(
+                          e.target.value as 'ALL' | 'SINCE_ZERO' | 'SINCE_LAST_DEBT' | 'CUSTOM'
+                        )
+                      }
+                    >
+                      <option value="ALL">📅 Todo el Historial</option>
+                      <option value="SINCE_ZERO">0️⃣ Desde Saldo Cero</option>
+                      <option value="SINCE_LAST_DEBT">🧾 Desde Ultima Factura</option>
+                      <option value="CUSTOM">🗓️ Rango Manual</option>
+                    </select>
+                  </div>
+                  {detailRangeFilter === 'CUSTOM' && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        className="px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600"
+                        value={detailRangeFrom}
+                        onChange={(e) => setDetailRangeFrom(e.target.value)}
+                      />
+                      <input
+                        type="date"
+                        className="px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600"
+                        value={detailRangeTo}
+                        onChange={(e) => setDetailRangeTo(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-4">
+                  <div className="app-card p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Client Analytics
+                      </p>
+                      <span className="text-[10px] font-bold uppercase text-slate-400">KPIs</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">
+                            Total Historico
+                          </p>
+                          <BarChart3 className="h-4 w-4 text-slate-400" />
+                        </div>
+                        <p className="text-lg font-black text-slate-800">
+                          {formatCurrency(analyticsKpis.totalHistorical)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">
+                            Ticket Promedio
+                          </p>
+                          <Receipt className="h-4 w-4 text-slate-400" />
+                        </div>
+                        <p className="text-lg font-black text-slate-800">
+                          {formatCurrency(analyticsKpis.ticketAverage)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">
+                            Dias Prom. de Pago
+                          </p>
+                          <Clock className="h-4 w-4 text-slate-400" />
+                        </div>
+                        <p className="text-lg font-black text-slate-800">
+                          {analyticsKpis.avgPaymentDays} dias
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold uppercase text-slate-400">
+                            Saldo Pendiente Total
+                          </p>
+                          <AlertTriangle className="h-4 w-4 text-slate-400" />
+                        </div>
+                        <p className={`text-lg font-black ${totalPendingClass}`}>
+                          {formatCurrency(Math.abs(totalPending), '$')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="app-card p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Tendencia 6 meses
+                      </p>
+                      <div className="text-[10px] font-bold uppercase text-slate-400">
+                        Cargos vs Abonos
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 lg:grid-cols-[1fr_180px] gap-3">
+                      <div className="relative h-32">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={trendData} barSize={12}>
+                            <XAxis
+                              dataKey="label"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 700 }}
+                            />
+                            <Tooltip
+                              cursor={{ fill: 'rgba(148, 163, 184, 0.12)' }}
+                              formatter={(value: any, name: any) => [formatCurrency(Number(value)), name]}
+                              labelFormatter={(label) => `${label}`}
+                            />
+                            <Bar dataKey="cargos" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                            <Bar dataKey="abonos" fill="#10b981" radius={[6, 6, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                        {trendIsSparse && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="text-[11px] font-bold text-slate-400 bg-white/80 px-3 py-1.5 rounded-full border border-slate-200">
+                              Generando tendencia...
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          Distribucion de Deuda
+                        </div>
+                        <div className="mt-2 space-y-2 text-[11px] font-semibold text-slate-600">
+                          <div className="flex items-center justify-between">
+                            <span>🇺🇸 Divisa</span>
+                            <span>{formatCurrency(Math.abs(scopedBalances.divisa), '$')}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>🇻🇪 BCV</span>
+                            <span>
+                              {formatCurrency(Math.abs(scopedBalances.bcv * (rates.bcv || 1)), 'Bs')}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>🟠 Grupo</span>
+                            <span>
+                              {formatCurrency(
+                                Math.abs(scopedBalances.grupo * (rates.grupo || 1)),
+                                'Bs'
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-[9px] font-bold uppercase text-slate-400">
+                      <span>Cargos</span>
+                      <span>Abonos</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TABS DE FILTRO DE ALTO CONTRASTE */}
+                <div className="flex app-chip p-1.5 rounded-xl gap-1">
+                  {(['ALL', AccountType.BCV, AccountType.GRUPO, AccountType.DIVISA] as const).map(
+                    (tab) => {
+                      // Logic for High Contrast Colors based on prompt
+                      let activeClasses = '';
+                      const inactiveClasses = 'text-slate-400 hover:bg-slate-200';
+
+                      if (activeTab === tab) {
+                        switch (tab) {
+                          case 'ALL':
+                            activeClasses = 'bg-white text-slate-900 shadow-lg';
+                            break;
+                          case AccountType.BCV:
+                            activeClasses =
+                              'bg-blue-800 text-slate-900 shadow-lg shadow-blue-200';
+                            break;
+                          case AccountType.GRUPO:
+                            activeClasses =
+                              'bg-orange-600 text-slate-900 shadow-lg shadow-orange-200';
+                            break;
+                          case AccountType.DIVISA:
+                            activeClasses =
+                              'bg-emerald-700 text-slate-900 shadow-lg shadow-emerald-200';
+                            break;
+                        }
+                      }
+
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => setActiveTab(tab)}
+                          className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${
+                            activeTab === tab ? activeClasses : inactiveClasses
+                          }`}
+                        >
+                          {tab === 'ALL'
+                            ? 'Global'
+                            : tab === AccountType.BCV
+                            ? 'BCV (Azul)'
+                            : tab === AccountType.GRUPO
+                            ? 'Grupo (Naranja)'
+                            : 'Divisa (Verde)'}
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Exportar / Compartir
+                    </p>
+                    <h3 className="text-lg font-black text-slate-800">Resguardos del estado</h3>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Accion rapida</span>
+                </div>
+
+                <div className="mt-4">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Cuenta a exportar
+                  </label>
+                  <div className="mt-2">
+                    <select
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700"
+                      value={shareMenuDetailAccount}
+                      onChange={(e) => setShareMenuDetailAccount(e.target.value as TabFilter)}
+                    >
+                      <option value="ALL">Global</option>
+                      <option value={AccountType.BCV}>BCV</option>
+                      <option value={AccountType.GRUPO}>GRUPO</option>
+                      <option value={AccountType.DIVISA}>DIVISA</option>
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-2">
+                      El estado respeta el rango actual; la cuenta sale segun este selector.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={copyShareText}
+                    className="w-full flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Copy className="h-4 w-4 text-slate-500" />
+                      <div>
+                        <div className="text-sm font-bold text-slate-800">
+                          Copiar Estado de Cuenta
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Copia el mensaje listo para WhatsApp.
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Resumen Ejecutivo
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => handleExportPdfSummary(shareMenuDetailAccount)}
+                      className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="text-xl">📄</div>
+                        <div>
+                          <div className="text-sm font-bold text-slate-800">PDF Resumido</div>
+                          <div className="text-[11px] text-slate-500">
+                            Solo saldos totales por cuenta.
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExportSummaryImage(shareMenuDetailAccount)}
+                      className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="text-xl">🖼️</div>
+                        <div>
+                          <div className="text-sm font-bold text-slate-800">Imagen Resumida</div>
+                          <div className="text-[11px] text-slate-500">Tarjeta limpia para compartir.</div>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Detalle Completo
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => handleExportPdfDetailed(shareMenuDetailAccount)}
+                      className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="text-xl">📄</div>
+                        <div>
+                          <div className="text-sm font-bold text-slate-800">PDF Detallado</div>
+                          <div className="text-[11px] text-slate-500">
+                            Incluye todos los movimientos y detalles.
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExportImage(shareMenuDetailAccount)}
+                      className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="text-xl">🖼️</div>
+                        <div>
+                          <div className="text-sm font-bold text-slate-800">Imagen Detallada</div>
+                          <div className="text-[11px] text-slate-500">Captura completa del reporte.</div>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
           {/* DETAILED TABLE WITH CONTEXT BORDER */}
           <div
-            className={`bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border-x border-b border-slate-200 dark:border-slate-700 overflow-hidden flex-1 flex flex-col border-t-[6px] ${contextColors.border}`}
+            className={`app-panel overflow-hidden flex-1 flex flex-col border-t-[6px] ${contextColors.border}`}
           >
             {/* Table Header */}
             <div
-              className={`px-8 py-4 ${contextColors.bg} border-b border-slate-200 dark:border-slate-700 grid grid-cols-7 text-[10px] font-black uppercase tracking-widest ${contextColors.text}`}
+              className={`px-8 py-4 ${contextColors.bg} border-b border-slate-200 grid grid-cols-10 text-[10px] font-black uppercase tracking-widest ${contextColors.text}`}
             >
-              <div className="col-span-1">Fecha</div>
+              <div className="col-span-2">Fecha / Hora</div>
               <div className="col-span-2">Concepto</div>
-              <div className="col-span-1 text-center">Ref. Tasa</div>
+              <div className="col-span-1 text-center">Referencia</div>
+              <div className="col-span-1 text-center">Cuenta</div>
+              <div className="col-span-1 text-center">Tasa</div>
               <div className="col-span-1 text-right text-rose-600">
                 {currentEntityInfo.type === 'NÓMINA' ? 'Devengado (+)' : 'Cargo ($)'}
               </div>
@@ -573,26 +1985,34 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               <div className="col-span-1 text-center">Acción</div>
             </div>
 
-            <div className="overflow-y-auto custom-scroll flex-1">
+            <div className="overflow-y-auto custom-scroll flex-1" ref={detailTableRef}>
               {detailData.length === 0 ? (
-                <div className="py-20 text-center text-slate-300 font-black italic uppercase">
-                  No hay movimientos en esta cuenta ({activeTab})
+                <div className="py-16 text-center text-slate-300 font-black uppercase">
+                  <div className="text-sm">Sin movimientos registrados</div>
+                  <div className="text-[10px] font-semibold text-slate-400 mt-2">
+                    Hoja de vida activa, sin operaciones en {activeTab}.
+                  </div>
                 </div>
               ) : (
                 detailData.map((mov) => (
                   <div
                     key={mov.id}
-                    className="px-8 py-4 border-b border-slate-100 dark:border-slate-700/50 grid grid-cols-7 items-center hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors text-xs group"
+                    className="px-8 py-4 border-b border-slate-100 grid grid-cols-10 items-center hover:bg-slate-50 transition-colors text-xs group"
                   >
-                    <div className="col-span-1 font-bold text-slate-500">{mov.date}</div>
+                    <div className="col-span-2 font-bold text-slate-500">
+                      {formatDateTime((mov as any).displayDate || mov.date)}
+                    </div>
                     <div
-                      className="col-span-2 font-medium text-slate-700 dark:text-slate-200 truncate pr-4"
+                      className="col-span-2 font-medium text-slate-700 truncate pr-4"
                       title={mov.concept}
                     >
                       {mov.concept}
-                      <span className="ml-2 px-1.5 py-0.5 bg-slate-100 text-[8px] rounded text-slate-400 font-bold">
-                        {mov.accountType}
-                      </span>
+                    </div>
+                    <div className="col-span-1 text-center font-mono text-slate-400 text-[10px]">
+                      {mov.reference || '-'}
+                    </div>
+                    <div className="col-span-1 text-center text-[10px] font-black text-slate-500">
+                      {mov.accountType}
                     </div>
                     <div className="col-span-1 text-center font-mono text-slate-400 text-[10px]">
                       {mov.rateUsed > 1 ? `Bs ${mov.rateUsed}` : '1:1'}
@@ -608,14 +2028,26 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     <div className="col-span-1 text-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleEditClick(mov)}
-                        className="w-8 h-8 rounded-full bg-slate-100 hover:bg-indigo-500 hover:text-white text-slate-500 transition-all flex items-center justify-center"
+                        className="w-8 h-8 rounded-full bg-slate-100 hover:bg-[var(--ui-accent)] hover:text-slate-900 text-slate-500 transition-all flex items-center justify-center"
                       >
                         <i className="fa-solid fa-pencil text-[10px]"></i>
                       </button>
                     </div>
 
                     {/* Row Footer with Running Balance */}
-                    <div className="col-span-7 mt-2 pt-2 border-t border-dashed border-slate-100 flex justify-end items-center gap-2 opacity-60">
+                    <div className="col-span-10 mt-2 pt-2 border-t border-dashed border-slate-100 flex flex-wrap justify-between items-center gap-2 opacity-60">
+                      <div className="text-[9px] uppercase font-bold text-slate-400 flex flex-wrap gap-3">
+                        <span>Cuenta: {mov.accountType}</span>
+                        <span>Moneda: {mov.currency}</span>
+                        <span>
+                          Monto: {mov.currency === 'BS' ? 'Bs' : '$'}
+                          {` ${Number(mov.originalAmount ?? mov.amount ?? 0).toFixed(2)}`}
+                        </span>
+                        <span>Tasa: {mov.rateUsed > 1 ? mov.rateUsed : '1:1'}</span>
+                        <span>
+                          Días desde último: {(mov as any).daysSinceLast ?? '-'}
+                        </span>
+                      </div>
                       <span className="text-[9px] uppercase font-bold text-slate-400">
                         {currentEntityInfo.type === 'NÓMINA'
                           ? 'Saldo Acumulado:'
@@ -651,78 +2083,59 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
 
       {/* --- EDIT MODAL --- */}
       {editingMovement && editForm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+        <div className="fixed inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
           <form
             onSubmit={handleSaveEdit}
-            className="bg-white dark:bg-slate-800 w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 animate-in zoom-in duration-300"
+            className="app-panel w-full max-w-2xl p-0 overflow-hidden animate-in zoom-in duration-300"
           >
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-slate-800 dark:text-white uppercase italic tracking-tight text-xl">
-                Editar Movimiento
-              </h3>
+            <div className="bg-slate-50 border-b border-slate-200 px-8 py-6 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Detalles de la Operacion
+                </p>
+                <h3 className="font-black text-slate-800 uppercase tracking-tight text-xl">
+                  Editar Movimiento
+                </h3>
+              </div>
               <button
                 type="button"
                 onClick={() => setEditingMovement(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center"
+                className="w-9 h-9 rounded-full bg-white text-slate-500 hover:bg-rose-500 hover:text-slate-900 transition-all flex items-center justify-center shadow"
               >
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="p-8 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                    Fecha
+                    Fecha y hora
                   </label>
                   <input
-                    type="date"
+                    type="datetime-local"
                     required
-                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="app-input"
                     value={editForm.date}
                     onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
                   />
                 </div>
                 <div>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                    Moneda Orig.
-                  </label>
-                  <select
-                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={editForm.currency}
-                    onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}
-                  >
-                    <option value={PaymentCurrency.USD}>USD ($)</option>
-                    <option value={PaymentCurrency.BS}>Bolívares (Bs)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                  Concepto / Glosa
-                </label>
-                <input
-                  type="text"
-                  required
-                  className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                  value={editForm.concept}
-                  onChange={(e) => setEditForm({ ...editForm, concept: e.target.value })}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
                     Monto Original
                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-black text-lg text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  <NumericFormat
                     value={editForm.amount}
-                    onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                    onValueChange={(values) =>
+                      setEditForm({ ...editForm, amount: values.value || '' })
+                    }
+                    thousandSeparator="."
+                    decimalSeparator="," 
+                    decimalScale={2}
+                    allowNegative={false}
+                    className="app-input text-lg"
+                    placeholder="0,00"
+                    required
                   />
                 </div>
                 <div>
@@ -733,7 +2146,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     type="number"
                     step="0.01"
                     required
-                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="app-input"
                     value={editForm.rateUsed}
                     onChange={(e) => setEditForm({ ...editForm, rateUsed: e.target.value })}
                     disabled={editForm.currency === PaymentCurrency.USD}
@@ -741,12 +2154,40 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                    Moneda Orig.
+                  </label>
+                  <select
+                    className="app-input"
+                    value={editForm.currency}
+                    onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}
+                  >
+                    <option value={PaymentCurrency.USD}>USD ($)</option>
+                    <option value={PaymentCurrency.BS}>Bolívares (Bs)</option>
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                    Concepto / Glosa
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="app-input"
+                    value={editForm.concept}
+                    onChange={(e) => setEditForm({ ...editForm, concept: e.target.value })}
+                  />
+                </div>
+              </div>
+
               {/* PREVIEW CALCULATION */}
-              <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl text-center border border-indigo-100 dark:border-indigo-800">
+              <div className="bg-indigo-50 p-4 rounded-xl text-center border border-indigo-100">
                 <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">
                   Nuevo Monto Contable (USD)
                 </p>
-                <p className="text-2xl font-black text-indigo-700 dark:text-indigo-300">
+                <p className="text-2xl font-black text-indigo-700">
                   {formatCurrency(
                     editForm.currency === PaymentCurrency.BS
                       ? (parseFloat(editForm.amount) || 0) / (parseFloat(editForm.rateUsed) || 1)
@@ -756,17 +2197,17 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               </div>
             </div>
 
-            <div className="mt-8 flex gap-3">
+            <div className="px-8 pb-8 flex flex-col md:flex-row gap-3">
               <button
                 type="button"
                 onClick={handleDeleteClick}
-                className="px-6 py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-100 transition-all"
+                className="md:w-1/2 w-full py-4 rounded-xl bg-rose-100 text-rose-700 font-black uppercase text-xs hover:bg-rose-200"
               >
-                <i className="fa-solid fa-trash-can"></i>
+                🗑️ Eliminar Transacción
               </button>
               <button
                 type="submit"
-                className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-black transition-all transform active:scale-95"
+                className="md:flex-1 w-full py-4 app-btn app-btn-primary shadow-xl transition-all transform active:scale-95"
               >
                 Guardar Corrección
               </button>
@@ -774,6 +2215,13 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           </form>
         </div>
       )}
+      <WhatsAppTemplateModal
+        isOpen={showWhatsAppModal}
+        onClose={() => setShowWhatsAppModal(false)}
+        templates={messageTemplates}
+        context={whatsAppContext}
+        onSend={handleSendWhatsApp}
+      />
     </div>
   );
 };

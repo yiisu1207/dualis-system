@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { NumericFormat } from 'react-number-format';
 import {
   Employee,
   Sanction,
@@ -23,6 +24,11 @@ interface PayrollSectionProps {
   setHistory: React.Dispatch<React.SetStateAction<PayrollReceipt[]>>;
   onUpdateEmployee: (id: string, e: Employee) => void;
   onDeleteEmployee: (id: string) => void;
+  canCreateEmployee: boolean;
+  canEditEmployee: boolean;
+  canDeleteEmployee: boolean;
+  canManageAdvances: boolean;
+  canProcessPayroll: boolean;
 }
 
 const PayrollSection: React.FC<PayrollSectionProps> = ({
@@ -38,6 +44,11 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
   setHistory,
   onUpdateEmployee,
   onDeleteEmployee,
+  canCreateEmployee,
+  canEditEmployee,
+  canDeleteEmployee,
+  canManageAdvances,
+  canProcessPayroll,
 }) => {
   const [selectedEmpId, setSelectedEmpId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'empleados' | 'vales' | 'procesar' | 'historico'>(
@@ -68,9 +79,17 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
   const handleSaveEmployee = (e: React.FormEvent) => {
     e.preventDefault();
     if (editEmployee) {
+      if (!canEditEmployee) {
+        alert('No tienes permisos para editar empleados.');
+        return;
+      }
       onUpdateEmployee(editEmployee.id, editEmployee);
       setEditEmployee(null);
     } else {
+      if (!canCreateEmployee) {
+        alert('No tienes permisos para crear empleados.');
+        return;
+      }
       const employee: Employee = {
         id: crypto.randomUUID(),
         name: newEmp.name || '',
@@ -91,6 +110,10 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
   };
 
   const handleDelete = (id: string) => {
+    if (!canDeleteEmployee) {
+      alert('No tienes permisos para eliminar empleados.');
+      return;
+    }
     if (confirm('¿Seguro que deseas eliminar este empleado? Se perderá su historial.'))
       onDeleteEmployee(id);
   };
@@ -99,6 +122,10 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
   const handleAddAdvance = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmpId || !newAdvance.amount) return;
+    if (!canManageAdvances) {
+      alert('No tienes permisos para registrar vales.');
+      return;
+    }
     const originalAmount = parseFloat(newAdvance.amount);
     const rate =
       newAdvance.currency === PaymentCurrency.BS
@@ -148,6 +175,10 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
   }, [employees, advances, missedDaysInput]);
 
   const handleCloseCycle = () => {
+    if (!canProcessPayroll) {
+      alert('No tienes permisos para procesar la nómina.');
+      return;
+    }
     if (
       !confirm(
         '¿CONFIRMAR CIERRE DE NÓMINA?\n\nEsta acción generará los recibos y descontará los vales.'
@@ -186,37 +217,33 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-in h-full flex flex-col">
+    <div className="app-section space-y-6 animate-in h-full flex flex-col">
       {/* HEADER RRHH */}
-      <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white uppercase italic tracking-tight">
-            Directorio de Capital Humano
-          </h1>
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
-            Gestión de Talento & Nómina
-          </p>
+      <div className="flex flex-col md:flex-row justify-between items-center app-panel p-6 gap-4">
+        <div className="app-section-header">
+          <p className="app-subtitle">Gestion de Talento</p>
+          <h1 className="app-title uppercase">Directorio de Capital Humano</h1>
         </div>
-        <div className="flex items-center gap-4 bg-slate-100 dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+        <div className="flex items-center gap-4 app-chip p-3 rounded-xl">
           <div className="text-right">
             <span className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">
-              Tasa Nómina (Bs/$)
+              Tasa Nomina (Bs/$)
             </span>
             <input
               type="number"
               value={payrollRate}
               onChange={(e) => setPayrollRate(parseFloat(e.target.value))}
-              className="w-20 bg-transparent text-right font-black text-lg text-slate-800 dark:text-white outline-none"
+              className="w-20 bg-transparent text-right font-black text-lg text-slate-800 outline-none"
             />
           </div>
-          <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-lg shadow-lg">
+          <div className="w-10 h-10 rounded-lg bg-[var(--ui-accent)] flex items-center justify-center text-slate-900 text-lg shadow-lg">
             <i className="fa-solid fa-money-bill-transfer"></i>
           </div>
         </div>
       </div>
 
       {/* NAVIGATION TABS */}
-      <div className="flex space-x-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl w-fit">
+      <div className="flex space-x-1 app-chip p-1 rounded-xl w-fit">
         {[
           { id: 'empleados', icon: 'fa-users', label: 'Personal' },
           { id: 'vales', icon: 'fa-hand-holding-dollar', label: 'Vales' },
@@ -228,7 +255,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
             onClick={() => setActiveTab(tab.id as any)}
             className={`px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wide flex items-center gap-2 transition-all ${
               activeTab === tab.id
-                ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm'
+                ? 'bg-white text-[var(--ui-accent)] shadow-sm'
                 : 'text-slate-400 hover:text-slate-600'
             }`}
           >
@@ -246,15 +273,15 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                 setEditEmployee(null);
                 setShowAddModal(true);
               }}
-              className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:bg-indigo-700 transition-all"
+              className="px-6 py-3 app-btn app-btn-primary"
             >
               + Nuevo Empleado
             </button>
           </div>
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex-1">
+          <div className="app-panel overflow-hidden flex-1">
             <div className="overflow-y-auto custom-scroll h-full">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 dark:bg-slate-900 text-slate-400 text-[10px] uppercase font-black tracking-widest sticky top-0">
+                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black tracking-widest sticky top-0">
                   <tr>
                     <th className="px-6 py-4">Nombre Completo</th>
                     <th className="px-6 py-4">Cargo</th>
@@ -263,15 +290,15 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                     <th className="px-6 py-4 text-center">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                <tbody className="divide-y divide-slate-100">
                   {employees.map((e) => (
-                    <tr key={e.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-white">
+                    <tr key={e.id} className="hover:bg-slate-50:bg-slate-700/50">
+                      <td className="px-6 py-4 font-bold text-slate-700">
                         {e.name} {e.lastName}
                       </td>
                       <td className="px-6 py-4 text-slate-500">{e.position}</td>
                       <td className="px-6 py-4">
-                        <span className="bg-slate-100 dark:bg-slate-900 text-slate-500 px-2 py-1 rounded text-[10px] font-black uppercase">
+                        <span className="bg-slate-100 text-slate-500 px-2 py-1 rounded text-[10px] font-black uppercase">
                           {e.frequency}
                         </span>
                       </td>
@@ -304,8 +331,8 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
       {/* --- TAB: VALES (ADELANTOS) --- */}
       {activeTab === 'vales' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
-            <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 font-bold text-xs uppercase text-slate-500">
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 font-bold text-xs uppercase text-slate-500">
               Seleccionar Empleado
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-2">
@@ -317,11 +344,11 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                     onClick={() => setSelectedEmpId(e.id)}
                     className={`w-full p-4 rounded-xl text-left transition-all border ${
                       selectedEmpId === e.id
-                        ? 'bg-indigo-50 border-indigo-200 shadow-sm dark:bg-indigo-900/20 dark:border-indigo-800'
-                        : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800'
+                        ? 'bg-indigo-50 border-indigo-200 shadow-sm'
+                        : 'bg-transparent border-transparent hover:bg-slate-50:bg-white'
                     }`}
                   >
-                    <p className="font-bold text-slate-800 dark:text-white text-sm">
+                    <p className="font-bold text-slate-800 text-sm">
                       {e.name} {e.lastName}
                     </p>
                     <p className="text-[10px] text-slate-400 uppercase tracking-wide">
@@ -334,9 +361,9 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
           <div className="lg:col-span-2 flex flex-col gap-6">
             {selectedEmp ? (
               <>
-                <div className="flex justify-between items-center bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   <div>
-                    <h3 className="font-black text-lg text-slate-800 dark:text-white">
+                    <h3 className="font-black text-lg text-slate-800">
                       {selectedEmp.name} {selectedEmp.lastName}
                     </h3>
                     <p className="text-xs text-slate-500">Adelantos pendientes</p>
@@ -348,7 +375,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                     💸 Registrar Vale
                   </button>
                 </div>
-                <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
+                <div className="flex-1 bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col">
                   <div className="overflow-y-auto flex-1 p-4 space-y-3">
                     {advances.filter(
                       (a) => a.employeeId === selectedEmp.id && a.status === 'PENDIENTE'
@@ -363,14 +390,14 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                         .map((a) => (
                           <div
                             key={a.id}
-                            className="flex justify-between items-center p-4 border border-slate-100 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900/50"
+                            className="flex justify-between items-center p-4 border border-slate-100 rounded-xl bg-slate-50"
                           >
                             <div>
-                              <p className="font-bold text-sm text-slate-700 dark:text-slate-200">
+                              <p className="font-bold text-sm text-slate-700">
                                 {a.reason}
                               </p>
                               <div className="flex gap-2 mt-1">
-                                <span className="text-[9px] font-black bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded text-slate-500">
+                                <span className="text-[9px] font-black bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-500">
                                   {a.date}
                                 </span>
                                 {a.currency === PaymentCurrency.BS && (
@@ -408,15 +435,15 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <form
             onSubmit={handleSaveEmployee}
-            className="bg-white dark:bg-slate-800 rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in"
+            className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in"
           >
-            <h3 className="text-2xl font-black text-slate-800 dark:text-white mb-8 uppercase italic tracking-tight">
+            <h3 className="text-2xl font-black text-slate-800 mb-8 uppercase italic tracking-tight">
               {editEmployee ? 'Editar Ficha' : 'Nuevo Ingreso'}
             </h3>
             <div className="grid grid-cols-2 gap-6">
               <input
                 placeholder="Nombre"
-                className="p-4 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold outline-none"
+                className="p-4 bg-slate-50 border-none rounded-xl font-bold outline-none"
                 required
                 value={editEmployee ? editEmployee.name : newEmp.name || ''}
                 onChange={(e) =>
@@ -427,7 +454,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
               />
               <input
                 placeholder="Apellido"
-                className="p-4 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold outline-none"
+                className="p-4 bg-slate-50 border-none rounded-xl font-bold outline-none"
                 required
                 value={editEmployee ? editEmployee.lastName : newEmp.lastName || ''}
                 onChange={(e) =>
@@ -438,7 +465,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
               />
               <input
                 placeholder="Cédula"
-                className="p-4 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold outline-none"
+                className="p-4 bg-slate-50 border-none rounded-xl font-bold outline-none"
                 required
                 value={editEmployee ? editEmployee.idNumber : newEmp.idNumber || ''}
                 onChange={(e) =>
@@ -449,7 +476,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
               />
               <input
                 placeholder="Cargo"
-                className="p-4 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold outline-none"
+                className="p-4 bg-slate-50 border-none rounded-xl font-bold outline-none"
                 required
                 value={editEmployee ? editEmployee.position : newEmp.position || ''}
                 onChange={(e) =>
@@ -458,20 +485,26 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                     : setNewEmp({ ...newEmp, position: e.target.value })
                 }
               />
-              <input
-                type="number"
-                placeholder="Sueldo Base ($)"
-                className="p-4 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold outline-none"
-                required
+              <NumericFormat
                 value={editEmployee ? editEmployee.salary : newEmp.salary || ''}
-                onChange={(e) =>
-                  editEmployee
-                    ? setEditEmployee({ ...editEmployee, salary: Number(e.target.value) })
-                    : setNewEmp({ ...newEmp, salary: Number(e.target.value) })
-                }
+                onValueChange={(values) => {
+                  const next = values.floatValue;
+                  if (editEmployee) {
+                    setEditEmployee({ ...editEmployee, salary: next || 0 });
+                  } else {
+                    setNewEmp({ ...newEmp, salary: next });
+                  }
+                }}
+                thousandSeparator="."
+                decimalSeparator=","
+                decimalScale={2}
+                allowNegative={false}
+                className="p-4 bg-slate-50 border-none rounded-xl font-bold outline-none"
+                placeholder="Sueldo Base ($)"
+                required
               />
               <select
-                className="p-4 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold outline-none"
+                className="p-4 bg-slate-50 border-none rounded-xl font-bold outline-none"
                 value={editEmployee ? editEmployee.frequency : newEmp.frequency}
                 onChange={(e) =>
                   editEmployee
@@ -514,10 +547,10 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <form
             onSubmit={handleAddAdvance}
-            className="bg-white dark:bg-slate-800 rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in border-t-4 border-emerald-500"
+            className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in border-t-4 border-emerald-500"
           >
             <div className="text-center mb-6">
-              <h3 className="text-xl font-black text-slate-800 dark:text-white uppercase italic tracking-tight">
+              <h3 className="text-xl font-black text-slate-800 uppercase italic tracking-tight">
                 Registrar Vale
               </h3>
               <p className="text-xs text-slate-500 font-bold mt-1">
@@ -525,13 +558,13 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
               </p>
             </div>
             <div className="space-y-4">
-              <div className="bg-slate-50 dark:bg-slate-900 p-1 rounded-xl flex">
+              <div className="bg-slate-50 p-1 rounded-xl flex">
                 <button
                   type="button"
                   onClick={() => setNewAdvance({ ...newAdvance, currency: PaymentCurrency.BS })}
                   className={`flex-1 py-3 rounded-lg text-xs font-black uppercase transition-all ${
                     newAdvance.currency === PaymentCurrency.BS
-                      ? 'bg-blue-600 text-white shadow-md'
+                      ? 'bg-blue-600 text-slate-900 shadow-md'
                       : 'text-slate-400'
                   }`}
                 >
@@ -542,7 +575,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                   onClick={() => setNewAdvance({ ...newAdvance, currency: PaymentCurrency.USD })}
                   className={`flex-1 py-3 rounded-lg text-xs font-black uppercase transition-all ${
                     newAdvance.currency === PaymentCurrency.USD
-                      ? 'bg-emerald-500 text-white shadow-md'
+                      ? 'bg-emerald-500 text-slate-900 shadow-md'
                       : 'text-slate-400'
                   }`}
                 >
@@ -553,14 +586,18 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
                   Monto ({newAdvance.currency === PaymentCurrency.USD ? '$' : 'Bs'})
                 </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="w-full p-4 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-black text-xl text-slate-800 outline-none"
-                  required
+                <NumericFormat
                   value={newAdvance.amount}
-                  onChange={(e) => setNewAdvance({ ...newAdvance, amount: e.target.value })}
-                  placeholder="0.00"
+                  onValueChange={(values) =>
+                    setNewAdvance({ ...newAdvance, amount: values.value || '' })
+                  }
+                  thousandSeparator="."
+                  decimalSeparator=","
+                  decimalScale={2}
+                  allowNegative={false}
+                  className="w-full p-4 bg-slate-50 border-none rounded-xl font-black text-xl text-slate-800 outline-none"
+                  required
+                  placeholder="0,00"
                 />
               </div>
               {newAdvance.currency === PaymentCurrency.BS && (
@@ -571,7 +608,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold text-slate-600 outline-none"
+                    className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-600 outline-none"
                     value={newAdvance.rateOverride}
                     onChange={(e) => setNewAdvance({ ...newAdvance, rateOverride: e.target.value })}
                     placeholder={`Usar tasa del sistema: ${payrollRate}`}
@@ -584,7 +621,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                 </label>
                 <input
                   type="text"
-                  className="w-full p-4 bg-slate-50 dark:bg-slate-900 border-none rounded-xl font-bold text-slate-700 outline-none"
+                  className="w-full p-4 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none"
                   required
                   value={newAdvance.reason}
                   onChange={(e) => setNewAdvance({ ...newAdvance, reason: e.target.value })}

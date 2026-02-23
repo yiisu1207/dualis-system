@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 // Corrected import from missing Entity to existing Customer
 import { Customer, Movement, MovementType } from '../../types';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
 
 interface DirectorySectionProps {
   // Use Customer interface for list of entities
@@ -23,10 +23,10 @@ const DirectorySection: React.FC<DirectorySectionProps> = ({
     const entityMovs = movements.filter((m) => m.entityId === entityId);
     const totalFacturado = entityMovs
       .filter((m) => m.movementType === MovementType.FACTURA)
-      .reduce((sum, m) => sum + m.amountInUSD, 0);
+      .reduce((sum, m) => sum + getMovementUsdAmount(m), 0);
     const totalAbonado = entityMovs
       .filter((m) => m.movementType === MovementType.ABONO)
-      .reduce((sum, m) => sum + m.amountInUSD, 0);
+      .reduce((sum, m) => sum + getMovementUsdAmount(m), 0);
     return totalFacturado - totalAbonado;
   };
 

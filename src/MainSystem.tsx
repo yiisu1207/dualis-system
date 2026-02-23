@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useLocation, useNavigate, useParams, Outlet } from 'react-router-dom';
 import {
   Customer,
   Movement,
@@ -20,737 +21,489 @@ import {
 
 // CONTEXTO NUEVO
 import { useAuth } from './context/AuthContext';
+import { useRates } from './context/RatesContext';
+import { useTranslation } from 'react-i18next';
+import { useWidgetManager } from './context/WidgetContext';
 
 // COMPONENTES
 import Sidebar from './components/Sidebar';
-import SummarySection from './components/SummarySection';
-import ConfigSection from './components/ConfigSection';
+import AdminDashboard from './features/admin/AdminDashboard';
+import Configuracion from './pages/Configuracion';
 import AccountingSection from './components/AccountingSection';
+import ReconciliationSection from './components/ReconciliationSection';
 import VisionSection from './components/VisionSection';
 import SupplierSection from './components/SupplierSection';
 import PayrollSection from './components/PayrollSection';
-import InventorySection from './components/InventorySection';
+import RecursosHumanos from './pages/RecursosHumanos';
+import Inventario from './pages/Inventario';
+import VisionLab from './components/VisionLab';
+import BooksComparePanel from './components/BooksComparePanel';
 import AIChat from './components/AIChat';
 import CustomerViewer from './components/CustomerViewer';
-import RateCheckModal from './components/RateCheckModal';
+import RateHistoryWall from './components/RateHistoryWall';
 import DataImporter from './components/DataImporter';
+import SmartCalculatorWidget from './components/SmartCalculatorWidget';
+import StickyNotesWidget from './components/StickyNotesWidget';
+import RateConverterWidget from './components/RateConverterWidget';
+import TimerWidget from './components/TimerWidget';
+import PriceCheckerWidget from './components/PriceCheckerWidget';
+import TodoListWidget from './components/TodoListWidget';
+import SpeedDialWidget from './components/SpeedDialWidget';
+import TeamChatWidget from './components/TeamChatWidget';
+import WidgetDock from './components/WidgetDock';
+import HelpCenter from './components/HelpCenter';
+import WelcomeTourModal from './components/WelcomeTourModal';
+import AdminPosManager from './pages/AdminPosManager';
 
 // FIREBASE
 import { auth, db } from './firebase/config';
-import { signOut } from 'firebase/auth';
-import { logAudit } from './firebase/api';
-import { collection, getDocs, doc, setDoc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  query,
+  where,
+  onSnapshot,
+  orderBy,
+  limit,
+  addDoc,
+  deleteDoc,
+  updateDoc
+} from 'firebase/firestore';
 
-// --- CONFIGURACIÓN POR DEFECTO ---
-const DEFAULT_CONFIG: AppConfig = {
-  companyName: 'BOUTIQUE LOS ANGELES',
-  currency: 'USD',
-  language: 'es',
-  theme: {
-    primaryColor: '#714B67',
-    fontFamily: 'Inter',
-    borderRadius: '0.5rem',
-    darkMode: false,
-    deviceMode: 'pc',
-  },
-  system: {
-    alertThreshold: 15,
-    enableAudit: true,
-  },
-  modules: {
-    dashboard: true,
-    cxc: true,
-    cxp: true,
-    statement: true,
-    ledger: true,
-    expenses: true,
-    vision: true,
-    reconciliation: true,
-    nomina: true,
-  },
-};
+type ConfigTabId =
+  | 'EMPRESA'
+  | 'USUARIOS'
+  | 'PERSONALIZACION'
+  | 'SISTEMA'
+  | 'MENSAJES'
+  | 'AUDITORIA';
 
-const DEFAULT_RATES: ExchangeRates = {
-  bcv: 36.5,
-  grupo: 42.0,
-  lastUpdated: new Date().toLocaleDateString(),
-};
-
-// Interfaz de Búsqueda
 interface SearchResult {
   id: string;
   title: string;
   subtitle: string;
-  type: 'Cliente' | 'Proveedor' | 'Empleado' | 'Producto' | 'Config';
-  targetTab: string;
+  type: 'Cliente' | 'Proveedor' | 'Empleado' | 'Producto' | 'Config' | 'Ruta' | 'Accion';
+  targetTab?: string;
+  targetConfigTab?: ConfigTabId;
   entityId?: string;
+  action?: () => void;
 }
 
-const MainSystem: React.FC = () => {
-  // 1. CONEXIÓN CON EL NUEVO LOGIN
+type TopbarProps = {
+  topbarTitle: string;
+  t: (key: string) => string;
+  i18n: any;
+  onOpenSidebar: () => void;
+  searchInputRef: React.RefObject<HTMLInputElement | null>;
+  globalSearchTerm: string;
+  onSearchTermChange: (value: string) => void;
+  onSearchBlur: () => void;
+  onSearchFocus: () => void;
+  showSearchResults: boolean;
+  globalSearchResults: SearchResult[];
+  onSearchResultClick: (result: SearchResult) => void;
+  notifications: Array<{ title: string; subtitle: string }>;
+  showNotifications: boolean;
+  onToggleNotifications: () => void;
+  onCloseNotifications: () => void;
+  onOpenCalculator: () => void;
+  canImport: boolean;
+  onOpenImporter: () => void;
+  canManageRates: boolean;
+  isOnline: boolean;
+  pendingWrites: number;
+  syncError: string | null;
+  lastSyncAt: string | null;
+};
+
+const Topbar: React.FC<TopbarProps> = React.memo(
+  ({
+    topbarTitle,
+    t,
+    i18n,
+    onOpenSidebar,
+    searchInputRef,
+    globalSearchTerm,
+    onSearchTermChange,
+    onSearchBlur,
+    onSearchFocus,
+    showSearchResults,
+    globalSearchResults,
+    onSearchResultClick,
+    notifications,
+    showNotifications,
+    onToggleNotifications,
+    onCloseNotifications,
+    onOpenCalculator,
+    canImport,
+    onOpenImporter,
+    canManageRates,
+    isOnline,
+    pendingWrites,
+    syncError,
+    lastSyncAt,
+  }) => {
+    const { rates, updateRates } = useRates();
+
+    return (
+      <header className="h-14 app-topbar flex items-center justify-between px-4 shrink-0 z-20">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onOpenSidebar}
+            className="lg:hidden text-slate-500 hover:text-slate-700"
+          >
+            <i className="fa-solid fa-bars text-xl"></i>
+          </button>
+          <nav className="hidden md:flex items-center text-sm font-medium text-slate-500">
+            <span className="hover:text-slate-900 cursor-pointer">
+              {t('app.name')}
+            </span>
+            <i className="fa-solid fa-chevron-right text-[10px] mx-2"></i>
+            <span className="text-slate-900 font-semibold">
+              {topbarTitle}
+            </span>
+          </nav>
+        </div>
+
+        <div className="flex-1 max-w-2xl mx-6 hidden md:block relative z-50">
+          <div className="relative group">
+            <input
+              type="text"
+              placeholder="Buscador Maestro (Ctrl+K)"
+              className="w-full app-input pl-10 pr-4 text-sm"
+              ref={searchInputRef as any}
+              value={globalSearchTerm}
+              onChange={(e) => onSearchTermChange(e.target.value)}
+              onBlur={onSearchBlur}
+              onFocus={onSearchFocus}
+            />
+            <i className="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400"></i>
+          </div>
+          {showSearchResults && globalSearchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 app-card overflow-hidden max-h-[400px] overflow-y-auto custom-scroll">
+              {globalSearchResults.map((result, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onSearchResultClick(result)}
+                  className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-100 flex items-center gap-3"
+                >
+                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-600">
+                    {result.type.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">
+                      {result.title}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {result.subtitle}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <select
+              value={i18n.language}
+              onChange={(e) => i18n.changeLanguage(e.target.value)}
+              className="h-10 rounded-full border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:border-slate-300"
+              title={t('language.label')}
+            >
+              <option value="es">{t('language.es')}</option>
+              <option value="en">{t('language.en')}</option>
+              <option value="ar">{t('language.ar')}</option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenCalculator}
+            className="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center"
+            title="Calculadora inteligente"
+          >
+            <i className="fa-solid fa-calculator text-lg text-slate-600"></i>
+          </button>
+
+          <div className="flex gap-4 px-4 py-1.5 app-chip rounded-xl">
+            <div className="text-right">
+              <span className="block text-[9px] uppercase font-bold text-slate-400">BCV</span>
+              <input
+                type="number"
+                value={rates.tasaBCV}
+                onChange={(e) => updateRates({ tasaBCV: parseFloat(e.target.value) })}
+                disabled={!canManageRates}
+                className={`w-16 bg-transparent text-right font-bold text-sm outline-none ${
+                  canManageRates ? '' : 'cursor-not-allowed text-slate-400'
+                }`}
+              />
+            </div>
+            <div className="w-px bg-slate-200"></div>
+            <div className="text-right">
+              <span className="block text-[9px] uppercase font-bold text-slate-400">Grupo</span>
+              <input
+                type="number"
+                value={rates.tasaGrupo}
+                onChange={(e) => updateRates({ tasaGrupo: parseFloat(e.target.value) })}
+                disabled={!canManageRates}
+                className={`w-16 bg-transparent text-right font-bold text-sm outline-none ${
+                  canManageRates ? '' : 'cursor-not-allowed text-slate-400'
+                }`}
+              />
+            </div>
+          </div>
+        </div>
+      </header>
+    );
+  }
+);
+
+const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const { user: firebaseUser, userProfile } = useAuth();
+  const { rates } = useRates();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const widgetManager = useWidgetManager();
+  const { t, i18n } = useTranslation();
+  
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // URL Multi-tenant
+  const { empresa_id } = useParams<{ empresa_id: string }>();
+  const adminBase = empresa_id ? `/${empresa_id}/admin` : '';
 
   const user: User | null = useMemo(() => {
     if (!firebaseUser) return null;
     return {
       username: firebaseUser.email || 'user',
-      name: userProfile?.fullName || firebaseUser.displayName || 'Admin',
+      name: userProfile?.displayName || userProfile?.fullName || firebaseUser.displayName || 'Admin',
       role: userProfile?.role || 'admin',
     };
   }, [firebaseUser, userProfile]);
 
-  const [loadingData, setLoadingData] = useState(false);
+  const businessId = userProfile?.businessId || '';
+  const role = user?.role || 'pending';
+  const isAdmin = role === 'owner' || role === 'admin';
 
-  // App State
-  const [ratesConfirmed, setRatesConfirmed] = useState(false);
+  // DATA STATES
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [movements, setMovements] = useState<Movement[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [activeTab, setActiveTab] = useState('resumen');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-
-  // Data States
-  const [config, setConfig] = useState<AppConfig>(() => {
-    // 1. Clonamos la configuración por defecto
-    const initialConfig = { ...DEFAULT_CONFIG };
-
-    // 2. Buscamos si hay un color guardado en la memoria del navegador
-    const savedColor = localStorage.getItem('theme_color');
-    if (savedColor) {
-      initialConfig.theme = { ...initialConfig.theme, primaryColor: savedColor };
-    }
-
-    // 3. Buscamos si había modo oscuro
-    const savedMode = localStorage.getItem('theme_mode');
-    if (savedMode) {
-      initialConfig.theme = { ...initialConfig.theme, darkMode: savedMode === 'dark' };
-    }
-
-    return initialConfig;
-  });
-
-  // EFECTO PINTOR (Asegúrate de tener este también en MainSystem.tsx)
-  useEffect(() => {
-    document.documentElement.style.setProperty('--odoo-primary', config.theme.primaryColor);
-  }, [config.theme.primaryColor]);
-  const [rates, setRates] = useState<ExchangeRates>(DEFAULT_RATES);
-  const [payrollRate, setPayrollRate] = useState<number>(40.0);
-
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [movements, setMovements] = useState<Movement[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [records, setRecords] = useState<OperationalRecord[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [sanctions, setSanctions] = useState<Sanction[]>([]);
-  const [advances, setAdvances] = useState<CashAdvance[]>([]);
-  const [payrollHistory, setPayrollHistory] = useState<PayrollReceipt[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-
-  // Search State
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
-  const [globalSearchResults, setGlobalSearchResults] = useState<SearchResult[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [preSelectedId, setPreSelectedId] = useState<string | null>(null);
-  const [showImporter, setShowImporter] = useState(false);
 
-  // Sincronizar la clase "dark" global de Tailwind
-  useEffect(() => {
-    if (config.theme.darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [config.theme.darkMode]);
+  // LÓGICA DE BÚSQUEDA GLOBAL
+  const globalSearchResults = useMemo(() => {
+    if (!globalSearchTerm) return [];
+    const term = globalSearchTerm.toLowerCase();
+    const results: SearchResult[] = [];
 
-  // --- DATA LOADING ---
-  useEffect(() => {
-    if (user) {
-      const fetchData = async () => {
-        setLoadingData(true);
-        try {
-          const customersSnap = await getDocs(collection(db, 'customers'));
-          setCustomers(customersSnap.docs.map((d) => d.data() as Customer));
-
-          const movementsSnap = await getDocs(collection(db, 'movements'));
-          setMovements(movementsSnap.docs.map((d) => d.data() as Movement));
-
-          const suppliersSnap = await getDocs(collection(db, 'suppliers'));
-          setSuppliers(suppliersSnap.docs.map((d) => d.data() as Supplier));
-
-          const employeesSnap = await getDocs(collection(db, 'employees'));
-          setEmployees(employeesSnap.docs.map((d) => d.data() as Employee));
-
-          const inventorySnap = await getDocs(collection(db, 'inventory'));
-          setInventory(inventorySnap.docs.map((d) => d.data() as InventoryItem));
-        } catch (error) {
-          console.error('Error loading data from Firebase:', error);
-        } finally {
-          setLoadingData(false);
-        }
-      };
-      fetchData();
-    }
-  }, [user]);
-
-  // LOG ACTION
-  const logAction = async (module: string, action: AuditLog['action'], detail: string) => {
-    const newLog: AuditLog = {
-      id: crypto.randomUUID(),
-      date: new Date().toISOString(),
-      user: user?.name || 'Sistema',
-      module,
-      action,
-      detail,
-    };
-    setAuditLogs((prev) => [newLog, ...prev]);
-    try {
-      await logAudit(user?.username || null, action, { module, detail });
-    } catch (e) {
-      console.error('Error logging', e);
-    }
-  };
-
-  // NOTIFICATIONS
-  const notifications = useMemo(() => {
-    const alerts: { title: string; subtitle: string; type: 'danger' | 'warning'; date: string }[] =
-      [];
-    const thresholdDays = config.system?.alertThreshold || 15;
-    const today = new Date();
-
-    customers.forEach((c) => {
-      const customerMovs = movements.filter((m) => m.entityId === c.id);
-      const debt = customerMovs
-        .filter((m) => m.movementType === MovementType.FACTURA)
-        .reduce((s, m) => s + m.amountInUSD, 0);
-      const paid = customerMovs
-        .filter((m) => m.movementType === MovementType.ABONO)
-        .reduce((s, m) => s + m.amountInUSD, 0);
-      const balance = debt - paid;
-
-      if (balance > 1) {
-        const lastMov = customerMovs.sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        )[0];
-        if (lastMov) {
-          const lastDate = new Date(lastMov.date);
-          const diffTime = Math.abs(today.getTime() - lastDate.getTime());
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-          if (diffDays > thresholdDays) {
-            alerts.push({
-              title: `Deuda Vencida: ${c.id}`,
-              subtitle: `Debe $${balance.toFixed(2)} hace ${diffDays} días.`,
-              type: 'danger',
-              date: lastMov.date,
-            });
-          }
-        }
+    // Buscar en Clientes
+    customers.forEach(c => {
+      if (c.cedula.toLowerCase().includes(term) || c.id.toLowerCase().includes(term)) {
+        results.push({ id: c.id, title: c.cedula, subtitle: 'Cliente', type: 'Cliente', targetTab: 'clientes' });
       }
     });
-    return alerts;
-  }, [movements, customers, config]);
 
-  // --- CRUD HANDLERS ---
-  const handleRegisterCustomer = async (newC: Customer) => {
-    setCustomers((prev) => [...prev, newC]);
-    await setDoc(doc(db, 'customers', newC.id), newC);
-    logAction('CLIENTES', 'CREAR', `Registró nuevo cliente: ${newC.id}`);
-  };
+    // Buscar en Rutas/Módulos
+    const modules = [
+      { title: 'Ventas y Cobranzas', tab: 'clientes' },
+      { title: 'Inventario de Productos', tab: 'inventario' },
+      { title: 'Recursos Humanos', tab: 'rrhh' },
+      { title: 'Configuración del Sistema', tab: 'config' },
+      { title: 'Vision Lab Analytics', tab: 'vision' }
+    ];
+    modules.forEach(m => {
+      if (m.title.toLowerCase().includes(term)) {
+        results.push({ id: m.tab, title: m.title, subtitle: 'Módulo', type: 'Ruta', targetTab: m.tab });
+      }
+    });
 
-  const handleRegisterSupplier = async (newS: Supplier) => {
-    setSuppliers((prev) => [...prev, newS]);
-    try {
-      await setDoc(doc(db, 'suppliers', newS.id), newS);
-      logAction('PROVEEDORES', 'CREAR', `Registró nuevo proveedor: ${newS.id}`);
-    } catch (e) {
-      console.error('Error creating supplier', e);
+    return results.slice(0, 10);
+  }, [globalSearchTerm, customers]);
+
+  const handleSearchResultClick = (result: SearchResult) => {
+    if (result.targetTab) {
+      setActiveTab(result.targetTab);
+      navigate(tabRoutes[result.targetTab]);
     }
+    setGlobalSearchTerm('');
+    setShowSearchResults(false);
   };
+  useEffect(() => {
+    if (!businessId) return;
 
-  const handleUpdateCustomer = async (id: string, updated: Customer) => {
-    setCustomers((prev) => prev.map((c) => (c.id === id ? updated : c)));
-    await setDoc(doc(db, 'customers', id), updated);
-    logAction('CLIENTES', 'EDITAR', `Actualizó cliente: ${id}`);
-  };
+    const qCust = query(collection(db, 'customers'), where('businessId', '==', businessId));
+    const unsubCust = onSnapshot(qCust, (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
 
-  const handleDeleteCustomer = async (id: string) => {
-    setCustomers((prev) => prev.filter((c) => c.id !== id));
-    await deleteDoc(doc(db, 'customers', id));
-    logAction('CLIENTES', 'ELIMINAR', `Eliminó cliente: ${id}`);
-  };
+    const qSupp = query(collection(db, 'suppliers'), where('businessId', '==', businessId));
+    const unsubSupp = onSnapshot(qSupp, (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
 
-  const handleUpdateSupplier = async (id: string, updated: Supplier) => {
-    setSuppliers((prev) => prev.map((s) => (s.id === id ? updated : s)));
-    await setDoc(doc(db, 'suppliers', id), updated);
-    logAction('PROVEEDORES', 'EDITAR', `Actualizó proveedor: ${id}`);
-  };
+    const qMov = query(collection(db, 'movements'), where('businessId', '==', businessId), orderBy('date', 'desc'), limit(200));
+    const unsubMov = onSnapshot(qMov, (snap) => setMovements(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
 
-  const handleDeleteSupplier = async (id: string) => {
-    setSuppliers((prev) => prev.filter((s) => s.id !== id));
-    await deleteDoc(doc(db, 'suppliers', id));
-    logAction('PROVEEDORES', 'ELIMINAR', `Eliminó proveedor: ${id}`);
-  };
-
-  const handleUpdateEmployee = async (id: string, updated: Employee) => {
-    setEmployees((prev) => prev.map((e) => (e.id === id ? updated : e)));
-    await setDoc(doc(db, 'employees', id), updated);
-    logAction('NOMINA', 'EDITAR', `Modificó empleado: ${updated.name}`);
-  };
-
-  const handleDeleteEmployee = async (id: string) => {
-    setEmployees((prev) => prev.filter((e) => e.id !== id));
-    await deleteDoc(doc(db, 'employees', id));
-    logAction('NOMINA', 'ELIMINAR', `Eliminó empleado ID: ${id}`);
-  };
+    return () => { unsubCust(); unsubSupp(); unsubMov(); };
+  }, [businessId]);
 
   const handleRegisterMovement = async (data: any) => {
-    const safeReference = data.reference || null;
-    const safeRate = Number(data.rate) || 1;
-    const safeAmount = Number(data.amount) || 0;
-    const safeIsSupplier = data.isSupplierMovement || false;
-    const safeMetodoPago = data.metodoPago || (data.reference ? 'Transferencia' : 'Efectivo');
-    const safeMontoCalculado =
-      Number(data.montoCalculado) || Number(data.originalAmount) || safeAmount;
-
-    const newMovement: Movement = {
-      id: crypto.randomUUID(),
-      date: data.date || new Date().toISOString().split('T')[0],
-      entityId: data.customerName ? data.customerName.toUpperCase() : 'DESCONOCIDO',
-      accountType: data.accountType,
-      movementType: data.type,
-      currency: data.currency || PaymentCurrency.USD,
-      concept: data.concept || 'Operación sin detalle',
-      amount: safeAmount,
-      amountInUSD: safeAmount,
-      rateUsed: safeRate,
-      reference: safeReference,
-      isSupplierMovement: safeIsSupplier,
-      metodoPago: safeMetodoPago,
-      montoCalculado: safeMontoCalculado,
-      originalAmount: Number(data.originalAmount) || null,
-    };
-
-    // Auto-create customer
-    if (!newMovement.isSupplierMovement) {
-      const exists = customers.some((c) => c.id === newMovement.entityId);
-      if (!exists) {
-        const newCustomer: Customer = {
-          id: newMovement.entityId,
-          cedula: 'N/A',
-          telefono: 'N/A',
-          direccion: 'Cliente Rápido',
-        };
-        setCustomers((prev) => [...prev, newCustomer]);
-        setDoc(doc(db, 'customers', newCustomer.id), newCustomer);
-      }
-    }
-
-    setMovements((prev) => [newMovement, ...prev]);
-    await setDoc(doc(db, 'movements', newMovement.id), newMovement);
-
-    logAction(
-      newMovement.isSupplierMovement ? 'CXP' : 'CXC',
-      'CREAR',
-      `Registró ${newMovement.movementType} de $${newMovement.amountInUSD.toFixed(2)} para ${
-        newMovement.entityId
-      }`
-    );
-    return 'SUCCESS';
+    if (!businessId) return;
+    await addDoc(collection(db, 'movements'), { ...data, businessId, createdAt: new Date().toISOString() });
   };
 
   const updateMovement = async (id: string, updated: Partial<Movement>) => {
-    const safeUpdated = JSON.parse(JSON.stringify(updated));
-    setMovements((prev) => prev.map((m) => (m.id === id ? { ...m, ...updated } : m)));
-    await updateDoc(doc(db, 'movements', id), safeUpdated);
-    logAction('TESORERIA', 'EDITAR', `Corrigió movimiento ${id}`);
+    await updateDoc(doc(db, 'movements', id), updated);
   };
 
   const deleteMovement = async (id: string) => {
-    setMovements((prev) => prev.filter((m) => m.id !== id));
-    await deleteDoc(doc(db, 'movements', id));
-    logAction('TESORERIA', 'ELIMINAR', `Eliminó movimiento ${id}`);
+    if (confirm('¿Eliminar movimiento?')) await deleteDoc(doc(db, 'movements', id));
   };
 
-  const handleUpdateRates = (newRates: ExchangeRates) => {
-    setRates(newRates);
-    logAction('CONFIG', 'AJUSTE', `Actualizó tasas: BCV ${newRates.bcv}`);
+  const handleRegisterCustomer = async (c: Customer) => {
+    await addDoc(collection(db, 'customers'), { ...c, businessId });
   };
 
-  // SEARCH LOGIC
+  const handleUpdateCustomer = async (id: string, c: Customer) => {
+    await updateDoc(doc(db, 'customers', id), c as any);
+  };
+
+  const handleDeleteCustomer = async (id: string) => {
+    if (confirm('¿Eliminar cliente?')) await deleteDoc(doc(db, 'customers', id));
+  };
+
+  const tabRoutes: Record<string, string> = {
+    resumen: `${adminBase}/dashboard`,
+    clientes: `${adminBase}/cobranzas`,
+    contabilidad: `${adminBase}/contabilidad`,
+    proveedores: `${adminBase}/cxp`,
+    rrhh: `${adminBase}/rrhh`,
+    inventario: `${adminBase}/inventario`,
+    vision: `${adminBase}/vision`,
+    comparar: `${adminBase}/comparar`,
+    cajas: `${adminBase}/cajas`,
+    config: `${adminBase}/configuracion`,
+    help: `${adminBase}/help`,
+  };
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (globalSearchTerm.trim().length < 2) {
-        setGlobalSearchResults([]);
-        return;
+    const path = location.pathname;
+    Object.entries(tabRoutes).forEach(([tab, route]) => {
+      if (path === route || path.startsWith(route + '/')) {
+        setActiveTab(tab);
       }
-      const term = globalSearchTerm.toLowerCase();
-      const results: SearchResult[] = [];
-
-      customers.forEach((c) => {
-        if (c.id.toLowerCase().includes(term) || c.cedula.toLowerCase().includes(term)) {
-          results.push({
-            id: c.id,
-            title: c.id,
-            subtitle: `Cliente`,
-            type: 'Cliente',
-            targetTab: 'clientes',
-            entityId: c.id,
-          });
-        }
-      });
-      suppliers.forEach((s) => {
-        if (s.id.toLowerCase().includes(term) || s.rif.toLowerCase().includes(term)) {
-          results.push({
-            id: s.id,
-            title: s.id,
-            subtitle: `Proveedor`,
-            type: 'Proveedor',
-            targetTab: 'proveedores',
-            entityId: s.id,
-          });
-        }
-      });
-      employees.forEach((e) => {
-        if (e.name.toLowerCase().includes(term) || e.lastName.toLowerCase().includes(term)) {
-          results.push({
-            id: e.id,
-            title: `${e.name} ${e.lastName}`,
-            subtitle: `Nómina`,
-            type: 'Empleado',
-            targetTab: 'nomina',
-            entityId: e.id,
-          });
-        }
-      });
-      setGlobalSearchResults(results.slice(0, 10));
-      setShowSearchResults(true);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [globalSearchTerm, customers, suppliers, employees]);
-
-  const handleSearchResultClick = (result: SearchResult) => {
-    setActiveTab(result.targetTab);
-    if (result.entityId) {
-      setPreSelectedId(result.entityId);
-      setTimeout(() => setPreSelectedId(null), 1000);
-    }
-    setShowSearchResults(false);
-    setGlobalSearchTerm('');
-  };
-
-  const handleCsvImport = (rows: { name: string; cedula: string; telefono: string }[]) => {
-    rows.forEach((row) => {
-      if (!row.name && !row.cedula) return;
-      const id = (row.cedula || row.name || '').toUpperCase();
-      if (!id) return;
-
-      const newCustomer: Customer = {
-        id,
-        cedula: row.cedula || 'N/A',
-        telefono: row.telefono || 'N/A',
-        direccion: row.name || 'Importado CSV',
-      };
-      handleRegisterCustomer(newCustomer);
     });
-  };
+  }, [location.pathname, adminBase]);
 
-  if (loadingData || !user) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-50 flex-col">
-        <div className="text-4xl mb-4 animate-bounce">☁️</div>
-        <h2 className="text-xl font-black uppercase tracking-[0.3em]">Cargando Sistema...</h2>
-      </div>
-    );
-  }
+  const handleLogout = () => auth.signOut();
 
-  // --- RENDERIZADO PRINCIPAL CORREGIDO (AQUÍ ESTÁ LA MAGIA DEL SCROLL) ---
+  // Compatibilidad con componentes legacy que esperan rates con bcv/grupo
+  const legacyRates = { bcv: rates.tasaBCV, grupo: rates.tasaGrupo, lastUpdated: rates.lastUpdated };
+
   return (
-    <div className="flex h-screen w-full bg-gradient-to-br from-indigo-50 to-indigo-100 overflow-y-auto custom-scroll">
-      {!ratesConfirmed && (
-        <RateCheckModal
-          currentRates={rates}
-          onConfirm={(r) => {
-            handleUpdateRates(r);
-            setRatesConfirmed(true);
-          }}
+    <div className="h-screen w-full flex bg-slate-50 overflow-hidden font-inter">
+      {user && (
+        <Sidebar
+          activeTab={activeTab}
+          isOpen={isSidebarOpen}
+          setIsOpen={setIsSidebarOpen}
+          user={user}
+          config={{ companyName: userProfile?.businessId } as any}
+          onLogout={handleLogout}
+          onOpenProfile={() => {}}
         />
       )}
 
-      {/* Sidebar tiene su propio scroll interno si es necesario */}
-      <Sidebar
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        onTabChange={(tab) => setActiveTab(tab)}
-      />
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+        <Topbar
+          topbarTitle={activeTab.toUpperCase()}
+          t={t}
+          i18n={i18n}
+          onOpenSidebar={() => setIsSidebarOpen(true)}
+          searchInputRef={searchInputRef}
+          globalSearchTerm={globalSearchTerm}
+          onSearchTermChange={setGlobalSearchTerm}
+          onSearchBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
+          onSearchFocus={() => setShowSearchResults(true)}
+          showSearchResults={showSearchResults}
+          globalSearchResults={globalSearchResults}
+          onSearchResultClick={handleSearchResultClick}
+          notifications={[]}
+          showNotifications={false}
+          onToggleNotifications={() => {}}
+          onCloseNotifications={() => {}}
+          onOpenCalculator={() => widgetManager.openWidget('calculator')}
+          canImport={isAdmin}
+          onOpenImporter={() => {}}
+          canManageRates={isAdmin}
+          isOnline={navigator.onLine}
+          pendingWrites={0}
+          syncError={null}
+          lastSyncAt={null}
+        />
 
-      {/* CAMBIO 2: h-full y relative para que el contenido respete el alto de la pantalla */}
-      <div className="flex-1 flex flex-col h-full relative min-w-0 overflow-hidden">
-        {/* TOPBAR (Fijo arriba) */}
-        <header className="flex-shrink-0 bg-white/90 dark:bg-[#020617]/90 backdrop-blur border-b border-slate-200 dark:border-slate-800 h-16 flex justify-between items-center px-6 z-30">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden text-slate-500 hover:text-slate-700"
-            >
-              <i className="fa-solid fa-bars text-xl"></i>
-            </button>
-            <nav className="hidden md:flex items-center text-sm font-medium text-slate-500">
-              <span className="hover:text-slate-800 cursor-pointer">Sistema ERP</span>
-              <i className="fa-solid fa-chevron-right text-[10px] mx-2"></i>
-              <span className="text-slate-800 dark:text-white font-semibold capitalize">
-                {activeTab.replace('_', ' ')}
-              </span>
-            </nav>
-          </div>
-
-          {/* SEARCH BAR */}
-          <div className="flex-1 max-w-2xl mx-6 hidden md:block relative z-50">
-            <div className="relative group">
-              <input
-                type="text"
-                placeholder="Buscador Maestro (Ctrl+K)"
-                className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-lg py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-[#714B67] transition-all"
-                value={globalSearchTerm}
-                onChange={(e) => setGlobalSearchTerm(e.target.value)}
-                onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
-                onFocus={() => {
-                  if (globalSearchTerm.length >= 2) setShowSearchResults(true);
-                }}
+        <main className="flex-1 overflow-y-auto p-6 relative">
+          <div className="max-w-7xl mx-auto h-full">
+            {activeTab === 'resumen' && <AdminDashboard />}
+            {activeTab === 'inventario' && <Inventario />}
+            {activeTab === 'config' && <Configuracion />}
+            {activeTab === 'cajas' && <AdminPosManager />}
+            {activeTab === 'rrhh' && <RecursosHumanos />}
+            {activeTab === 'help' && <HelpCenter />}
+            {activeTab === 'vision' && <VisionLab movements={movements} />}
+            
+            {activeTab === 'clientes' && (
+              <CustomerViewer
+                customers={customers}
+                movements={movements}
+                rates={legacyRates as any}
+                config={{} as any}
+                onAddMovement={handleRegisterMovement}
+                onUpdateMovement={updateMovement}
+                onDeleteMovement={deleteMovement}
+                onRegisterCustomer={handleRegisterCustomer}
+                onUpdateCustomer={handleUpdateCustomer}
+                onDeleteCustomer={handleDeleteCustomer}
+                getSmartRate={async () => rates.tasaBCV}
               />
-              <i className="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400"></i>
-            </div>
-            {showSearchResults && globalSearchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden max-h-[400px] overflow-y-auto custom-scroll">
-                {globalSearchResults.map((result, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSearchResultClick(result)}
-                    className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 flex items-center gap-3"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs">
-                      {result.type.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-800 dark:text-white">
-                        {result.title}
-                      </p>
-                      <p className="text-xs text-slate-500">{result.subtitle}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
             )}
+
+            {activeTab === 'contabilidad' && (
+              <AccountingSection
+                movements={movements}
+                customers={customers}
+                suppliers={suppliers}
+                employees={employees}
+                rates={legacyRates as any}
+                config={{} as any}
+                onUpdateMovement={updateMovement}
+                onDeleteMovement={deleteMovement}
+              />
+            )}
+
+            {activeTab === 'proveedores' && (
+              <SupplierSection
+                suppliers={suppliers}
+                movements={movements}
+                rates={legacyRates as any}
+                onRegisterMovement={handleRegisterMovement}
+                onUpdateMovement={updateMovement}
+                onDeleteMovement={deleteMovement}
+                getSmartRate={async () => rates.tasaBCV}
+              />
+            )}
+
+            <Outlet />
           </div>
-
-          <div className="flex items-center gap-4">
-            {/* NOTIFICATIONS */}
-            <div className="relative">
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center relative"
-              >
-                <i
-                  className={`fa-solid fa-bell text-xl ${
-                    notifications.length > 0
-                      ? 'text-slate-600 dark:text-slate-300'
-                      : 'text-slate-400'
-                  }`}
-                ></i>
-                {notifications.length > 0 && (
-                  <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white dark:border-slate-800 animate-pulse"></span>
-                )}
-              </button>
-              {showNotifications && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden z-[100]">
-                  <div className="p-4 border-b border-slate-100 dark:border-slate-700 font-bold text-xs uppercase text-slate-500">
-                    Notificaciones
-                  </div>
-                  <div className="max-h-64 overflow-y-auto custom-scroll">
-                    {notifications.length === 0 ? (
-                      <div className="p-6 text-center text-slate-400 text-xs italic">
-                        Todo en orden ✅
-                      </div>
-                    ) : (
-                      notifications.map((n, i) => (
-                        <div
-                          key={i}
-                          className="p-4 border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                          onClick={() => {
-                            handleSearchResultClick({
-                              id: n.title,
-                              title: n.title,
-                              subtitle: '',
-                              type: 'Cliente',
-                              targetTab: 'clientes',
-                              entityId: n.title.split(': ')[1],
-                            });
-                            setShowNotifications(false);
-                          }}
-                        >
-                          <p className="text-rose-600 font-bold text-xs">{n.title}</p>
-                          <p className="text-slate-500 text-[10px] mt-1">{n.subtitle}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={() => setShowImporter(true)}
-              className="hidden md:inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-slate-50 hover:bg-indigo-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white shadow-sm"
-            >
-              <i className="fa-solid fa-file-import text-[11px]" />
-              Importar
-            </button>
-
-            <div className="flex gap-4 px-4 py-1.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
-              <div className="text-right">
-                <span className="block text-[9px] uppercase font-bold text-slate-400">BCV</span>
-                <input
-                  type="number"
-                  value={rates.bcv}
-                  onChange={(e) => handleUpdateRates({ ...rates, bcv: parseFloat(e.target.value) })}
-                  className="w-16 bg-transparent text-right font-bold text-sm outline-none dark:text-white"
-                />
-              </div>
-              <div className="w-px bg-slate-300 dark:bg-slate-600"></div>
-              <div className="text-right">
-                <span className="block text-[9px] uppercase font-bold text-slate-400">Grupo</span>
-                <input
-                  type="number"
-                  value={rates.grupo}
-                  onChange={(e) =>
-                    handleUpdateRates({ ...rates, grupo: parseFloat(e.target.value) })
-                  }
-                  className="w-16 bg-transparent text-right font-bold text-sm outline-none dark:text-white"
-                />
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* CAMBIO 3: El main tiene el scroll interno */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 lg:p-10 custom-scroll relative scroll-smooth">
-          {activeTab === 'resumen' && (
-            <SummarySection
-              customerMovements={movements}
-              records={records}
-              config={config}
-              rates={rates}
-              customers={customers}
-              suppliers={suppliers}
-              onRegisterCustomer={handleRegisterCustomer}
-              onRegisterSupplier={handleRegisterSupplier}
-              onUpdateRates={handleUpdateRates}
-              setActiveTab={setActiveTab}
-              onRegisterMovement={handleRegisterMovement}
-            />
-          )}
-
-          {activeTab === 'clientes' && (
-            <CustomerViewer
-              customers={customers}
-              movements={movements}
-              selectedId={preSelectedId}
-              onSelectCustomer={() => {}}
-              onUpdateMovement={updateMovement}
-              onDeleteMovement={deleteMovement}
-              onAddMovement={handleRegisterMovement}
-              onRegisterCustomer={handleRegisterCustomer}
-              onUpdateCustomer={handleUpdateCustomer}
-              onDeleteCustomer={handleDeleteCustomer}
-              rates={rates}
-            />
-          )}
-
-          {activeTab === 'proveedores' && (
-            <SupplierSection
-              suppliers={suppliers}
-              setSuppliers={setSuppliers}
-              movements={movements}
-              onRegisterMovement={handleRegisterMovement}
-              onUpdateSupplier={handleUpdateSupplier}
-              onDeleteSupplier={handleDeleteSupplier}
-              onUpdateMovement={updateMovement}
-              onDeleteMovement={deleteMovement}
-              rates={rates}
-            />
-          )}
-
-          {activeTab === 'contabilidad' && (
-            <AccountingSection
-              movements={movements}
-              customers={customers}
-              suppliers={suppliers}
-              employees={employees}
-              rates={rates}
-              config={config}
-              onUpdateMovement={updateMovement}
-              onDeleteMovement={deleteMovement}
-            />
-          )}
-
-          {activeTab === 'inventario' && (
-            <InventorySection inventory={inventory} setInventory={setInventory} />
-          )}
-
-          {activeTab === 'vision' && (
-            <VisionSection onImportMovements={(ms) => setMovements((prev) => [...ms, ...prev])} />
-          )}
-
-          {activeTab === 'nomina' && (
-            <PayrollSection
-              employees={employees}
-              setEmployees={setEmployees}
-              sanctions={sanctions}
-              setSanctions={setSanctions}
-              advances={advances}
-              setAdvances={setAdvances}
-              payrollRate={payrollRate}
-              setPayrollRate={setPayrollRate}
-              history={payrollHistory}
-              setHistory={setPayrollHistory}
-              onUpdateEmployee={handleUpdateEmployee}
-              onDeleteEmployee={handleDeleteEmployee}
-            />
-          )}
-
-          {activeTab === 'config' && (
-            <ConfigSection
-              config={config}
-              onUpdateConfig={setConfig}
-              auditLogs={auditLogs}
-              userRole={user.role}
-              onResetData={() => {
-                if (confirm('Se borrará todo.')) {
-                  localStorage.clear();
-                  window.location.reload();
-                }
-              }}
-            />
-          )}
         </main>
       </div>
 
-      <AIChat
-        config={config}
-        customers={customers}
-        employees={employees}
-        rates={rates}
-        movements={movements}
-        payrollRate={payrollRate}
-        onRegisterMovement={handleRegisterMovement}
-        onAddCustomer={handleRegisterCustomer}
-        onUpdateRates={handleUpdateRates}
-        onRegisterAdvance={(adv) => setAdvances((prev) => [adv, ...prev])}
-      />
-
-      <DataImporter
-        open={showImporter}
-        onClose={() => setShowImporter(false)}
-        onImport={handleCsvImport}
-      />
+      <WidgetDock />
+      <SmartCalculatorWidget rates={legacyRates as any} isOpen={widgetManager.widgets.calculator.isOpen} isMinimized={widgetManager.widgets.calculator.isMinimized} position={widgetManager.widgets.calculator.position} onClose={() => widgetManager.closeWidget('calculator')} onMinimize={() => widgetManager.setMinimized('calculator', !widgetManager.widgets.calculator.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('calculator', pos)} />
+      <AIChat />
     </div>
   );
 };

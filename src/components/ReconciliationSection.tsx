@@ -1,31 +1,73 @@
-import React, { useState, useMemo } from 'react';
-import { Movement, AccountType, MovementType, OperationalRecord, User } from '../../types';
-import { formatCurrency } from '../utils/formatters';
+import React, { useEffect, useState, useMemo } from 'react';
+import { NumericFormat } from 'react-number-format';
+import {
+  Movement,
+  AccountType,
+  MovementType,
+  OperationalRecord,
+  ReconciliationRecord,
+  User,
+} from '../../types';
+import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
+import { getReconciliationHistory, saveReconciliationRecord } from '../firebase/api';
+import { isDemoMode, loadDemoData } from '../utils/demoStore';
 
 interface ReconciliationSectionProps {
   movements: Movement[];
   records: OperationalRecord[];
   user: User;
+  businessId: string;
+  userId?: string;
+  ownerIdFilter?: string;
 }
 
 const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
   movements,
   records,
   user,
+  businessId,
+  userId,
+  ownerIdFilter,
 }) => {
   const [selectedAccount, setSelectedAccount] = useState<AccountType>(AccountType.DIVISA);
   const [physicalAmount, setPhysicalAmount] = useState<string>('');
-  const [history, setHistory] = useState<any[]>(() => {
-    const saved = localStorage.getItem('db_reconciliation_history');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [history, setHistory] = useState<ReconciliationRecord[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [filterAccount, setFilterAccount] = useState<'ALL' | AccountType>('ALL');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  useEffect(() => {
+    if (!businessId && !isDemoMode()) return;
+    const loadHistory = async () => {
+      try {
+        setLoadingHistory(true);
+        if (isDemoMode()) {
+          const demo = loadDemoData();
+          const items = (demo?.reconciliations || []) as ReconciliationRecord[];
+          const filtered = ownerIdFilter
+            ? items.filter((i) => i.ownerId === ownerIdFilter)
+            : items;
+          setHistory(filtered);
+          return;
+        }
+        const data = await getReconciliationHistory(businessId, 100, ownerIdFilter);
+        setHistory(data);
+      } catch (e) {
+        console.error('Error cargando conciliaciones', e);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    loadHistory();
+  }, [businessId, ownerIdFilter]);
 
   const systemBalance = useMemo(() => {
     // Calculamos el saldo teórico: Ingresos - Egresos
     // Ingresos: Abonos de clientes (Dinero que entró a caja)
     const ingresos = movements
       .filter((m) => m.accountType === selectedAccount && m.movementType === MovementType.ABONO)
-      .reduce((acc, m) => acc + m.amountInUSD, 0);
+      .reduce((acc, m) => acc + getMovementUsdAmount(m), 0);
 
     // Egresos 1: Pagos a proveedores desde esta cuenta
     const egresosProveedores = movements
@@ -35,7 +77,7 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
           m.movementType === MovementType.ABONO &&
           m.isSupplierMovement
       )
-      .reduce((acc, m) => acc + m.amountInUSD, 0);
+      .reduce((acc, m) => acc + getMovementUsdAmount(m), 0);
 
     // Egresos 2: Gastos operativos registrados
     const egresosGastos = records
@@ -45,41 +87,55 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
     return ingresos - egresosProveedores - egresosGastos;
   }, [movements, records, selectedAccount]);
 
-  const handleSave = () => {
+  const filteredHistory = useMemo(() => {
+    const from = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+    const to = dateTo ? new Date(`${dateTo}T23:59:59`) : null;
+    return history.filter((item) => {
+      if (filterAccount !== 'ALL' && item.account !== filterAccount) return false;
+      const itemDate = new Date(item.createdAt);
+      if (from && itemDate < from) return false;
+      if (to && itemDate > to) return false;
+      return true;
+    });
+  }, [history, filterAccount, dateFrom, dateTo]);
+
+  const handleSave = async () => {
     if (!physicalAmount) return;
     const physical = parseFloat(physicalAmount);
     const diff = physical - systemBalance;
 
-    const record = {
-      id: crypto.randomUUID(),
-      date: new Date().toLocaleString(),
+    const record: Omit<ReconciliationRecord, 'id'> = {
+      businessId,
+      ownerId: userId,
       account: selectedAccount,
       system: systemBalance,
       physical: physical,
       difference: diff,
-      user: user.name,
+      userName: user.name,
+      userId,
+      createdAt: new Date().toISOString(),
     };
 
-    const newHistory = [record, ...history];
-    setHistory(newHistory);
-    localStorage.setItem('db_reconciliation_history', JSON.stringify(newHistory));
-    setPhysicalAmount('');
-    alert(`Auditoría Guardada. Diferencia: ${formatCurrency(diff)}`);
+    try {
+      const id = await saveReconciliationRecord(record);
+      setHistory((prev) => [{ id, ...record }, ...prev]);
+      setPhysicalAmount('');
+      alert(`Auditoría Guardada. Diferencia: ${formatCurrency(diff)}`);
+    } catch (e) {
+      console.error('Error guardando conciliación', e);
+      alert('Error guardando la conciliación. Intenta nuevamente.');
+    }
   };
 
   return (
-    <div className="space-y-10 animate-in">
-      <div>
-        <h1 className="text-4xl font-black text-slate-900 tracking-tighter italic uppercase">
-          Conciliación de Cajas
-        </h1>
-        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">
-          Auditoría de Saldos Físicos vs Teóricos
-        </p>
+    <div className="app-section space-y-10 animate-in">
+      <div className="app-section-header">
+        <p className="app-subtitle">Auditoria de Saldos</p>
+        <h1 className="app-title uppercase">Conciliacion de Cajas</h1>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-        <div className="glass-panel p-10 rounded-[2.5rem] bg-white border border-slate-100 shadow-2xl">
+        <div className="app-panel p-10">
           <div className="flex justify-between items-center mb-10">
             <h3 className="text-xl font-black italic uppercase tracking-tighter">
               Verificación de Saldo
@@ -87,7 +143,7 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
             <select
               value={selectedAccount}
               onChange={(e) => setSelectedAccount(e.target.value as AccountType)}
-              className="p-3 bg-slate-50 border-none rounded-xl font-black text-[10px] uppercase tracking-widest outline-none"
+              className="app-input text-[10px] uppercase tracking-widest"
             >
               <option value={AccountType.BCV}>BANESCO BCV</option>
               <option value={AccountType.GRUPO}>GRUPO PARALELO</option>
@@ -96,13 +152,15 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
-            <div className="p-8 bg-slate-50 rounded-[2rem] border-2 border-slate-100">
+            <div className="p-8 app-card">
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
                 Saldo en Sistema
               </p>
-              <p className="text-3xl font-black text-slate-900">{formatCurrency(systemBalance)}</p>
+              <p className="text-3xl font-black text-slate-900 dark:text-slate-100">
+                {formatCurrency(systemBalance)}
+              </p>
             </div>
-            <div className="p-8 bg-indigo-50 rounded-[2rem] border-2 border-indigo-100">
+            <div className="p-8 app-card">
               <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">
                 Conteo Físico Real
               </p>
@@ -110,13 +168,15 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 font-black text-slate-300 text-lg">
                   $
                 </span>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="w-full pl-6 bg-transparent border-none outline-none text-2xl font-black text-indigo-700"
-                  placeholder="0.00"
+                <NumericFormat
                   value={physicalAmount}
-                  onChange={(e) => setPhysicalAmount(e.target.value)}
+                  onValueChange={(values) => setPhysicalAmount(values.value || '')}
+                  thousandSeparator="."
+                  decimalSeparator="," 
+                  decimalScale={2}
+                  allowNegative={false}
+                  className="w-full pl-6 bg-transparent border-none outline-none text-2xl font-black text-indigo-700"
+                  placeholder="0,00"
                 />
               </div>
             </div>
@@ -146,35 +206,65 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
 
           <button
             onClick={handleSave}
-            className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-2xl hover:scale-[1.02] transition-all active:scale-95"
+            className="w-full py-5 app-btn app-btn-primary text-xs shadow-2xl hover:scale-[1.02] transition-all active:scale-95"
           >
             REGISTRAR CIERRE DE CAJA
           </button>
         </div>
 
-        <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col">
-          <div className="p-8 border-b bg-slate-50">
-            <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">
-              Historial de Cierres
-            </h3>
+        <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
+          <div className="p-8 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
+            <div className="flex flex-col gap-4">
+              <h3 className="font-black text-slate-800 dark:text-slate-100 text-sm uppercase tracking-widest">
+                Historial de Cierres
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <select
+                  value={filterAccount}
+                  onChange={(e) => setFilterAccount(e.target.value as 'ALL' | AccountType)}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-100"
+                >
+                  <option value="ALL">Todas las cuentas</option>
+                  <option value={AccountType.BCV}>BANESCO BCV</option>
+                  <option value={AccountType.GRUPO}>GRUPO PARALELO</option>
+                  <option value={AccountType.DIVISA}>CAJA EFECTIVO $</option>
+                </select>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-100"
+                />
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-100"
+                />
+              </div>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto max-h-[500px] custom-scroll p-6">
-            {history.length === 0 ? (
-              <div className="py-20 text-center text-slate-300 font-black italic uppercase">
+            {loadingHistory ? (
+              <div className="py-20 text-center text-slate-400 dark:text-slate-500 font-black italic uppercase">
+                Cargando historial...
+              </div>
+            ) : filteredHistory.length === 0 ? (
+              <div className="py-20 text-center text-slate-300 dark:text-slate-600 font-black italic uppercase">
                 Sin registros de conciliación
               </div>
             ) : (
-              history.map((h) => (
+              filteredHistory.map((h) => (
                 <div
                   key={h.id}
-                  className="p-6 bg-white border-b border-slate-50 flex justify-between items-center group"
+                  className="p-6 bg-white dark:bg-slate-900 border-b border-slate-50 dark:border-slate-800 flex justify-between items-center group"
                 >
                   <div>
-                    <p className="text-xs font-black text-slate-800 uppercase italic">
+                    <p className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase italic">
                       {h.account}
                     </p>
-                    <p className="text-[9px] text-slate-400 font-bold">
-                      {h.date} • {h.user}
+                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold">
+                      {new Date(h.createdAt).toLocaleString()} • {h.userName}
                     </p>
                   </div>
                   <div className="text-right">
@@ -185,7 +275,7 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
                     >
                       {h.difference === 0 ? 'OK' : formatCurrency(h.difference)}
                     </p>
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">
+                    <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">
                       Dif. Real
                     </p>
                   </div>

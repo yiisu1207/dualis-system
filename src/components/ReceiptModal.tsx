@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { Movement, MovementType, AppConfig } from '../../types';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
 
 interface ReceiptModalProps {
   movement: Movement;
@@ -76,7 +76,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, onClose }
               Total Transacción
             </p>
             <p className="text-3xl font-black text-slate-900">
-              {formatCurrency(movement.amountInUSD)}
+              {formatCurrency(getMovementUsdAmount(movement))}
             </p>
             {movement.rateUsed > 1 && (
               <p className="text-[8px] font-bold text-slate-400 mt-1 italic">

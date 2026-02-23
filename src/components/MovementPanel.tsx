@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AccountType, MovementType, Customer, ExchangeRates, PaymentCurrency } from '../../types';
 import Autocomplete from './Autocomplete';
-import { GoogleGenAI } from '@google/genai';
 
 interface MovementPanelProps {
   title: string;
@@ -10,6 +9,7 @@ interface MovementPanelProps {
   customers: Customer[];
   inventory: any[];
   dailyRates: ExchangeRates;
+  getSmartRate?: (date: string, accountType: AccountType) => Promise<number>;
   onRegister: (data: {
     date: string;
     customerName: string;
@@ -30,6 +30,7 @@ const MovementPanel: React.FC<MovementPanelProps> = ({
   colorClass,
   customers,
   dailyRates,
+  getSmartRate,
   onRegister,
   onCreateCustomer,
 }) => {
@@ -52,9 +53,25 @@ const MovementPanel: React.FC<MovementPanelProps> = ({
   const [isSuggesting, setIsSuggesting] = useState(false);
 
   useEffect(() => {
-    const defaultRate = accountType === AccountType.BCV ? dailyRates.bcv : dailyRates.grupo;
-    setManualRate(defaultRate.toString());
-  }, [dailyRates, accountType]);
+    let active = true;
+    const resolveRate = async () => {
+      if (accountType === AccountType.DIVISA) {
+        setManualRate('1');
+        return;
+      }
+      if (!getSmartRate) {
+        const fallback = accountType === AccountType.BCV ? dailyRates.bcv : dailyRates.grupo;
+        setManualRate(String(fallback || 1));
+        return;
+      }
+      const rate = await getSmartRate(date, accountType);
+      if (active) setManualRate(String(rate || 1));
+    };
+    resolveRate();
+    return () => {
+      active = false;
+    };
+  }, [date, accountType, dailyRates.bcv, dailyRates.grupo, getSmartRate]);
 
   const suggestAIConcept = async () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -63,15 +80,18 @@ const MovementPanel: React.FC<MovementPanelProps> = ({
     }
     setIsSuggesting(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `Sugiere una descripción profesional de máximo 4 palabras para una venta de ropa de $${amount}. Devuelve solo el texto.`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
+      const response = await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
       });
-      setConcept(response.text.trim());
+      if (!response.ok) throw new Error('Proxy de IA no disponible');
+      const data = await response.json();
+      setConcept(String(data?.result || '').trim());
     } catch (e) {
       console.error(e);
+      alert('IA no disponible en este momento.');
     } finally {
       setIsSuggesting(false);
     }

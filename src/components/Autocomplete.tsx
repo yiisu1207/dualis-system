@@ -81,12 +81,16 @@ function Autocomplete<T>({
             </button>
           ))}
 
-          {filtered.length === 0 && term.trim().length > 0 && onCreate && (
+          {!exactExists && term.trim().length > 0 && onCreate && (
             <div className="p-3 border-t border-slate-100 dark:border-slate-700">
               <button
                 type="button"
                 className="w-full text-left px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900"
-                onClick={() => onCreate(term)}
+                onClick={() => {
+                  if (onChange) onChange(term);
+                  onCreate(term);
+                  setOpen(false);
+                }}
               >
                 ¿No existe? Crear a «{term}»
               </button>

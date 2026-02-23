@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // HELPERS
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // El ID de empresa del usuario (soporta ambos esquemas)
+    function myBID() {
+      let data = getUser();
+      return data.businessId != null ? data.businessId : data.empresa_id;
+    }
+
+    function myRole() {
+      let data = getUser();
+      return data.role != null ? data.role.lower() : 'pending';
+    }
+
+    // Es miembro si el ID del documento coincide con el ID del usuario
+    function isMember(bid) {
+      let me = myBID();
+      return isSignedIn() && me != null && me == bid;
+    }
+
+    // Es admin si es miembro y tiene rol alto
+    function isAdmin(bid) {
+      let role = myRole();
+      return isMember(bid) && (role == 'admin' || role == 'owner');
+    }
+
+    // Verificar si un documento pertenece a la empresa del usuario
+    function belongsToMe(data) {
+      let me = myBID();
+      return isSignedIn() && me != null && (data.businessId == me || data.empresa_id == me);
+    }
+
+    // ─── REGLAS ─────────────────────────────────────────────────────────────
+
+    // PERFILES DE USUARIO
+    match /users/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow update, delete: if isSignedIn() && belongsToMe(resource.data) && (myRole() == 'admin' || myRole() == 'owner');
+    }
+
+    // RAMA DE NEGOCIO (Contenedor central)
+    match /businesses/{bid} {
+      allow read: if isMember(bid);
+      allow write: if isAdmin(bid);
+
+      match /{allSubcollections=**} {
+        allow read: if isMember(bid);
+        allow write: if isAdmin(bid);
+      }
+    }
+
+    // CONFIGURACIONES
+    match /businessConfigs/{bid} {
+      allow read: if isMember(bid);
+      allow write: if isAdmin(bid);
+      
+      match /{allSubcollections=**} {
+        allow read: if isMember(bid);
+        allow write: if isAdmin(bid);
+      }
+    }
+
+    // COLECCIONES OPERATIVAS EN RAÍZ
+    // (Clientes, Movimientos, Inventario, etc.)
+    match /{collectionName}/{docId} {
+      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow create: if isSignedIn() && belongsToMe(request.resource.data);
+      allow update, delete: if isSignedIn() && belongsToMe(resource.data) && (myRole() == 'admin' || myRole() == 'owner');
+    }
+
+    // SOLICITUDES
+    match /workspaceRequests/{docId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && (request.auth.uid == resource.data.senderId || (resource.data.workspaceId != null && isAdmin(resource.data.workspaceId)));
+      allow update: if isSignedIn() && resource.data.workspaceId != null && isAdmin(resource.data.workspaceId);
+    }
+  }
+}

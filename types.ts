@@ -1,7 +1,7 @@
 
 export interface User {
   username: string;
-  role: 'admin' | 'employee';
+  role: 'owner' | 'admin' | 'ventas' | 'auditor' | 'pending' | 'staff' | 'member';
   name: string;
   pin?: string; // Nuevo para acceso rápido
 }
@@ -35,6 +35,10 @@ export interface Customer {
   cedula: string;
   telefono: string;
   direccion: string;
+  email?: string;
+  createdAt?: string;
+  businessId?: string;
+  ownerId?: string;
 }
 
 export interface Supplier {
@@ -42,6 +46,8 @@ export interface Supplier {
   rif: string;
   contacto: string;
   categoria: string;
+  businessId?: string;
+  ownerId?: string;
 }
 
 export interface InventoryItem {
@@ -58,6 +64,9 @@ export interface Movement {
   id: string;
   entityId: string;
   date: string;
+  createdAt?: string;
+  businessId?: string;
+  ownerId?: string;
   concept: string;
   amount: number;
   amountInUSD: number;
@@ -68,6 +77,8 @@ export interface Movement {
   reference?: string; 
   productId?: string;
   isSupplierMovement?: boolean;
+  expenseCategory?: string;
+  invoiceImage?: string;
   metodoPago?: 'Efectivo' | 'Transferencia' | string;
   montoCalculado?: number;
   originalAmount?: number;
@@ -84,12 +95,21 @@ export interface AppConfig {
     primaryColor: string;
     fontFamily: string;
     borderRadius: string;
-    darkMode: boolean;
+    // darkMode eliminado: solo modo claro
     deviceMode: DeviceMode;
+    uiVersion?: 'classic' | 'editorial';
   };
   system: { // Nuevo bloque de sistema
     alertThreshold: number; // Días para alerta de deuda
     enableAudit: boolean;
+  };
+  notifications?: {
+    cxc: boolean;
+    inventory: boolean;
+    nomina: boolean;
+    ventas: boolean;
+    finanzas: boolean;
+    reportes: boolean;
   };
   modules: {
     dashboard: boolean;
@@ -102,7 +122,14 @@ export interface AppConfig {
     reconciliation: boolean;
     nomina: boolean;
   };
+  messageTemplates?: MessageTemplate[];
   authorizedUsers?: User[]; // Nuevo: Gestión de usuarios
+}
+
+export interface MessageTemplate {
+  id: string;
+  name: string;
+  body: string;
 }
 
 export interface OperationalRecord {
@@ -112,6 +139,21 @@ export interface OperationalRecord {
   amount: number;
   accountSource: AccountType;
   type: 'GASTO' | 'NOMINA' | 'COSTO';
+  businessId?: string;
+  ownerId?: string;
+}
+
+export interface ReconciliationRecord {
+  id: string;
+  businessId: string;
+  ownerId?: string;
+  account: AccountType;
+  system: number;
+  physical: number;
+  difference: number;
+  userName: string;
+  userId?: string;
+  createdAt: string;
 }
 
 // SISTEMA RRHH PRO

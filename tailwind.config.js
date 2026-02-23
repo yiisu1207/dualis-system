@@ -4,7 +4,7 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}"  // 👈 Ahora sí todo está aquí dentro
   ],
-  darkMode: 'class',
+  // darkMode eliminado: solo modo claro
   theme: {
     extend: {
       colors: {

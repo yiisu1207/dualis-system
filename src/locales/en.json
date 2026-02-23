@@ -1,0 +1,101 @@
+{
+  "app": {
+    "name": "DUALIS"
+  },
+  "titles": {
+    "dashboard": "Global Overview",
+    "cobranzas": "Collections",
+    "contabilidad": "General Ledger",
+    "tasas": "Exchange Control",
+    "cxp": "Accounts Payable",
+    "rrhh": "Human Capital",
+    "inventario": "Assets and Stock",
+    "vision": "Vision Lab",
+    "comparar": "Compare Books",
+    "help": "Help and Support",
+    "configuracion": "System Settings"
+  },
+  "menu": {
+    "dashboard": "Global Overview",
+    "cobranzas": "Collections",
+    "contabilidad": "General Ledger",
+    "tasas": "Exchange Control",
+    "cxp": "Accounts Payable",
+    "rrhh": "Human Capital",
+    "inventario": "Assets / Stock",
+    "vision": "Vision Lab",
+    "comparar": "Compare Books",
+    "help": "Help and Support",
+    "configuracion": "Settings"
+  },
+  "widgets": {
+    "calc": "Calc",
+    "notes": "Notes",
+    "fx": "Rates",
+    "timer": "Timer",
+    "price": "Prices",
+    "todo": "Tasks",
+    "quick": "Quick",
+    "chat": "Chat"
+  },
+  "tooltips": {
+    "calc": "Quick currency calculator",
+    "notes": "Team quick notes",
+    "fx": "Check daily rates",
+    "timer": "Focus timer",
+    "price": "Price checker",
+    "todo": "Pending tasks",
+    "quick": "Quick actions",
+    "chat": "Internal chat"
+  },
+  "dashboard": {
+    "headerSubtitle": "Main Control Panel",
+    "headerTitle": "Executive Summary",
+    "showAmounts": "Show amounts",
+    "hideAmounts": "Hide amounts",
+    "terminals": {
+      "clients": "Clients Terminal",
+      "suppliers": "Suppliers Terminal"
+    },
+    "actions": {
+      "newInvoice": "New Invoice",
+      "newInvoiceDesc": "Register debt / sale",
+      "registerPayment": "Register Payment",
+      "registerPaymentDesc": "Income / payment",
+      "registerExpense": "Register Expense",
+      "registerExpenseDesc": "Register debt / purchase",
+      "registerSupplierPayment": "Register Supplier Payment",
+      "registerSupplierPaymentDesc": "Cash out / payment"
+    },
+    "attention": {
+      "title": "Attention Needed",
+      "subtitle": "Daily summary to make quick decisions.",
+      "overdue": "Overdue",
+      "overdueHint": "Clients with debt over 30 days",
+      "stock": "Low Stock",
+      "stockHint": "Products with low stock"
+    },
+    "empty": {
+      "title": "All under control",
+      "description": "No critical debt or low stock at the moment.",
+      "cobranzas": "View Collections",
+      "inventario": "View Inventory"
+    },
+    "visionLab": "Vision Lab (Analytics)",
+    "shortcuts": {
+      "title": "Shortcuts",
+      "cobranzasDesc": "Client portfolio",
+      "contabilidadDesc": "Accounting ledger",
+      "cxpDesc": "Suppliers",
+      "inventarioDesc": "Stock control",
+      "rrhhDesc": "Payroll and advances",
+      "configDesc": "System settings"
+    }
+  },
+  "language": {
+    "label": "Language",
+    "es": "Spanish",
+    "en": "English",
+    "ar": "Arabic"
+  }
+}
