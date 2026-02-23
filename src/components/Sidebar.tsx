@@ -43,7 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'contabilidad', label: t('menu.contabilidad'), icon: 'fa-solid fa-scale-balanced', path: legacy('contabilidad') },
     { id: 'tasas', label: t('menu.tasas'), icon: 'fa-solid fa-arrow-trend-up', path: legacy('tasas') },
     { id: 'proveedores', label: t('menu.cxp'), icon: 'fa-solid fa-file-invoice-dollar', path: legacy('cxp') },
-    { id: 'nomina', label: t('menu.rrhh'), icon: 'fa-solid fa-users-gear', path: legacy('rrhh') },
+    { id: 'rrhh', label: t('menu.rrhh'), icon: 'fa-solid fa-users-gear', path: legacy('rrhh') },
     { id: 'inventario', label: t('menu.inventario'), icon: 'fa-solid fa-boxes-stacked', path: legacy('inventario') },
     { id: 'vision', label: t('menu.vision'), icon: 'fa-solid fa-wand-magic-sparkles', path: legacy('vision') },
     // Nueva opción de cajas/terminales

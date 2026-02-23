@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../firebase/config';
-import { doc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, addDoc, collection, getDoc, updateDoc } from 'firebase/firestore';
 import { 
   Banknote, 
   Monitor, 
@@ -32,17 +32,50 @@ export default function OnboardingWizard() {
   const [terminalType, setTerminalType] = useState<'detal' | 'mayor'>('detal');
 
   const handleFinish = async () => {
-    if (!tenantId) {
-      setError('No se detectó un espacio de trabajo válido.');
-      return;
-    }
+    let currentTenantId = tenantId;
 
     setLoading(true);
     setError('');
 
     try {
+      // Intento de recuperación de emergencia si el contexto no tiene el businessId
+      if (!currentTenantId && user) {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          currentTenantId = data.businessId || data.empresa_id;
+        }
+      }
+
+      // Si después de buscar sigue sin haber ID, creamos uno (Plan B)
+      if (!currentTenantId && user) {
+        const prefix = 'key_';
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        const generatedId = prefix + Array.from({length: 20}, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+        
+        await updateDoc(doc(db, 'users', user.uid), {
+          businessId: generatedId,
+          role: 'owner',
+          status: 'ACTIVE'
+        });
+        
+        await setDoc(doc(db, 'businesses', generatedId), {
+          name: userProfile?.fullName || user.email || 'Mi Negocio',
+          ownerId: user.uid,
+          createdAt: new Date().toISOString()
+        });
+
+        currentTenantId = generatedId;
+      }
+
+      if (!currentTenantId) {
+        setError('No se pudo establecer un espacio de trabajo. Por favor, recarga la página.');
+        setLoading(false);
+        return;
+      }
+
       // 1. Guardar Tasa Inicial en businessConfigs
-      await setDoc(doc(db, 'businessConfigs', tenantId), {
+      await setDoc(doc(db, 'businessConfigs', currentTenantId), {
         currency: 'BS',
         exchangeRate: parseFloat(exchangeRate),
         updatedAt: new Date().toISOString(),
@@ -50,7 +83,7 @@ export default function OnboardingWizard() {
       }, { merge: true });
 
       // 2. Crear Primera Terminal (Caja)
-      await addDoc(collection(db, 'businesses', tenantId, 'terminals'), {
+      await addDoc(collection(db, 'businesses', currentTenantId, 'terminals'), {
         nombre: terminalName,
         tipo: terminalType,
         estado: 'cerrada',
@@ -62,7 +95,7 @@ export default function OnboardingWizard() {
       });
 
       // 3. Redirigir al Dashboard
-      navigate(`/${tenantId}/admin/dashboard`);
+      navigate(`/${currentTenantId}/admin/dashboard`);
     } catch (err: any) {
       console.error(err);
       setError('Hubo un problema al guardar la configuración inicial.');

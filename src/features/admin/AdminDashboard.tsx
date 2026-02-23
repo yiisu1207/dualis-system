@@ -7,8 +7,11 @@ import {
   onSnapshot, 
   query, 
   where, 
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import { Movement, InventoryItem } from '../../../types';
 import { 
   TrendingUp, 
   Calculator, 
@@ -28,7 +31,9 @@ import {
   Package,
   ChevronRight,
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  ShoppingCart,
+  Fingerprint
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -40,25 +45,6 @@ import {
   ResponsiveContainer, 
   Cell 
 } from 'recharts';
-
-// ─── DUMMY DATA PARA BI ──────────────────────────────────────────────────────
-const weeklyData = [
-  { day: 'Lun', sales: 4500 },
-  { day: 'Mar', sales: 5200 },
-  { day: 'Mie', sales: 3800 },
-  { day: 'Jue', sales: 6100 },
-  { day: 'Vie', sales: 7500 },
-  { day: 'Sab', sales: 8200 },
-  { day: 'Dom', sales: 2100 },
-];
-
-const topProducts = [
-  { id: 1, name: 'Pantalón Cargo Beige', sales: 145, trend: '+12%', color: 'text-sky-600' },
-  { id: 2, name: 'Franela Dualis Premium', sales: 98, trend: '+5%', color: 'text-violet-600' },
-  { id: 3, name: 'Brownie Familiar', sales: 86, trend: '+22%', color: 'text-amber-600' },
-  { id: 4, name: 'Gorra Urban Black', sales: 72, trend: '-3%', color: 'text-slate-600' },
-  { id: 5, name: 'Jeans Slim Fit Blue', sales: 54, trend: '+8%', color: 'text-indigo-600' },
-];
 
 // ─── COMPONENTES ATÓMICOS ────────────────────────────────────────────────────
 
@@ -77,10 +63,10 @@ const KPICard = ({ title, value, subtext, icon: Icon, colorClass, trend, alert }
       <div className={`h-14 w-14 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 duration-500 ${colorClass}`}>
         <Icon size={28} />
       </div>
-      {trend && (
+      {trend !== undefined && (
         <span className={`flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${trend > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
           {trend > 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-          {Math.abs(trend)}%
+          {Math.abs(trend).toFixed(1)}%
         </span>
       )}
     </div>
@@ -105,6 +91,10 @@ export default function AdminDashboard() {
   const [newRateGrupo, setNewRateGrupo] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const [movements, setMovements] = useState<Movement[]>([]);
+  const [products, setProducts] = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
   // Listener de Terminales Activas
   useEffect(() => {
     if (!tenantId) return;
@@ -112,6 +102,100 @@ export default function AdminDashboard() {
     const unsub = onSnapshot(q, (snap) => setActiveTerminals(snap.size));
     return () => unsub();
   }, [tenantId]);
+
+  // Listener de Movimientos
+  useEffect(() => {
+    if (!tenantId) return;
+    const q = query(collection(db, 'movements'), where('businessId', '==', tenantId), orderBy('date', 'desc'), limit(500));
+    const unsub = onSnapshot(q, (snap) => {
+      setMovements(snap.docs.map(d => ({ id: d.id, ...d.data() } as Movement)));
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [tenantId]);
+
+  // Listener de Productos (Top y Stock)
+  useEffect(() => {
+    if (!tenantId) return;
+    const q = query(collection(db, `businesses/${tenantId}/products`), orderBy('stock', 'asc'), limit(50));
+    const unsub = onSnapshot(q, (snap) => {
+      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as InventoryItem)));
+    });
+    return () => unsub();
+  }, [tenantId]);
+
+  // Cálculos de KPIs
+  const kpis = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+    const salesToday = movements
+      .filter(m => m.date === today && m.movementType === 'FACTURA')
+      .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0);
+    
+    const salesYesterday = movements
+      .filter(m => m.date === yesterday && m.movementType === 'FACTURA')
+      .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0);
+
+    const trendSales = salesYesterday > 0 ? ((salesToday - salesYesterday) / salesYesterday) * 100 : 0;
+
+    const ticketsToday = movements.filter(m => m.date === today && m.movementType === 'FACTURA').length;
+    const avgTicket = ticketsToday > 0 ? salesToday / ticketsToday : 0;
+
+    // Cuentas por Cobrar (Créditos Activos)
+    // Esto es una simplificación, idealmente se calcula sumando balances de clientes
+    const totalCredits = movements
+      .filter(m => m.movementType === 'FACTURA' && !m.isSupplierMovement)
+      .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0) -
+      movements
+      .filter(m => m.movementType === 'ABONO' && !m.isSupplierMovement)
+      .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0);
+
+    const recoveredToday = movements
+      .filter(m => m.date === today && m.movementType === 'ABONO' && !m.isSupplierMovement)
+      .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0);
+
+    return {
+      salesToday,
+      trendSales,
+      avgTicket,
+      totalCredits,
+      recoveredToday
+    };
+  }, [movements]);
+
+  // Datos de la Gráfica Semanal
+  const weeklyData = useMemo(() => {
+    const days = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+    const last7Days = [...Array(7)].map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return {
+        date: d.toISOString().split('T')[0],
+        day: days[d.getDay()],
+        sales: 0
+      };
+    });
+
+    last7Days.forEach(day => {
+      day.sales = movements
+        .filter(m => m.date === day.date && m.movementType === 'FACTURA')
+        .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0);
+    });
+
+    return last7Days;
+  }, [movements]);
+
+  // Top Productos (Basado en stock bajo o los primeros encontrados)
+  const topProductsList = useMemo(() => {
+    return products.slice(0, 5).map(p => ({
+      id: p.id,
+      name: p.name || 'Producto',
+      sales: p.stock, // Usamos stock como proxy o placeholder
+      trend: p.stock < p.minStock ? 'Bajo' : 'OK',
+      color: p.stock < p.minStock ? 'text-rose-600' : 'text-emerald-600'
+    }));
+  }, [products]);
 
   const handleUpdateRate = async () => {
     if (!tenantId) return;
@@ -130,6 +214,49 @@ export default function AdminDashboard() {
       setIsSaving(false);
     }
   };
+
+  const suggestions = useMemo(() => {
+    const list = [];
+    if (!userProfile?.pin) {
+      list.push({
+        id: 'pin',
+        title: 'Configura tu PIN Maestro',
+        desc: 'Protege tus registros de eliminaciones accidentales o malintencionadas.',
+        icon: Fingerprint,
+        color: 'bg-rose-500',
+        action: () => (window.location.href = `/${tenantId}/admin/configuracion`)
+      });
+    }
+    if (products.length === 0) {
+      list.push({
+        id: 'products',
+        title: 'Carga tu Inventario',
+        desc: 'Aún no tienes productos registrados para vender en el POS.',
+        icon: Package,
+        color: 'bg-indigo-500',
+        action: () => (window.location.href = `/${tenantId}/admin/inventario`)
+      });
+    }
+    if (movements.length === 0) {
+      list.push({
+        id: 'sales',
+        title: 'Registra tu primera venta',
+        desc: 'Usa el terminal para generar tu primera factura y ver las analíticas.',
+        icon: ShoppingCart,
+        color: 'bg-emerald-500',
+        action: () => (window.location.href = `/${tenantId}/pos/detal`)
+      });
+    }
+    return list;
+  }, [userProfile, products, movements, tenantId]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="animate-spin text-indigo-600" size={48} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 p-10 font-inter">
@@ -173,21 +300,50 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* PANEL DE SUGERENCIAS / GUÍA DE INICIO */}
+        {suggestions.length > 0 && (
+          <section className="animate-in fade-in slide-in-from-top-4 duration-1000">
+            <div className="flex items-center gap-3 mb-6 ml-2">
+              <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
+                <Zap size={16} />
+              </div>
+              <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Guía de Inicio Rápido</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {suggestions.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={s.action}
+                  className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 flex items-center gap-5 text-left hover:scale-[1.02] transition-all group"
+                >
+                  <div className={`h-12 w-12 rounded-2xl ${s.color} text-white flex items-center justify-center shrink-0 shadow-lg group-hover:rotate-12 transition-transform`}>
+                    <s.icon size={24} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 leading-tight mb-1">{s.title}</h4>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase leading-relaxed">{s.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* SECCIÓN 1: FLUJO DE CAJA (POS / CONTADO) */}
         <section className="animate-in fade-in slide-in-from-left-4 duration-700">
           <SectionLabel title="Flujo de Caja (Ventas de Contado)" icon={Wallet} colorClass="bg-emerald-50 text-emerald-600" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <KPICard 
               title="Ingresos POS Hoy" 
-              value="$1,245.00" 
+              value={`$${kpis.salesToday.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} 
               subtext="Capital liquidado hoy" 
               icon={TrendingUp} 
               colorClass="bg-emerald-50 text-emerald-600 shadow-emerald-100"
-              trend={12.5}
+              trend={kpis.trendSales}
             />
             <KPICard 
               title="Ticket Promedio" 
-              value="$32.40" 
+              value={`$${kpis.avgTicket.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} 
               subtext="Eficiencia de venta" 
               icon={Calculator} 
               colorClass="bg-sky-50 text-sky-600 shadow-sky-100"
@@ -208,26 +364,25 @@ export default function AdminDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <KPICard 
               title="Créditos Activos" 
-              value="$14,820.50" 
+              value={`$${kpis.totalCredits.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} 
               subtext="Deuda total en la calle" 
               icon={Users} 
               colorClass="bg-indigo-100/50 text-indigo-700"
             />
             <KPICard 
               title="Cuotas Vencidas" 
-              value="$2,450.00" 
-              subtext="+30 días de retraso" 
+              value="$0.00" 
+              subtext="Estimado de retraso" 
               icon={AlertCircle} 
               colorClass="bg-rose-50 text-rose-600"
-              alert
+              alert={kpis.totalCredits > 1000}
             />
             <KPICard 
               title="Recuperado Hoy" 
-              value="$850.00" 
+              value={`$${kpis.recoveredToday.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} 
               subtext="Pagos de deuda recibidos" 
               icon={CheckCircle2} 
               colorClass="bg-emerald-50 text-emerald-600"
-              trend={15.4}
             />
           </div>
         </section>
@@ -271,7 +426,7 @@ export default function AdminDashboard() {
                   />
                   <Bar dataKey="sales" radius={[10, 10, 0, 0]} barSize={45}>
                     {weeklyData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={index === 5 ? '#4f46e5' : '#e2e8f0'} className="hover:fill-indigo-600 transition-all duration-300" />
+                      <Cell key={`cell-${index}`} fill={index === 6 ? '#4f46e5' : '#e2e8f0'} className="hover:fill-indigo-600 transition-all duration-300" />
                     ))}
                   </Bar>
                 </BarChart>
@@ -285,28 +440,28 @@ export default function AdminDashboard() {
               <div className="h-10 w-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
                 <TrendingUp size={20} />
               </div>
-              <h3 className="text-xl font-black text-slate-900 tracking-tight">Top 5 Productos</h3>
+              <h3 className="text-xl font-black text-slate-900 tracking-tight">Estado de Stock</h3>
             </div>
             
             <div className="space-y-6 flex-1">
-              {topProducts.map((product, i) => (
+              {topProductsList.map((product, i) => (
                 <div key={product.id} className="flex items-center gap-4 p-4 rounded-3xl bg-slate-50/50 hover:bg-white hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer border border-transparent hover:border-slate-100 group">
                   <div className={`h-12 w-12 rounded-2xl bg-white shadow-inner flex items-center justify-center ${product.color} opacity-60 group-hover:opacity-100 transition-all`}>
                     <Package size={20} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-black text-slate-800 truncate">{product.name}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{product.sales} unidades vendidas</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{product.sales} unidades en stock</p>
                   </div>
                   <div className="flex flex-col items-end">
-                    <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{product.trend}</span>
+                    <span className={`text-[10px] font-black ${product.trend === 'Bajo' ? 'text-rose-600 bg-rose-50' : 'text-emerald-600 bg-emerald-50'} px-2 py-0.5 rounded-full`}>{product.trend}</span>
                   </div>
                 </div>
               ))}
             </div>
 
             <button className="mt-8 w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-2 group">
-              Análisis Detallado <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+              Ver Inventario Completo <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
 

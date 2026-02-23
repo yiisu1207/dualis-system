@@ -292,10 +292,26 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [activeTab, setActiveTab] = useState('resumen');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isImporterOpen, setIsImporterOpen] = useState(false);
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
+
+  const { updateUserProfile } = useAuth();
+
+  const handleSaveProfile = async (patch: any) => {
+    if (!firebaseUser) return;
+    try {
+      await updateDoc(doc(db, 'users', firebaseUser.uid), patch);
+      updateUserProfile(patch);
+      setIsProfileOpen(false);
+      alert('Perfil actualizado con éxito');
+    } catch (e) {
+      console.error(e);
+      alert('Error al actualizar perfil');
+    }
+  };
 
   // LÓGICA DE BÚSQUEDA GLOBAL
   const globalSearchResults = useMemo(() => {
@@ -305,7 +321,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
     // Buscar en Clientes
     customers.forEach(c => {
-      if (c.cedula.toLowerCase().includes(term) || c.id.toLowerCase().includes(term)) {
+      if ((c.cedula || '').toLowerCase().includes(term) || (c.id || '').toLowerCase().includes(term)) {
         results.push({ id: c.id, title: c.cedula, subtitle: 'Cliente', type: 'Cliente', targetTab: 'clientes' });
       }
     });
@@ -384,6 +400,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     inventario: `${adminBase}/inventario`,
     vision: `${adminBase}/vision`,
     comparar: `${adminBase}/comparar`,
+    tasas: `${adminBase}/tasas`,
     cajas: `${adminBase}/cajas`,
     config: `${adminBase}/configuracion`,
     help: `${adminBase}/help`,
@@ -413,7 +430,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           user={user}
           config={{ companyName: userProfile?.businessId } as any}
           onLogout={handleLogout}
-          onOpenProfile={() => {}}
+          onOpenProfile={() => setIsProfileOpen(true)}
         />
       )}
 
@@ -437,7 +454,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           onCloseNotifications={() => {}}
           onOpenCalculator={() => widgetManager.openWidget('calculator')}
           canImport={isAdmin}
-          onOpenImporter={() => {}}
+          onOpenImporter={() => setIsImporterOpen(true)}
           canManageRates={isAdmin}
           isOnline={navigator.onLine}
           pendingWrites={0}
@@ -454,6 +471,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             {activeTab === 'rrhh' && <RecursosHumanos />}
             {activeTab === 'help' && <HelpCenter />}
             {activeTab === 'vision' && <VisionLab movements={movements} />}
+            {activeTab === 'tasas' && <RateHistoryWall rates={legacyRates as any} />}
+            {activeTab === 'comparar' && <BooksComparePanel movements={movements} customers={customers} rates={legacyRates as any} />}
             
             {activeTab === 'clientes' && (
               <CustomerViewer
@@ -500,6 +519,24 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           </div>
         </main>
       </div>
+
+      <UserProfileModal 
+        isOpen={isProfileOpen} 
+        profile={userProfile as any} 
+        onClose={() => setIsProfileOpen(false)} 
+        onSave={handleSaveProfile} 
+      />
+
+      <DataImporter 
+        open={isImporterOpen} 
+        onClose={() => setIsImporterOpen(false)} 
+        onImport={() => {}} 
+        onImportMovements={(rows) => {
+          rows.forEach(row => handleRegisterMovement(row));
+        }}
+        customers={customers}
+        onCreateCustomer={handleRegisterCustomer}
+      />
 
       <WidgetDock />
       <SmartCalculatorWidget rates={legacyRates as any} isOpen={widgetManager.widgets.calculator.isOpen} isMinimized={widgetManager.widgets.calculator.isMinimized} position={widgetManager.widgets.calculator.position} onClose={() => widgetManager.closeWidget('calculator')} onMinimize={() => widgetManager.setMinimized('calculator', !widgetManager.widgets.calculator.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('calculator', pos)} />

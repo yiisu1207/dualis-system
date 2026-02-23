@@ -375,7 +375,14 @@ const SummarySection: React.FC<SummarySectionProps> = ({
                 </div>
             </div>
 
-            <OnboardingChecklist storageKey={checklistKey} hasFirstInvoice={hasFirstInvoice} onCreateInvoice={() => openQuickModal(MovementType.FACTURA)} onOpenCustomers={() => setActiveTab('clientes')} onOpenConfig={() => { window.location.href = '/configuracion'; }} onOpenHelp={() => setActiveTab('help')} />
+            <OnboardingChecklist 
+                storageKey={checklistKey} 
+                hasFirstInvoice={hasFirstInvoice} 
+                onCreateInvoice={() => openQuickModal(MovementType.FACTURA)} 
+                onOpenCustomers={() => setActiveTab('clientes')} 
+                onOpenConfig={() => setActiveTab('config')} 
+                onOpenHelp={() => setActiveTab('help')} 
+            />
 
             {/* SECCIÓN 1: TERMINALES */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

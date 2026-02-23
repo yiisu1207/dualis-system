@@ -81,7 +81,7 @@ const PosMayorContent = () => {
           return {
             id: d.id,
             name: data.name || data.nombre || 'Producto sin nombre',
-            price: Number(data.salePrice || data.precioDetal || data.price || 0),
+            price: Number(data.marketPrice || data.precioVenta || data.salePrice || data.precioDetal || data.price || 0),
             stock: Number(data.stock || 0),
           };
         });

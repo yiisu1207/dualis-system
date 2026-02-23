@@ -67,7 +67,7 @@ const PosContent = () => {
           return {
             id: d.id,
             name: data.name || data.nombre || 'Sin nombre',
-            price: Number(data.salePrice || data.precioDetal || data.price || 0),
+            price: Number(data.marketPrice || data.precioVenta || data.salePrice || data.precioDetal || data.price || 0),
             stock: Number(data.stock || 0),
             codigo: data.codigo || d.id
           };

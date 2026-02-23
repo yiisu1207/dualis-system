@@ -53,12 +53,27 @@ interface ConfigData {
 
 const Configuracion: React.FC = () => {
   const navigate = useNavigate();
-  const { userProfile } = useAuth();
+  const { userProfile, updateUserProfile } = useAuth();
   const [activeSection, setActiveSection] = useState<SectionType>('identidad');
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copyToast, setCopyToast] = useState(false);
+
+  const handleSaveConfigPin = async (newPin: string) => {
+    if (!auth.currentUser) return;
+    setSaving(true);
+    try {
+      await setDoc(doc(db, 'users', auth.currentUser.uid), { pin: newPin }, { merge: true });
+      updateUserProfile({ pin: newPin });
+      alert('PIN Maestro actualizado exitosamente ✅');
+    } catch (e) {
+      console.error(e);
+      alert('Error al guardar PIN');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ESTADO GLOBAL DEL FORMULARIO
   const [configData, setConfigData] = useState<ConfigData>({
@@ -473,6 +488,40 @@ const Configuracion: React.FC = () => {
                         </div>
                       </div>
                     ))}
+
+                    {/* GESTIÓN DE PIN MAESTRO */}
+                    <div className="mt-8 p-12 bg-slate-900 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
+                        <div className="absolute -right-20 -top-20 h-64 w-64 bg-white/5 rounded-full blur-3xl group-hover:bg-white/10 transition-colors pointer-events-none"></div>
+                        <div className="relative z-10">
+                            <h4 className="text-2xl font-black mb-2 flex items-center gap-3">
+                                <Fingerprint className="text-indigo-400" /> PIN de Autoridad Maestro
+                            </h4>
+                            <p className="text-slate-400 text-sm font-medium mb-10 max-w-md">Este código de 4 dígitos será solicitado para eliminar facturas, clientes o realizar ajustes contables críticos.</p>
+                            
+                            <div className="flex flex-col md:flex-row items-center gap-8">
+                                <div className="flex gap-4">
+                                    {[1,2,3,4].map(i => (
+                                        <div key={i} className={`h-16 w-14 rounded-2xl border-2 flex items-center justify-center text-2xl font-black transition-all ${userProfile?.pin ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-white/20'}`}>
+                                            {userProfile?.pin ? '●' : ''}
+                                        </div>
+                                    ))}
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        const val = prompt('Ingresa tu nuevo PIN de 4 dígitos:');
+                                        if (val && val.length === 4 && !isNaN(Number(val))) {
+                                            handleSaveConfigPin(val);
+                                        } else if (val) {
+                                            alert('El PIN debe ser exactamente de 4 números.');
+                                        }
+                                    }}
+                                    className="px-10 py-5 bg-white text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-2xl"
+                                >
+                                    {userProfile?.pin ? 'Cambiar PIN Maestro' : 'Establecer PIN Ahora'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                   </div>
                 </div>
               </div>
