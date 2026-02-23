@@ -17,7 +17,7 @@ import {
 
 export default function OnboardingWizard() {
   const navigate = useNavigate();
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, updateUserProfile } = useAuth();
   const tenantId = userProfile?.businessId;
 
   const [step, setStep] = useState(1);
@@ -38,7 +38,7 @@ export default function OnboardingWizard() {
     setError('');
 
     try {
-      // Intento de recuperación de emergencia si el contexto no tiene el businessId
+      // Intento de recuperación de emergencia... (mismo código)
       if (!currentTenantId && user) {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         if (userDoc.exists()) {
@@ -47,7 +47,7 @@ export default function OnboardingWizard() {
         }
       }
 
-      // Si después de buscar sigue sin haber ID, creamos uno (Plan B)
+      // Si después de buscar sigue sin haber ID... (mismo código)
       if (!currentTenantId && user) {
         const prefix = 'key_';
         const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -74,27 +74,35 @@ export default function OnboardingWizard() {
         return;
       }
 
-      // 1. Guardar Tasa Inicial en businessConfigs
-      await setDoc(doc(db, 'businessConfigs', currentTenantId), {
-        currency: 'BS',
-        exchangeRate: parseFloat(exchangeRate),
-        updatedAt: new Date().toISOString(),
-        setupCompleted: true
-      }, { merge: true });
+      // 1. Guardar Tasa Inicial directamente en la empresa
+      await updateDoc(doc(db, 'businesses', currentTenantId), {
+        tasaBCV: parseFloat(exchangeRate),
+        tasaGrupo: parseFloat(exchangeRate),
+        setupCompleted: true,
+        updatedAt: new Date().toISOString()
+      });
 
-      // 2. Crear Primera Terminal (Caja)
+      // 2. Marcar al usuario como ACTIVO (esto rompe el bucle del OnboardingGate)
+      if (user) {
+        await updateDoc(doc(db, 'users', user.uid), {
+          status: 'ACTIVE'
+        });
+        updateUserProfile({ status: 'ACTIVE' });
+      }
+
+      // 3. Crear Primera Terminal (Caja)
       await addDoc(collection(db, 'businesses', currentTenantId, 'terminals'), {
         nombre: terminalName,
         tipo: terminalType,
         estado: 'cerrada',
         totalFacturado: 0,
         movimientos: 0,
-        cajeroId: '',
-        cajeroNombre: 'Sin asignar',
+        cajeroId: user?.uid || '',
+        cajeroNombre: userProfile?.fullName || 'Admin',
         createdAt: new Date().toISOString()
       });
 
-      // 3. Redirigir al Dashboard
+      // 4. Redirigir al Dashboard
       navigate(`/${currentTenantId}/admin/dashboard`);
     } catch (err: any) {
       console.error(err);

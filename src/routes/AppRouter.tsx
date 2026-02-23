@@ -47,17 +47,22 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
 
   const tenantId = resolveTenantId(userProfile);
   const role = userProfile?.role;
+  const setupCompleted = userProfile?.status === 'ACTIVE' && userProfile?.businessId; 
+  // Podríamos usar una prop específica setupCompleted si existiera, por ahora usamos status
 
   if (user && !tenantId) {
     return <Navigate to="/onboarding" replace />;
   }
 
   if (user && tenantId) {
-    // Redirección según rol
+    // Si el usuario tiene tenantId pero no ha pasado el onboarding (ej: status PENDING)
+    if (userProfile?.status === 'PENDING_SETUP') {
+        return <Navigate to="/onboarding" replace />;
+    }
+
     if (role === 'owner' || role === 'admin') {
       return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
     }
-    // Aquí puedes agregar lógica para otros roles (ej: cajero)
     return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
   }
 

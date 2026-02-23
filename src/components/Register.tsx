@@ -106,7 +106,7 @@ export default function Register() {
       }
 
       const role = workspaceMode === 'create' ? 'owner' : 'employee';
-      const status = workspaceMode === 'create' ? 'ACTIVE' : 'PENDING';
+      const status = workspaceMode === 'create' ? 'PENDING_SETUP' : 'PENDING';
       await setDoc(doc(db, 'users', uid), {
         uid: uid,
         email: formData.email,
