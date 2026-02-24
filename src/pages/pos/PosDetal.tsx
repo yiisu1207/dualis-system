@@ -25,6 +25,7 @@ type QuickProduct = {
   price: number;
   stock: number;
   codigo: string;
+  marca?: string;
 };
 
 // Internal component to use cart context
@@ -67,9 +68,10 @@ const PosContent = () => {
           return {
             id: d.id,
             name: data.name || data.nombre || 'Sin nombre',
-            price: Number(data.marketPrice || data.precioVenta || data.salePrice || data.precioDetal || data.price || 0),
+            price: Number(data.precioDetal || data.marketPrice || data.precioVenta || data.salePrice || data.price || 0),
             stock: Number(data.stock || 0),
-            codigo: data.codigo || d.id
+            codigo: data.codigo || d.id,
+            marca: data.marca || ''
           };
         });
         setProducts(list.slice(0, 12)); // Mostrar solo los primeros 12 en el grid rápido
@@ -258,7 +260,10 @@ const PosContent = () => {
                          <div className="h-8 w-8 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white transition-colors">
                            <Package size={14} />
                          </div>
-                         <span className="text-[9px] font-black text-slate-300 uppercase tracking-tighter bg-slate-50 px-1.5 py-0.5 rounded-md">{product.stock}</span>
+                         <div className="flex flex-col items-end">
+                            <span className="text-[9px] font-black text-slate-300 uppercase tracking-tighter bg-slate-50 px-1.5 py-0.5 rounded-md">{product.stock}</span>
+                            {product.marca && <span className="text-[7px] font-black text-indigo-400 uppercase mt-1">{product.marca}</span>}
+                         </div>
                       </div>
                       <div className="text-xs font-black text-slate-700 line-clamp-2 leading-tight group-hover:text-slate-900">{product.name}</div>
                     </div>

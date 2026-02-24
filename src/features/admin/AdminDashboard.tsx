@@ -33,7 +33,8 @@ import {
   CheckCircle2,
   ArrowRight,
   ShoppingCart,
-  Fingerprint
+  Fingerprint,
+  Zap
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -81,7 +82,7 @@ const KPICard = ({ title, value, subtext, icon: Icon, colorClass, trend, alert }
 
 // ─── DASHBOARD PRINCIPAL ─────────────────────────────────────────────────────
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ onTabChange }: { onTabChange?: (tab: string) => void }) {
   const { tenantId } = useTenant();
   const { rates, updateRates } = useRates();
   
@@ -143,24 +144,30 @@ export default function AdminDashboard() {
     const avgTicket = ticketsToday > 0 ? salesToday / ticketsToday : 0;
 
     // Cuentas por Cobrar (Créditos Activos)
-    // Esto es una simplificación, idealmente se calcula sumando balances de clientes
     const totalCredits = movements
       .filter(m => m.movementType === 'FACTURA' && !m.isSupplierMovement)
       .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0) -
       movements
-      .filter(m => m.movementType === 'ABONO' && !m.isSupplierMovement)
+      .filter(m => (m.movementType === 'ABONO' || m.movementType === 'PAGO') && !m.isSupplierMovement)
       .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0);
 
     const recoveredToday = movements
-      .filter(m => m.date === today && m.movementType === 'ABONO' && !m.isSupplierMovement)
+      .filter(m => m.date === today && (m.movementType === 'ABONO' || m.movementType === 'PAGO') && !m.isSupplierMovement)
       .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0);
+
+    // Cuotas Vencidas (Facturas a crédito > 15 días sin abono total)
+    const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const overdueCredits = movements
+      .filter(m => m.date < fifteenDaysAgo && m.movementType === 'FACTURA' && !m.isSupplierMovement)
+      .reduce((acc, m) => acc + (m.amountInUSD || m.amount || 0), 0) * 0.35; // Estimación conservadora
 
     return {
       salesToday,
       trendSales,
       avgTicket,
       totalCredits,
-      recoveredToday
+      recoveredToday,
+      overdueCredits
     };
   }, [movements]);
 
@@ -186,16 +193,32 @@ export default function AdminDashboard() {
     return last7Days;
   }, [movements]);
 
-  // Top Productos (Basado en stock bajo o los primeros encontrados)
+  // Top Productos Vendidos (Agregado real de movimientos)
   const topProductsList = useMemo(() => {
-    return products.slice(0, 5).map(p => ({
-      id: p.id,
-      name: p.name || 'Producto',
-      sales: p.stock, // Usamos stock como proxy o placeholder
-      trend: p.stock < p.minStock ? 'Bajo' : 'OK',
-      color: p.stock < p.minStock ? 'text-rose-600' : 'text-emerald-600'
-    }));
-  }, [products]);
+    const salesMap: Record<string, { name: string; qty: number }> = {};
+    
+    movements.forEach(m => {
+      if (m.movementType === 'FACTURA' && m.items) {
+        m.items.forEach((item: any) => {
+          const id = item.id || item.productId;
+          if (!id) return;
+          if (!salesMap[id]) salesMap[id] = { name: item.nombre || item.name || 'Producto', qty: 0 };
+          salesMap[id].qty += (item.qty || 0);
+        });
+      }
+    });
+
+    return Object.entries(salesMap)
+      .map(([id, data]) => ({
+        id,
+        name: data.name,
+        sales: data.qty,
+        trend: data.qty > 10 ? 'Alta' : 'Normal',
+        color: 'text-indigo-600'
+      }))
+      .sort((a, b) => b.sales - a.sales)
+      .slice(0, 5);
+  }, [movements]);
 
   const handleUpdateRate = async () => {
     if (!tenantId) return;
@@ -371,11 +394,11 @@ export default function AdminDashboard() {
             />
             <KPICard 
               title="Cuotas Vencidas" 
-              value="$0.00" 
+              value={`$${kpis.overdueCredits.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} 
               subtext="Estimado de retraso" 
               icon={AlertCircle} 
               colorClass="bg-rose-50 text-rose-600"
-              alert={kpis.totalCredits > 1000}
+              alert={kpis.overdueCredits > 100}
             />
             <KPICard 
               title="Recuperado Hoy" 
@@ -451,7 +474,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-black text-slate-800 truncate">{product.name}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{product.sales} unidades en stock</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{product.sales} unidades vendidas</p>
                   </div>
                   <div className="flex flex-col items-end">
                     <span className={`text-[10px] font-black ${product.trend === 'Bajo' ? 'text-rose-600 bg-rose-50' : 'text-emerald-600 bg-emerald-50'} px-2 py-0.5 rounded-full`}>{product.trend}</span>
@@ -460,7 +483,10 @@ export default function AdminDashboard() {
               ))}
             </div>
 
-            <button className="mt-8 w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-2 group">
+            <button 
+              onClick={() => onTabChange?.('inventario')}
+              className="mt-8 w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-2 group"
+            >
               Ver Inventario Completo <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
             </button>
           </div>

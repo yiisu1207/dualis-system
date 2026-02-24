@@ -104,6 +104,16 @@ export default function VisionLab({ movements = [] }: VisionLabProps) {
 
     const salesChange = totalSalesPrev > 0 ? ((totalSales - totalSalesPrev) / totalSalesPrev * 100).toFixed(1) : '100';
     const ticketPromedio = saleCount > 0 ? (totalSales / saleCount).toFixed(2) : '0.00';
+    
+    // Salud del Negocio (Relación Ingresos/Egresos)
+    const totalIngresos = monthlyData.reduce((acc, d) => acc + d.ingresos, 0);
+    const totalEgresos = monthlyData.reduce((acc, d) => acc + d.egresos, 0);
+    const healthScore = totalIngresos > 0 ? (totalIngresos / (totalIngresos + totalEgresos) * 100) : 0;
+    const businessHealth = healthScore > 70 ? 'Óptima' : healthScore > 40 ? 'Estable' : 'Crítica';
+
+    // Índice de Actividad (Ventas por día en el mes actual)
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const activityIndex = ((saleCount / daysInMonth) * 10).toFixed(1);
 
     return {
       chartData: monthlyData,
@@ -112,7 +122,9 @@ export default function VisionLab({ movements = [] }: VisionLabProps) {
         proyeccion: totalSales.toLocaleString('en-US', { style: 'currency', currency: 'USD' }),
         ticket: `$${ticketPromedio}`,
         change: `${Number(salesChange) >= 0 ? '+' : ''}${salesChange}%`,
-        trend: Number(salesChange) >= 0 ? 'up' : 'down'
+        trend: Number(salesChange) >= 0 ? 'up' : 'down',
+        health: businessHealth,
+        activity: activityIndex
       }
     };
   }, [movements]);
@@ -197,16 +209,16 @@ export default function VisionLab({ movements = [] }: VisionLabProps) {
         <StatCard 
           title="Ticket Promedio" 
           value={stats.ticket} 
-          change="+2.4%" 
-          trend="up"
+          change={stats.change} 
+          trend={stats.trend}
           icon={Receipt} 
           colorClass="bg-fuchsia-500" 
         />
         <StatCard 
           title="Salud del Negocio" 
-          value="Óptima" 
-          change="AI Insight" 
-          trend="up"
+          value={stats.health} 
+          change="Real-time" 
+          trend={stats.health === 'Crítica' ? 'down' : 'up'}
           icon={Zap} 
           colorClass="bg-emerald-500" 
         />
@@ -308,9 +320,9 @@ export default function VisionLab({ movements = [] }: VisionLabProps) {
           <div className="mt-6 p-4 rounded-3xl bg-indigo-50 border border-indigo-100 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <TrendingUp className="text-indigo-600 w-4 h-4" />
-              <span className="text-xs font-bold text-indigo-700">Tasa de Conversión</span>
+              <span className="text-xs font-bold text-indigo-700">Índice de Actividad</span>
             </div>
-            <span className="text-sm font-black text-indigo-900">14.2%</span>
+            <span className="text-sm font-black text-indigo-900">{stats.activity}/10</span>
           </div>
         </div>
       </div>

@@ -42,14 +42,20 @@ type Product = {
   id: string;
   codigo: string;
   nombre: string;
+  marca: string;
+  proveedor: string;
   categoria: string;
+  ubicacion: string;
   costoUSD: number;
-  margen: number;
-  precioVentaUSD: number;
+  precioDetal: number;
+  precioMayor: number;
   stock: number;
   stockMinimo: number;
   iva: number;
+  ivaTipo: 'GENERAL' | 'REDUCIDO' | 'EXENTO';
   unidad: string;
+  peso: number;
+  descripcion: string;
 };
 
 type StockMovement = {
@@ -68,14 +74,20 @@ type TabType = 'catalog' | 'kardex' | 'tools';
 const initialProduct: Omit<Product, 'id'> = {
   codigo: '',
   nombre: '',
+  marca: '',
+  proveedor: '',
   categoria: 'General',
+  ubicacion: '',
   costoUSD: 0,
-  margen: 30,
-  precioVentaUSD: 0,
+  precioDetal: 0,
+  precioMayor: 0,
   stock: 0,
   stockMinimo: 5,
   iva: 16,
+  ivaTipo: 'GENERAL',
   unidad: 'UND',
+  peso: 0,
+  descripcion: '',
 };
 
 // ─── COMPONENTS ──────────────────────────────────────────────────────────────
@@ -152,12 +164,10 @@ export default function Inventario() {
   }, [products]);
 
   // 3. HANDLERS
-  const handleCalculatePrice = (cost: number, margin: number) => cost + (cost * (margin / 100));
-
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenantId) return;
-    const payload = { ...form, precioVentaUSD: handleCalculatePrice(form.costoUSD, form.margen), updatedAt: new Date().toISOString() };
+    const payload = { ...form, updatedAt: new Date().toISOString() };
     if (editingId) {
       await setDoc(doc(db, `businesses/${tenantId}/products`, editingId), payload, { merge: true });
     } else {
@@ -271,8 +281,9 @@ export default function Inventario() {
                     <tr>
                       <th className="px-10 py-8">Producto / SKU</th>
                       <th className="px-10 py-8">Categoría</th>
-                      <th className="px-10 py-8 text-right">Costo Unit.</th>
-                      <th className="px-10 py-8 text-right">Precio Mercado</th>
+                      <th className="px-10 py-8 text-right">Costo Base</th>
+                      <th className="px-10 py-8 text-right">Precio Detal</th>
+                      <th className="px-10 py-8 text-right">Precio Mayor</th>
                       <th className="px-10 py-8 text-center">Stock Real</th>
                       <th className="px-10 py-8 text-right">Control</th>
                     </tr>
@@ -296,11 +307,14 @@ export default function Inventario() {
                         </td>
                         <td className="px-10 py-8 text-right font-bold text-slate-500">
                           <p className="text-sm font-black">${p.costoUSD.toFixed(2)}</p>
-                          <p className="text-[9px] text-slate-300 uppercase tracking-widest mt-0.5">Margen: {p.margen}%</p>
                         </td>
                         <td className="px-10 py-8 text-right">
-                          <p className="text-sm font-black text-emerald-600">${p.precioVentaUSD.toFixed(2)}</p>
-                          <p className="text-[10px] font-black text-slate-300 mt-0.5">Bs {(p.precioVentaUSD * rates.tasaBCV).toFixed(2)}</p>
+                          <p className="text-sm font-black text-emerald-600">${p.precioDetal.toFixed(2)}</p>
+                          <p className="text-[9px] text-slate-300 uppercase tracking-widest">Bs {(p.precioDetal * rates.tasaBCV).toFixed(2)}</p>
+                        </td>
+                        <td className="px-10 py-8 text-right">
+                          <p className="text-sm font-black text-violet-600">${p.precioMayor.toFixed(2)}</p>
+                          <p className="text-[9px] text-slate-300 uppercase tracking-widest">Bs {(p.precioMayor * rates.tasaBCV).toFixed(2)}</p>
                         </td>
                         <td className="px-10 py-8 text-center">
                           <div className={`inline-flex flex-col items-center px-6 py-3 rounded-2xl border ${p.stock < p.stockMinimo ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
@@ -403,41 +417,125 @@ export default function Inventario() {
               <button onClick={() => setModalOpen(false)} className="p-4 hover:bg-slate-100 rounded-full text-slate-400 transition-all shadow-sm"><X size={28} /></button>
             </div>
             
-            <form onSubmit={handleSaveProduct} className="p-12 space-y-8 max-h-[60vh] overflow-y-auto custom-scroll">
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Código SKU / Barras</label>
-                  <div className="relative">
-                    <Barcode className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
-                    <input required value={form.codigo} onChange={e => setForm({...form, codigo: e.target.value.toUpperCase()})} className="w-full pl-14 pr-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner uppercase" placeholder="SCAN_BARCODE" />
+            <form onSubmit={handleSaveProduct} className="p-12 space-y-8 max-h-[70vh] overflow-y-auto custom-scroll">
+              {/* SECCIÓN 1: DATOS BÁSICOS */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="h-8 w-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black">1</div>
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Información General</h3>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Código SKU / Barras</label>
+                    <div className="relative">
+                      <Barcode className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
+                      <input required value={form.codigo} onChange={e => setForm({...form, codigo: e.target.value.toUpperCase()})} className="w-full pl-14 pr-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner uppercase" placeholder="SCAN_BARCODE" />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Descripción del Activo</label>
+                    <input required value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" placeholder="Nombre completo del producto..." />
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Categoría</label>
-                  <input required value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" placeholder="Ej. Pantalones" />
-                </div>
-              </div>
 
-              <div className="space-y-3">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Descripción del Activo</label>
-                <input required value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" placeholder="Nombre completo del producto..." />
-              </div>
-
-              <div className="bg-slate-900 p-10 rounded-[3rem] shadow-2xl text-white space-y-8 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-10 opacity-5 group-hover:scale-125 transition-transform"><TrendingUp size={120} /></div>
-                <div className="relative z-10">
-                  <div className="flex items-center gap-3 mb-6"><TrendingUp size={24} className="text-emerald-400" /><span className="text-[11px] font-black uppercase tracking-[0.3em] text-emerald-400">Análisis Financiero Proyectado</span></div>
-                  <div className="grid grid-cols-3 gap-8">
-                    <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Costo Base ($)</label><input type="number" step="0.01" value={form.costoUSD} onChange={e => setForm({...form, costoUSD: Number(e.target.value)})} className="w-full px-5 py-4 bg-white/10 border border-white/10 rounded-2xl text-lg font-black focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all" /></div>
-                    <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Margen (%)</label><input type="number" value={form.margen} onChange={e => setForm({...form, margen: Number(e.target.value)})} className="w-full px-5 py-4 bg-white/10 border border-white/10 rounded-2xl text-lg font-black focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all" /></div>
-                    <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">PVP Sugerido</label><div className="w-full px-5 py-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-xl font-black text-emerald-400 shadow-inner">${handleCalculatePrice(form.costoUSD, form.margen).toFixed(2)}</div></div>
+                <div className="grid grid-cols-3 gap-8">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Categoría</label>
+                    <input value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" placeholder="Ej. Calzado" />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Marca</label>
+                    <input value={form.marca} onChange={e => setForm({...form, marca: e.target.value})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" placeholder="Ej. Nike" />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Unidad</label>
+                    <select value={form.unidad} onChange={e => setForm({...form, unidad: e.target.value})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner">
+                      <option value="UND">Unidades (UND)</option>
+                      <option value="KG">Kilogramos (KG)</option>
+                      <option value="L">Litros (L)</option>
+                      <option value="M">Metros (M)</option>
+                      <option value="PAR">Pares (PAR)</option>
+                    </select>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-3"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Stock de Apertura</label><input type="number" value={form.stock} onChange={e => setForm({...form, stock: Number(e.target.value)})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" /></div>
-                <div className="space-y-3"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Alerta de Mínimo</label><input type="number" value={form.stockMinimo} onChange={e => setForm({...form, stockMinimo: Number(e.target.value)})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" /></div>
+              {/* SECCIÓN 2: FINANZAS Y PRECIOS */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="h-8 w-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center font-black">2</div>
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Estructura de Costos y Precios</h3>
+                </div>
+
+                <div className="bg-slate-900 p-10 rounded-[3rem] shadow-2xl text-white space-y-8 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-10 opacity-5 group-hover:scale-125 transition-transform"><TrendingUp size={120} /></div>
+                  <div className="relative z-10">
+                    <div className="grid grid-cols-3 gap-8">
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Costo Base ($)</label>
+                        <input type="number" step="0.01" value={form.costoUSD} onChange={e => setForm({...form, costoUSD: Number(e.target.value)})} className="w-full px-5 py-4 bg-white/10 border border-white/10 rounded-2xl text-lg font-black focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Precio Detal ($)</label>
+                        <input type="number" step="0.01" value={form.precioDetal} onChange={e => setForm({...form, precioDetal: Number(e.target.value)})} className="w-full px-5 py-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-lg font-black focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all" />
+                        <p className="text-[8px] font-black text-emerald-400 uppercase mt-1">Margen: {form.costoUSD > 0 ? (((form.precioDetal - form.costoUSD) / form.costoUSD) * 100).toFixed(1) : 0}%</p>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Precio Mayor ($)</label>
+                        <input type="number" step="0.01" value={form.precioMayor} onChange={e => setForm({...form, precioMayor: Number(e.target.value)})} className="w-full px-5 py-4 bg-violet-500/10 border border-violet-500/20 rounded-2xl text-lg font-black focus:ring-2 focus:ring-violet-400 focus:outline-none transition-all" />
+                        <p className="text-[8px] font-black text-violet-400 uppercase mt-1">Margen: {form.costoUSD > 0 ? (((form.precioMayor - form.costoUSD) / form.costoUSD) * 100).toFixed(1) : 0}%</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Tipo de Impuesto (IVA)</label>
+                    <select 
+                      value={form.ivaTipo} 
+                      onChange={e => {
+                        const tipo = e.target.value as any;
+                        const tasa = tipo === 'GENERAL' ? 16 : tipo === 'REDUCIDO' ? 8 : 0;
+                        setForm({...form, ivaTipo: tipo, iva: tasa});
+                      }} 
+                      className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner"
+                    >
+                      <option value="GENERAL">IVA General (16%)</option>
+                      <option value="REDUCIDO">IVA Reducido (8%)</option>
+                      <option value="EXENTO">Exento de IVA (0%)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Peso Neto (KG)</label>
+                    <input type="number" step="0.001" value={form.peso} onChange={e => setForm({...form, peso: Number(e.target.value)})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" placeholder="0.000" />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECCIÓN 3: LOGÍSTICA */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="h-8 w-8 rounded-lg bg-violet-500 text-white flex items-center justify-center font-black">3</div>
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Almacén y Logística</h3>
+                </div>
+
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Proveedor Principal</label>
+                    <input value={form.proveedor} onChange={e => setForm({...form, proveedor: e.target.value})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" placeholder="Nombre del proveedor o distribuidor" />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Ubicación Física</label>
+                    <input value={form.ubicacion} onChange={e => setForm({...form, ubicacion: e.target.value})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" placeholder="Ej. Pasillo A - Estante 4" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-3"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Stock de Apertura</label><input type="number" value={form.stock} onChange={e => setForm({...form, stock: Number(e.target.value)})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" /></div>
+                  <div className="space-y-3"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Alerta de Mínimo</label><input type="number" value={form.stockMinimo} onChange={e => setForm({...form, stockMinimo: Number(e.target.value)})} className="w-full px-6 py-5 bg-slate-50 border border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 focus:ring-2 focus:ring-slate-900 transition-all shadow-inner" /></div>
+                </div>
               </div>
             </form>
 

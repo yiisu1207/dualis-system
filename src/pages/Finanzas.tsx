@@ -14,18 +14,13 @@ export default function Finanzas() {
   useEffect(() => {
     let mounted = true;
     const load = async () => {
+      if (!userProfile?.businessId) return;
       setLoading(true);
       try {
-        if (isDemoMode()) {
-          const demo = loadDemoData();
-          setMovements((demo?.movements || []) as Movement[]);
-          return;
-        }
-        if (!userProfile?.businessId) return;
         const snap = await getDocs(
-          query(collection(db, 'movements'), where('businessId', '==', userProfile.businessId))
+          query(collection(db, 'movements'), where('businessId', '==', userProfile.businessId), orderBy('date', 'desc'))
         );
-        const items = snap.docs.map((d) => d.data() as Movement);
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Movement));
         if (mounted) setMovements(items);
       } catch (e) {
         console.warn('No se pudieron obtener movimientos', e);

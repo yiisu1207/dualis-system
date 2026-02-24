@@ -96,21 +96,15 @@ export default function Ventas() {
   useEffect(() => {
     let mounted = true;
     const load = async () => {
+      if (!userProfile?.businessId) return;
       setLoading(true);
       try {
-        if (isDemoMode()) {
-          const demo = loadDemoData();
-          if (demo?.sales) {
-            setSales(demo.sales);
-            return;
-          }
-        }
-        if (!userProfile?.businessId) return;
         const q = query(
-          collection(db, 'sales'),
+          collection(db, 'movements'),
           where('businessId', '==', userProfile.businessId),
-          orderBy('createdAt', 'desc'),
-          limit(10)
+          where('movementType', '==', 'FACTURA'),
+          orderBy('date', 'desc'),
+          limit(50)
         );
         const snap = await getDocs(q);
         if (!mounted) return;
@@ -203,7 +197,7 @@ export default function Ventas() {
       >
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-lg">
           <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Recibo</div>
-          <div className="text-2xl font-black">ERP Boutique</div>
+          <div className="text-2xl font-black">Dualis System</div>
           <div className="mt-4 space-y-2 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-slate-500">Venta</span>

@@ -45,8 +45,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'proveedores', label: t('menu.cxp'), icon: 'fa-solid fa-file-invoice-dollar', path: legacy('cxp') },
     { id: 'rrhh', label: t('menu.rrhh'), icon: 'fa-solid fa-users-gear', path: legacy('rrhh') },
     { id: 'inventario', label: t('menu.inventario'), icon: 'fa-solid fa-boxes-stacked', path: legacy('inventario') },
-    { id: 'vision', label: t('menu.vision'), icon: 'fa-solid fa-wand-magic-sparkles', path: legacy('vision') },
-    // Nueva opción de cajas/terminales
+        {id: 'vision', label: t('menu.vision'), icon: 'fa-solid fa-wand-magic-sparkles', path: legacy('vision') },
+        // Nueva opción de widgets
+        { id: 'widgets', label: 'Herramientas / Widgets', icon: 'fa-solid fa-shapes', path: legacy('widgets') },
+        // Nueva opción de cajas/terminales
+    
     { id: 'cajas', label: 'Cajas / Terminales', icon: 'fa-solid fa-cash-register', path: legacy('cajas') },
     { id: 'comparar', label: t('menu.comparar'), icon: 'fa-solid fa-code-compare', path: legacy('comparar') },
     { id: 'config', label: t('menu.configuracion'), icon: 'fa-solid fa-gears', path: legacy('configuracion') },

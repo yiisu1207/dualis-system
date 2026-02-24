@@ -27,6 +27,7 @@ type QuickProduct = {
   name: string;
   price: number;
   stock: number;
+  marca?: string;
 };
 
 type ClientRecord = {
@@ -81,8 +82,9 @@ const PosMayorContent = () => {
           return {
             id: d.id,
             name: data.name || data.nombre || 'Producto sin nombre',
-            price: Number(data.marketPrice || data.precioVenta || data.salePrice || data.precioDetal || data.price || 0),
+            price: Number(data.precioMayor || data.marketPrice || data.precioVenta || data.salePrice || data.price || 0),
             stock: Number(data.stock || 0),
+            marca: data.marca || ''
           };
         });
         setProducts(list);
@@ -292,10 +294,14 @@ const PosMayorContent = () => {
                   onClick={() => addProductByCode(product.id, 'mayor')}
                   className="group bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-violet-400 hover:shadow-md transition-all text-left flex items-center justify-between"
                 >
-                  <div>
-                    <div className="text-[10px] font-bold text-slate-400 mb-1">{product.id}</div>
-                    <div className="text-sm font-black text-slate-800">{product.name}</div>
-                  </div>
+                                      <div>
+                                        <div className="text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-2">
+                                          {product.id} 
+                                          {product.marca && <span className="text-[8px] font-black text-violet-500 uppercase">[{product.marca}]</span>}
+                                        </div>
+                                        <div className="text-sm font-black text-slate-800">{product.name}</div>
+                                      </div>
+                  
                   <div className="text-right">
                     <div className="text-sm font-black text-violet-600">${product.price.toFixed(2)}</div>
                     <div className="text-[9px] font-bold text-slate-400">Stock: {product.stock}</div>

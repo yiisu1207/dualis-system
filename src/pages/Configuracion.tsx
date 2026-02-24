@@ -49,6 +49,11 @@ interface ConfigData {
   mainCurrency: 'USD' | 'BS';
   invoicePrefix: string;
   ticketFooter: string;
+  security: {
+    twoFactor: boolean;
+    auditLogs: boolean;
+    terminalMonitor: boolean;
+  };
 }
 
 const Configuracion: React.FC = () => {
@@ -85,7 +90,12 @@ const Configuracion: React.FC = () => {
     defaultIva: 16,
     mainCurrency: 'USD',
     invoicePrefix: 'FACT-',
-    ticketFooter: '¡Gracias por su compra!'
+    ticketFooter: '¡Gracias por su compra!',
+    security: {
+      twoFactor: false,
+      auditLogs: true,
+      terminalMonitor: true
+    }
   });
 
   const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'owner';
@@ -270,7 +280,7 @@ const Configuracion: React.FC = () => {
                       <input 
                         value={configData.companyName}
                         onChange={e => setConfigData({...configData, companyName: e.target.value})}
-                        placeholder="Ej. Dualis Boutique"
+                        placeholder="Ej. Dualis System"
                         className={inputClasses} 
                       />
                     </div>
@@ -455,21 +465,24 @@ const Configuracion: React.FC = () => {
                   <div className="grid grid-cols-1 gap-6">
                     {[
                       { 
+                        id: 'twoFactor',
                         title: 'Autenticación de Dos Factores (2FA)', 
                         desc: 'Protege tu acceso administrativo con un código dinámico adicional.', 
-                        enabled: false,
+                        enabled: configData.security.twoFactor,
                         icon: Fingerprint 
                       },
                       { 
+                        id: 'auditLogs',
                         title: 'Registros de Auditoría', 
                         desc: 'Seguimiento detallado de cada inicio de sesión y acciones críticas del sistema.', 
-                        enabled: true,
+                        enabled: configData.security.auditLogs,
                         icon: Activity
                       },
                       { 
+                        id: 'terminalMonitor',
                         title: 'Monitoreo de Terminales', 
                         desc: 'Controla qué dispositivos están actualmente autorizados para facturar.', 
-                        enabled: true,
+                        enabled: configData.security.terminalMonitor,
                         icon: Monitor
                       }
                     ].map((opt, i) => (
@@ -483,7 +496,13 @@ const Configuracion: React.FC = () => {
                             <p className="text-xs text-slate-400 font-medium mt-1">{opt.desc}</p>
                           </div>
                         </div>
-                        <div className={`h-8 w-14 rounded-full relative cursor-pointer transition-colors ${opt.enabled ? 'bg-slate-900' : 'bg-slate-200'}`}>
+                        <div 
+                          onClick={() => setConfigData({
+                            ...configData, 
+                            security: { ...configData.security, [opt.id]: !opt.enabled }
+                          })}
+                          className={`h-8 w-14 rounded-full relative cursor-pointer transition-colors ${opt.enabled ? 'bg-slate-900' : 'bg-slate-200'}`}
+                        >
                           <div className={`absolute top-1.5 h-5 w-5 bg-white rounded-full transition-all shadow-sm ${opt.enabled ? 'right-1.5' : 'left-1.5'}`} />
                         </div>
                       </div>

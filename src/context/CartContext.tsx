@@ -36,18 +36,21 @@ type CartContextValue = {
 const CartContext = createContext<CartContextValue | null>(null);
 
 function resolvePrice(data: Record<string, unknown>, priceTier: PriceTier) {
-  const detal = Number(data.precioDetal);
-  const mayor = Number(data.precioMayor);
-  const granMayor = Number(data.precioGranMayor ?? data.precioPromo);
   if (priceTier === 'mayor') {
-    return Number.isFinite(mayor) ? mayor : Number.isFinite(detal) ? detal : 0;
+    // Para mayoristas, usamos estrictamente precioMayor
+    const mayor = Number(data.precioMayor);
+    return Number.isFinite(mayor) && mayor > 0 ? mayor : 0;
   }
+  
   if (priceTier === 'granMayor') {
-    if (Number.isFinite(granMayor)) return granMayor;
-    if (Number.isFinite(mayor)) return mayor;
-    return Number.isFinite(detal) ? detal : 0;
+    const granMayor = Number(data.precioGranMayor ?? data.precioPromo);
+    return Number.isFinite(granMayor) && granMayor > 0 ? granMayor : 0;
   }
-  return Number.isFinite(detal) ? detal : 0;
+
+  // Por defecto (detal), usamos precioDetal
+  // Mantengo una pequeña compatibilidad con 'price' o 'marketPrice' solo si NO existe precioDetal
+  const detal = Number(data.precioDetal ?? data.marketPrice ?? data.precioVenta ?? data.salePrice ?? data.price);
+  return Number.isFinite(detal) && detal > 0 ? detal : 0;
 }
 
 function resolveIvaRate(data: Record<string, unknown>) {
@@ -82,13 +85,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (snap.empty) return false;
 
       const docSnap = snap.docs[0];
-
       const data = docSnap.data() as Record<string, unknown>;
-      // Adaptador retrocompatible: si solo hay price, úsalo como detal
-      let priceUsd = resolvePrice(data, priceTier);
-      if (!('precioDetal' in data) && 'price' in data) {
-        priceUsd = Number(data.price) || 0;
-      }
+      
+      const priceUsd = resolvePrice(data, priceTier);
+
       const nextItem: CartItem = {
         id: docSnap.id,
         codigo: String(data.codigo || data.codigoAlterno || normalized),

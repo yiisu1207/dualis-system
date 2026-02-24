@@ -1,4 +1,4 @@
-const CACHE_NAME = 'erp-system-v1';
+const CACHE_NAME = 'dualis-system-v1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

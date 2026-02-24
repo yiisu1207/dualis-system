@@ -5,18 +5,14 @@ import {
   Movement,
   AccountType,
   MovementType,
-  OperationalRecord,
   User,
   AppConfig,
   ExchangeRates,
   PaymentCurrency,
   Employee,
-  Sanction,
   CashAdvance,
   Supplier,
-  InventoryItem,
   PayrollReceipt,
-  AuditLog,
 } from '../types';
 
 // CONTEXTO NUEVO
@@ -30,29 +26,20 @@ import Sidebar from './components/Sidebar';
 import AdminDashboard from './features/admin/AdminDashboard';
 import Configuracion from './pages/Configuracion';
 import AccountingSection from './components/AccountingSection';
-import ReconciliationSection from './components/ReconciliationSection';
-import VisionSection from './components/VisionSection';
 import SupplierSection from './components/SupplierSection';
-import PayrollSection from './components/PayrollSection';
 import RecursosHumanos from './pages/RecursosHumanos';
 import Inventario from './pages/Inventario';
 import VisionLab from './components/VisionLab';
 import BooksComparePanel from './components/BooksComparePanel';
 import AIChat from './components/AIChat';
+import UserProfileModalComp from './components/UserProfileModal';
 import CustomerViewer from './components/CustomerViewer';
 import RateHistoryWall from './components/RateHistoryWall';
 import DataImporter from './components/DataImporter';
 import SmartCalculatorWidget from './components/SmartCalculatorWidget';
-import StickyNotesWidget from './components/StickyNotesWidget';
-import RateConverterWidget from './components/RateConverterWidget';
-import TimerWidget from './components/TimerWidget';
-import PriceCheckerWidget from './components/PriceCheckerWidget';
-import TodoListWidget from './components/TodoListWidget';
-import SpeedDialWidget from './components/SpeedDialWidget';
-import TeamChatWidget from './components/TeamChatWidget';
 import WidgetDock from './components/WidgetDock';
 import HelpCenter from './components/HelpCenter';
-import WelcomeTourModal from './components/WelcomeTourModal';
+import WidgetLaunchpad from './components/WidgetLaunchpad';
 import AdminPosManager from './pages/AdminPosManager';
 
 // FIREBASE
@@ -274,6 +261,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const { empresa_id } = useParams<{ empresa_id: string }>();
   const adminBase = empresa_id ? `/${empresa_id}/admin` : '';
 
+  const [activeTab, setActiveTab] = useState<string>(initialTab || 'resumen');
+
   const user: User | null = useMemo(() => {
     if (!firebaseUser) return null;
     return {
@@ -292,6 +281,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [advances, setAdvances] = useState<CashAdvance[]>([]);
+  const [payrollHistory, setPayrollHistory] = useState<PayrollReceipt[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isImporterOpen, setIsImporterOpen] = useState(false);
@@ -363,12 +354,24 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     const qMov = query(collection(db, 'movements'), where('businessId', '==', businessId), orderBy('date', 'desc'), limit(200));
     const unsubMov = onSnapshot(qMov, (snap) => setMovements(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
 
-    return () => { unsubCust(); unsubSupp(); unsubMov(); };
+    const qEmp = query(collection(db, `businesses/${businessId}/employees`), orderBy('name', 'asc'));
+    const unsubEmp = onSnapshot(qEmp, (snap) => setEmployees(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
+
+    const qAdv = query(collection(db, `businesses/${businessId}/payroll_advances`), orderBy('date', 'desc'));
+    const unsubAdv = onSnapshot(qAdv, (snap) => setAdvances(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
+
+    const qHist = query(collection(db, `businesses/${businessId}/payroll_history`), orderBy('date', 'desc'), limit(24));
+    const unsubHist = onSnapshot(qHist, (snap) => setPayrollHistory(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
+
+    return () => { 
+      unsubCust(); unsubSupp(); unsubMov(); unsubEmp(); unsubAdv(); unsubHist();
+    };
   }, [businessId]);
 
   const handleRegisterMovement = async (data: any) => {
-    if (!businessId) return;
-    await addDoc(collection(db, 'movements'), { ...data, businessId, createdAt: new Date().toISOString() });
+    if (!businessId) return '';
+    const docRef = await addDoc(collection(db, 'movements'), { ...data, businessId, createdAt: new Date().toISOString() });
+    return docRef.id;
   };
 
   const updateMovement = async (id: string, updated: Partial<Movement>) => {
@@ -391,6 +394,34 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     if (confirm('¿Eliminar cliente?')) await deleteDoc(doc(db, 'customers', id));
   };
 
+  // PROVEEDORES HANDLERS
+  const handleRegisterSupplier = async (s: Supplier) => {
+    await addDoc(collection(db, 'suppliers'), { ...s, businessId });
+  };
+  const handleUpdateSupplier = async (id: string, s: Supplier) => {
+    await updateDoc(doc(db, 'suppliers', id), s as any);
+  };
+  const handleDeleteSupplier = async (id: string) => {
+    if (confirm('¿Eliminar proveedor?')) await deleteDoc(doc(db, 'suppliers', id));
+  };
+
+  // RRHH HANDLERS
+  const handleRegisterEmployee = async (emp: any) => {
+    await addDoc(collection(db, `businesses/${businessId}/employees`), { ...emp, businessId });
+  };
+  const handleUpdateEmployee = async (id: string, emp: any) => {
+    await updateDoc(doc(db, `businesses/${businessId}/employees`, id), emp);
+  };
+  const handleDeleteEmployee = async (id: string) => {
+    await deleteDoc(doc(db, `businesses/${businessId}/employees`, id));
+  };
+  const handleRegisterAdvance = async (adv: any) => {
+    await addDoc(collection(db, `businesses/${businessId}/payroll_advances`), { ...adv, businessId });
+  };
+  const handleRegisterPayrollCycle = async (receipt: any) => {
+    await addDoc(collection(db, `businesses/${businessId}/payroll_history`), { ...receipt, businessId });
+  };
+
   const tabRoutes: Record<string, string> = {
     resumen: `${adminBase}/dashboard`,
     clientes: `${adminBase}/cobranzas`,
@@ -399,6 +430,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     rrhh: `${adminBase}/rrhh`,
     inventario: `${adminBase}/inventario`,
     vision: `${adminBase}/vision`,
+    widgets: `${adminBase}/widgets`,
     comparar: `${adminBase}/comparar`,
     tasas: `${adminBase}/tasas`,
     cajas: `${adminBase}/cajas`,
@@ -464,7 +496,13 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
         <main className="flex-1 overflow-y-auto p-6 relative">
           <div className="max-w-7xl mx-auto h-full">
-            {activeTab === 'resumen' && <AdminDashboard />}
+            {activeTab === 'resumen' && (
+              <AdminDashboard onTabChange={(tab) => {
+                setActiveTab(tab);
+                navigate(tabRoutes[tab]);
+              }} />
+            )}
+            {activeTab === 'widgets' && <WidgetLaunchpad />}
             {activeTab === 'inventario' && <Inventario />}
             {activeTab === 'config' && <Configuracion />}
             {activeTab === 'cajas' && <AdminPosManager />}
@@ -511,7 +549,16 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                 onRegisterMovement={handleRegisterMovement}
                 onUpdateMovement={updateMovement}
                 onDeleteMovement={deleteMovement}
+                onRegisterSupplier={handleRegisterSupplier}
+                onUpdateSupplier={handleUpdateSupplier}
+                onDeleteSupplier={handleDeleteSupplier}
                 getSmartRate={async () => rates.tasaBCV}
+                canCreateSupplier={isAdmin}
+                canEditSupplier={isAdmin}
+                canDeleteSupplier={isAdmin}
+                canCreateMovement={true}
+                canEditMovement={isAdmin}
+                canDeleteMovement={isAdmin}
               />
             )}
 
@@ -520,7 +567,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         </main>
       </div>
 
-      <UserProfileModal 
+      <UserProfileModalComp 
         isOpen={isProfileOpen} 
         profile={userProfile as any} 
         onClose={() => setIsProfileOpen(false)} 
@@ -540,7 +587,18 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
       <WidgetDock />
       <SmartCalculatorWidget rates={legacyRates as any} isOpen={widgetManager.widgets.calculator.isOpen} isMinimized={widgetManager.widgets.calculator.isMinimized} position={widgetManager.widgets.calculator.position} onClose={() => widgetManager.closeWidget('calculator')} onMinimize={() => widgetManager.setMinimized('calculator', !widgetManager.widgets.calculator.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('calculator', pos)} />
-      <AIChat />
+      <AIChat 
+        config={{} as any}
+        customers={customers}
+        employees={employees}
+        rates={legacyRates as any}
+        movements={movements}
+        payrollRate={rates.tasaBCV}
+        onRegisterMovement={handleRegisterMovement}
+        onAddCustomer={handleRegisterCustomer}
+        onUpdateRates={(newRates) => updateRates({ tasaBCV: newRates.bcv, tasaGrupo: newRates.grupo })}
+        onRegisterAdvance={handleRegisterAdvance}
+      />
     </div>
   );
 };

@@ -248,7 +248,7 @@ export default function Register() {
               <input
                 required
                 type="text"
-                placeholder="Ej. Boutique Los Ángeles C.A."
+                placeholder="Ej. Mi Negocio Dualis C.A."
                 className={inputClasses}
                 value={formData.businessName}
                 onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
