@@ -16,210 +16,195 @@ import {
   Receipt,
   FileText,
   MousePointer2,
+  Layers,
+  Rocket
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import ReCAPTCHA from 'react-google-recaptcha';
-import { releaseNotes } from '../data/releaseNotes';
 import Logo from './ui/Logo';
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [showAnnouncement, setShowAnnouncement] = useState(() => {
-    return localStorage.getItem('release_announcement_v1') !== 'hidden';
-  });
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof document === 'undefined') return false;
-    return document.documentElement.classList.contains('dark');
-  });
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
-  const [contactForm, setContactForm] = useState({ name: '', email: '', message: '' });
-  const [contactSent, setContactSent] = useState(false);
-  const [contactCaptcha, setContactCaptcha] = useState<string | null>(null);
-  const captchaKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined;
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', handleScroll);
+    
     const items = Array.from(document.querySelectorAll('[data-reveal]')) as HTMLElement[];
-    if (items.length === 0) return;
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-          entry.target.classList.add('is-visible');
-          observer.unobserve(entry.target);
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            observer.unobserve(entry.target);
+          }
         });
       },
-      { threshold: 0.18 }
+      { threshold: 0.1 }
     );
 
     items.forEach((item) => observer.observe(item));
-    return () => observer.disconnect();
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      observer.disconnect();
+    };
   }, []);
 
-  const toggleDarkMode = () => {
-    const next = !isDarkMode;
-    setIsDarkMode(next);
-    document.documentElement.classList.toggle('dark', next);
-    localStorage.setItem('theme_mode', next ? 'dark' : 'light');
-  };
-
   return (
-    <div className="min-h-screen bg-white text-slate-900 selection:bg-indigo-100 selection:text-indigo-900 font-inter overflow-x-hidden">
+    <div className="min-h-screen bg-[#fcfcfd] text-slate-900 selection:bg-indigo-600 selection:text-white font-inter overflow-x-hidden">
       
+      {/* BACKGROUND ELEMENTS */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-100/40 rounded-full blur-[120px] animate-pulse"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-emerald-50/40 rounded-full blur-[120px] animate-pulse" style={{animationDelay: '2s'}}></div>
+      </div>
+
       {/* MODERN NAVBAR */}
-      <nav className="fixed w-full z-[100] bg-white/70 backdrop-blur-xl border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}>
-            <Logo />
+      <nav className={`fixed w-full z-[100] transition-all duration-500 ${scrolled ? 'bg-white/80 backdrop-blur-2xl border-b border-slate-200 py-4' : 'bg-transparent py-6'}`}>
+        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
+          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}>
+            <Logo className="transition-transform group-hover:scale-110" />
             <div className="h-6 w-px bg-slate-200 hidden md:block"></div>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hidden md:block">
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 hidden md:block group-hover:text-indigo-600 transition-colors">
               Hybrid ERP System
             </span>
           </div>
 
           <div className="flex items-center gap-8">
-            <div className="hidden lg:flex items-center gap-6">
-              {['Características', 'Precios', 'Seguridad', 'Soporte'].map((item) => (
-                <button key={item} className="text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 transition-colors">
+            <div className="hidden lg:flex items-center gap-8">
+              {['Características', 'Precios', 'Seguridad'].map((item) => (
+                <button key={item} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-indigo-600 transition-all">
                   {item}
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3 border-l border-slate-100 pl-8">
-              <button onClick={() => navigate('/login')} className="text-xs font-black uppercase tracking-widest text-slate-900 hover:opacity-70 transition-opacity">
+            <div className="flex items-center gap-4">
+              <button onClick={() => navigate('/login')} className="text-[10px] font-black uppercase tracking-widest text-slate-900 hover:text-indigo-600 transition-colors px-4">
                 Entrar
               </button>
-              <button onClick={() => navigate('/register')} className="px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl shadow-slate-200 hover:scale-105 active:scale-95 transition-all">
-                Prueba Gratis
+              <button onClick={() => navigate('/register')} className="px-8 py-3.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-600 hover:-translate-y-0.5 active:scale-95 transition-all">
+                Empezar Ahora
               </button>
             </div>
           </div>
         </div>
       </nav>
 
-      {/* HERO SECTION: THE FUTURE OF BUSINESS */}
-      <section className="relative pt-40 pb-32 overflow-hidden bg-slate-50/50">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none opacity-40">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-200/50 rounded-full blur-[120px]"></div>
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-200/50 rounded-full blur-[120px]"></div>
-        </div>
+      {/* HERO SECTION */}
+      <section className="relative pt-48 pb-32 z-10">
+        <div className="max-w-7xl mx-auto px-6 text-center">
+          <div data-reveal className="reveal-up inline-flex items-center gap-3 px-5 py-2.5 rounded-full bg-white border border-slate-200 shadow-xl shadow-slate-100 mb-10">
+            <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">Dualis v2.0: El futuro del retail ya está aquí</span>
+          </div>
+          
+          <h1 data-reveal className="reveal-up text-6xl md:text-9xl font-black text-slate-900 leading-[0.9] tracking-tighter mb-8">
+            Domina tu mercado <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-violet-600 to-emerald-500 animate-gradient-x">
+              sin complicaciones.
+            </span>
+          </h1>
+          
+          <p data-reveal className="reveal-up text-lg md:text-2xl text-slate-500 font-medium leading-relaxed max-w-3xl mx-auto mb-12">
+            La plataforma híbrida que sincroniza tus ventas, inventario y finanzas con protección cambiaria en tiempo real. Diseñada para emprendedores que buscan control absoluto.
+          </p>
 
-        <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="text-center space-y-8 max-w-4xl mx-auto">
-            <div data-reveal className="reveal-up inline-flex items-center gap-3 px-4 py-2 rounded-full bg-white border border-slate-200 shadow-sm">
-              <Sparkles className="w-4 h-4 text-amber-500 fill-amber-500" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Nueva Versión 2.0: Ahora con Vision AI</span>
-            </div>
-            
-            <h1 data-reveal className="reveal-up text-5xl md:text-8xl font-black text-slate-900 leading-[0.95] tracking-tight">
-              Control total para <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-violet-500 to-emerald-500">
-                negocios que no paran.
-              </span>
-            </h1>
-            
-            <p data-reveal className="reveal-up text-lg md:text-xl text-slate-500 font-medium leading-relaxed max-w-2xl mx-auto">
-              Sincroniza tus ventas, inventario y finanzas en tiempo real. La única plataforma diseñada para mercados híbridos con protección cambiaria inteligente.
-            </p>
+          <div data-reveal className="reveal-up flex flex-col sm:flex-row items-center justify-center gap-6">
+            <button onClick={() => navigate('/register')} className="w-full sm:w-auto px-12 py-6 bg-slate-900 text-white rounded-[2.5rem] text-xs font-black uppercase tracking-[0.2em] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.3)] hover:bg-indigo-600 hover:-translate-y-1 active:scale-95 transition-all flex items-center justify-center gap-4">
+              Digitalizar mi Negocio <ArrowRight size={20} />
+            </button>
+            <button className="w-full sm:w-auto px-12 py-6 bg-white text-slate-900 border border-slate-200 rounded-[2.5rem] text-xs font-black uppercase tracking-[0.2em] hover:bg-slate-50 hover:border-slate-300 transition-all">
+              Ver Demostración
+            </button>
+          </div>
 
-            <div data-reveal className="reveal-up flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-              <button onClick={() => navigate('/register')} className="w-full sm:w-auto px-10 py-5 bg-slate-900 text-white rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-[0_20px_50px_rgba(0,0,0,0.15)] hover:bg-indigo-600 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3">
-                Digitalizar mi Negocio <ArrowRight size={18} />
-              </button>
-              <button className="w-full sm:w-auto px-10 py-5 bg-white text-slate-900 border border-slate-200 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] hover:bg-slate-50 transition-all">
-                Ver Demostración
-              </button>
-            </div>
-
-            {/* TRUST INDICATORS */}
-            <div data-reveal className="reveal-up pt-16 flex flex-wrap justify-center items-center gap-12 opacity-40 grayscale hover:opacity-100 hover:grayscale-0 transition-all duration-700">
-              {['Boutique Pro', 'Luxe Market', 'Tech Hub', 'Foodie Central', 'Mega Corp'].map((brand) => (
-                <span key={brand} className="text-sm font-black uppercase tracking-widest text-slate-400">{brand}</span>
-              ))}
-            </div>
+          <div data-reveal className="reveal-up pt-24 grid grid-cols-2 md:grid-cols-5 gap-8 opacity-30 grayscale hover:opacity-100 hover:grayscale-0 transition-all duration-1000">
+            {['Boutique Pro', 'Luxe Market', 'Tech Hub', 'Foodie Central', 'Mega Corp'].map((brand) => (
+              <span key={brand} className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-900">{brand}</span>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* CORE FEATURES GRID */}
-      <section className="py-32 bg-white">
+      {/* FEATURE CARDS GRID */}
+      <section className="py-32 relative z-10 bg-white">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
             
-            {/* FEATURE 1: DUAL POS */}
-            <div data-reveal className="reveal-up md:col-span-2 bg-slate-900 rounded-[3rem] p-12 text-white relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-110 transition-transform duration-700">
-                <ShoppingCart size={200} />
+            {/* TERMINALES */}
+            <div data-reveal className="reveal-up md:col-span-8 bg-slate-900 rounded-[4rem] p-16 text-white relative overflow-hidden group hover:shadow-[0_50px_100px_-20px_rgba(79,70,229,0.2)] transition-all duration-700">
+              <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-110 group-hover:rotate-12 transition-transform duration-1000">
+                <ShoppingCart size={350} />
               </div>
-              <div className="relative z-10 max-w-lg">
-                <div className="h-12 w-12 rounded-2xl bg-indigo-500 flex items-center justify-center mb-8 shadow-xl shadow-indigo-500/20">
-                  <Cpu size={24} />
+              <div className="relative z-10 max-w-xl">
+                <div className="h-16 w-16 rounded-[1.5rem] bg-indigo-500 flex items-center justify-center mb-10 shadow-2xl shadow-indigo-500/40">
+                  <Cpu size={32} />
                 </div>
-                <h3 className="text-4xl font-black mb-4 tracking-tight">Terminales Inteligentes</h3>
-                <p className="text-slate-400 text-lg leading-relaxed mb-8">
-                  Caja Detal y Caja Mayor en un solo sistema. Precios diferenciados automáticos, control de stock por unidad y reportes de cierre blindados.
+                <h3 className="text-5xl font-black mb-6 tracking-tight">Terminales Inteligentes</h3>
+                <p className="text-slate-400 text-xl leading-relaxed mb-10">
+                  Caja Detal y Mayor en un solo ecosistema. Sincronización automática con tasas BCV y control de stock blindado por unidad.
                 </p>
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-4">
                   {['Sincronización BCV', 'Ticket Digital', 'Multi-moneda'].map(tag => (
-                    <span key={tag} className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest">{tag}</span>
+                    <span key={tag} className="px-6 py-2.5 rounded-full bg-white/5 border border-white/10 text-[9px] font-black uppercase tracking-[0.2em]">{tag}</span>
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* FEATURE 2: ERP INVENTORY */}
-            <div data-reveal className="reveal-up bg-emerald-50 rounded-[3rem] p-12 border border-emerald-100 flex flex-col justify-between hover:shadow-2xl hover:shadow-emerald-100 transition-all duration-500">
+            {/* INVENTARIO */}
+            <div data-reveal className="reveal-up md:col-span-4 bg-[#f0fdf4] rounded-[4rem] p-12 border border-emerald-100 flex flex-col justify-between hover:shadow-2xl hover:shadow-emerald-100 transition-all duration-700">
               <div>
-                <div className="h-12 w-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center mb-8 shadow-xl shadow-emerald-500/20">
-                  <Package size={24} />
+                <div className="h-16 w-16 rounded-[1.5rem] bg-emerald-500 text-white flex items-center justify-center mb-10 shadow-2xl shadow-emerald-500/20">
+                  <Package size={32} />
                 </div>
-                <h3 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Inventario Pro</h3>
-                <p className="text-slate-600 font-medium leading-relaxed">
-                  Trazabilidad total: Marca, Proveedor y Ubicación física. Analiza tus márgenes de ganancia antes de registrar.
+                <h3 className="text-4xl font-black text-slate-900 mb-6 tracking-tight">Inventario Pro</h3>
+                <p className="text-slate-600 text-lg font-medium leading-relaxed">
+                  Trazabilidad total: Marca, Proveedor y Ubicación. Analiza márgenes de ganancia antes de registrar.
                 </p>
               </div>
-              <div className="mt-8 pt-8 border-t border-emerald-200/50">
-                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 flex items-center gap-2">
-                  <TrendingUp size={14} /> Optimización de Stock Activa
+              <div className="mt-10 pt-10 border-t border-emerald-200/50">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-600 flex items-center gap-3">
+                  <TrendingUp size={18} /> IA DE REABASTECIMIENTO ACTIVA
                 </span>
               </div>
             </div>
 
-            {/* FEATURE 3: VISION LAB */}
-            <div data-reveal className="reveal-up bg-slate-50 rounded-[3rem] p-12 border border-slate-200 flex flex-col justify-between hover:bg-white hover:shadow-2xl transition-all duration-500">
+            {/* ANALYTICS */}
+            <div data-reveal className="reveal-up md:col-span-4 bg-slate-50 rounded-[4rem] p-12 border border-slate-200 flex flex-col justify-between hover:bg-white hover:shadow-2xl transition-all duration-700 group">
               <div>
-                <div className="h-12 w-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center mb-8">
-                  <BarChart3 size={24} />
+                <div className="h-16 w-16 rounded-[1.5rem] bg-indigo-600 text-white flex items-center justify-center mb-10 shadow-2xl shadow-indigo-600/20 group-hover:rotate-12 transition-transform">
+                  <BarChart3 size={32} />
                 </div>
-                <h3 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Vision Lab</h3>
-                <p className="text-slate-500 font-medium leading-relaxed">
-                  Analítica en tiempo real. Conoce la salud de tu negocio, tu índice de actividad y recibe sugerencias impulsadas por IA.
+                <h3 className="text-4xl font-black text-slate-900 mb-6 tracking-tight">Vision Lab</h3>
+                <p className="text-slate-500 text-lg font-medium leading-relaxed">
+                  Analítica profunda en tiempo real. Recibe sugerencias estratégicas impulsadas por nuestra IA propietaria.
                 </p>
               </div>
-              <button className="mt-8 flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-indigo-600 group">
-                Explorar Analytics <ArrowRight size={14} className="group-hover:translate-x-2 transition-transform" />
+              <button onClick={() => navigate('/login')} className="mt-10 flex items-center gap-4 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600 group">
+                Explorar Analytics <ArrowRight size={16} className="group-hover:translate-x-3 transition-transform" />
               </button>
             </div>
 
-            {/* FEATURE 4: SECURITY */}
-            <div data-reveal className="reveal-up md:col-span-2 bg-white border border-slate-200 rounded-[3rem] p-12 shadow-xl shadow-slate-200/50 flex flex-col md:flex-row gap-12 items-center">
+            {/* SEGURIDAD */}
+            <div data-reveal className="reveal-up md:col-span-8 bg-white border border-slate-200 rounded-[4rem] p-16 shadow-2xl shadow-slate-200/50 flex flex-col lg:flex-row gap-16 items-center">
               <div className="flex-1">
-                <div className="h-12 w-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mb-8">
-                  <ShieldCheck size={24} />
+                <div className="h-16 w-16 rounded-[1.5rem] bg-slate-900 text-white flex items-center justify-center mb-10 shadow-2xl">
+                  <ShieldCheck size={32} />
                 </div>
-                <h3 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">Seguridad de Grado Bancario</h3>
-                <p className="text-slate-500 text-lg leading-relaxed">
-                  Protege tu información con Autenticación 2FA, PIN de Autoridad Maestro para operaciones críticas y registros de auditoría detallados por usuario.
+                <h3 className="text-5xl font-black text-slate-900 mb-6 tracking-tight">Seguridad Elite</h3>
+                <p className="text-slate-500 text-xl leading-relaxed">
+                  Protección de grado bancario con Autenticación 2FA, PIN de Autoridad Maestro y logs de auditoría inmutables.
                 </p>
               </div>
-              <div className="w-full md:w-64 space-y-4">
+              <div className="w-full lg:w-72 space-y-4">
                 {[
-                  { icon: Fingerprint, label: 'PIN Maestro' },
-                  { icon: Shield, label: 'Acceso 2FA' },
-                  { icon: FileText, label: 'Audit Logs' }
+                  { icon: Fingerprint, label: 'PIN Maestro', color: 'text-rose-500', bg: 'bg-rose-50' },
+                  { icon: Shield, label: 'Acceso 2FA', color: 'text-indigo-500', bg: 'bg-indigo-50' },
+                  { icon: FileText, label: 'Audit Logs', color: 'text-emerald-500', bg: 'bg-emerald-50' }
                 ].map(item => (
-                  <div key={item.label} className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center gap-4">
-                    <item.icon size={20} className="text-indigo-500" />
+                  <div key={item.label} className={`p-6 rounded-3xl ${item.bg} flex items-center gap-5 transition-transform hover:scale-105 cursor-default`}>
+                    <item.icon size={24} className={item.color} />
                     <span className="text-xs font-black uppercase tracking-widest text-slate-700">{item.label}</span>
                   </div>
                 ))}
@@ -230,74 +215,80 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* HOW IT WORKS SECTION */}
-      <section className="py-32 bg-slate-900 text-white relative overflow-hidden">
-        <div className="hero-aurora opacity-20"></div>
+      {/* STEPS SECTION */}
+      <section className="py-40 bg-slate-900 text-white relative overflow-hidden">
+        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_50%_50%,#4f46e5_0%,transparent_70%)] animate-pulse"></div>
         <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="text-center max-w-3xl mx-auto mb-24">
-            <h2 data-reveal className="reveal-up text-4xl md:text-6xl font-black mb-6">Tu migración al futuro <br /> es en tres pasos.</h2>
-            <p data-reveal className="reveal-up text-slate-400 text-lg">Sin configuraciones complejas ni servidores locales.</p>
+          <div className="text-center max-w-3xl mx-auto mb-32">
+            <h2 data-reveal className="reveal-up text-5xl md:text-7xl font-black mb-8 tracking-tighter leading-tight">Migración al futuro <br /> en tres latidos.</h2>
+            <p data-reveal className="reveal-up text-slate-400 text-xl font-medium">Sin servidores locales, sin cables, sin fricción.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-20">
             {[
-              { step: '01', title: 'Crea tu Espacio', desc: 'Configura tu RIF, moneda y logo en menos de 2 minutos.' },
-              { step: '02', title: 'Carga tu Data', desc: 'Importa tu inventario desde Excel o regístralo con nuestra IA.' },
-              { step: '03', title: 'Vende y Crece', desc: 'Abre tus cajas y empieza a recibir pagos con total control.' }
+              { step: '01', icon: Rocket, title: 'Crea tu Espacio', desc: 'Configura tu RIF y moneda en menos de 120 segundos.' },
+              { step: '02', icon: Layers, title: 'Carga tu Data', desc: 'Importa tu inventario desde Excel o vía Scan con nuestra IA.' },
+              { step: '03', icon: Zap, title: 'Vende y Crece', desc: 'Abre tus terminales y escala tu rentabilidad hoy mismo.' }
             ].map((item, i) => (
               <div key={i} data-reveal className="reveal-up relative group">
-                <div className="text-8xl font-black text-white/5 absolute -top-12 -left-4 group-hover:text-indigo-500/10 transition-colors">{item.step}</div>
-                <h4 className="text-2xl font-black mb-4 relative z-10">{item.title}</h4>
-                <p className="text-slate-400 leading-relaxed relative z-10">{item.desc}</p>
+                <div className="text-[12rem] font-black text-white/[0.03] absolute -top-32 -left-10 group-hover:text-indigo-500/[0.08] transition-all duration-1000 select-none">{item.step}</div>
+                <div className="h-14 w-14 rounded-2xl bg-white/10 flex items-center justify-center mb-8 border border-white/10 group-hover:bg-indigo-600 transition-colors">
+                  <item.icon size={28} className="text-indigo-400 group-hover:text-white" />
+                </div>
+                <h4 className="text-3xl font-black mb-6 relative z-10 tracking-tight">{item.title}</h4>
+                <p className="text-slate-400 text-lg leading-relaxed relative z-10 font-medium">{item.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* CONTACT & CTA */}
-      <section className="py-32 bg-white">
+      {/* FINAL CTA */}
+      <section className="py-40 bg-white relative z-10">
         <div className="max-w-5xl mx-auto px-6">
-          <div data-reveal className="reveal-up bg-slate-50 rounded-[4rem] p-16 text-center border border-slate-100 shadow-2xl shadow-slate-200/50">
-            <h2 className="text-4xl md:text-6xl font-black text-slate-900 mb-8 tracking-tight">¿Listo para el siguiente nivel?</h2>
-            <p className="text-xl text-slate-500 mb-12 max-w-2xl mx-auto">Únete a las empresas que ya están protegiendo su patrimonio con Dualis ERP.</p>
-            <div className="flex flex-col sm:flex-row justify-center gap-4">
-              <button onClick={() => navigate('/register')} className="px-12 py-6 bg-slate-900 text-white rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] hover:scale-105 active:scale-95 transition-all shadow-2xl">
-                Comenzar ahora mismo
-              </button>
-              <button className="px-12 py-6 bg-white text-slate-900 border border-slate-200 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] hover:bg-slate-50 transition-all">
-                Hablar con un asesor
-              </button>
+          <div data-reveal className="reveal-up bg-[#f8fafc] rounded-[5rem] p-20 text-center border border-slate-200 shadow-[0_50px_100px_-30px_rgba(0,0,0,0.1)] relative overflow-hidden group">
+            <div className="absolute -top-24 -right-24 w-64 h-64 bg-indigo-500/5 rounded-full blur-[100px] group-hover:bg-indigo-500/10 transition-colors"></div>
+            <div className="relative z-10">
+              <h2 className="text-5xl md:text-8xl font-black text-slate-900 mb-10 tracking-tighter">¿Listo para <br /> evolucionar?</h2>
+              <p className="text-2xl text-slate-500 mb-16 max-w-2xl mx-auto font-medium">Únete a las empresas que ya están protegiendo su patrimonio con Dualis ERP.</p>
+              <div className="flex flex-col sm:flex-row justify-center gap-6">
+                <button onClick={() => navigate('/register')} className="px-16 py-7 bg-slate-900 text-white rounded-[2.5rem] text-xs font-black uppercase tracking-[0.3em] hover:bg-indigo-600 hover:-translate-y-1 active:scale-95 transition-all shadow-2xl">
+                  Comenzar ahora mismo
+                </button>
+                <button className="px-16 py-7 bg-white text-slate-900 border-2 border-slate-200 rounded-[2.5rem] text-xs font-black uppercase tracking-[0.3em] hover:bg-slate-50 hover:border-slate-900 transition-all">
+                  Hablar con un asesor
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       {/* MINIMAL FOOTER */}
-      <footer className="py-20 bg-white border-t border-slate-100">
+      <footer className="py-24 bg-white border-t border-slate-100 z-10 relative">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-12">
-            <div className="flex flex-col items-center md:items-start gap-4">
-              <Logo />
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">© 2026 Dualis ERP — Inteligencia de Negocio</p>
+          <div className="flex flex-col md:flex-row justify-between items-center gap-16">
+            <div className="flex flex-col items-center md:items-start gap-6">
+              <Logo className="h-10 w-auto" />
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em]">© 2026 Dualis ERP — Inteligencia de Negocio</p>
             </div>
-            <div className="flex gap-12">
-              <div className="space-y-4 text-center md:text-left">
-                <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-900">Producto</h5>
-                <div className="flex flex-col gap-2">
-                  {['POS', 'Inventario', 'Finanzas', 'Seguridad'].map(l => <button key={l} className="text-[11px] font-bold text-slate-400 hover:text-slate-900 transition-colors uppercase">{l}</button>)}
+            <div className="flex gap-20">
+              <div className="space-y-6">
+                <h5 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-900">Soluciones</h5>
+                <div className="flex flex-col gap-4">
+                  {['POS Cloud', 'Inventario', 'Finanzas', 'Vision AI'].map(l => <button key={l} className="text-[11px] font-black text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-widest">{l}</button>)}
                 </div>
               </div>
-              <div className="space-y-4 text-center md:text-left">
-                <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-900">Legal</h5>
-                <div className="flex flex-col gap-2">
-                  {['Términos', 'Privacidad', 'Cookies'].map(l => <button key={l} className="text-[11px] font-bold text-slate-400 hover:text-slate-900 transition-colors uppercase">{l}</button>)}
+              <div className="space-y-6">
+                <h5 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-900">Legal</h5>
+                <div className="flex flex-col gap-4">
+                  {['Términos', 'Privacidad', 'Cookies'].map(l => <button key={l} className="text-[11px] font-black text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-widest">{l}</button>)}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-900 hover:text-white transition-all cursor-pointer"><Globe size={18} /></div>
-              <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-900 hover:text-white transition-all cursor-pointer"><MessageSquare size={18} /></div>
+            <div className="flex items-center gap-6">
+              <div className="h-12 w-12 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 hover:bg-indigo-600 hover:text-white hover:-translate-y-1 transition-all cursor-pointer"><Globe size={20} /></div>
+              <div className="h-12 w-12 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 hover:bg-indigo-600 hover:text-white hover:-translate-y-1 transition-all cursor-pointer"><MessageSquare size={20} /></div>
             </div>
           </div>
         </div>

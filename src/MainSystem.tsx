@@ -585,7 +585,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         onCreateCustomer={handleRegisterCustomer}
       />
 
-      <WidgetDock />
       <SmartCalculatorWidget rates={legacyRates as any} isOpen={widgetManager.widgets.calculator.isOpen} isMinimized={widgetManager.widgets.calculator.isMinimized} position={widgetManager.widgets.calculator.position} onClose={() => widgetManager.closeWidget('calculator')} onMinimize={() => widgetManager.setMinimized('calculator', !widgetManager.widgets.calculator.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('calculator', pos)} />
       <AIChat 
         config={{} as any}

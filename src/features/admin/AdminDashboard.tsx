@@ -249,7 +249,7 @@ export default function AdminDashboard({ onTabChange }: { onTabChange?: (tab: st
         desc: 'Protege tus registros de eliminaciones accidentales o malintencionadas.',
         icon: Fingerprint,
         color: 'bg-rose-500',
-        action: () => (window.location.href = `/${tenantId}/admin/configuracion`)
+        action: () => onTabChange?.('config')
       });
     }
     if (products.length === 0) {
@@ -259,7 +259,7 @@ export default function AdminDashboard({ onTabChange }: { onTabChange?: (tab: st
         desc: 'Aún no tienes productos registrados para vender en el POS.',
         icon: Package,
         color: 'bg-indigo-500',
-        action: () => (window.location.href = `/${tenantId}/admin/inventario`)
+        action: () => onTabChange?.('inventario')
       });
     }
     if (movements.length === 0) {
@@ -269,7 +269,7 @@ export default function AdminDashboard({ onTabChange }: { onTabChange?: (tab: st
         desc: 'Usa el terminal para generar tu primera factura y ver las analíticas.',
         icon: ShoppingCart,
         color: 'bg-emerald-500',
-        action: () => (window.location.href = `/${tenantId}/pos/detal`)
+        action: () => (window.location.href = `/${tenantId}/pos/detal`) // El POS sí está fuera de MainSystem
       });
     }
     return list;
