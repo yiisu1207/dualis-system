@@ -112,23 +112,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (docSnap.exists()) {
           const profile = docSnap.data() as UserProfile;
+          // Forzar sincronía de ID
+          if (profile.empresa_id && !profile.businessId) {
+            profile.businessId = profile.empresa_id;
+          }
+          
           let needsProfileUpdate = false;
           
-          if (!profile.businessId) {
-            const generatedId = generateWorkspaceId();
-            const ownerId = profile.uid || firebaseUser.uid;
-            const workspaceName = profile.fullName || profile.email || 'Workspace';
-            await ensureBusiness(generatedId, ownerId, workspaceName);
-            await updateDoc(doc(db, 'users', ownerId), {
-              businessId: generatedId,
-              role: profile.role || 'owner',
-              status: profile.status || 'ACTIVE',
-            });
-            profile.businessId = generatedId;
-            profile.role = (profile.role || 'owner') as UserProfile['role'];
-            profile.status = profile.status || 'ACTIVE';
-            await ensureMembership(generatedId, ownerId, profile.role);
-            needsProfileUpdate = false;
+          if (!profile.businessId && profile.status === 'ACTIVE') {
+            // Este es un estado inconsistente, lo enviamos a onboarding
+            profile.status = 'PENDING_SETUP';
+            needsProfileUpdate = true;
           }
           if (!profile.displayName) {
             profile.displayName = profile.fullName || profile.email || 'Usuario';

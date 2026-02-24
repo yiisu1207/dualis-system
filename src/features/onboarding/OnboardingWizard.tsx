@@ -103,25 +103,25 @@ export default function OnboardingWizard() {
       });
 
       if (user) {
-        await updateDoc(doc(db, 'users', user.uid), {
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, {
           pin: formData.pin,
-          status: 'ACTIVE'
+          status: 'ACTIVE',
+          businessId: currentTenantId // Asegurar que el ID esté guardado
         });
-        updateUserProfile({ pin: formData.pin, status: 'ACTIVE' });
+        
+        // Actualización atómica local para evitar el loop del router
+        updateUserProfile({ 
+          pin: formData.pin, 
+          status: 'ACTIVE',
+          businessId: currentTenantId 
+        });
       }
 
-      await addDoc(collection(db, 'businesses', currentTenantId, 'terminals'), {
-        nombre: formData.terminalName,
-        tipo: formData.terminalType,
-        estado: 'cerrada',
-        totalFacturado: 0,
-        movimientos: 0,
-        cajeroId: user?.uid || '',
-        cajeroNombre: userProfile?.fullName || 'Admin',
-        createdAt: new Date().toISOString()
-      });
-
-      navigate(`/${currentTenantId}/admin/dashboard`);
+      // Pequeña espera para que el estado de Firebase se propague
+      setTimeout(() => {
+        navigate(`/${currentTenantId}/admin/dashboard`, { replace: true });
+      }, 500);
     } catch (err: any) {
       console.error(err);
       setError('Error al guardar la configuración.');

@@ -45,31 +45,27 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
     return <div className="h-screen flex items-center justify-center">Cargando...</div>;
   }
 
-  const tenantId = resolveTenantId(userProfile);
-  const role = userProfile?.role;
-  const location = window.location.pathname;
+  if (!user) {
+    return <>{children}</>;
+  }
 
-  if (user && !tenantId) {
+  const tenantId = resolveTenantId(userProfile);
+
+  if (!tenantId) {
     return <Navigate to="/onboarding" replace />;
   }
 
-  if (user && tenantId) {
-    if (userProfile?.status === 'PENDING_SETUP') {
-        return <Navigate to="/onboarding" replace />;
-    }
-
-    // SI EL USUARIO YA ESTÁ EN UNA RUTA DE POS, NO LO REDIRIGIMOS AL DASHBOARD
-    if (location.includes('/pos')) {
-      return <>{children}</>;
-    }
-
-    if (role === 'owner' || role === 'admin') {
-      return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
-    }
-    return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
+  if (userProfile?.status === 'PENDING_SETUP') {
+    return <Navigate to="/onboarding" replace />;
   }
 
-  return <>{children}</>;
+  // Si ya estamos en una ruta válida (Dashboard o POS), no redirigir
+  const path = window.location.pathname;
+  if (path.includes('/admin') || path.includes('/pos')) {
+    return <>{children}</>;
+  }
+
+  return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
 }
 
 function OnboardingGate() {
