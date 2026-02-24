@@ -249,7 +249,7 @@ const Topbar: React.FC<TopbarProps> = React.memo(
 
 const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const { user: firebaseUser, userProfile } = useAuth();
-  const { rates } = useRates();
+  const { rates, updateRates } = useRates();
   const location = useLocation();
   const navigate = useNavigate();
   const widgetManager = useWidgetManager();

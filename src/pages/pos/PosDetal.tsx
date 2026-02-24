@@ -36,7 +36,7 @@ const PosContent = () => {
   const { userProfile } = useAuth();
   const { rates } = useRates();
   
-  const { items, addProductByCode, updateQty, removeItem, totals, setRateValue, clearCart } = useCart();
+  const { items, addProductByCode, updateQty, removeItem, totals, rateValue, setRateValue, clearCart } = useCart();
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');

@@ -86,9 +86,16 @@ export interface Movement {
 
 export interface AppConfig {
   companyName: string;
-  companyRif?: string; // Nuevo
-  companyLogo?: string; // Nuevo (Base64)
-  receiptMessage?: string; // Nuevo
+  companyRif?: string;
+  companyPhone?: string;
+  companyEmail?: string;
+  companyAddress?: string;
+  companyLogo?: string;
+  receiptMessage?: string;
+  defaultIva?: number;
+  mainCurrency?: 'USD' | 'BS';
+  invoicePrefix?: string;
+  ticketFooter?: string;
   currency: string;
   language: string;
   theme: {

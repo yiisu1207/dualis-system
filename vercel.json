@@ -1,12 +1,17 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/*", "use": "@vercel/node" },
-    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "public": true,
+  "cleanUrls": true,
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/scanner", "destination": "/api/scanner.cjs" },
+    { "source": "/api/assistant", "destination": "/api/assistant.cjs" },
+    { "source": "/api/passkey-auth-options", "destination": "/api/passkey-auth-options.cjs" },
+    { "source": "/api/passkey-auth-verify", "destination": "/api/passkey-auth-verify.cjs" },
+    { "source": "/api/passkey-register-options", "destination": "/api/passkey-register-options.cjs" },
+    { "source": "/api/passkey-register-verify", "destination": "/api/passkey-register-verify.cjs" },
+    { "source": "/api/revoke-sessions", "destination": "/api/revoke-sessions.cjs" },
+    { "source": "/api/(.*)", "destination": "/api/$1.cjs" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

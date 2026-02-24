@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { NumericFormat } from 'react-number-format';
-import { DayPicker, DayContentProps } from 'react-day-picker';
+import { DayPicker } from 'react-day-picker';
 import {
   Customer,
   Movement,
@@ -123,20 +123,6 @@ const SmartDatePicker: React.FC<{
             selected={selected}
             onSelect={handleSelect}
             weekStartsOn={1}
-            components={{
-              DayContent: (props: DayContentProps) => {
-                const key = toDateKey(props.date);
-                const hasRate = rateDates?.has(key);
-                return (
-                  <div className="flex flex-col items-center">
-                    <span>{props.date.getDate()}</span>
-                    {hasRate && (
-                      <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                    )}
-                  </div>
-                );
-              },
-            }}
           />
         </div>
       )}

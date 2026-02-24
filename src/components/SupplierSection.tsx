@@ -222,6 +222,26 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
     [detailMovementsChrono]
   );
 
+  const selectedSupplierTotals = useMemo(() => {
+    const items = detailMovementsChrono;
+    const bcv = items
+      .filter((m) => m.accountType === AccountType.BCV)
+      .reduce((acc, m) => acc + (m.movementType === MovementType.FACTURA ? m.amountUsd : -m.amountUsd), 0);
+    const grupo = items
+      .filter((m) => m.accountType === AccountType.GRUPO)
+      .reduce((acc, m) => acc + (m.movementType === MovementType.FACTURA ? m.amountUsd : -m.amountUsd), 0);
+    const div = items
+      .filter((m) => m.accountType === AccountType.DIVISA)
+      .reduce((acc, m) => acc + (m.movementType === MovementType.FACTURA ? m.amountUsd : -m.amountUsd), 0);
+    return { bcv, grupo, div };
+  }, [detailMovementsChrono]);
+
+  const resolveAccountDotClass = (accountType: AccountType) => {
+    if (accountType === AccountType.BCV) return 'bg-blue-500';
+    if (accountType === AccountType.GRUPO) return 'bg-orange-500';
+    return 'bg-emerald-500';
+  };
+
   useEffect(() => {
     let active = true;
     const resolveRate = async () => {

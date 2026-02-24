@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTenant } from '../../context/TenantContext';
 import { useRates } from '../../context/RatesContext';
+import { useAuth } from '../../context/AuthContext';
 import { 
   collection, 
   doc, 
@@ -85,6 +86,7 @@ const KPICard = ({ title, value, subtext, icon: Icon, colorClass, trend, alert }
 export default function AdminDashboard({ onTabChange }: { onTabChange?: (tab: string) => void }) {
   const { tenantId } = useTenant();
   const { rates, updateRates } = useRates();
+  const { userProfile } = useAuth();
   
   const [activeTerminals, setActiveTerminals] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);

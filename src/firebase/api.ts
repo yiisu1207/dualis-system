@@ -14,7 +14,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './config';
-import { AppConfig, ExchangeRates, ReconciliationRecord } from '../types';
+import { AppConfig, ExchangeRates, ReconciliationRecord } from '../../types';
 
 export type RequestStatus =
   | 'pending_match'

@@ -19,6 +19,20 @@ type CompanyUser = {
   role?: string;
 };
 
+type BookCompareRequest = {
+  id: string;
+  businessId: string;
+  requesterId: string;
+  requesterName?: string;
+  requesterEmail?: string;
+  targetUserId: string;
+  targetUserName?: string;
+  requesterCustomerId?: string;
+  responderCustomerId?: string;
+  status: string;
+  createdAt: string;
+};
+
 interface BooksComparePanelProps {
   businessId: string;
   currentUserId: string;
@@ -52,7 +66,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     'idle' | 'pending_match' | 'accepted' | 'connected' | 'closed' | 'rejected'
   >('idle');
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
-  const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<BookCompareRequest[]>([]);
   const [incomingMatchMap, setIncomingMatchMap] = useState<Record<string, string>>({});
   const [incomingMatchTermMap, setIncomingMatchTermMap] = useState<Record<string, string>>({});
   const [requestLoading, setRequestLoading] = useState(false);
@@ -219,7 +233,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     );
 
     const unsubscribe = onSnapshot(pendingQuery, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as BookCompareRequest));
       const nextIds = new Set(items.map((item) => item.id));
       const lastIds = lastIncomingIdsRef.current;
       const hasNew = items.some((item) => !lastIds.has(item.id));
@@ -831,7 +845,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
           Cliente a comparar
         </label>
         <div className="mt-2">
-          <Autocomplete
+          <Autocomplete<Customer>
             items={customers}
             stringify={(item) => item.id}
             secondary={(item) => item.cedula || ''}

@@ -37,6 +37,7 @@ export default function OnboardingWizard() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const pinInputRef = React.useRef<HTMLInputElement>(null);
 
   // --- STATE ---
   const [formData, setFormData] = useState({
@@ -240,7 +241,10 @@ export default function OnboardingWizard() {
                 <h1 className="text-3xl font-black text-slate-900 tracking-tight">PIN de Autoridad</h1>
                 <p className="text-slate-400 font-medium mt-2">Crea una llave secreta para acciones críticas.</p>
               </header>
-              <div className="bg-slate-900 rounded-[2.5rem] p-10 flex flex-col items-center text-center">
+              <div 
+                className="bg-slate-900 rounded-[2.5rem] p-10 flex flex-col items-center text-center cursor-pointer hover:bg-slate-800 transition-colors"
+                onClick={() => pinInputRef.current?.focus()}
+              >
                 <label className="text-[10px] font-black uppercase tracking-[0.4em] text-indigo-400 mb-6">4 DÍGITOS REQUERIDOS</label>
                 <div className="flex gap-4 mb-8">
                   {[0,1,2,3].map(i => (
@@ -249,8 +253,18 @@ export default function OnboardingWizard() {
                     </div>
                   ))}
                 </div>
-                <input type="password" maxLength={4} className="absolute opacity-0 pointer-events-none" autoFocus value={formData.pin} onChange={e => setFormData({...formData, pin: e.target.value.replace(/\D/g, '')})} />
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Este PIN será necesario para borrar facturas o clientes.</p>
+                <input 
+                  ref={pinInputRef}
+                  type="text" 
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4} 
+                  className="absolute opacity-0 h-0 w-0 overflow-hidden" 
+                  autoFocus 
+                  value={formData.pin} 
+                  onChange={e => setFormData({...formData, pin: e.target.value.replace(/\D/g, '')})} 
+                />
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Haz clic aquí para escribir tu PIN.</p>
               </div>
               <div className="flex gap-4">
                 <button onClick={() => setStep(3)} className="flex-1 py-5 bg-slate-50 text-slate-400 rounded-3xl font-black text-xs uppercase tracking-widest">Volver</button>
