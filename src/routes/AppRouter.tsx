@@ -47,17 +47,20 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
 
   const tenantId = resolveTenantId(userProfile);
   const role = userProfile?.role;
-  const setupCompleted = userProfile?.status === 'ACTIVE' && userProfile?.businessId; 
-  // Podríamos usar una prop específica setupCompleted si existiera, por ahora usamos status
+  const location = window.location.pathname;
 
   if (user && !tenantId) {
     return <Navigate to="/onboarding" replace />;
   }
 
   if (user && tenantId) {
-    // Si el usuario tiene tenantId pero no ha pasado el onboarding (ej: status PENDING)
     if (userProfile?.status === 'PENDING_SETUP') {
         return <Navigate to="/onboarding" replace />;
+    }
+
+    // SI EL USUARIO YA ESTÁ EN UNA RUTA DE POS, NO LO REDIRIGIMOS AL DASHBOARD
+    if (location.includes('/pos')) {
+      return <>{children}</>;
     }
 
     if (role === 'owner' || role === 'admin') {

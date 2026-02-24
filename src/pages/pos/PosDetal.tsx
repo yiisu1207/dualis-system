@@ -17,6 +17,7 @@ import {
   Package, 
   CheckCircle2,
   AlertTriangle,
+  LogOut,
 } from 'lucide-react';
 
 type QuickProduct = {
@@ -226,6 +227,14 @@ const PosContent = () => {
         </div>
 
         <div className="flex items-center gap-4">
+           <button 
+             onClick={() => auth.signOut()}
+             className="h-10 w-10 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all border border-rose-100"
+             title="Cerrar Sesión"
+           >
+             <LogOut size={18} />
+           </button>
+           <div className="w-px h-8 bg-slate-200 mx-1"></div>
            {success && (
              <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-xs font-black animate-in fade-in slide-in-from-top-2">
                <CheckCircle2 size={14} /> {success}
