@@ -101,75 +101,85 @@ const PosContent = () => {
     );
   }, [clientQuery, clients]);
 
-  const handleAdd = async () => {
-    if (!searchQuery.trim()) return;
-    const ok = await addProductByCode(searchQuery, 'detal');
-    if (!ok) {
-      setError('Producto no encontrado.');
-      setTimeout(() => setError(''), 2000);
-      return;
-    }
+  const handleAddProduct = async (product: QuickProduct) => {
     setError('');
-    setSearchQuery('');
+    const ok = await addProductByCode(product.codigo, 'detal');
+    if (!ok) {
+      setError(`No se pudo añadir: ${product.name}`);
+      setTimeout(() => setError(''), 2000);
+    }
   };
 
   const handleCharge = async () => {
     if (!customer) {
       setError('Seleccione un cliente para facturar');
-      setTimeout(() => setError(''), 3000);
       return;
     }
     if (items.length === 0) {
       setError('El carrito está vacío');
-      setTimeout(() => setError(''), 3000);
       return;
     }
 
     try {
       setLoading(true);
+      setError('');
+      
+      const batchDate = new Date().toISOString();
+      const simpleDate = batchDate.split('T')[0];
+
       // 1. Registrar el movimiento (Factura)
       const movementPayload = {
         businessId: empresa_id,
         entityId: customer.id,
         concept: `Venta POS - Caja ${cajaId || 'Principal'}`,
         amount: totals.totalUsd,
+        originalAmount: totals.totalBs,
         amountInUSD: totals.totalUsd,
         currency: 'USD',
-        date: new Date().toISOString().split('T')[0],
+        date: simpleDate,
+        createdAt: batchDate,
         movementType: 'FACTURA',
         accountType: 'BCV',
         rateUsed: rateValue,
-        items: items.map(i => ({ id: i.id, nombre: i.nombre, qty: i.qty, price: i.priceUsd })),
-        cajaId: cajaId,
-        createdAt: new Date().toISOString()
+        items: items.map(i => ({ 
+          id: i.id, 
+          nombre: i.nombre, 
+          qty: i.qty, 
+          price: i.priceUsd,
+          subtotal: i.qty * i.priceUsd
+        })),
+        cajaId: cajaId || 'principal',
+        vendedorId: userProfile?.uid || 'sistema',
+        vendedorNombre: userProfile?.fullName || 'Vendedor'
       };
+
       await addDoc(collection(db, 'movements'), movementPayload);
 
-      // 2. Actualizar stock
+      // 2. Actualizar stock y estadísticas de terminal
       for (const item of items) {
-        // Intentar actualizar en inventory (root) o products (business)
-        // Por consistencia con loadData, usamos products en business
         const pRef = doc(db, `businesses/${empresa_id}/products`, item.id);
-        await updateDoc(pRef, { stock: increment(-item.qty) });
-      }
-
-      // 3. Actualizar totales de la caja
-      if (cajaId) {
-        const cRef = doc(db, `businesses/${empresa_id}/terminals`, cajaId);
-        await updateDoc(cRef, {
-          totalFacturado: increment(totals.totalBs),
-          movimientos: increment(1)
+        await updateDoc(pRef, { 
+          stock: increment(-item.qty) 
         });
       }
 
-      setSuccess('¡Cobro exitoso!');
+      if (cajaId) {
+        const cRef = doc(db, `businesses/${empresa_id}/terminals`, cajaId);
+        await updateDoc(cRef, {
+          totalFacturado: increment(totals.totalUsd),
+          movimientos: increment(1),
+          ultimaVenta: batchDate
+        });
+      }
+
+      setSuccess('¡Venta procesada y stock actualizado!');
       clearCart();
       setCustomer(null);
       setClientQuery('');
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
-      console.error(err);
-      setError('Error procesando el cobro');
+      console.error("Error en cobro:", err);
+      setError('Error crítico al procesar la venta');
     } finally {
       setLoading(false);
     }
@@ -252,7 +262,7 @@ const PosContent = () => {
                 {products.map((product) => (
                   <button
                     key={product.id}
-                    onClick={() => addProductByCode(product.codigo, 'detal')}
+                    onClick={() => handleAddProduct(product)}
                     className="group bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:border-slate-300 hover:-translate-y-1 transition-all text-left flex flex-col h-32 justify-between"
                   >
                     <div>

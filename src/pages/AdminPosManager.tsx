@@ -77,6 +77,11 @@ export default function AdminPosManager() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
+  // Auditoría
+  const [selectedTerminalAudit, setSelectedTerminalAudit] = useState<Terminal | null>(null);
+  const [auditMovements, setAuditMovements] = useState<any[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  
   // NUEVO: Estado para las pestañas Detal/Mayor
   const [activeTab, setActiveTab] = useState<'detal' | 'mayor'>('detal');
   
@@ -106,6 +111,27 @@ export default function AdminPosManager() {
 
     return () => unsub();
   }, [businessId]);
+
+  // Auditoría de movimientos
+  useEffect(() => {
+    if (!selectedTerminalAudit || !businessId) return;
+    
+    setLoadingAudit(true);
+    const q = query(
+      collection(db, 'movements'), 
+      where('businessId', '==', businessId),
+      where('cajaId', '==', selectedTerminalAudit.id),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      setAuditMovements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoadingAudit(false);
+    });
+
+    return () => unsub();
+  }, [selectedTerminalAudit, businessId]);
 
   // 2. ANALYTICS (Suma Global de TODAS las cajas)
   const stats = useMemo(() => {
@@ -270,6 +296,13 @@ export default function AdminPosManager() {
 
               {/* Card Footer */}
               <div className="p-8 pt-0 flex gap-3">
+                <button 
+                  onClick={() => setSelectedTerminalAudit(t)}
+                  className="h-14 w-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-inner"
+                  title="Auditoría de Ventas"
+                >
+                  <Activity size={20} />
+                </button>
                 {t.estado === 'abierta' && isAdmin && (
                   <button 
                     onClick={() => handleCloseShift(t.id)}
@@ -299,6 +332,70 @@ export default function AdminPosManager() {
           )}
         </div>
       </div>
+
+      {/* AUDIT MODAL (JOURNAL) */}
+      {selectedTerminalAudit && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-end bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-2xl h-screen shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
+            <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Auditoría: {selectedTerminalAudit.nombre}</h2>
+                <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest mt-1">Historial de Transacciones (Últimas 50)</p>
+              </div>
+              <button onClick={() => setSelectedTerminalAudit(null)} className="h-12 w-12 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors"><X size={24} /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 custom-scroll">
+              {loadingAudit ? (
+                <div className="h-full flex flex-col items-center justify-center opacity-40">
+                  <Loader2 className="animate-spin mb-4" size={32} />
+                  <p className="text-xs font-bold uppercase tracking-widest">Consultando registros...</p>
+                </div>
+              ) : auditMovements.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center opacity-40 text-center">
+                  <Activity size={64} className="mb-6" />
+                  <h3 className="text-xl font-black">Sin Movimientos</h3>
+                  <p className="text-sm font-medium mt-2">Esta terminal aún no ha procesado ventas.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {auditMovements.map((m) => (
+                    <div key={m.id} className="p-6 rounded-3xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all group">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xs">
+                            {m.vendedorNombre?.charAt(0) || 'V'}
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-slate-900">{m.entityId}</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase">{new Date(m.createdAt).toLocaleTimeString()} • {m.date}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-black text-slate-900">${Number(m.amountInUSD || m.amount).toFixed(2)}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Rate: {m.rateUsed || 0} BS</p>
+                        </div>
+                      </div>
+                      
+                      {/* Items mini-list */}
+                      {m.items && (
+                        <div className="pt-4 border-t border-slate-50 space-y-2">
+                          {m.items.map((item: any, idx: number) => (
+                            <div key={idx} className="flex justify-between text-[10px] font-medium text-slate-500">
+                              <span>{item.qty}x {item.nombre}</span>
+                              <span className="font-bold text-slate-700">${Number(item.price).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* NEW TERMINAL MODAL */}
       {isModalOpen && (

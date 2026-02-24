@@ -42,6 +42,15 @@ import HelpCenter from './components/HelpCenter';
 import WidgetLaunchpad from './components/WidgetLaunchpad';
 import AdminPosManager from './pages/AdminPosManager';
 
+// WIDGETS COMPONENTS
+import StickyNotesWidget from './components/StickyNotesWidget';
+import RateConverterWidget from './components/RateConverterWidget';
+import TimerWidget from './components/TimerWidget';
+import PriceCheckerWidget from './components/PriceCheckerWidget';
+import TodoListWidget from './components/TodoListWidget';
+import TeamChatWidget from './components/TeamChatWidget';
+import SpeedDialWidget from './components/SpeedDialWidget';
+
 // FIREBASE
 import { auth, db } from './firebase/config';
 import {
@@ -586,6 +595,87 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       />
 
       <SmartCalculatorWidget rates={legacyRates as any} isOpen={widgetManager.widgets.calculator.isOpen} isMinimized={widgetManager.widgets.calculator.isMinimized} position={widgetManager.widgets.calculator.position} onClose={() => widgetManager.closeWidget('calculator')} onMinimize={() => widgetManager.setMinimized('calculator', !widgetManager.widgets.calculator.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('calculator', pos)} />
+      
+      {/* FLOATING WIDGETS RENDERER */}
+      {widgetManager.widgets.notes.isOpen && (
+        <StickyNotesWidget 
+          isOpen={true} 
+          isMinimized={widgetManager.widgets.notes.isMinimized} 
+          position={widgetManager.widgets.notes.position} 
+          onClose={() => widgetManager.closeWidget('notes')} 
+          onMinimize={() => widgetManager.setMinimized('notes', !widgetManager.widgets.notes.isMinimized)} 
+          onPositionChange={(pos) => widgetManager.setPosition('notes', pos)} 
+        />
+      )}
+
+      {widgetManager.widgets.converter.isOpen && (
+        <RateConverterWidget 
+          rates={legacyRates as any}
+          isOpen={true} 
+          isMinimized={widgetManager.widgets.converter.isMinimized} 
+          position={widgetManager.widgets.converter.position} 
+          onClose={() => widgetManager.closeWidget('converter')} 
+          onMinimize={() => widgetManager.setMinimized('converter', !widgetManager.widgets.converter.isMinimized)} 
+          onPositionChange={(pos) => widgetManager.setPosition('converter', pos)} 
+        />
+      )}
+
+      {widgetManager.widgets.timer.isOpen && (
+        <TimerWidget 
+          isOpen={true} 
+          isMinimized={widgetManager.widgets.timer.isMinimized} 
+          position={widgetManager.widgets.timer.position} 
+          onClose={() => widgetManager.closeWidget('timer')} 
+          onMinimize={() => widgetManager.setMinimized('timer', !widgetManager.widgets.timer.isMinimized)} 
+          onPositionChange={(pos) => widgetManager.setPosition('timer', pos)} 
+        />
+      )}
+
+      {widgetManager.widgets.priceChecker.isOpen && (
+        <PriceCheckerWidget 
+          isOpen={true} 
+          isMinimized={widgetManager.widgets.priceChecker.isMinimized} 
+          position={widgetManager.widgets.priceChecker.position} 
+          onClose={() => widgetManager.closeWidget('priceChecker')} 
+          onMinimize={() => widgetManager.setMinimized('priceChecker', !widgetManager.widgets.priceChecker.isMinimized)} 
+          onPositionChange={(pos) => widgetManager.setPosition('priceChecker', pos)} 
+        />
+      )}
+
+      {widgetManager.widgets.todo.isOpen && (
+        <TodoListWidget 
+          isOpen={true} 
+          isMinimized={widgetManager.widgets.todo.isMinimized} 
+          position={widgetManager.widgets.todo.position} 
+          onClose={() => widgetManager.closeWidget('todo')} 
+          onMinimize={() => widgetManager.setMinimized('todo', !widgetManager.widgets.todo.isMinimized)} 
+          onPositionChange={(pos) => widgetManager.setPosition('todo', pos)} 
+        />
+      )}
+
+      {widgetManager.widgets.chat.isOpen && (
+        <TeamChatWidget 
+          user={user as any}
+          isOpen={true} 
+          isMinimized={widgetManager.widgets.chat.isMinimized} 
+          position={widgetManager.widgets.chat.position} 
+          onClose={() => widgetManager.closeWidget('chat')} 
+          onMinimize={() => widgetManager.setMinimized('chat', !widgetManager.widgets.chat.isMinimized)} 
+          onPositionChange={(pos) => widgetManager.setPosition('chat', pos)} 
+        />
+      )}
+
+      {widgetManager.widgets.speedDial.isOpen && (
+        <SpeedDialWidget 
+          isOpen={true} 
+          isMinimized={widgetManager.widgets.speedDial.isMinimized} 
+          position={widgetManager.widgets.speedDial.position} 
+          onClose={() => widgetManager.closeWidget('speedDial')} 
+          onMinimize={() => widgetManager.setMinimized('speedDial', !widgetManager.widgets.speedDial.isMinimized)} 
+          onPositionChange={(pos) => widgetManager.setPosition('speedDial', pos)} 
+        />
+      )}
+
       <AIChat 
         config={{} as any}
         customers={customers}
