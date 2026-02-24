@@ -4,6 +4,7 @@
   "cleanUrls": true,
   "framework": "vite",
   "rewrites": [
+    { "source": "/api/bcv", "destination": "/api/bcv.cjs" },
     { "source": "/api/(.*)", "destination": "/api/$1.cjs" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

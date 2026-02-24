@@ -30,8 +30,10 @@ import {
   UserCheck,
   Loader2,
   Clock,
-  Save // <-- AQUÍ ESTABA EL ERROR: Faltaba importar Save
+  Save,
+  Download
 } from 'lucide-react';
+import ExcelJS from 'exceljs';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 interface Terminal {
@@ -87,6 +89,24 @@ export default function AdminPosManager() {
   
   // Form State
   const [newTerminal, setNewTerminal] = useState({ nombre: '', tipo: 'detal' as 'detal' | 'mayor' });
+
+  const handleExportExcel = async () => {
+    if (!auditMovements.length) return;
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Auditoria');
+    worksheet.columns = [
+      { header: 'Fecha', key: 'date', width: 15 },
+      { header: 'Concepto', key: 'concept', width: 30 },
+      { header: 'Monto ($)', key: 'amount', width: 15 },
+      { header: 'Tasa BCV', key: 'rate', width: 15 }
+    ];
+    auditMovements.forEach(m => worksheet.addRow({ date: m.date, concept: m.concept, amount: m.amountInUSD || m.amount, rate: m.rateUsed }));
+    const buffer = await workbook.xlsx.writeBuffer();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([buffer]));
+    link.download = `Auditoria_${selectedTerminalAudit?.nombre}.xlsx`;
+    link.click();
+  };
 
   // 1. REAL-TIME LISTENER
   useEffect(() => {
@@ -340,7 +360,15 @@ export default function AdminPosManager() {
             <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <div>
                 <h2 className="text-2xl font-black text-slate-900 tracking-tight">Auditoría: {selectedTerminalAudit.nombre}</h2>
-                <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest mt-1">Historial de Transacciones (Últimas 50)</p>
+                <div className="flex items-center gap-4 mt-1">
+                  <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Historial de Transacciones</p>
+                  <button 
+                    onClick={handleExportExcel}
+                    className="flex items-center gap-1.5 text-[9px] font-black uppercase bg-emerald-50 text-emerald-600 px-2 py-1 rounded-md hover:bg-emerald-600 hover:text-white transition-all"
+                  >
+                    <Download size={10} /> Exportar Excel
+                  </button>
+                </div>
               </div>
               <button onClick={() => setSelectedTerminalAudit(null)} className="h-12 w-12 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors"><X size={24} /></button>
             </div>

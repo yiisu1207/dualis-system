@@ -13,6 +13,7 @@ interface RatesContextValue {
   rates: Rates;
   loading: boolean;
   updateRates: (newRates: Partial<Rates>) => Promise<void>;
+  fetchBCVRate: () => Promise<number | null>;
 }
 
 const RatesContext = createContext<RatesContextValue | undefined>(undefined);
@@ -24,6 +25,17 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const businessId = userProfile?.businessId;
 
+  const fetchBCVRate = async () => {
+    try {
+      const res = await fetch('/api/bcv');
+      const data = await res.json();
+      return data.rate || null;
+    } catch (e) {
+      console.error("Error fetching BCV:", e);
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (!businessId) {
       setLoading(false);
@@ -33,16 +45,27 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setLoading(true);
     const docRef = doc(db, 'businessConfigs', businessId);
     
-    const unsub = onSnapshot(docRef, (docSnap) => {
+    const unsub = onSnapshot(docRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
+        const currentBCV = Number(data.tasaBCV || 36.5);
+        const lastUpd = data.updatedAt || '';
+        
         setRates({
-          tasaBCV: Number(data.tasaBCV || 36.5),
+          tasaBCV: currentBCV,
           tasaGrupo: Number(data.tasaGrupo || 42.0),
-          lastUpdated: data.updatedAt || '',
+          lastUpdated: lastUpd,
         });
+
+        // AUTO-UPDATE: Si no se ha actualizado hoy, buscar la tasa
+        const today = new Date().toISOString().split('T')[0];
+        if (!lastUpd.startsWith(today)) {
+          const freshRate = await fetchBCVRate();
+          if (freshRate && freshRate !== currentBCV) {
+            await updateRates({ tasaBCV: freshRate });
+          }
+        }
       } else {
-        // Valores por defecto si no existe el documento
         setRates({ tasaBCV: 36.5, tasaGrupo: 42.0, lastUpdated: new Date().toISOString() });
       }
       setLoading(false);
@@ -64,7 +87,7 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <RatesContext.Provider value={{ rates, loading, updateRates }}>
+    <RatesContext.Provider value={{ rates, loading, updateRates, fetchBCVRate }}>
       {children}
     </RatesContext.Provider>
   );

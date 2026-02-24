@@ -18,7 +18,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   LogOut,
+  FileText
 } from 'lucide-react';
+import ReceiptModal from '../../components/ReceiptModal';
 
 type QuickProduct = {
   id: string;
@@ -47,6 +49,7 @@ const PosContent = () => {
   const [clients, setClients] = useState<any[]>([]);
   const [products, setProducts] = useState<QuickProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastMovement, setLastMovement] = useState<any>(null);
 
   // Sync rates context with cart context
   useEffect(() => {
@@ -173,6 +176,7 @@ const PosContent = () => {
         });
       }
 
+      setLastMovement(movementPayload);
       setSuccess('¡Venta procesada y stock actualizado!');
       clearCart();
       setCustomer(null);
@@ -459,6 +463,14 @@ const PosContent = () => {
           </div>
         </aside>
       </div>
+
+      {lastMovement && (
+        <ReceiptModal 
+          movement={lastMovement} 
+          config={{ companyName: userProfile?.fullName || 'Mi Negocio' } as any} 
+          onClose={() => setLastMovement(null)} 
+        />
+      )}
     </div>
   );
 };
