@@ -66,6 +66,7 @@ const KPICard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
 export default function AdminPosManager() {
+  const navigate = useNavigate();
   const { userProfile } = useAuth();
   const { rates } = useRates();
   const businessId = userProfile?.businessId;
@@ -278,7 +279,7 @@ export default function AdminPosManager() {
                   </button>
                 )}
                 <button 
-                  onClick={() => window.open(`/${businessId}/pos/${t.tipo}?cajaId=${t.id}`, '_blank')}
+                  onClick={() => navigate(`/${businessId}/pos/${t.tipo}?cajaId=${t.id}`)}
                   className={`flex-[2] py-4 rounded-2xl font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl transition-all hover:scale-105 active:scale-95 ${t.estado === 'abierta' ? 'bg-slate-900 text-white shadow-slate-200' : 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'}`}
                 >
                   <ExternalLink size={14} />
