@@ -3,7 +3,7 @@ import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { useCart, CartProvider } from '../../context/CartContext';
 import { useRates } from '../../context/RatesContext';
 import { collection, getDocs, query, where, addDoc, doc, updateDoc, increment } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import { db, auth } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
 import { TenantProvider } from '../../context/TenantContext'; // Ensure Tenant context is available
 import { 
@@ -110,6 +110,19 @@ const PosContent = () => {
     const ok = await addProductByCode(product.codigo, 'detal');
     if (!ok) {
       setError(`No se pudo añadir: ${product.name}`);
+      setTimeout(() => setError(''), 2000);
+    }
+  };
+
+  const handleAdd = async () => {
+    const code = searchQuery.trim();
+    if (!code) return;
+    setError('');
+    const ok = await addProductByCode(code, 'detal');
+    if (ok) {
+      setSearchQuery('');
+    } else {
+      setError(`Producto no encontrado: ${code}`);
       setTimeout(() => setError(''), 2000);
     }
   };

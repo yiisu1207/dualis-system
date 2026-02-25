@@ -2,11 +2,7 @@ import React from 'react';
 import { Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { TenantProvider } from '../context/TenantContext';
-import AdminLayout from '../layouts/AdminLayout';
 import PosLayout from '../layouts/PosLayout';
-import AdminDashboard from '../features/admin/AdminDashboard';
-import AdminInventario from '../features/admin/AdminInventario';
-import AdminFinanzas from '../features/admin/AdminFinanzas';
 import PosDetal from '../pages/pos/PosDetal';
 import PosMayor from '../pages/pos/PosMayor';
 import NotAuthorized from '../features/common/NotAuthorized';
@@ -15,23 +11,13 @@ import OnboardingWizard from '../features/onboarding/OnboardingWizard';
 import LandingPage from '../components/LandingPage';
 import Login from '../components/Login';
 import Register from '../components/Register';
-import PlanesFacturacion from '../pages/admin/PlanesFacturacion';
+import AdminPosManager from '../pages/AdminPosManager';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { WidgetProvider } from '../context/WidgetContext';
 import MainSystem from '../MainSystem';
 import { useTenant } from '../context/TenantContext';
-// ...existing code...
-import ModulePage from '../pages/ModulePage';
-import Cuentas from '../pages/Cuentas';
-import Finanzas from '../pages/Finanzas';
-import RecursosHumanos from '../pages/RecursosHumanos';
-import Inventario from '../pages/Inventario';
-import Ventas from '../pages/Ventas';
-import Reportes from '../pages/Reportes';
-import Configuracion from '../pages/Configuracion';
 import Terms from '../pages/Terms';
 import Privacy from '../pages/Privacy';
-import AdminPosManager from '../pages/AdminPosManager';
 
 function resolveTenantId(profile: { empresa_id?: string; businessId?: string } | null) {
   if (!profile) return '';
@@ -56,10 +42,11 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
   }
 
   if (userProfile?.status === 'PENDING_SETUP') {
+    const isInsideSystem = window.location.pathname.includes('/admin') || window.location.pathname.includes('/pos');
+    if (isInsideSystem) return <>{children}</>;
     return <Navigate to="/onboarding" replace />;
   }
 
-  // Si ya estamos en una ruta válida (Dashboard o POS), no redirigir
   const path = window.location.pathname;
   if (path.includes('/admin') || path.includes('/pos')) {
     return <>{children}</>;
@@ -119,7 +106,6 @@ function TenantGuard({ children }: { children: React.ReactNode }) {
   return <TenantProvider tenantId={empresa_id}>{children}</TenantProvider>;
 }
 
-// Wrapper para pasar ownerId/businessId correctamente - MUDADO AFUERA DE LAS RUTAS
 function AdminCoreWrapper() {
   const { tenantId } = useTenant();
   const params = useParams();
@@ -131,65 +117,57 @@ function AdminCoreWrapper() {
   );
 }
 
+// Redirige rutas legacy al tenant dashboard del usuario autenticado
+function LegacyRedirect() {
+  const { user, userProfile, loading } = useAuth();
+
+  if (loading) {
+    return <div className="h-screen flex items-center justify-center">Cargando...</div>;
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  const tenantId = resolveTenantId(userProfile);
+  if (!tenantId) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
+}
+
 export default function AppRouter() {
   return (
     <Routes>
-      <Route
-        path="/"
-        element={
-          <AuthEntry>
-            <LandingPage />
-          </AuthEntry>
-        }
-      />
-      <Route
-        path="/login"
-        element={
-          <AuthEntry>
-            <Login />
-          </AuthEntry>
-        }
-      />
-      <Route
-        path="/register"
-        element={
-          <AuthEntry>
-            <Register />
-          </AuthEntry>
-        }
-      />
+      {/* Rutas públicas */}
+      <Route path="/" element={<AuthEntry><LandingPage /></AuthEntry>} />
+      <Route path="/login" element={<AuthEntry><Login /></AuthEntry>} />
+      <Route path="/register" element={<AuthEntry><Register /></AuthEntry>} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/onboarding" element={<OnboardingGate />} />
       <Route path="/unauthorized" element={<NotAuthorized />} />
 
-      {/* Legacy routes (keep existing system alive) */}
-      <Route path="/dashboard" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/cobranzas" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/contabilidad" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/tasas" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/cxp" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/rrhh" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/inventario" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/vision" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/comparar" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/conciliacion" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/configuracion" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/help" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/ayuda" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      <Route path="/finanzas" element={<ProtectedRoute><WidgetProvider><MainSystem /></WidgetProvider></ProtectedRoute>} />
-      
-      <Route path="/cuentas" element={<ProtectedRoute><Cuentas /></ProtectedRoute>} />
-      <Route path="/recursos-humanos" element={<ProtectedRoute><RecursosHumanos /></ProtectedRoute>} />
-      <Route path="/inventario-legacy" element={<ProtectedRoute><Inventario /></ProtectedRoute>} />
-      <Route path="/ventas" element={<ProtectedRoute><Ventas /></ProtectedRoute>} />
-      <Route path="/reportes" element={<ProtectedRoute><Reportes /></ProtectedRoute>} />
-      <Route path="/configuracion-legacy" element={<ProtectedRoute><Configuracion /></ProtectedRoute>} />
-      <Route path="/module" element={<ProtectedRoute><ModulePage title="Módulo" /></ProtectedRoute>} />
+      {/* Rutas legacy — redirigen al dashboard del tenant */}
+      <Route path="/dashboard" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/cobranzas" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/contabilidad" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/tasas" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/cxp" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/rrhh" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/inventario" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/vision" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/comparar" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/conciliacion" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/configuracion" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/help" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+      <Route path="/ayuda" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
 
+      {/* Redirección raíz del tenant */}
       <Route path="/:empresa_id" element={<Navigate to="admin/dashboard" replace />} />
 
-     {/* RUTA CENTRAL DEL SISTEMA */}
+      {/* Sistema principal multi-tenant */}
       <Route
         path="/:empresa_id/admin/cajas"
         element={
@@ -207,7 +185,7 @@ export default function AppRouter() {
         }
       />
 
-      {/* RUTAS POS CORREGIDAS PARA EL USO DE <Outlet /> */}
+      {/* POS */}
       <Route
         path="/:empresa_id/pos"
         element={

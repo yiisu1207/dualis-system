@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep -l \"TODO\\\\|FIXME\\\\|XXX\\\\|HACK\")",
+      "Bash(cd /c/Users/DELL/Downloads/\"Dualis System\")"
+    ]
+  }
+}

@@ -15,89 +15,66 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700;800&family=Inter:wght@300;400;500;600;700;800&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
         :root {
-            --odoo-primary: #0f766e;
-            --odoo-secondary: #c0841f;
-            --odoo-dark: #1b1b1b;
-            --odoo-bg: #f6f2ec;
-            --odoo-border: #e7e2d9;
-            --font-display: 'Fraunces', serif;
-            --font-body: 'Manrope', system-ui, sans-serif;
-            --font-family: var(--font-body);
-            --ui-bg: #f6f2ec;
-            --ui-panel: #ffffff;
-            --ui-elev: #fbf8f4;
-            --ui-ink: #1b1b1b;
-            --ui-muted: #6b7280;
-            --ui-border: #e7e2d9;
-            --ui-accent: #0f766e;
-            --ui-accent-2: #c0841f;
-            --ui-soft: rgba(15, 118, 110, 0.08);
-        }
-        .dark {
-            --odoo-bg: #0f1115;
-            --odoo-dark: #07090c;
-            --odoo-border: #1f2329;
-            --ui-bg: #0f1115;
-            --ui-panel: #151922;
-            --ui-elev: #1b202c;
-            --ui-ink: #f4f2ee;
-            --ui-muted: #9aa4b2;
-            --ui-border: #242a36;
-            --ui-accent: #20b2a2;
-            --ui-accent-2: #e1b36a;
-            --ui-soft: rgba(32, 178, 162, 0.12);
+            --bg: #f4f6fb;
+            --surface: #ffffff;
+            --surface2: #eef1f8;
+            --surface3: #e2e7f3;
+            --border: rgba(0,0,0,0.07);
+            --border2: rgba(0,0,0,0.13);
+            --accent: #4f6ef7;
+            --accent2: #7c3aed;
+            --accent3: #06b6d4;
+            --gold: #d97706;
+            --green: #059669;
+            --red: #dc2626;
+            --text: #111827;
+            --text2: #4b5563;
+            --text3: #9ca3af;
+            --font-display: 'Syne', sans-serif;
+            --font-body: 'Instrument Sans', sans-serif;
+            --font-mono: 'DM Mono', monospace;
         }
         body { 
-            font-family: var(--font-family); 
-            background: var(--odoo-bg); 
-            color: var(--ui-ink); 
+            font-family: var(--font-body); 
+            background: var(--bg); 
+            color: var(--text); 
             overflow-y: auto;
             overflow-x: hidden;
+            min-height: 100vh;
         }
-        .odoo-card {
-            background: white;
-            border: 1px solid var(--odoo-border);
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 0;
         }
-        .dark .odoo-card {
-            background: #1e293b;
-            border-color: #334155;
-            color: #f8fafc;
-        }
+        /* Ambient backgrounds */
+        .amb { position: fixed; border-radius: 50%; filter: blur(120px); pointer-events: none; z-index: 0; animation: drift 12s ease-in-out infinite alternate; }
+        .a1 { width: 600px; height: 400px; background: rgba(79, 110, 247, 0.06); top: -100px; right: -100px; }
+        .a2 { width: 500px; height: 500px; background: rgba(124, 58, 237, 0.04); bottom: 100px; left: -150px; animation-delay: -6s; }
+        .a3 { width: 300px; height: 300px; background: rgba(6, 182, 212, 0.03); top: 50%; left: 40%; animation-delay: -3s; }
+        @keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(30px, 20px) scale(1.05); } }
+        
         /* Scrollbar */
-        .custom-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
-        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
         
         .animate-in { animation: fadeIn 0.3s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-float { animation: float 4s ease-in-out infinite; }
-        @keyframes float { 0% { transform: translateY(0); } 50% { transform: translateY(-6px); } 100% { transform: translateY(0); } }
-        /* Small UI animations */
-        @keyframes floatUp {
-            0% { transform: translateY(0); }
-            50% { transform: translateY(-6px); }
-            100% { transform: translateY(0); }
-        }
-        .animate-float { animation: floatUp 3s ease-in-out infinite; }
-        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        .shimmer-text { background: linear-gradient(90deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.0) 100%); background-size: 200% 100%; display: inline-block; -webkit-background-clip: text; background-clip: text; animation: shimmer 2.5s linear infinite; }
-        
-        input:focus, select:focus, textarea:focus {
-            outline: none;
-            border-color: var(--odoo-primary);
-            box-shadow: 0 0 0 1px var(--odoo-primary);
-        }
     </style>
 </head>
 <body>
+    <div class="amb a1"></div>
+    <div class="amb a2"></div>
+    <div class="amb a3"></div>
     <div id="root"></div>
     
     <script type="module" src="/src/index.tsx"></script>

@@ -1,283 +1,421 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { NumericFormat } from 'react-number-format';
-import {
-  Movement,
-  AccountType,
-  MovementType,
-  OperationalRecord,
-  ReconciliationRecord,
-  User,
-} from '../../types';
+import { Movement, AccountType, MovementType, ReconciliationRecord } from '../../types';
 import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
 import { getReconciliationHistory, saveReconciliationRecord } from '../firebase/api';
-import { isDemoMode, loadDemoData } from '../utils/demoStore';
+import {
+  Landmark,
+  Upload,
+  Download,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  FileText,
+  BarChart3,
+} from 'lucide-react';
 
 interface ReconciliationSectionProps {
   movements: Movement[];
-  records: OperationalRecord[];
-  user: User;
   businessId: string;
-  userId?: string;
-  ownerIdFilter?: string;
+  ownerId?: string;
+  rates?: { bcv: number; grupo: number; lastUpdated?: string };
+}
+
+interface BankLine {
+  date: string;
+  description: string;
+  amount: number;
+  matched: boolean;
+}
+
+const ACCOUNTS = [
+  { key: AccountType.BCV,    label: 'Banesco BCV',       shortLabel: 'BCV' },
+  { key: AccountType.GRUPO,  label: 'Grupo Paralelo',    shortLabel: 'GRUPO' },
+  { key: AccountType.DIVISA, label: 'Caja Efectivo USD', shortLabel: 'DIVISA' },
+] as const;
+
+function parseCSV(text: string): BankLine[] {
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  const results: BankLine[] = [];
+  for (const line of lines) {
+    const cols = line.split(/[,;|\t]/).map(c => c.trim().replace(/"/g, ''));
+    if (cols.length < 2) continue;
+    const rawAmt = cols[2] || cols[cols.length - 1];
+    const amount = parseFloat(rawAmt.replace(/[^\d.-]/g, ''));
+    if (!isNaN(amount) && cols[0]) {
+      results.push({ date: cols[0], description: cols[1] || '', amount: Math.abs(amount), matched: false });
+    }
+  }
+  return results;
+}
+
+function exportCSV(rows: ReconciliationRecord[]) {
+  const headers = ['Fecha', 'Cuenta', 'Saldo Sistema', 'Conteo Físico', 'Diferencia', 'Responsable'];
+  const body = rows.map(r => [
+    new Date(r.createdAt).toLocaleDateString('es-VE'),
+    r.account,
+    r.system.toFixed(2),
+    r.physical.toFixed(2),
+    r.difference.toFixed(2),
+    r.userName,
+  ]);
+  const csv = [headers, ...body].map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `conciliacion_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
   movements,
-  records,
-  user,
   businessId,
-  userId,
-  ownerIdFilter,
+  ownerId,
 }) => {
   const [selectedAccount, setSelectedAccount] = useState<AccountType>(AccountType.DIVISA);
-  const [physicalAmount, setPhysicalAmount] = useState<string>('');
+  const [physicalAmount, setPhysicalAmount] = useState('');
   const [history, setHistory] = useState<ReconciliationRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [filterAccount, setFilterAccount] = useState<'ALL' | AccountType>('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [bankLines, setBankLines] = useState<BankLine[]>([]);
+  const [showBankImport, setShowBankImport] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!businessId && !isDemoMode()) return;
-    const loadHistory = async () => {
-      try {
-        setLoadingHistory(true);
-        if (isDemoMode()) {
-          const demo = loadDemoData();
-          const items = (demo?.reconciliations || []) as ReconciliationRecord[];
-          const filtered = ownerIdFilter
-            ? items.filter((i) => i.ownerId === ownerIdFilter)
-            : items;
-          setHistory(filtered);
-          return;
-        }
-        const data = await getReconciliationHistory(businessId, 100, ownerIdFilter);
-        setHistory(data);
-      } catch (e) {
-        console.error('Error cargando conciliaciones', e);
-      } finally {
-        setLoadingHistory(false);
-      }
+    if (!businessId) return;
+    setLoadingHistory(true);
+    getReconciliationHistory(businessId, 100, ownerId)
+      .then(data => setHistory(data))
+      .catch(e => console.error('Error cargando conciliaciones', e))
+      .finally(() => setLoadingHistory(false));
+  }, [businessId, ownerId]);
+
+  // ── System balance per account ──────────────────────────────────────────────
+  const balanceByAccount = useMemo(() => {
+    const result: Record<string, number> = {
+      [AccountType.BCV]: 0,
+      [AccountType.GRUPO]: 0,
+      [AccountType.DIVISA]: 0,
     };
-    loadHistory();
-  }, [businessId, ownerIdFilter]);
+    movements.forEach(m => {
+      if (!(m.accountType in result)) return;
+      const usd = getMovementUsdAmount(m);
+      if (m.movementType === MovementType.ABONO) {
+        result[m.accountType] += m.isSupplierMovement ? -usd : usd;
+      }
+    });
+    return result;
+  }, [movements]);
 
-  const systemBalance = useMemo(() => {
-    // Calculamos el saldo teórico: Ingresos - Egresos
-    // Ingresos: Abonos de clientes (Dinero que entró a caja)
-    const ingresos = movements
-      .filter((m) => m.accountType === selectedAccount && m.movementType === MovementType.ABONO)
-      .reduce((acc, m) => acc + getMovementUsdAmount(m), 0);
+  const systemBalance = balanceByAccount[selectedAccount] ?? 0;
 
-    // Egresos 1: Pagos a proveedores desde esta cuenta
-    const egresosProveedores = movements
-      .filter(
-        (m) =>
-          m.accountType === selectedAccount &&
-          m.movementType === MovementType.ABONO &&
-          m.isSupplierMovement
-      )
-      .reduce((acc, m) => acc + getMovementUsdAmount(m), 0);
+  const lastRecByAccount = useMemo(() => {
+    const map: Record<string, ReconciliationRecord | null> = {};
+    ACCOUNTS.forEach(a => { map[a.key] = null; });
+    history.forEach(h => {
+      const prev = map[h.account];
+      if (!prev || new Date(h.createdAt) > new Date(prev.createdAt)) {
+        map[h.account] = h;
+      }
+    });
+    return map;
+  }, [history]);
 
-    // Egresos 2: Gastos operativos registrados
-    const egresosGastos = records
-      .filter((r) => r.accountSource === selectedAccount)
-      .reduce((acc, r) => acc + r.amount, 0);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text = ev.target?.result as string;
+      const lines = parseCSV(text).map(line => ({
+        ...line,
+        matched: movements.some(m =>
+          Math.abs(getMovementUsdAmount(m) - line.amount) < 0.01 &&
+          m.accountType === selectedAccount
+        ),
+      }));
+      setBankLines(lines);
+      setShowBankImport(true);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
-    return ingresos - egresosProveedores - egresosGastos;
-  }, [movements, records, selectedAccount]);
+  const handleSave = async () => {
+    if (!physicalAmount || !businessId) return;
+    const physical = parseFloat(physicalAmount);
+    const record: Omit<ReconciliationRecord, 'id'> = {
+      businessId,
+      ownerId,
+      account: selectedAccount,
+      system: systemBalance,
+      physical,
+      difference: physical - systemBalance,
+      userName: ownerId || 'Sistema',
+      userId: ownerId,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      setSaving(true);
+      const id = await saveReconciliationRecord(record);
+      setHistory(prev => [{ id, ...record }, ...prev]);
+      setPhysicalAmount('');
+    } catch (e) {
+      console.error('Error guardando conciliación', e);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const filteredHistory = useMemo(() => {
-    const from = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
-    const to = dateTo ? new Date(`${dateTo}T23:59:59`) : null;
-    return history.filter((item) => {
-      if (filterAccount !== 'ALL' && item.account !== filterAccount) return false;
-      const itemDate = new Date(item.createdAt);
-      if (from && itemDate < from) return false;
-      if (to && itemDate > to) return false;
+    return history.filter(h => {
+      if (filterAccount !== 'ALL' && h.account !== filterAccount) return false;
+      const d = new Date(h.createdAt);
+      if (dateFrom && d < new Date(`${dateFrom}T00:00:00`)) return false;
+      if (dateTo && d > new Date(`${dateTo}T23:59:59`)) return false;
       return true;
     });
   }, [history, filterAccount, dateFrom, dateTo]);
 
-  const handleSave = async () => {
-    if (!physicalAmount) return;
-    const physical = parseFloat(physicalAmount);
-    const diff = physical - systemBalance;
-
-    const record: Omit<ReconciliationRecord, 'id'> = {
-      businessId,
-      ownerId: userId,
-      account: selectedAccount,
-      system: systemBalance,
-      physical: physical,
-      difference: diff,
-      userName: user.name,
-      userId,
-      createdAt: new Date().toISOString(),
-    };
-
-    try {
-      const id = await saveReconciliationRecord(record);
-      setHistory((prev) => [{ id, ...record }, ...prev]);
-      setPhysicalAmount('');
-      alert(`Auditoría Guardada. Diferencia: ${formatCurrency(diff)}`);
-    } catch (e) {
-      console.error('Error guardando conciliación', e);
-      alert('Error guardando la conciliación. Intenta nuevamente.');
-    }
-  };
+  const diff = physicalAmount ? parseFloat(physicalAmount) - systemBalance : null;
+  const diffOk = diff !== null && Math.abs(diff) < 0.01;
+  const matchedCount = bankLines.filter(l => l.matched).length;
 
   return (
-    <div className="app-section space-y-10 animate-in">
-      <div className="app-section-header">
-        <p className="app-subtitle">Auditoria de Saldos</p>
-        <h1 className="app-title uppercase">Conciliacion de Cajas</h1>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-black text-slate-900 text-2xl leading-tight">Conciliación Bancaria</h1>
+          <p className="text-slate-400 text-sm mt-0.5 font-medium">Auditoría y cuadre de saldos</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input type="file" ref={fileRef} accept=".csv,.txt" className="hidden" onChange={handleFileUpload} />
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all"
+          >
+            <Upload size={13} />
+            Importar Extracto
+          </button>
+          {history.length > 0 && (
+            <button
+              onClick={() => exportCSV(filteredHistory)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-[#4f6ef7] text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-md shadow-blue-200"
+            >
+              <Download size={13} />
+              Exportar
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-        <div className="app-panel p-10">
-          <div className="flex justify-between items-center mb-10">
-            <h3 className="text-xl font-black italic uppercase tracking-tighter">
-              Verificación de Saldo
-            </h3>
-            <select
-              value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value as AccountType)}
-              className="app-input text-[10px] uppercase tracking-widest"
+      {/* Account KPI cards */}
+      <div className="grid grid-cols-3 gap-4">
+        {ACCOUNTS.map(acc => {
+          const bal = balanceByAccount[acc.key] ?? 0;
+          const last = lastRecByAccount[acc.key];
+          const lastDiff = last ? last.difference : null;
+          const isActive = selectedAccount === acc.key;
+          return (
+            <button
+              key={acc.key}
+              onClick={() => setSelectedAccount(acc.key)}
+              className={`rounded-3xl border p-5 text-left transition-all ${
+                isActive
+                  ? 'bg-[#4f6ef7] border-blue-500 text-white shadow-lg shadow-blue-200'
+                  : 'bg-white border-slate-100 hover:border-blue-200 hover:shadow-sm'
+              }`}
             >
-              <option value={AccountType.BCV}>BANESCO BCV</option>
-              <option value={AccountType.GRUPO}>GRUPO PARALELO</option>
-              <option value={AccountType.DIVISA}>CAJA EFECTIVO $</option>
-            </select>
+              <div className="flex items-center justify-between mb-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${isActive ? 'bg-white/20' : 'bg-blue-50'}`}>
+                  <Landmark size={15} className={isActive ? 'text-white' : 'text-[#4f6ef7]'} />
+                </div>
+                {lastDiff !== null && (
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${
+                    Math.abs(lastDiff) < 0.01
+                      ? isActive ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
+                      : isActive ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'
+                  }`}>
+                    {Math.abs(lastDiff) < 0.01 ? 'OK' : `Dif. ${formatCurrency(lastDiff)}`}
+                  </span>
+                )}
+              </div>
+              <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>
+                {acc.shortLabel}
+              </p>
+              <p className={`text-lg font-black leading-tight ${isActive ? 'text-white' : 'text-slate-900'}`}>
+                {formatCurrency(bal)}
+              </p>
+              {last && (
+                <p className={`text-[10px] mt-1.5 ${isActive ? 'text-blue-200' : 'text-slate-400'}`}>
+                  Última: {new Date(last.createdAt).toLocaleDateString('es-VE')}
+                </p>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Bank import panel */}
+      {showBankImport && bankLines.length > 0 && (
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText size={15} className="text-[#4f6ef7]" />
+              <span className="font-black text-slate-800 text-[14px]">Extracto Importado</span>
+              <span className="ml-1 bg-emerald-100 text-emerald-700 text-[10px] font-black px-2 py-0.5 rounded-lg">{matchedCount} coinciden</span>
+              {bankLines.length - matchedCount > 0 && (
+                <span className="bg-amber-100 text-amber-700 text-[10px] font-black px-2 py-0.5 rounded-lg">
+                  {bankLines.length - matchedCount} sin registro
+                </span>
+              )}
+            </div>
+            <button onClick={() => { setBankLines([]); setShowBankImport(false); }}
+              className="text-[11px] font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest">
+              Cerrar
+            </button>
+          </div>
+          <div className="overflow-x-auto max-h-56 custom-scroll">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-slate-100 sticky top-0 bg-white">
+                  {['Fecha', 'Descripción', 'Monto', 'Estado'].map(h => (
+                    <th key={h} className="px-5 py-3 text-left font-black text-slate-400 uppercase tracking-widest text-[10px]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {bankLines.map((line, i) => (
+                  <tr key={i} className="border-b border-slate-50">
+                    <td className="px-5 py-2.5 text-slate-500">{line.date}</td>
+                    <td className="px-5 py-2.5 text-slate-700 max-w-[200px] truncate">{line.description}</td>
+                    <td className="px-5 py-2.5 font-black text-slate-800">{formatCurrency(line.amount)}</td>
+                    <td className="px-5 py-2.5">
+                      {line.matched
+                        ? <span className="flex items-center gap-1 text-emerald-600 text-[11px] font-black"><CheckCircle2 size={12} />Coincide</span>
+                        : <span className="flex items-center gap-1 text-amber-600 text-[11px] font-black"><AlertTriangle size={12} />Sin registro</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Main grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Verification form */}
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <h3 className="font-black text-slate-800 text-[15px]">Verificación de Saldo</h3>
+            <span className="text-[11px] font-black uppercase tracking-widest px-3 py-1 bg-blue-50 text-[#4f6ef7] rounded-xl">
+              {ACCOUNTS.find(a => a.key === selectedAccount)?.label}
+            </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
-            <div className="p-8 app-card">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                Saldo en Sistema
-              </p>
-              <p className="text-3xl font-black text-slate-900 dark:text-slate-100">
-                {formatCurrency(systemBalance)}
-              </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Saldo en Sistema</p>
+              <p className="text-xl font-black text-slate-900">{formatCurrency(systemBalance)}</p>
+              <p className="text-[10px] text-slate-400 mt-1">Calculado de movimientos</p>
             </div>
-            <div className="p-8 app-card">
-              <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">
-                Conteo Físico Real
-              </p>
-              <div className="relative mt-2">
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 font-black text-slate-300 text-lg">
-                  $
-                </span>
+            <div className="rounded-2xl bg-blue-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#4f6ef7] mb-2">Conteo Físico</p>
+              <div className="relative">
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 font-black text-slate-400 text-sm">$</span>
                 <NumericFormat
                   value={physicalAmount}
-                  onValueChange={(values) => setPhysicalAmount(values.value || '')}
+                  onValueChange={v => setPhysicalAmount(v.value || '')}
                   thousandSeparator="."
-                  decimalSeparator="," 
+                  decimalSeparator=","
                   decimalScale={2}
                   allowNegative={false}
-                  className="w-full pl-6 bg-transparent border-none outline-none text-2xl font-black text-indigo-700"
+                  className="w-full pl-5 bg-transparent border-none outline-none text-lg font-black text-slate-800 placeholder:text-slate-300"
                   placeholder="0,00"
                 />
               </div>
             </div>
           </div>
 
-          {physicalAmount && (
-            <div
-              className={`p-8 rounded-[2rem] mb-10 text-center animate-in zoom-in ${
-                parseFloat(physicalAmount) - systemBalance === 0
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-rose-50 text-rose-700'
-              }`}
-            >
-              <p className="text-[10px] font-black uppercase tracking-widest mb-1">
-                Discrepancia Auditada
-              </p>
-              <p className="text-4xl font-black">
-                {formatCurrency(parseFloat(physicalAmount) - systemBalance)}
-              </p>
-              <p className="text-[10px] font-bold mt-2 uppercase tracking-tighter">
-                {parseFloat(physicalAmount) - systemBalance === 0
-                  ? 'Saldos perfectamente cuadrados'
-                  : 'Se requiere ajuste de auditoría'}
-              </p>
+          {diff !== null && (
+            <div className={`rounded-2xl p-5 text-center ${diffOk ? 'bg-emerald-50 border border-emerald-100' : 'bg-rose-50 border border-rose-100'}`}>
+              <div className="flex items-center justify-center gap-2 mb-1">
+                {diffOk
+                  ? <CheckCircle2 size={16} className="text-emerald-600" />
+                  : <AlertTriangle size={16} className="text-rose-600" />
+                }
+                <p className={`text-[10px] font-black uppercase tracking-widest ${diffOk ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {diffOk ? 'Saldos cuadrados' : 'Discrepancia detectada'}
+                </p>
+              </div>
+              <p className={`text-3xl font-black ${diffOk ? 'text-emerald-700' : 'text-rose-700'}`}>{formatCurrency(diff)}</p>
             </div>
           )}
 
           <button
             onClick={handleSave}
-            className="w-full py-5 app-btn app-btn-primary text-xs shadow-2xl hover:scale-[1.02] transition-all active:scale-95"
+            disabled={!physicalAmount || saving}
+            className="w-full py-4 bg-[#4f6ef7] text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-md shadow-blue-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            REGISTRAR CIERRE DE CAJA
+            {saving ? <><Clock size={14} className="animate-spin" />Guardando...</> : 'Registrar Cierre de Caja'}
           </button>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
-          <div className="p-8 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
-            <div className="flex flex-col gap-4">
-              <h3 className="font-black text-slate-800 dark:text-slate-100 text-sm uppercase tracking-widest">
-                Historial de Cierres
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <select
-                  value={filterAccount}
-                  onChange={(e) => setFilterAccount(e.target.value as 'ALL' | AccountType)}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-100"
-                >
-                  <option value="ALL">Todas las cuentas</option>
-                  <option value={AccountType.BCV}>BANESCO BCV</option>
-                  <option value={AccountType.GRUPO}>GRUPO PARALELO</option>
-                  <option value={AccountType.DIVISA}>CAJA EFECTIVO $</option>
-                </select>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-100"
-                />
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-100"
-                />
-              </div>
+        {/* History */}
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart3 size={15} className="text-slate-400" />
+              <span className="font-black text-slate-800 text-[14px]">Historial de Cierres</span>
+              <span className="ml-auto text-[11px] font-black text-slate-400">{filteredHistory.length} registros</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <select value={filterAccount} onChange={e => setFilterAccount(e.target.value as any)}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-bold text-slate-700">
+                <option value="ALL">Todas</option>
+                {ACCOUNTS.map(a => <option key={a.key} value={a.key}>{a.shortLabel}</option>)}
+              </select>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700" />
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700" />
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto max-h-[500px] custom-scroll p-6">
+
+          <div className="flex-1 overflow-y-auto max-h-[340px] custom-scroll">
             {loadingHistory ? (
-              <div className="py-20 text-center text-slate-400 dark:text-slate-500 font-black italic uppercase">
-                Cargando historial...
-              </div>
+              <div className="py-10 text-center text-slate-400 text-[12px] font-black">Cargando historial...</div>
             ) : filteredHistory.length === 0 ? (
-              <div className="py-20 text-center text-slate-300 dark:text-slate-600 font-black italic uppercase">
-                Sin registros de conciliación
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-300">
+                <Landmark size={28} />
+                <span className="text-[12px] font-black">Sin registros de conciliación</span>
               </div>
             ) : (
-              filteredHistory.map((h) => (
-                <div
-                  key={h.id}
-                  className="p-6 bg-white dark:bg-slate-900 border-b border-slate-50 dark:border-slate-800 flex justify-between items-center group"
-                >
+              filteredHistory.map(h => (
+                <div key={h.id} className="px-6 py-4 border-b border-slate-50 flex items-center justify-between hover:bg-slate-50/60 transition-all">
                   <div>
-                    <p className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase italic">
-                      {h.account}
-                    </p>
-                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold">
-                      {new Date(h.createdAt).toLocaleString()} • {h.userName}
-                    </p>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[11px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">{h.account}</span>
+                      <span className="text-[11px] text-slate-400">{new Date(h.createdAt).toLocaleDateString('es-VE')}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">{h.userName}</p>
                   </div>
                   <div className="text-right">
-                    <p
-                      className={`text-sm font-black ${
-                        h.difference === 0 ? 'text-emerald-600' : 'text-rose-600'
-                      }`}
-                    >
-                      {h.difference === 0 ? 'OK' : formatCurrency(h.difference)}
-                    </p>
-                    <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">
-                      Dif. Real
-                    </p>
+                    <div className={`flex items-center gap-1 justify-end mb-0.5 ${Math.abs(h.difference) < 0.01 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {Math.abs(h.difference) < 0.01
+                        ? <><CheckCircle2 size={12} /><span className="text-[12px] font-black">OK</span></>
+                        : <><AlertTriangle size={12} /><span className="text-[12px] font-black">{formatCurrency(h.difference)}</span></>
+                      }
+                    </div>
+                    <p className="text-[10px] text-slate-400">Sistema: {formatCurrency(h.system)}</p>
                   </div>
                 </div>
               ))

@@ -1,9 +1,10 @@
 import React from 'react';
-// Deploy Version: 1.0.1 - PIN & SECURITY
+// Deploy Version: 2.5.0 - Full Remodel
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { RatesProvider } from './context/RatesContext';
+import { ToastProvider } from './context/ToastContext';
 import AppRouter from './routes/AppRouter';
 
 export default function App() {
@@ -11,9 +12,11 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <RatesProvider>
-          <BrowserRouter>
-            <AppRouter />
-          </BrowserRouter>
+          <ToastProvider>
+            <BrowserRouter>
+              <AppRouter />
+            </BrowserRouter>
+          </ToastProvider>
         </RatesProvider>
       </AuthProvider>
     </ThemeProvider>

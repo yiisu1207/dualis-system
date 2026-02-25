@@ -3,14 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRates } from '../context/RatesContext';
 import { 
-  collection, 
-  onSnapshot, 
-  query, 
-  where, 
-  addDoc, 
-  doc, 
-  updateDoc, 
-  serverTimestamp 
+  collection,
+  onSnapshot,
+  query,
+  where,
+  addDoc,
+  doc,
+  updateDoc,
+  serverTimestamp,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { 

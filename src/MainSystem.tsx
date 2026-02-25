@@ -1,23 +1,16 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate, useParams, Outlet } from 'react-router-dom';
 import {
   Customer,
   Movement,
-  AccountType,
-  MovementType,
   User,
-  AppConfig,
-  ExchangeRates,
-  PaymentCurrency,
-  Employee,
-  CashAdvance,
   Supplier,
-  PayrollReceipt,
 } from '../types';
 
-// CONTEXTO NUEVO
 import { useAuth } from './context/AuthContext';
 import { useRates } from './context/RatesContext';
+import { useToast } from './context/ToastContext';
+import { useBusinessData } from './hooks/useBusinessData';
 import { useTranslation } from 'react-i18next';
 import { useWidgetManager } from './context/WidgetContext';
 
@@ -37,12 +30,14 @@ import CustomerViewer from './components/CustomerViewer';
 import RateHistoryWall from './components/RateHistoryWall';
 import DataImporter from './components/DataImporter';
 import SmartCalculatorWidget from './components/SmartCalculatorWidget';
-import WidgetDock from './components/WidgetDock';
 import HelpCenter from './components/HelpCenter';
 import WidgetLaunchpad from './components/WidgetLaunchpad';
 import AdminPosManager from './pages/AdminPosManager';
+import NotificationCenter from './components/NotificationCenter';
+import ReportesSection from './components/ReportesSection';
+import ReconciliationSection from './components/ReconciliationSection';
 
-// WIDGETS COMPONENTS
+// WIDGETS
 import StickyNotesWidget from './components/StickyNotesWidget';
 import RateConverterWidget from './components/RateConverterWidget';
 import TimerWidget from './components/TimerWidget';
@@ -56,221 +51,118 @@ import { auth, db } from './firebase/config';
 import {
   collection,
   doc,
-  query,
-  where,
-  onSnapshot,
-  orderBy,
-  limit,
   addDoc,
   deleteDoc,
-  updateDoc
+  updateDoc,
 } from 'firebase/firestore';
+import { Bell } from 'lucide-react';
+import { logAudit } from './utils/auditLogger';
 
-type ConfigTabId =
-  | 'EMPRESA'
-  | 'USUARIOS'
-  | 'PERSONALIZACION'
-  | 'SISTEMA'
-  | 'MENSAJES'
-  | 'AUDITORIA';
-
-interface SearchResult {
-  id: string;
-  title: string;
-  subtitle: string;
-  type: 'Cliente' | 'Proveedor' | 'Empleado' | 'Producto' | 'Config' | 'Ruta' | 'Accion';
-  targetTab?: string;
-  targetConfigTab?: ConfigTabId;
-  entityId?: string;
-  action?: () => void;
-}
-
-type TopbarProps = {
+// ── Topbar ─────────────────────────────────────────────────────────────────────
+const Topbar: React.FC<{
   topbarTitle: string;
-  t: (key: string) => string;
-  i18n: any;
-  onOpenSidebar: () => void;
-  searchInputRef: React.RefObject<HTMLInputElement | null>;
-  globalSearchTerm: string;
-  onSearchTermChange: (value: string) => void;
-  onSearchBlur: () => void;
-  onSearchFocus: () => void;
-  showSearchResults: boolean;
-  globalSearchResults: SearchResult[];
-  onSearchResultClick: (result: SearchResult) => void;
-  notifications: Array<{ title: string; subtitle: string }>;
+  notifCount: number;
   showNotifications: boolean;
   onToggleNotifications: () => void;
-  onCloseNotifications: () => void;
   onOpenCalculator: () => void;
-  canImport: boolean;
-  onOpenImporter: () => void;
-  canManageRates: boolean;
-  isOnline: boolean;
-  pendingWrites: number;
-  syncError: string | null;
-  lastSyncAt: string | null;
-};
+  bcvRate: number;
+}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, bcvRate }) => (
+  <header className="h-16 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-7 flex items-center justify-between sticky top-0 z-50">
+    <div>
+      <div className="font-syne font-bold text-[17px] text-slate-900 leading-tight capitalize">{topbarTitle}</div>
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 mt-0.5">
+        <span>Dualis System</span>
+        <span className="text-slate-200">/</span>
+        <span className="text-slate-500 capitalize">{topbarTitle.toLowerCase()}</span>
+      </div>
+    </div>
 
-const Topbar: React.FC<TopbarProps> = React.memo(
-  ({
-    topbarTitle,
-    t,
-    i18n,
-    onOpenSidebar,
-    searchInputRef,
-    globalSearchTerm,
-    onSearchTermChange,
-    onSearchBlur,
-    onSearchFocus,
-    showSearchResults,
-    globalSearchResults,
-    onSearchResultClick,
-    notifications,
-    showNotifications,
-    onToggleNotifications,
-    onCloseNotifications,
-    onOpenCalculator,
-    canImport,
-    onOpenImporter,
-    canManageRates,
-    isOnline,
-    pendingWrites,
-    syncError,
-    lastSyncAt,
-  }) => {
-    const { rates, updateRates } = useRates();
-
-    return (
-      <header className="h-14 app-topbar flex items-center justify-between px-4 shrink-0 z-20">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onOpenSidebar}
-            className="lg:hidden text-slate-500 hover:text-slate-700"
-          >
-            <i className="fa-solid fa-bars text-xl"></i>
-          </button>
-          <nav className="hidden md:flex items-center text-sm font-medium text-slate-500">
-            <span className="hover:text-slate-900 cursor-pointer">
-              {t('app.name')}
-            </span>
-            <i className="fa-solid fa-chevron-right text-[10px] mx-2"></i>
-            <span className="text-slate-900 font-semibold">
-              {topbarTitle}
-            </span>
-          </nav>
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-1.5">
+        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        <div className="flex flex-col">
+          <span className="text-[10px] font-black uppercase tracking-tighter text-slate-400 leading-none">BCV</span>
+          <span className="text-[13px] font-mono font-bold text-amber-600">Bs. {bcvRate.toFixed(2)}</span>
         </div>
+      </div>
 
-        <div className="flex-1 max-w-2xl mx-6 hidden md:block relative z-50">
-          <div className="relative group">
-            <input
-              type="text"
-              placeholder="Buscador Maestro (Ctrl+K)"
-              className="w-full app-input pl-10 pr-4 text-sm"
-              ref={searchInputRef as any}
-              value={globalSearchTerm}
-              onChange={(e) => onSearchTermChange(e.target.value)}
-              onBlur={onSearchBlur}
-              onFocus={onSearchFocus}
-            />
-            <i className="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400"></i>
-          </div>
-          {showSearchResults && globalSearchResults.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 app-card overflow-hidden max-h-[400px] overflow-y-auto custom-scroll">
-              {globalSearchResults.map((result, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => onSearchResultClick(result)}
-                  className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-100 flex items-center gap-3"
-                >
-                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-600">
-                    {result.type.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-800">
-                      {result.title}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {result.subtitle}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+      <div className="w-px h-8 bg-slate-100 mx-1" />
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <select
-              value={i18n.language}
-              onChange={(e) => i18n.changeLanguage(e.target.value)}
-              className="h-10 rounded-full border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:border-slate-300"
-              title={t('language.label')}
-            >
-              <option value="es">{t('language.es')}</option>
-              <option value="en">{t('language.en')}</option>
-              <option value="ar">{t('language.ar')}</option>
-            </select>
-          </div>
+      <button
+        onClick={onToggleNotifications}
+        className={`relative w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${
+          showNotifications
+            ? 'bg-blue-50 border-blue-200 text-[#4f6ef7]'
+            : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-white hover:border-blue-200 hover:text-blue-600'
+        }`}
+      >
+        <Bell size={16} />
+        {notifCount > 0 && (
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+            {notifCount > 9 ? '9+' : notifCount}
+          </span>
+        )}
+      </button>
 
-          <button
-            type="button"
-            onClick={onOpenCalculator}
-            className="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center"
-            title="Calculadora inteligente"
-          >
-            <i className="fa-solid fa-calculator text-lg text-slate-600"></i>
-          </button>
+      <button
+        onClick={onOpenCalculator}
+        className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 hover:bg-white hover:border-blue-200 hover:text-blue-600 transition-all font-mono text-sm font-bold"
+      >
+        =
+      </button>
+    </div>
+  </header>
+));
 
-          <div className="flex gap-4 px-4 py-1.5 app-chip rounded-xl">
-            <div className="text-right">
-              <span className="block text-[9px] uppercase font-bold text-slate-400">BCV</span>
-              <input
-                type="number"
-                value={rates.tasaBCV}
-                onChange={(e) => updateRates({ tasaBCV: parseFloat(e.target.value) })}
-                disabled={!canManageRates}
-                className={`w-16 bg-transparent text-right font-bold text-sm outline-none ${
-                  canManageRates ? '' : 'cursor-not-allowed text-slate-400'
-                }`}
-              />
-            </div>
-            <div className="w-px bg-slate-200"></div>
-            <div className="text-right">
-              <span className="block text-[9px] uppercase font-bold text-slate-400">Grupo</span>
-              <input
-                type="number"
-                value={rates.tasaGrupo}
-                onChange={(e) => updateRates({ tasaGrupo: parseFloat(e.target.value) })}
-                disabled={!canManageRates}
-                className={`w-16 bg-transparent text-right font-bold text-sm outline-none ${
-                  canManageRates ? '' : 'cursor-not-allowed text-slate-400'
-                }`}
-              />
-            </div>
-          </div>
-        </div>
-      </header>
-    );
-  }
+// ── Confirm Dialog ─────────────────────────────────────────────────────────────
+interface ConfirmState {
+  message: string;
+  onConfirm: () => Promise<void>;
+}
+
+const ConfirmDialog: React.FC<{ state: ConfirmState; onClose: () => void }> = ({ state, onClose }) => (
+  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+    <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-100 max-w-sm w-full p-8 animate-in zoom-in-95">
+      <h3 className="text-lg font-black text-slate-900 mb-6">{state.message}</h3>
+      <div className="flex gap-3">
+        <button onClick={onClose} className="flex-1 py-3.5 bg-slate-100 text-slate-700 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all">
+          Cancelar
+        </button>
+        <button
+          onClick={async () => { await state.onConfirm(); onClose(); }}
+          className="flex-1 py-3.5 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all"
+        >
+          Confirmar
+        </button>
+      </div>
+    </div>
+  </div>
 );
 
+// ── MainSystem ─────────────────────────────────────────────────────────────────
 const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
-  const { user: firebaseUser, userProfile } = useAuth();
+  const { user: firebaseUser, userProfile, updateUserProfile } = useAuth();
   const { rates, updateRates } = useRates();
+  const toast = useToast();
   const location = useLocation();
   const navigate = useNavigate();
   const widgetManager = useWidgetManager();
-  const { t, i18n } = useTranslation();
-  
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // URL Multi-tenant
   const { empresa_id } = useParams<{ empresa_id: string }>();
   const adminBase = empresa_id ? `/${empresa_id}/admin` : '';
 
   const [activeTab, setActiveTab] = useState<string>(initialTab || 'resumen');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isImporterOpen, setIsImporterOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
+  const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('dualis_dismissed_notifs');
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
 
   const user: User | null = useMemo(() => {
     if (!firebaseUser) return null;
@@ -282,184 +174,213 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   }, [firebaseUser, userProfile]);
 
   const businessId = userProfile?.businessId || '';
-  const role = user?.role || 'pending';
-  const isAdmin = role === 'owner' || role === 'admin';
+  const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
-  // DATA STATES
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [movements, setMovements] = useState<Movement[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [advances, setAdvances] = useState<CashAdvance[]>([]);
-  const [payrollHistory, setPayrollHistory] = useState<PayrollReceipt[]>([]);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isImporterOpen, setIsImporterOpen] = useState(false);
-  const [globalSearchTerm, setGlobalSearchTerm] = useState('');
-  const [showSearchResults, setShowSearchResults] = useState(false);
+  // ── Data via hook (replaces 6 individual listeners) ──────────────────────────
+  const { customers, suppliers, movements, employees, advances, payrollHistory, inventoryItems } = useBusinessData(businessId);
 
-  const { updateUserProfile } = useAuth();
+  // ── Tab routing ──────────────────────────────────────────────────────────────
+  const tabRoutes: Record<string, string> = useMemo(() => ({
+    resumen:       `${adminBase}/dashboard`,
+    clientes:      `${adminBase}/cobranzas`,
+    contabilidad:  `${adminBase}/contabilidad`,
+    proveedores:   `${adminBase}/cxp`,
+    rrhh:          `${adminBase}/rrhh`,
+    inventario:    `${adminBase}/inventario`,
+    reportes:      `${adminBase}/reportes`,
+    vision:        `${adminBase}/vision`,
+    widgets:       `${adminBase}/widgets`,
+    comparar:      `${adminBase}/comparar`,
+    tasas:         `${adminBase}/tasas`,
+    conciliacion:  `${adminBase}/conciliacion`,
+    cajas:         `${adminBase}/cajas`,
+    config:        `${adminBase}/configuracion`,
+    help:          `${adminBase}/help`,
+  }), [adminBase]);
 
+  useEffect(() => {
+    const path = location.pathname;
+    for (const [tab, route] of Object.entries(tabRoutes)) {
+      if (path === route || path.startsWith(route + '/')) {
+        setActiveTab(tab);
+        break;
+      }
+    }
+  }, [location.pathname, tabRoutes]);
+
+  const goTab = useCallback((tab: string) => {
+    setActiveTab(tab);
+    if (tabRoutes[tab]) navigate(tabRoutes[tab]);
+  }, [navigate, tabRoutes]);
+
+  // ── Confirm helper ───────────────────────────────────────────────────────────
+  const withConfirm = useCallback((message: string, action: () => Promise<void>) => {
+    setConfirmState({ message, onConfirm: action });
+  }, []);
+
+  // ── Mutation handlers ────────────────────────────────────────────────────────
   const handleSaveProfile = async (patch: any) => {
     if (!firebaseUser) return;
     try {
       await updateDoc(doc(db, 'users', firebaseUser.uid), patch);
       updateUserProfile(patch);
       setIsProfileOpen(false);
-      alert('Perfil actualizado con éxito');
-    } catch (e) {
-      console.error(e);
-      alert('Error al actualizar perfil');
+      toast.success('Perfil actualizado correctamente');
+    } catch {
+      toast.error('Error al actualizar el perfil');
     }
   };
 
-  // LÓGICA DE BÚSQUEDA GLOBAL
-  const globalSearchResults = useMemo(() => {
-    if (!globalSearchTerm) return [];
-    const term = globalSearchTerm.toLowerCase();
-    const results: SearchResult[] = [];
-
-    // Buscar en Clientes
-    customers.forEach(c => {
-      if ((c.cedula || '').toLowerCase().includes(term) || (c.id || '').toLowerCase().includes(term)) {
-        results.push({ id: c.id, title: c.cedula, subtitle: 'Cliente', type: 'Cliente', targetTab: 'clientes' });
-      }
-    });
-
-    // Buscar en Rutas/Módulos
-    const modules = [
-      { title: 'Ventas y Cobranzas', tab: 'clientes' },
-      { title: 'Inventario de Productos', tab: 'inventario' },
-      { title: 'Recursos Humanos', tab: 'rrhh' },
-      { title: 'Configuración del Sistema', tab: 'config' },
-      { title: 'Vision Lab Analytics', tab: 'vision' }
-    ];
-    modules.forEach(m => {
-      if (m.title.toLowerCase().includes(term)) {
-        results.push({ id: m.tab, title: m.title, subtitle: 'Módulo', type: 'Ruta', targetTab: m.tab });
-      }
-    });
-
-    return results.slice(0, 10);
-  }, [globalSearchTerm, customers]);
-
-  const handleSearchResultClick = (result: SearchResult) => {
-    if (result.targetTab) {
-      setActiveTab(result.targetTab);
-      navigate(tabRoutes[result.targetTab]);
-    }
-    setGlobalSearchTerm('');
-    setShowSearchResults(false);
-  };
-  useEffect(() => {
-    if (!businessId) return;
-
-    const qCust = query(collection(db, 'customers'), where('businessId', '==', businessId));
-    const unsubCust = onSnapshot(qCust, (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
-
-    const qSupp = query(collection(db, 'suppliers'), where('businessId', '==', businessId));
-    const unsubSupp = onSnapshot(qSupp, (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
-
-    const qMov = query(collection(db, 'movements'), where('businessId', '==', businessId), orderBy('date', 'desc'), limit(200));
-    const unsubMov = onSnapshot(qMov, (snap) => setMovements(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
-
-    const qEmp = query(collection(db, `businesses/${businessId}/employees`), orderBy('name', 'asc'));
-    const unsubEmp = onSnapshot(qEmp, (snap) => setEmployees(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
-
-    const qAdv = query(collection(db, `businesses/${businessId}/payroll_advances`), orderBy('date', 'desc'));
-    const unsubAdv = onSnapshot(qAdv, (snap) => setAdvances(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
-
-    const qHist = query(collection(db, `businesses/${businessId}/payroll_history`), orderBy('date', 'desc'), limit(24));
-    const unsubHist = onSnapshot(qHist, (snap) => setPayrollHistory(snap.docs.map(d => ({ id: d.id, ...d.data() } as any))));
-
-    return () => { 
-      unsubCust(); unsubSupp(); unsubMov(); unsubEmp(); unsubAdv(); unsubHist();
-    };
-  }, [businessId]);
+  const uid = firebaseUser?.uid || '';
 
   const handleRegisterMovement = async (data: any) => {
     if (!businessId) return '';
     const docRef = await addDoc(collection(db, 'movements'), { ...data, businessId, createdAt: new Date().toISOString() });
+    logAudit(businessId, uid, 'CREAR', 'MOVIMIENTO', `${data.movementType || 'MOV'} — ${data.description || docRef.id}`);
     return docRef.id;
   };
 
   const updateMovement = async (id: string, updated: Partial<Movement>) => {
     await updateDoc(doc(db, 'movements', id), updated);
+    logAudit(businessId, uid, 'EDITAR', 'MOVIMIENTO', `ID: ${id}`);
   };
 
   const deleteMovement = async (id: string) => {
-    if (confirm('¿Eliminar movimiento?')) await deleteDoc(doc(db, 'movements', id));
+    withConfirm('¿Eliminar este movimiento?', async () => {
+      await deleteDoc(doc(db, 'movements', id));
+      logAudit(businessId, uid, 'ELIMINAR', 'MOVIMIENTO', `ID: ${id}`);
+      toast.success('Movimiento eliminado');
+    });
   };
 
   const handleRegisterCustomer = async (c: Customer) => {
     await addDoc(collection(db, 'customers'), { ...c, businessId });
+    logAudit(businessId, uid, 'CREAR', 'CLIENTE', c.cedula || c.email || '');
   };
 
   const handleUpdateCustomer = async (id: string, c: Customer) => {
     await updateDoc(doc(db, 'customers', id), c as any);
+    logAudit(businessId, uid, 'EDITAR', 'CLIENTE', c.cedula || `ID: ${id}`);
   };
 
   const handleDeleteCustomer = async (id: string) => {
-    if (confirm('¿Eliminar cliente?')) await deleteDoc(doc(db, 'customers', id));
+    withConfirm('¿Eliminar este cliente?', async () => {
+      await deleteDoc(doc(db, 'customers', id));
+      logAudit(businessId, uid, 'ELIMINAR', 'CLIENTE', `ID: ${id}`);
+      toast.success('Cliente eliminado');
+    });
   };
 
-  // PROVEEDORES HANDLERS
   const handleRegisterSupplier = async (s: Supplier) => {
     await addDoc(collection(db, 'suppliers'), { ...s, businessId });
+    logAudit(businessId, uid, 'CREAR', 'PROVEEDOR', s.contacto || s.rif || '');
   };
+
   const handleUpdateSupplier = async (id: string, s: Supplier) => {
     await updateDoc(doc(db, 'suppliers', id), s as any);
-  };
-  const handleDeleteSupplier = async (id: string) => {
-    if (confirm('¿Eliminar proveedor?')) await deleteDoc(doc(db, 'suppliers', id));
+    logAudit(businessId, uid, 'EDITAR', 'PROVEEDOR', s.contacto || `ID: ${id}`);
   };
 
-  // RRHH HANDLERS
-  const handleRegisterEmployee = async (emp: any) => {
-    await addDoc(collection(db, `businesses/${businessId}/employees`), { ...emp, businessId });
+  const handleDeleteSupplier = async (id: string) => {
+    withConfirm('¿Eliminar este proveedor?', async () => {
+      await deleteDoc(doc(db, 'suppliers', id));
+      logAudit(businessId, uid, 'ELIMINAR', 'PROVEEDOR', `ID: ${id}`);
+      toast.success('Proveedor eliminado');
+    });
   };
-  const handleUpdateEmployee = async (id: string, emp: any) => {
-    await updateDoc(doc(db, `businesses/${businessId}/employees`, id), emp);
-  };
-  const handleDeleteEmployee = async (id: string) => {
-    await deleteDoc(doc(db, `businesses/${businessId}/employees`, id));
-  };
+
   const handleRegisterAdvance = async (adv: any) => {
     await addDoc(collection(db, `businesses/${businessId}/payroll_advances`), { ...adv, businessId });
-  };
-  const handleRegisterPayrollCycle = async (receipt: any) => {
-    await addDoc(collection(db, `businesses/${businessId}/payroll_history`), { ...receipt, businessId });
+    logAudit(businessId, uid, 'CREAR', 'ANTICIPO', `${adv.employeeName || ''} — $${adv.amount || 0}`);
   };
 
-  const tabRoutes: Record<string, string> = {
-    resumen: `${adminBase}/dashboard`,
-    clientes: `${adminBase}/cobranzas`,
-    contabilidad: `${adminBase}/contabilidad`,
-    proveedores: `${adminBase}/cxp`,
-    rrhh: `${adminBase}/rrhh`,
-    inventario: `${adminBase}/inventario`,
-    vision: `${adminBase}/vision`,
-    widgets: `${adminBase}/widgets`,
-    comparar: `${adminBase}/comparar`,
-    tasas: `${adminBase}/tasas`,
-    cajas: `${adminBase}/cajas`,
-    config: `${adminBase}/configuracion`,
-    help: `${adminBase}/help`,
-  };
+  // ── Notifications derived from live data ─────────────────────────────────────
+  const notifications = useMemo(() => {
+    const items: Array<{ id: string; title: string; subtitle: string; type: 'warning' | 'info' }> = [];
 
-  useEffect(() => {
-    const path = location.pathname;
-    Object.entries(tabRoutes).forEach(([tab, route]) => {
-      if (path === route || path.startsWith(route + '/')) {
-        setActiveTab(tab);
-      }
+    // 1. Stock bajo
+    const lowStock = inventoryItems.filter(p => {
+      const stock = (p as any).stock ?? (p as any).quantity ?? 0;
+      const min = (p as any).minStock ?? 10;
+      return stock < min;
     });
-  }, [location.pathname, adminBase]);
+    if (lowStock.length > 0) {
+      items.push({ id: 'low-stock', title: `${lowStock.length} producto${lowStock.length > 1 ? 's' : ''} con stock bajo`, subtitle: 'Ver inventario', type: 'warning' });
+    }
 
-  const handleLogout = () => auth.signOut();
+    // 2. Movimientos del día
+    const today = new Date().toISOString().split('T')[0];
+    const todayTx = movements.filter(m => m.date?.startsWith(today));
+    if (todayTx.length > 0) {
+      items.push({ id: 'today-activity', title: `${todayTx.length} movimiento${todayTx.length > 1 ? 's' : ''} hoy`, subtitle: 'Actividad del día', type: 'info' });
+    }
 
-  // Compatibilidad con componentes legacy que esperan rates con bcv/grupo
+    // 3. CxC vencidas > 30 días
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const clientBalance: Record<string, number> = {};
+    movements.filter(m => !m.isSupplierMovement).forEach(m => {
+      if (!clientBalance[m.entityId]) clientBalance[m.entityId] = 0;
+      if (m.movementType === 'FACTURA') clientBalance[m.entityId] += (m.amountInUSD || 0);
+      if (m.movementType === 'ABONO') clientBalance[m.entityId] -= (m.amountInUSD || 0);
+    });
+    const overdueCount = [...new Set(
+      movements
+        .filter(m => !m.isSupplierMovement && m.movementType === 'FACTURA' && (m.date || '') < cutoffStr)
+        .filter(m => (clientBalance[m.entityId] || 0) > 0)
+        .map(m => m.entityId)
+    )].length;
+    if (overdueCount > 0) {
+      items.push({ id: 'overdue-cxc', title: `${overdueCount} cliente${overdueCount > 1 ? 's' : ''} con CxC vencida`, subtitle: 'Facturas sin cobrar > 30 días', type: 'warning' });
+    }
+
+    // 4. CxP pendiente con proveedores
+    const supplierBalance: Record<string, number> = {};
+    movements.filter(m => m.isSupplierMovement).forEach(m => {
+      if (!supplierBalance[m.entityId]) supplierBalance[m.entityId] = 0;
+      if (m.movementType === 'FACTURA') supplierBalance[m.entityId] += (m.amountInUSD || 0);
+      if (m.movementType === 'ABONO') supplierBalance[m.entityId] -= (m.amountInUSD || 0);
+    });
+    const debtSuppliers = Object.values(supplierBalance).filter(b => b > 0).length;
+    if (debtSuppliers > 0) {
+      items.push({ id: 'pending-cxp', title: `${debtSuppliers} proveedor${debtSuppliers > 1 ? 'es' : ''} con deuda pendiente`, subtitle: 'Ver CxP', type: 'info' });
+    }
+
+    return items;
+  }, [inventoryItems, movements]);
+
+  const visibleNotifications = useMemo(
+    () => notifications.filter(n => !dismissedNotifIds.has(n.id)),
+    [notifications, dismissedNotifIds]
+  );
+
+  const handleDismissNotif = useCallback((id: string) => {
+    setDismissedNotifIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      localStorage.setItem('dualis_dismissed_notifs', JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
+  const handleDismissAllNotifs = useCallback(() => {
+    setDismissedNotifIds(prev => {
+      const next = new Set([...prev, ...notifications.map(n => n.id)]);
+      localStorage.setItem('dualis_dismissed_notifs', JSON.stringify([...next]));
+      return next;
+    });
+  }, [notifications]);
+
   const legacyRates = { bcv: rates.tasaBCV, grupo: rates.tasaGrupo, lastUpdated: rates.lastUpdated };
+
+  const tabTitles: Record<string, string> = {
+    resumen: 'Resumen', clientes: 'Clientes', contabilidad: 'Contabilidad',
+    proveedores: 'Proveedores', rrhh: 'RRHH', inventario: 'Inventario',
+    reportes: 'Reportes', vision: 'VisionLab', widgets: 'Herramientas',
+    comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
+    cajas: 'Cajas', config: 'Configuración', help: 'Ayuda',
+  };
 
   return (
     <div className="h-screen w-full flex bg-slate-50 overflow-hidden font-inter">
@@ -470,57 +391,36 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           setIsOpen={setIsSidebarOpen}
           user={user}
           config={{ companyName: userProfile?.businessId } as any}
-          onLogout={handleLogout}
+          onLogout={() => auth.signOut()}
           onOpenProfile={() => setIsProfileOpen(true)}
         />
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <Topbar
-          topbarTitle={activeTab.toUpperCase()}
-          t={t}
-          i18n={i18n}
-          onOpenSidebar={() => setIsSidebarOpen(true)}
-          searchInputRef={searchInputRef}
-          globalSearchTerm={globalSearchTerm}
-          onSearchTermChange={setGlobalSearchTerm}
-          onSearchBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
-          onSearchFocus={() => setShowSearchResults(true)}
-          showSearchResults={showSearchResults}
-          globalSearchResults={globalSearchResults}
-          onSearchResultClick={handleSearchResultClick}
-          notifications={[]}
-          showNotifications={false}
-          onToggleNotifications={() => {}}
-          onCloseNotifications={() => {}}
+          topbarTitle={tabTitles[activeTab] || activeTab}
+          notifCount={visibleNotifications.length}
+          showNotifications={showNotifications}
+          onToggleNotifications={() => setShowNotifications(p => !p)}
           onOpenCalculator={() => widgetManager.openWidget('calculator')}
-          canImport={isAdmin}
-          onOpenImporter={() => setIsImporterOpen(true)}
-          canManageRates={isAdmin}
-          isOnline={navigator.onLine}
-          pendingWrites={0}
-          syncError={null}
-          lastSyncAt={null}
+          bcvRate={rates.tasaBCV}
         />
 
-        <main className="flex-1 overflow-y-auto p-6 relative">
-          <div className="max-w-7xl mx-auto h-full">
-            {activeTab === 'resumen' && (
-              <AdminDashboard onTabChange={(tab) => {
-                setActiveTab(tab);
-                navigate(tabRoutes[tab]);
-              }} />
-            )}
-            {activeTab === 'widgets' && <WidgetLaunchpad />}
-            {activeTab === 'inventario' && <Inventario />}
-            {activeTab === 'config' && <Configuracion />}
-            {activeTab === 'cajas' && <AdminPosManager />}
-            {activeTab === 'rrhh' && <RecursosHumanos />}
-            {activeTab === 'help' && <HelpCenter />}
-            {activeTab === 'vision' && <VisionLab movements={movements} />}
-            {activeTab === 'tasas' && <RateHistoryWall rates={legacyRates as any} />}
-            {activeTab === 'comparar' && <BooksComparePanel movements={movements} customers={customers} rates={legacyRates as any} />}
-            
+        <main className="flex-1 overflow-y-auto p-8 relative custom-scroll">
+          <div className="max-w-[1440px] mx-auto h-full">
+            {activeTab === 'resumen'      && <AdminDashboard onTabChange={goTab} />}
+            {activeTab === 'widgets'      && <WidgetLaunchpad />}
+            {activeTab === 'inventario'   && <Inventario />}
+            {activeTab === 'config'       && <Configuracion />}
+            {activeTab === 'cajas'        && <AdminPosManager />}
+            {activeTab === 'rrhh'         && <RecursosHumanos />}
+            {activeTab === 'help'         && <HelpCenter />}
+            {activeTab === 'reportes'     && <ReportesSection movements={movements} customers={customers} />}
+            {activeTab === 'conciliacion' && <ReconciliationSection movements={movements} businessId={businessId} ownerId={userProfile?.uid || ''} rates={legacyRates as any} />}
+            {activeTab === 'vision'       && <VisionLab movements={movements} inventory={inventoryItems as any} rates={legacyRates as any} customers={customers} />}
+            {activeTab === 'tasas'        && <RateHistoryWall rates={legacyRates as any} />}
+            {activeTab === 'comparar'     && <BooksComparePanel movements={movements} customers={customers} rates={legacyRates as any} />}
+
             {activeTab === 'clientes' && (
               <CustomerViewer
                 customers={customers}
@@ -574,120 +474,48 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             <Outlet />
           </div>
         </main>
+
+        {/* STATUS BAR */}
+        <footer className="h-10 bg-white border-t border-slate-200 px-7 flex items-center justify-between font-mono text-[10px] text-slate-400 shrink-0">
+          <div className="flex items-center gap-5">
+            <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>Firebase Live</span></div>
+            <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>{user?.role || 'pending'}</span></div>
+            <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-500" /><span>{userProfile?.businessId?.slice(0, 12) || 'N/A'}</span></div>
+          </div>
+          <span>Dualis System v3.0.0 · React 19 · Firebase</span>
+        </footer>
       </div>
 
-      <UserProfileModalComp 
-        isOpen={isProfileOpen} 
-        profile={userProfile as any} 
-        onClose={() => setIsProfileOpen(false)} 
-        onSave={handleSaveProfile} 
-      />
+      {/* NOTIFICATION CENTER */}
+      {showNotifications && (
+        <NotificationCenter
+          notifications={visibleNotifications}
+          inventoryItems={inventoryItems as any}
+          movements={movements}
+          onClose={() => setShowNotifications(false)}
+          onNavigate={(tab) => { goTab(tab); setShowNotifications(false); }}
+          onDismiss={handleDismissNotif}
+          onDismissAll={handleDismissAllNotifs}
+        />
+      )}
 
-      <DataImporter 
-        open={isImporterOpen} 
-        onClose={() => setIsImporterOpen(false)} 
-        onImport={() => {}} 
-        onImportMovements={(rows) => {
-          rows.forEach(row => handleRegisterMovement(row));
-        }}
-        customers={customers}
-        onCreateCustomer={handleRegisterCustomer}
-      />
+      {/* MODALS */}
+      <UserProfileModalComp isOpen={isProfileOpen} profile={userProfile as any} onClose={() => setIsProfileOpen(false)} onSave={handleSaveProfile} />
+      <DataImporter open={isImporterOpen} onClose={() => setIsImporterOpen(false)} onImport={() => {}} onImportMovements={(rows) => rows.forEach(row => handleRegisterMovement(row))} customers={customers} onCreateCustomer={handleRegisterCustomer} />
 
+      {confirmState && <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />}
+
+      {/* WIDGETS */}
       <SmartCalculatorWidget rates={legacyRates as any} isOpen={widgetManager.widgets.calculator.isOpen} isMinimized={widgetManager.widgets.calculator.isMinimized} position={widgetManager.widgets.calculator.position} onClose={() => widgetManager.closeWidget('calculator')} onMinimize={() => widgetManager.setMinimized('calculator', !widgetManager.widgets.calculator.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('calculator', pos)} />
-      
-      {/* FLOATING WIDGETS RENDERER */}
-      {widgetManager.widgets.notes.isOpen && (
-        <StickyNotesWidget 
-          isOpen={true} 
-          isMinimized={widgetManager.widgets.notes.isMinimized} 
-          position={widgetManager.widgets.notes.position} 
-          onClose={() => widgetManager.closeWidget('notes')} 
-          onMinimize={() => widgetManager.setMinimized('notes', !widgetManager.widgets.notes.isMinimized)} 
-          onPositionChange={(pos) => widgetManager.setPosition('notes', pos)} 
-        />
-      )}
+      {widgetManager.widgets.notes.isOpen && <StickyNotesWidget isOpen={true} isMinimized={widgetManager.widgets.notes.isMinimized} position={widgetManager.widgets.notes.position} onClose={() => widgetManager.closeWidget('notes')} onMinimize={() => widgetManager.setMinimized('notes', !widgetManager.widgets.notes.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('notes', pos)} />}
+      {widgetManager.widgets.converter.isOpen && <RateConverterWidget rates={legacyRates as any} isOpen={true} isMinimized={widgetManager.widgets.converter.isMinimized} position={widgetManager.widgets.converter.position} onClose={() => widgetManager.closeWidget('converter')} onMinimize={() => widgetManager.setMinimized('converter', !widgetManager.widgets.converter.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('converter', pos)} />}
+      {widgetManager.widgets.timer.isOpen && <TimerWidget isOpen={true} isMinimized={widgetManager.widgets.timer.isMinimized} position={widgetManager.widgets.timer.position} onClose={() => widgetManager.closeWidget('timer')} onMinimize={() => widgetManager.setMinimized('timer', !widgetManager.widgets.timer.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('timer', pos)} />}
+      {widgetManager.widgets.priceChecker.isOpen && <PriceCheckerWidget inventory={inventoryItems as any} rates={legacyRates as any} isOpen={true} isMinimized={widgetManager.widgets.priceChecker.isMinimized} position={widgetManager.widgets.priceChecker.position} onClose={() => widgetManager.closeWidget('priceChecker')} onMinimize={() => widgetManager.setMinimized('priceChecker', !widgetManager.widgets.priceChecker.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('priceChecker', pos)} />}
+      {widgetManager.widgets.todo.isOpen && <TodoListWidget isOpen={true} isMinimized={widgetManager.widgets.todo.isMinimized} position={widgetManager.widgets.todo.position} onClose={() => widgetManager.closeWidget('todo')} onMinimize={() => widgetManager.setMinimized('todo', !widgetManager.widgets.todo.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('todo', pos)} />}
+      {widgetManager.widgets.chat.isOpen && <TeamChatWidget businessId={businessId} currentUserId={uid} currentUserName={user?.name} isOpen={true} isMinimized={widgetManager.widgets.chat.isMinimized} position={widgetManager.widgets.chat.position} onClose={() => widgetManager.closeWidget('chat')} onMinimize={() => widgetManager.setMinimized('chat', !widgetManager.widgets.chat.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('chat', pos)} />}
+      {widgetManager.widgets.speedDial.isOpen && <SpeedDialWidget isOpen={true} isMinimized={widgetManager.widgets.speedDial.isMinimized} position={widgetManager.widgets.speedDial.position} onClose={() => widgetManager.closeWidget('speedDial')} onMinimize={() => widgetManager.setMinimized('speedDial', !widgetManager.widgets.speedDial.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('speedDial', pos)} />}
 
-      {widgetManager.widgets.converter.isOpen && (
-        <RateConverterWidget 
-          rates={legacyRates as any}
-          isOpen={true} 
-          isMinimized={widgetManager.widgets.converter.isMinimized} 
-          position={widgetManager.widgets.converter.position} 
-          onClose={() => widgetManager.closeWidget('converter')} 
-          onMinimize={() => widgetManager.setMinimized('converter', !widgetManager.widgets.converter.isMinimized)} 
-          onPositionChange={(pos) => widgetManager.setPosition('converter', pos)} 
-        />
-      )}
-
-      {widgetManager.widgets.timer.isOpen && (
-        <TimerWidget 
-          isOpen={true} 
-          isMinimized={widgetManager.widgets.timer.isMinimized} 
-          position={widgetManager.widgets.timer.position} 
-          onClose={() => widgetManager.closeWidget('timer')} 
-          onMinimize={() => widgetManager.setMinimized('timer', !widgetManager.widgets.timer.isMinimized)} 
-          onPositionChange={(pos) => widgetManager.setPosition('timer', pos)} 
-        />
-      )}
-
-      {widgetManager.widgets.priceChecker.isOpen && (
-        <PriceCheckerWidget 
-          isOpen={true} 
-          isMinimized={widgetManager.widgets.priceChecker.isMinimized} 
-          position={widgetManager.widgets.priceChecker.position} 
-          onClose={() => widgetManager.closeWidget('priceChecker')} 
-          onMinimize={() => widgetManager.setMinimized('priceChecker', !widgetManager.widgets.priceChecker.isMinimized)} 
-          onPositionChange={(pos) => widgetManager.setPosition('priceChecker', pos)} 
-        />
-      )}
-
-      {widgetManager.widgets.todo.isOpen && (
-        <TodoListWidget 
-          isOpen={true} 
-          isMinimized={widgetManager.widgets.todo.isMinimized} 
-          position={widgetManager.widgets.todo.position} 
-          onClose={() => widgetManager.closeWidget('todo')} 
-          onMinimize={() => widgetManager.setMinimized('todo', !widgetManager.widgets.todo.isMinimized)} 
-          onPositionChange={(pos) => widgetManager.setPosition('todo', pos)} 
-        />
-      )}
-
-      {widgetManager.widgets.chat.isOpen && (
-        <TeamChatWidget 
-          user={user as any}
-          isOpen={true} 
-          isMinimized={widgetManager.widgets.chat.isMinimized} 
-          position={widgetManager.widgets.chat.position} 
-          onClose={() => widgetManager.closeWidget('chat')} 
-          onMinimize={() => widgetManager.setMinimized('chat', !widgetManager.widgets.chat.isMinimized)} 
-          onPositionChange={(pos) => widgetManager.setPosition('chat', pos)} 
-        />
-      )}
-
-      {widgetManager.widgets.speedDial.isOpen && (
-        <SpeedDialWidget 
-          isOpen={true} 
-          isMinimized={widgetManager.widgets.speedDial.isMinimized} 
-          position={widgetManager.widgets.speedDial.position} 
-          onClose={() => widgetManager.closeWidget('speedDial')} 
-          onMinimize={() => widgetManager.setMinimized('speedDial', !widgetManager.widgets.speedDial.isMinimized)} 
-          onPositionChange={(pos) => widgetManager.setPosition('speedDial', pos)} 
-        />
-      )}
-
-      <AIChat 
-        config={{} as any}
-        customers={customers}
-        employees={employees}
-        rates={legacyRates as any}
-        movements={movements}
-        payrollRate={rates.tasaBCV}
-        onRegisterMovement={handleRegisterMovement}
-        onAddCustomer={handleRegisterCustomer}
-        onUpdateRates={(newRates) => updateRates({ tasaBCV: newRates.bcv, tasaGrupo: newRates.grupo })}
-        onRegisterAdvance={handleRegisterAdvance}
-      />
+      <AIChat config={{} as any} customers={customers} employees={employees} rates={legacyRates as any} movements={movements} payrollRate={rates.tasaBCV} onRegisterMovement={handleRegisterMovement} onAddCustomer={handleRegisterCustomer} onUpdateRates={(newRates) => updateRates({ tasaBCV: newRates.bcv, tasaGrupo: newRates.grupo })} onRegisterAdvance={handleRegisterAdvance} />
     </div>
   );
 };

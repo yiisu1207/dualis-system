@@ -789,7 +789,9 @@ const TeamChatWidget: React.FC<TeamChatWidgetProps> = ({
                     <div className="flex items-center justify-between">
                       <span>#{conv.name || 'Canal'}</span>
                       {!isActive && unread && (
-                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[8px] font-black leading-none animate-pulse">
+                          NEW
+                        </span>
                       )}
                     </div>
                     <div
@@ -856,7 +858,9 @@ const TeamChatWidget: React.FC<TeamChatWidgetProps> = ({
                         <div className="flex items-center justify-between">
                           <span>{label}</span>
                           {!isActive && unread && (
-                            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[8px] font-black leading-none animate-pulse">
+                              NEW
+                            </span>
                           )}
                         </div>
                         <div
@@ -993,7 +997,14 @@ const TeamChatWidget: React.FC<TeamChatWidgetProps> = ({
             </div>
 
             {typingLabel && (
-              <div className="mb-2 text-[11px] text-slate-400">{typingLabel}</div>
+              <div className="mb-2 flex items-center gap-2 text-[11px] text-slate-400 italic">
+                <span className="flex gap-0.5">
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </span>
+                {typingLabel}
+              </div>
             )}
 
             {replyDraft && (
