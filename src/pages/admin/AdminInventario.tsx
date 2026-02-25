@@ -38,16 +38,21 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { db } from '../../firebase/config';
 import { useTenant } from '../../context/TenantContext';
 import { useAuth } from '../../context/AuthContext';
+import { useRates } from '../../context/RatesContext';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Product = {
   id: string;
   codigo: string;
   nombre: string;
+  marca: string;
   categoria: string;
   costoUSD: number;
   margen: number;
   precioVentaUSD: number;
+  precioDetal: number;
+  precioMayor: number;
+  margenMayor: number;
   stock: number;
   stockMinimo: number;
   iva: number;
@@ -70,10 +75,14 @@ type TabType = 'catalog' | 'kardex' | 'tools';
 const initialProduct: Omit<Product, 'id'> = {
   codigo: '',
   nombre: '',
+  marca: '',
   categoria: 'General',
   costoUSD: 0,
   margen: 30,
   precioVentaUSD: 0,
+  precioDetal: 0,
+  precioMayor: 0,
+  margenMayor: 20,
   stock: 0,
   stockMinimo: 5,
   iva: 16,
@@ -100,6 +109,7 @@ const KPICard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
 export default function AdminInventario() {
   const { tenantId } = useTenant();
   const { userProfile } = useAuth();
+  const { rates } = useRates();
   const [activeTab, setActiveTab] = useState<TabType>('catalog');
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
@@ -116,7 +126,7 @@ export default function AdminInventario() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [adjData, setAdjData] = useState({ type: 'AJUSTE', quantity: 0, reason: '' });
 
-  const exchangeRate = 36.5;
+  const exchangeRate = rates.tasaBCV || 36.5;
 
   // 1. DATA LISTENERS
   useEffect(() => {
@@ -159,7 +169,18 @@ export default function AdminInventario() {
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenantId) return;
-    const payload = { ...form, precioVentaUSD: handleCalculatePrice(form.costoUSD, form.margen), updatedAt: new Date().toISOString() };
+    const calculatedDetal = handleCalculatePrice(form.costoUSD, form.margen);
+    const calculatedMayor = handleCalculatePrice(form.costoUSD, form.margenMayor);
+    const payload = {
+      ...form,
+      precioVentaUSD: calculatedDetal,
+      // Campos que el POS usa directamente
+      precioDetal: calculatedDetal,
+      precioMayor: calculatedMayor,
+      // Campo de compatibilidad con CartContext fallback
+      marketPrice: calculatedDetal,
+      updatedAt: new Date().toISOString(),
+    };
     if (editingId) {
       await setDoc(doc(db, `businesses/${tenantId}/products`, editingId), payload, { merge: true });
     } else {
@@ -300,8 +321,9 @@ export default function AdminInventario() {
                         </td>
                         <td className="px-10 py-6 text-right font-bold text-slate-500">${p.costoUSD.toFixed(2)}</td>
                         <td className="px-10 py-6 text-right">
-                          <p className="text-sm font-black text-emerald-600">${p.precioVentaUSD.toFixed(2)}</p>
-                          <p className="text-[10px] font-black text-slate-300">Bs {(p.precioVentaUSD * exchangeRate).toFixed(2)}</p>
+                          <p className="text-sm font-black text-emerald-600">${(p.precioDetal || p.precioVentaUSD || 0).toFixed(2)} <span className="text-[9px] font-black text-slate-300">detal</span></p>
+                          <p className="text-[10px] font-black text-amber-500">${(p.precioMayor || 0).toFixed(2)} <span className="text-[9px] text-slate-300">mayor</span></p>
+                          <p className="text-[10px] font-black text-slate-300">Bs {((p.precioDetal || p.precioVentaUSD || 0) * exchangeRate).toFixed(2)}</p>
                         </td>
                         <td className="px-10 py-6 text-center">
                           <div className={`inline-flex flex-col items-center px-4 py-2 rounded-2xl ${p.stock < p.stockMinimo ? 'bg-rose-50' : 'bg-slate-50'}`}>
@@ -312,7 +334,7 @@ export default function AdminInventario() {
                         <td className="px-10 py-6 text-right">
                           <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
                             <button onClick={() => { setSelectedProduct(p); setAdjModalOpen(true); }} className="p-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200" title="Ajuste de Stock"><TrendingUp size={14} /></button>
-                            <button onClick={() => { setEditingId(p.id); setForm(p); setModalOpen(true); }} className="p-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"><Pencil size={14} /></button>
+                            <button onClick={() => { setEditingId(p.id); setForm({ ...initialProduct, ...p }); setModalOpen(true); }} className="p-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"><Pencil size={14} /></button>
                             <button onClick={async () => { if(confirm('¿Eliminar?')) await deleteDoc(doc(db, `businesses/${tenantId}/products`, p.id)); }} className="p-2.5 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors"><Trash2 size={14} /></button>
                           </div>
                         </td>
@@ -419,17 +441,28 @@ export default function AdminInventario() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Descripción del Activo</label>
-                <input required value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 transition-all" placeholder="Nombre completo del producto..." />
+              <div className="grid grid-cols-2 gap-8">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Nombre del Producto</label>
+                  <input required value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 transition-all" placeholder="Nombre completo del producto..." />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Marca / Fabricante</label>
+                  <input value={form.marca} onChange={e => setForm({...form, marca: e.target.value})} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 transition-all" placeholder="Ej. Samsung, Nike..." />
+                </div>
               </div>
 
               <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white space-y-6">
                 <div className="flex items-center gap-3"><TrendingUp size={20} className="text-emerald-400" /><span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Análisis de Rentabilidad</span></div>
                 <div className="grid grid-cols-3 gap-6">
                   <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Costo Base ($)</label><input type="number" step="0.01" value={form.costoUSD} onChange={e => setForm({...form, costoUSD: Number(e.target.value)})} className="w-full px-4 py-3 bg-white/10 border border-white/10 rounded-xl text-sm font-black focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all" /></div>
-                  <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Margen (%)</label><input type="number" value={form.margen} onChange={e => setForm({...form, margen: Number(e.target.value)})} className="w-full px-4 py-3 bg-white/10 border border-white/10 rounded-xl text-sm font-black focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all" /></div>
-                  <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Venta Sugerida</label><div className="w-full px-4 py-3 bg-white/5 border border-white/5 rounded-xl text-base font-black text-emerald-400">${handleCalculatePrice(form.costoUSD, form.margen).toFixed(2)}</div></div>
+                  <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Margen Detal (%)</label><input type="number" value={form.margen} onChange={e => setForm({...form, margen: Number(e.target.value)})} className="w-full px-4 py-3 bg-white/10 border border-white/10 rounded-xl text-sm font-black focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all" /></div>
+                  <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Precio Detal (POS)</label><div className="w-full px-4 py-3 bg-white/5 border border-white/5 rounded-xl text-base font-black text-emerald-400">${handleCalculatePrice(form.costoUSD, form.margen).toFixed(2)}</div></div>
+                </div>
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Margen Mayor (%)</label><input type="number" value={form.margenMayor} onChange={e => setForm({...form, margenMayor: Number(e.target.value)})} className="w-full px-4 py-3 bg-white/10 border border-white/10 rounded-xl text-sm font-black focus:ring-2 focus:ring-amber-400 focus:outline-none transition-all" /></div>
+                  <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">IVA (%)</label><input type="number" value={form.iva} onChange={e => setForm({...form, iva: Number(e.target.value)})} className="w-full px-4 py-3 bg-white/10 border border-white/10 rounded-xl text-sm font-black focus:ring-2 focus:ring-amber-400 focus:outline-none transition-all" /></div>
+                  <div className="space-y-2"><label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Precio Mayor (POS)</label><div className="w-full px-4 py-3 bg-white/5 border border-white/5 rounded-xl text-base font-black text-amber-400">${handleCalculatePrice(form.costoUSD, form.margenMayor).toFixed(2)}</div></div>
                 </div>
               </div>
 

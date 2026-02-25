@@ -112,37 +112,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (docSnap.exists()) {
           const profile = docSnap.data() as UserProfile;
-          // Forzar sincronía de ID
+          // Forzar sincronía de ID — también persiste en Firestore si falta businessId
           if (profile.empresa_id && !profile.businessId) {
             profile.businessId = profile.empresa_id;
           }
-          
+
           let needsProfileUpdate = false;
-          
+          const firestoreUpdate: Record<string, unknown> = {};
+
           if (!profile.businessId && profile.status === 'ACTIVE') {
-            // Este es un estado inconsistente, lo enviamos a onboarding
             profile.status = 'PENDING_SETUP';
+            firestoreUpdate.status = 'PENDING_SETUP';
             needsProfileUpdate = true;
           }
           if (!profile.displayName) {
             profile.displayName = profile.fullName || profile.email || 'Usuario';
+            firestoreUpdate.displayName = profile.displayName;
             needsProfileUpdate = true;
           }
           if (!profile.role) {
             profile.role = 'owner';
+            firestoreUpdate.role = 'owner';
             needsProfileUpdate = true;
           }
           if (!profile.status) {
             profile.status = 'ACTIVE';
+            firestoreUpdate.status = 'ACTIVE';
+            needsProfileUpdate = true;
+          }
+          // Persistir businessId en Firestore si solo existía como empresa_id
+          if (profile.businessId && !docSnap.data().businessId) {
+            firestoreUpdate.businessId = profile.businessId;
             needsProfileUpdate = true;
           }
           if (needsProfileUpdate) {
             const ownerId = profile.uid || firebaseUser.uid;
-            await updateDoc(doc(db, 'users', ownerId), {
-              displayName: profile.displayName,
-              role: profile.role,
-              status: profile.status,
-            });
+            await updateDoc(doc(db, 'users', ownerId), firestoreUpdate);
           }
           if (profile.businessId) {
             const ownerId = profile.uid || firebaseUser.uid;
@@ -151,10 +156,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
           finalProfile = profile;
         } else {
-          // Si no existe el perfil (pero hay auth), no lo creamos automáticamente aquí
-          // para dejar que OnboardingGate haga su trabajo si es necesario.
-          // Pero para evitar el bucle, seteamos el usuario con perfil null.
-          finalProfile = null;
+          // Race condition: el doc puede estar siendo creado por Register.tsx.
+          // Reintentamos una vez después de 1.5s.
+          await new Promise(r => setTimeout(r, 1500));
+          const retrySnap = await getDoc(docRef);
+          if (retrySnap.exists()) {
+            const profile = retrySnap.data() as UserProfile;
+            if (profile.empresa_id && !profile.businessId) {
+              profile.businessId = profile.empresa_id;
+            }
+            if (!profile.displayName) {
+              profile.displayName = profile.fullName || profile.email || 'Usuario';
+            }
+            if (!profile.role) profile.role = 'owner';
+            if (!profile.status) profile.status = 'PENDING_SETUP';
+            finalProfile = profile;
+          } else {
+            finalProfile = null;
+          }
         }
         
         // 3. FINALMENTE: Actualizamos todo el estado atómicamente

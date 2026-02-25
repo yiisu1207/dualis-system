@@ -75,7 +75,11 @@ function OnboardingGate() {
   }
 
   const tenantId = resolveTenantId(userProfile);
-  if (tenantId && !force) {
+  const isSetupComplete = tenantId && userProfile?.status === 'ACTIVE';
+
+  // Solo redirigimos al admin si el setup está COMPLETO (status ACTIVE).
+  // Si status es PENDING_SETUP, mostramos el wizard aunque haya tenantId.
+  if (isSetupComplete && !force) {
     return <Navigate to={`/${tenantId}/admin`} replace />;
   }
 

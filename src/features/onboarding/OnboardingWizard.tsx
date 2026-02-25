@@ -87,6 +87,8 @@ export default function OnboardingWizard() {
         companyPhone: formData.phone,
         mainCurrency: formData.mainCurrency,
         defaultIva: parseFloat(formData.iva),
+        tasaBCV: parseFloat(formData.exchangeRate),
+        tasaGrupo: parseFloat(formData.exchangeRate),
         theme: {
           primaryColor: formData.brandColor,
           uiVersion: formData.uiVersion,
@@ -102,19 +104,34 @@ export default function OnboardingWizard() {
         setupCompleted: true
       });
 
+      // Crear la primera terminal configurada en paso 3
+      if (formData.terminalName) {
+        await addDoc(collection(db, `businesses/${currentTenantId}/terminals`), {
+          nombre: formData.terminalName,
+          tipo: formData.terminalType,
+          estado: 'cerrada',
+          cajeroNombre: null,
+          apertura: null,
+          cierreAt: null,
+          totalFacturado: 0,
+          movimientos: 0,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
       if (user) {
         const userRef = doc(db, 'users', user.uid);
         await updateDoc(userRef, {
           pin: formData.pin,
           status: 'ACTIVE',
-          businessId: currentTenantId // Asegurar que el ID esté guardado
+          businessId: currentTenantId
         });
-        
+
         // Actualización atómica local para evitar el loop del router
-        updateUserProfile({ 
-          pin: formData.pin, 
+        updateUserProfile({
+          pin: formData.pin,
           status: 'ACTIVE',
-          businessId: currentTenantId 
+          businessId: currentTenantId
         });
       }
 

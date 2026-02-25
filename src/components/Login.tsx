@@ -29,7 +29,7 @@ export default function Login() {
     }
   });
   const nav = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const captchaKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined;
 
   const RATE_LIMIT_KEY = 'login_rate_limit_v1';
@@ -53,9 +53,10 @@ export default function Login() {
     localStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(next));
   };
 
+  // Redirige si el usuario ya está autenticado antes de que llegue al login
   React.useEffect(() => {
-    if (user) nav('/');
-  }, [user, nav]);
+    if (user && !authLoading) nav('/');
+  }, [user, authLoading, nav]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,8 +114,8 @@ export default function Login() {
       const userBusinessId = userData.businessId || userData.empresa_id;
 
       // VALIDACIÓN ESTRICTA DE CÓDIGO DE ESPACIO
-      if (userBusinessId && userBusinessId !== workspaceCode) {
-        await auth.signOut(); // Forzamos salida si el código no coincide
+      if (userBusinessId && userBusinessId !== workspaceCode.trim()) {
+        await auth.signOut();
         setError('Acceso Denegado: El Código de Espacio no coincide con esta cuenta.');
         setLoading(false);
         return;
@@ -129,9 +130,17 @@ export default function Login() {
       localStorage.setItem('erp_login_users', JSON.stringify(next));
       localStorage.removeItem(RATE_LIMIT_KEY);
       setCaptchaToken(null);
-      
-      // IMPORTANTE: No navegamos manualmente ni hacemos signOut(). 
-      // El AuthContext detectará el login y el AppRouter redirigirá según el perfil real.
+
+      // 4. Navegar directamente al destino correcto según el estado del perfil
+      const effectiveBusinessId = userBusinessId || workspaceCode.trim();
+      const userStatus = userData.status || 'ACTIVE';
+      if (userStatus === 'ACTIVE' && effectiveBusinessId) {
+        nav(`/${effectiveBusinessId}/admin/dashboard`, { replace: true });
+      } else {
+        // PENDING_SETUP u otro estado → onboarding
+        nav('/onboarding', { replace: true });
+      }
+      setLoading(false);
     } catch (err: any) {
       console.error(err);
       const nextWindow = current && now - current.firstAttempt <= WINDOW_MS
