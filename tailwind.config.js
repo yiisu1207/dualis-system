@@ -2,9 +2,9 @@
 export default {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}"  // 👈 Ahora sí todo está aquí dentro
+    "./src/**/*.{js,ts,jsx,tsx}"
   ],
-  // darkMode eliminado: solo modo claro
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {

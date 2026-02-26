@@ -193,8 +193,10 @@ export default function AdminPosManager() {
       });
       setIsModalOpen(false);
       setNewTerminal({ nombre: '', tipo: 'detal' });
-    } catch { alert('Error al crear terminal'); }
-    finally { setIsSaving(false); }
+    } catch (err: any) {
+      console.error('[AdminPosManager] Error creando terminal:', err);
+      alert(`Error al crear terminal: ${err?.message || String(err)}`);
+    } finally { setIsSaving(false); }
   };
 
   const handleInitiateOpenShift = (terminal: Terminal) => {
@@ -217,24 +219,35 @@ export default function AdminPosManager() {
         cierreAt: null,
       });
       setOpenShiftModal(false);
-      window.open(`/${businessId}/pos/${selectedForOpen.tipo}?cajaId=${selectedForOpen.id}`, '_blank');
-    } catch { alert('Error al abrir turno'); }
-    finally { setIsOpeningShift(false); }
+      const newTab = window.open(`/${businessId}/pos/${selectedForOpen.tipo}?cajaId=${selectedForOpen.id}`, '_blank');
+      if (!newTab) {
+        alert('El navegador bloqueó la pestaña. Permite popups para este sitio e intenta de nuevo.');
+      }
+    } catch (err: any) {
+      console.error('[AdminPosManager] Error abriendo turno:', err);
+      alert(`Error al abrir turno: ${err?.message || String(err)}`);
+    } finally { setIsOpeningShift(false); }
   };
 
   const handleEnterTerminal = (terminal: Terminal) => {
-    window.open(`/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}`, '_blank');
+    const newTab = window.open(`/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}`, '_blank');
+    if (!newTab) alert('El navegador bloqueó la pestaña. Permite popups para este sitio.');
   };
 
   const handleCloseShift = async (terminal: Terminal) => {
     if (!confirm(`¿Cerrar el turno de "${terminal.nombre}"?\nEl cajero no podrá seguir facturando.`)) return;
-    const ref = doc(db, `businesses/${businessId}/terminals`, terminal.id);
-    await updateDoc(ref, {
-      estado: 'cerrada',
-      cajeroNombre: 'Sin asignar',
-      apertura: null,
-      cierreAt: new Date().toISOString(),
-    });
+    try {
+      const ref = doc(db, `businesses/${businessId}/terminals`, terminal.id);
+      await updateDoc(ref, {
+        estado: 'cerrada',
+        cajeroNombre: 'Sin asignar',
+        apertura: null,
+        cierreAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error('[AdminPosManager] Error cerrando turno:', err);
+      alert(`Error al cerrar turno: ${err?.message || String(err)}`);
+    }
   };
 
   const handleCopyUrl = (terminal: Terminal) => {
@@ -261,7 +274,6 @@ export default function AdminPosManager() {
       { header: 'Tasa BCV', key: 'rate', width: 12 },
       { header: 'Monto (BS)', key: 'amountBs', width: 14 },
     ];
-    // Header style
     ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
     ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
 
@@ -299,15 +311,15 @@ export default function AdminPosManager() {
 
   if (loading) {
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50">
-        <Loader2 className="animate-spin text-slate-900 mb-4" size={36} />
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Cargando Cajas...</p>
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0a0f1e]">
+        <Loader2 className="animate-spin text-slate-900 dark:text-white mb-4" size={36} />
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">Cargando Cajas...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-inter">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0a0f1e] font-inter transition-colors">
       <div className="max-w-7xl mx-auto p-6 space-y-7">
 
         {/* ── HEADER ─────────────────────────────────────────────────────── */}
@@ -315,18 +327,18 @@ export default function AdminPosManager() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Centro de Control</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">Centro de Control</span>
             </div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Administrador de Cajas</h1>
-            <p className="text-slate-400 text-sm font-semibold mt-2">
-              <span className="text-slate-600 font-black">{headerTime}</span>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Administrador de Cajas</h1>
+            <p className="text-slate-400 dark:text-slate-500 text-sm font-semibold mt-2">
+              <span className="text-slate-600 dark:text-slate-300 font-black">{headerTime}</span>
               {' — '}{headerDate}
             </p>
           </div>
           {isAdmin && (
             <button
               onClick={() => setIsModalOpen(true)}
-              className="h-12 px-7 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg hover:bg-slate-700 transition-all active:scale-95 flex items-center gap-2.5 shrink-0"
+              className="h-12 px-7 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg hover:bg-slate-700 dark:hover:bg-slate-100 transition-all active:scale-95 flex items-center gap-2.5 shrink-0"
             >
               <Plus size={17} />Nueva Terminal
             </button>
@@ -346,10 +358,14 @@ export default function AdminPosManager() {
         </div>
 
         {/* ── TABS ───────────────────────────────────────────────────────── */}
-        <div className="flex gap-2 bg-white p-1.5 rounded-2xl shadow-sm border border-slate-100 w-fit">
+        <div className="flex gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] w-fit">
           {(['detal', 'mayor'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`flex items-center gap-2 px-7 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>
+              className={`flex items-center gap-2 px-7 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                activeTab === tab
+                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
+                  : 'text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-white/[0.05]'
+              }`}>
               {tab === 'detal' ? <Store size={13} /> : <Factory size={13} />}
               {tab === 'detal' ? 'Sucursal Detal' : 'Sucursal Mayor'}
             </button>
@@ -362,26 +378,26 @@ export default function AdminPosManager() {
             const isOpen = t.estado === 'abierta';
             return (
               <div key={t.id}
-                className={`bg-white rounded-[2rem] flex flex-col overflow-hidden shadow-md transition-all duration-300 hover:shadow-xl border ${isOpen ? 'border-emerald-200' : 'border-slate-100'}`}>
+                className={`bg-white dark:bg-slate-900 rounded-[2rem] flex flex-col overflow-hidden shadow-md dark:shadow-black/20 transition-all duration-300 hover:shadow-xl dark:hover:shadow-black/30 border ${isOpen ? 'border-emerald-200 dark:border-emerald-500/30' : 'border-slate-100 dark:border-white/[0.06]'}`}>
 
                 {/* Color stripe */}
-                <div className={`h-1.5 w-full ${isOpen ? 'bg-gradient-to-r from-emerald-400 to-teal-500' : 'bg-slate-200'}`} />
+                <div className={`h-1.5 w-full ${isOpen ? 'bg-gradient-to-r from-emerald-400 to-teal-500' : 'bg-slate-200 dark:bg-white/10'}`} />
 
                 {/* Card header */}
                 <div className="p-6 pb-0">
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-3">
-                      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${t.tipo === 'detal' ? 'bg-sky-100 text-sky-600' : 'bg-violet-100 text-violet-600'}`}>
+                      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${t.tipo === 'detal' ? 'bg-sky-100 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400' : 'bg-violet-100 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400'}`}>
                         {t.tipo === 'detal' ? <Store size={22} /> : <Factory size={22} />}
                       </div>
                       <div>
-                        <h3 className="text-base font-black text-slate-900 leading-none">{t.nombre}</h3>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                        <h3 className="text-base font-black text-slate-900 dark:text-white leading-none">{t.nombre}</h3>
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
                           Terminal {t.tipo === 'detal' ? 'Detal' : 'Mayor'}
                         </p>
                       </div>
                     </div>
-                    <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isOpen ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-slate-100 text-slate-400'}`}>
+                    <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isOpen ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400 dark:text-slate-500'}`}>
                       {isOpen ? <Unlock size={9} /> : <Lock size={9} />}
                       {isOpen ? 'Abierta' : 'Cerrada'}
                     </span>
@@ -391,42 +407,42 @@ export default function AdminPosManager() {
                 {/* Card body */}
                 <div className="p-6 space-y-3 flex-1">
                   {/* Cajero */}
-                  <div className="flex items-center justify-between py-2.5 px-4 bg-slate-50 rounded-xl">
-                    <div className="flex items-center gap-2 text-slate-400">
+                  <div className="flex items-center justify-between py-2.5 px-4 bg-slate-50 dark:bg-white/[0.04] rounded-xl">
+                    <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
                       <User size={13} />
                       <span className="text-[10px] font-black uppercase tracking-widest">Cajero</span>
                     </div>
-                    <span className="text-xs font-black text-slate-800">{t.cajeroNombre || 'Sin asignar'}</span>
+                    <span className="text-xs font-black text-slate-800 dark:text-slate-200">{t.cajeroNombre || 'Sin asignar'}</span>
                   </div>
 
                   {/* Apertura info */}
                   {isOpen && t.apertura && (
-                    <div className="py-3 px-4 bg-emerald-50 rounded-xl border border-emerald-100 space-y-1">
+                    <div className="py-3 px-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-500/20 space-y-1">
                       <div className="flex items-center gap-1.5">
-                        <Calendar size={11} className="text-emerald-600" />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700">Apertura de turno</span>
+                        <Calendar size={11} className="text-emerald-600 dark:text-emerald-400" />
+                        <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Apertura de turno</span>
                       </div>
-                      <p className="text-xs font-black text-slate-800">{formatOpenedAt(t.apertura)}</p>
-                      <p className="text-[10px] font-bold text-emerald-600">{getSessionDuration(t.apertura)}</p>
+                      <p className="text-xs font-black text-slate-800 dark:text-slate-200">{formatOpenedAt(t.apertura)}</p>
+                      <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">{getSessionDuration(t.apertura)}</p>
                     </div>
                   )}
 
                   {/* Revenue stats */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-slate-50 rounded-xl">
-                      <p className="text-[9px] font-black uppercase text-slate-300 mb-1">Facturado (USD)</p>
-                      <p className="text-lg font-black text-slate-900">${(t.totalFacturado || 0).toFixed(2)}</p>
+                    <div className="p-3 bg-slate-50 dark:bg-white/[0.04] rounded-xl">
+                      <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Facturado (USD)</p>
+                      <p className="text-lg font-black text-slate-900 dark:text-white">${(t.totalFacturado || 0).toFixed(2)}</p>
                     </div>
-                    <div className="p-3 bg-slate-50 rounded-xl">
-                      <p className="text-[9px] font-black uppercase text-slate-300 mb-1">Ventas</p>
-                      <p className="text-lg font-black text-slate-900">{t.movimientos || 0}</p>
+                    <div className="p-3 bg-slate-50 dark:bg-white/[0.04] rounded-xl">
+                      <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Ventas</p>
+                      <p className="text-lg font-black text-slate-900 dark:text-white">{t.movimientos || 0}</p>
                     </div>
                   </div>
 
                   {/* URL copy */}
                   {isOpen && (
                     <button onClick={() => handleCopyUrl(t)}
-                      className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-[9px] font-bold text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-300 transition-all">
+                      className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-white/[0.03] border border-dashed border-slate-200 dark:border-white/[0.08] rounded-xl text-[9px] font-bold text-slate-400 dark:text-slate-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-500/30 transition-all">
                       <span className="font-mono text-[8px] truncate flex-1 mr-2 text-left">
                         .../{t.tipo}?cajaId={t.id.slice(0, 10)}...
                       </span>
@@ -440,21 +456,21 @@ export default function AdminPosManager() {
                 {/* Footer */}
                 <div className="px-6 pb-6 flex gap-2">
                   <button onClick={() => setSelectedAudit(t)}
-                    className="h-11 w-11 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shrink-0"
+                    className="h-11 w-11 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-400 dark:text-slate-400 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shrink-0"
                     title="Ver Auditoría">
                     <Eye size={17} />
                   </button>
 
                   {isOpen && isAdmin && (
                     <button onClick={() => handleCloseShift(t)}
-                      className="flex-1 h-11 rounded-xl bg-rose-50 text-rose-500 font-black text-[9px] uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all border border-rose-100">
+                      className="flex-1 h-11 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 dark:text-rose-400 font-black text-[9px] uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all border border-rose-100 dark:border-rose-500/20">
                       Cerrar Turno
                     </button>
                   )}
 
                   {!isOpen ? (
                     <button onClick={() => handleInitiateOpenShift(t)}
-                      className="flex-[2] h-11 rounded-xl bg-slate-900 text-white font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all">
+                      className="flex-[2] h-11 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 dark:hover:bg-emerald-500 dark:hover:text-white transition-all">
                       <Unlock size={13} />Abrir Turno
                     </button>
                   ) : (
@@ -470,9 +486,9 @@ export default function AdminPosManager() {
 
           {filteredTerminals.length === 0 && (
             <div className="col-span-full py-24 flex flex-col items-center justify-center opacity-40 text-center">
-              {activeTab === 'detal' ? <Store size={72} className="text-slate-200 mb-5" /> : <Factory size={72} className="text-slate-200 mb-5" />}
-              <h3 className="text-xl font-black text-slate-700">Sin Cajas de {activeTab === 'detal' ? 'Detal' : 'Mayor'}</h3>
-              <p className="text-sm text-slate-400 mt-2">Crea una nueva terminal para empezar a facturar</p>
+              {activeTab === 'detal' ? <Store size={72} className="text-slate-200 dark:text-slate-700 mb-5" /> : <Factory size={72} className="text-slate-200 dark:text-slate-700 mb-5" />}
+              <h3 className="text-xl font-black text-slate-700 dark:text-slate-400">Sin Cajas de {activeTab === 'detal' ? 'Detal' : 'Mayor'}</h3>
+              <p className="text-sm text-slate-400 dark:text-slate-500 mt-2">Crea una nueva terminal para empezar a facturar</p>
             </div>
           )}
         </div>
@@ -481,29 +497,29 @@ export default function AdminPosManager() {
       {/* ══ OPEN SHIFT MODAL ═══════════════════════════════════════════════════ */}
       {openShiftModal && selectedForOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="p-7 border-b border-slate-100">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl dark:shadow-black/40 overflow-hidden animate-in zoom-in-95 duration-300 border border-transparent dark:border-white/[0.06]">
+            <div className="p-7 border-b border-slate-100 dark:border-white/[0.06]">
               <div className="flex items-center gap-3 mb-1">
-                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${selectedForOpen.tipo === 'detal' ? 'bg-sky-100 text-sky-600' : 'bg-violet-100 text-violet-600'}`}>
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${selectedForOpen.tipo === 'detal' ? 'bg-sky-100 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400' : 'bg-violet-100 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400'}`}>
                   {selectedForOpen.tipo === 'detal' ? <Store size={19} /> : <Factory size={19} />}
                 </div>
                 <div>
-                  <h2 className="text-xl font-black text-slate-900 leading-none">Abrir Turno</h2>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{selectedForOpen.nombre}</p>
+                  <h2 className="text-xl font-black text-slate-900 dark:text-white leading-none">Abrir Turno</h2>
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">{selectedForOpen.nombre}</p>
                 </div>
               </div>
             </div>
 
             <div className="p-7 space-y-5">
-              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3">
-                <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-sm text-amber-700 font-medium leading-snug">
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-100 dark:border-amber-500/20 flex gap-3">
+                <AlertTriangle size={16} className="text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-700 dark:text-amber-300 font-medium leading-snug">
                   La terminal se abrirá en una nueva pestaña. El cajero puede acceder a la URL desde cualquier PC de tu red con una cuenta de ventas.
                 </p>
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">
                   Nombre del Cajero *
                 </label>
                 <input
@@ -512,19 +528,19 @@ export default function AdminPosManager() {
                   onChange={e => setCashierName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleConfirmOpenShift()}
                   placeholder="Ej. María González"
-                  className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-slate-900 outline-none transition-all"
+                  className="w-full px-4 py-3.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/20 focus:ring-2 focus:ring-slate-900 dark:focus:ring-white/20 outline-none transition-all"
                 />
               </div>
 
               <div className="flex gap-3">
                 <button onClick={() => setOpenShiftModal(false)}
-                  className="flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all">
+                  className="flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-white/[0.05] transition-all">
                   Cancelar
                 </button>
                 <button
                   disabled={!cashierName.trim() || isOpeningShift}
                   onClick={handleConfirmOpenShift}
-                  className="flex-[2] py-4 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all disabled:opacity-40">
+                  className="flex-[2] py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 dark:hover:bg-emerald-500 dark:hover:text-white transition-all disabled:opacity-40">
                   {isOpeningShift
                     ? <Loader2 size={16} className="animate-spin" />
                     : <><ExternalLink size={14} />Abrir en Nueva Pestaña</>}
@@ -538,20 +554,20 @@ export default function AdminPosManager() {
       {/* ══ CREATE TERMINAL MODAL ══════════════════════════════════════════════ */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl dark:shadow-black/40 overflow-hidden animate-in zoom-in-95 duration-300 border border-transparent dark:border-white/[0.06]">
+            <div className="px-8 py-6 border-b border-slate-100 dark:border-white/[0.06] flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-black text-slate-900">Nueva Terminal</h2>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Punto de Venta</p>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white">Nueva Terminal</h2>
+                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">Punto de Venta</p>
               </div>
               <button onClick={() => setIsModalOpen(false)}
-                className="h-10 w-10 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 transition-all">
+                className="h-10 w-10 rounded-full hover:bg-slate-100 dark:hover:bg-white/[0.08] flex items-center justify-center text-slate-400 dark:text-slate-500 transition-all">
                 <X size={20} />
               </button>
             </div>
             <form onSubmit={handleCreateTerminal} className="p-8 space-y-6">
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">
                   Nombre Identificador
                 </label>
                 <input
@@ -559,15 +575,15 @@ export default function AdminPosManager() {
                   value={newTerminal.nombre}
                   onChange={e => setNewTerminal({ ...newTerminal, nombre: e.target.value })}
                   placeholder="Ej. Caja 1 — Planta Baja"
-                  className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-slate-900 outline-none"
+                  className="w-full px-4 py-3.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/20 focus:ring-2 focus:ring-slate-900 dark:focus:ring-white/20 outline-none"
                 />
               </div>
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 block">Tipo</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3 block">Tipo</label>
                 <div className="grid grid-cols-2 gap-3">
                   {(['detal', 'mayor'] as const).map(tipo => (
                     <button key={tipo} type="button" onClick={() => setNewTerminal({ ...newTerminal, tipo })}
-                      className={`py-5 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${newTerminal.tipo === tipo ? 'border-slate-900 bg-slate-900 text-white shadow-xl' : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200'}`}>
+                      className={`py-5 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${newTerminal.tipo === tipo ? 'border-slate-900 dark:border-white bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xl' : 'border-slate-100 dark:border-white/10 bg-slate-50 dark:bg-white/[0.04] text-slate-400 dark:text-slate-500 hover:border-slate-200 dark:hover:border-white/20'}`}>
                       {tipo === 'detal' ? <Store size={22} /> : <Factory size={22} />}
                       <span className="text-[9px] font-black uppercase tracking-widest">{tipo === 'detal' ? 'Detal' : 'Al Mayor'}</span>
                     </button>
@@ -576,12 +592,12 @@ export default function AdminPosManager() {
               </div>
               <div className="flex gap-3">
                 <button type="button" onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-4 rounded-xl text-[10px] font-black uppercase text-slate-400 hover:bg-slate-50">
+                  className="flex-1 py-4 rounded-xl text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-white/[0.05]">
                   Cancelar
                 </button>
                 <button
                   disabled={isSaving || !newTerminal.nombre}
-                  className="flex-[2] py-4 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all disabled:opacity-50">
+                  className="flex-[2] py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-600 dark:hover:bg-emerald-500 dark:hover:text-white transition-all disabled:opacity-50">
                   {isSaving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={15} />Crear Caja</>}
                 </button>
               </div>
@@ -593,56 +609,56 @@ export default function AdminPosManager() {
       {/* ══ AUDIT PANEL ════════════════════════════════════════════════════════ */}
       {selectedAudit && (
         <div className="fixed inset-0 z-[60] flex items-end justify-end bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-2xl h-screen shadow-2xl flex flex-col animate-in slide-in-from-right duration-400">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl h-screen shadow-2xl dark:shadow-black/40 flex flex-col animate-in slide-in-from-right duration-400 border-l border-transparent dark:border-white/[0.06]">
 
             {/* Audit header */}
-            <div className="p-6 border-b border-slate-100 shrink-0">
+            <div className="p-6 border-b border-slate-100 dark:border-white/[0.06] shrink-0">
               <div className="flex justify-between items-start mb-5">
                 <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${selectedAudit.tipo === 'detal' ? 'bg-sky-100 text-sky-600' : 'bg-violet-100 text-violet-600'}`}>
+                  <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${selectedAudit.tipo === 'detal' ? 'bg-sky-100 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400' : 'bg-violet-100 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400'}`}>
                     {selectedAudit.tipo === 'detal' ? <Store size={18} /> : <Factory size={18} />}
                   </div>
                   <div>
-                    <h2 className="text-xl font-black text-slate-900 leading-none">{selectedAudit.nombre}</h2>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                    <h2 className="text-xl font-black text-slate-900 dark:text-white leading-none">{selectedAudit.nombre}</h2>
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
                       {selectedAudit.apertura ? formatFullDateTime(selectedAudit.apertura) : 'Terminal cerrada'}
                     </p>
                   </div>
                 </div>
                 <button onClick={() => setSelectedAudit(null)}
-                  className="h-10 w-10 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 transition-all">
+                  className="h-10 w-10 rounded-full hover:bg-slate-100 dark:hover:bg-white/[0.08] flex items-center justify-center text-slate-400 dark:text-slate-500 transition-all">
                   <X size={20} />
                 </button>
               </div>
 
               {/* Summary row */}
               <div className="grid grid-cols-4 gap-3">
-                <div className="bg-slate-50 rounded-xl p-3">
-                  <p className="text-[9px] font-black uppercase text-slate-300 mb-1">Estado</p>
-                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${selectedAudit.estado === 'abierta' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3">
+                  <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Estado</p>
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${selectedAudit.estado === 'abierta' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' : 'bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400'}`}>
                     {selectedAudit.estado}
                   </span>
                 </div>
-                <div className="bg-slate-50 rounded-xl p-3">
-                  <p className="text-[9px] font-black uppercase text-slate-300 mb-1">Cajero</p>
-                  <p className="text-xs font-black text-slate-700 truncate">{selectedAudit.cajeroNombre}</p>
+                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3">
+                  <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Cajero</p>
+                  <p className="text-xs font-black text-slate-700 dark:text-slate-300 truncate">{selectedAudit.cajeroNombre}</p>
                 </div>
-                <div className="bg-emerald-50 rounded-xl p-3">
-                  <p className="text-[9px] font-black uppercase text-slate-300 mb-1">Total (USD)</p>
-                  <p className="text-sm font-black text-emerald-700">${auditTotalUsd.toFixed(2)}</p>
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3">
+                  <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Total (USD)</p>
+                  <p className="text-sm font-black text-emerald-700 dark:text-emerald-400">${auditTotalUsd.toFixed(2)}</p>
                 </div>
-                <div className="bg-slate-50 rounded-xl p-3">
-                  <p className="text-[9px] font-black uppercase text-slate-300 mb-1">Transacciones</p>
-                  <p className="text-sm font-black text-slate-700">{auditMovements.length}</p>
+                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3">
+                  <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Transacciones</p>
+                  <p className="text-sm font-black text-slate-700 dark:text-slate-300">{auditMovements.length}</p>
                 </div>
               </div>
 
               <div className="flex items-center justify-between mt-4">
-                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest">
                   Historial de Ventas
                 </p>
                 <button onClick={handleExportExcel}
-                  className="flex items-center gap-1.5 text-[9px] font-black uppercase bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg hover:bg-emerald-600 hover:text-white transition-all">
+                  className="flex items-center gap-1.5 text-[9px] font-black uppercase bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 px-3 py-1.5 rounded-lg hover:bg-emerald-600 hover:text-white transition-all">
                   <Download size={11} />Exportar Excel
                 </button>
               </div>
@@ -653,40 +669,40 @@ export default function AdminPosManager() {
               {loadingAudit ? (
                 <div className="h-full flex flex-col items-center justify-center opacity-40">
                   <Loader2 className="animate-spin mb-3" size={28} />
-                  <p className="text-xs font-bold uppercase tracking-widest">Consultando registros...</p>
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Consultando registros...</p>
                 </div>
               ) : auditMovements.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center opacity-40 text-center">
-                  <Activity size={56} className="mb-4 text-slate-300" />
-                  <h3 className="text-lg font-black text-slate-600">Sin Movimientos</h3>
-                  <p className="text-sm text-slate-400 mt-1">Esta terminal aún no ha procesado ventas.</p>
+                  <Activity size={56} className="mb-4 text-slate-300 dark:text-slate-700" />
+                  <h3 className="text-lg font-black text-slate-600 dark:text-slate-400">Sin Movimientos</h3>
+                  <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Esta terminal aún no ha procesado ventas.</p>
                 </div>
               ) : auditMovements.map((m, idx) => {
                 const ts = formatAuditTimestamp(m.createdAt);
                 const amtUsd = Number(m.amountInUSD || m.amount || 0);
                 return (
-                  <div key={m.id} className="p-4 rounded-2xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all">
+                  <div key={m.id} className="p-4 rounded-2xl border border-slate-100 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] shadow-sm hover:shadow-md dark:hover:shadow-black/20 transition-all">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xs shrink-0">
+                        <div className="h-9 w-9 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-black text-xs shrink-0">
                           {(auditMovements.length - idx).toString().padStart(2, '0')}
                         </div>
                         <div>
-                          <p className="text-sm font-black text-slate-900">
+                          <p className="text-sm font-black text-slate-900 dark:text-white">
                             {m.entityId === 'CONSUMIDOR_FINAL' ? 'Consumidor Final' : (m.entityId || 'Sin cliente')}
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                            <span className="text-[9px] font-black text-slate-500 uppercase">{ts.day}</span>
-                            <span className="w-0.5 h-0.5 rounded-full bg-slate-300" />
-                            <span className="text-[9px] font-bold text-slate-400">{ts.date}</span>
-                            <span className="w-0.5 h-0.5 rounded-full bg-slate-300" />
-                            <span className="text-[9px] font-black text-indigo-600">{ts.time}</span>
+                            <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase">{ts.day}</span>
+                            <span className="w-0.5 h-0.5 rounded-full bg-slate-300 dark:bg-slate-600" />
+                            <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500">{ts.date}</span>
+                            <span className="w-0.5 h-0.5 rounded-full bg-slate-300 dark:bg-slate-600" />
+                            <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">{ts.time}</span>
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-base font-black text-slate-900">${amtUsd.toFixed(2)}</p>
-                        <p className="text-[9px] font-bold text-slate-400">
+                        <p className="text-base font-black text-slate-900 dark:text-white">${amtUsd.toFixed(2)}</p>
+                        <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500">
                           {(amtUsd * (m.rateUsed || 0)).toFixed(2)} Bs
                         </p>
                       </div>
@@ -694,28 +710,28 @@ export default function AdminPosManager() {
 
                     <div className="flex items-center gap-3 mb-2 flex-wrap">
                       {m.vendedorNombre && (
-                        <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                        <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500">
                           <User size={10} />{m.vendedorNombre}
                         </div>
                       )}
                       {m.metodoPago && (
-                        <span className="px-2 py-0.5 bg-slate-100 rounded-md text-[9px] font-black text-slate-500 uppercase">
+                        <span className="px-2 py-0.5 bg-slate-100 dark:bg-white/[0.08] rounded-md text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase">
                           {m.metodoPago}
                         </span>
                       )}
                       {m.rateUsed && (
-                        <span className="text-[9px] font-bold text-slate-300">
+                        <span className="text-[9px] font-bold text-slate-300 dark:text-slate-600">
                           Tasa: {Number(m.rateUsed).toFixed(2)} Bs/USD
                         </span>
                       )}
                     </div>
 
                     {m.items && m.items.length > 0 && (
-                      <div className="pt-3 border-t border-slate-50 space-y-1">
+                      <div className="pt-3 border-t border-slate-50 dark:border-white/[0.04] space-y-1">
                         {m.items.map((item: any, i: number) => (
-                          <div key={i} className="flex justify-between text-[10px] text-slate-500">
-                            <span className="font-bold text-slate-600">{item.qty}× {item.nombre}</span>
-                            <span className="font-black text-slate-700">${Number(item.price || 0).toFixed(2)}</span>
+                          <div key={i} className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                            <span className="font-bold text-slate-600 dark:text-slate-300">{item.qty}× {item.nombre}</span>
+                            <span className="font-black text-slate-700 dark:text-slate-200">${Number(item.price || 0).toFixed(2)}</span>
                           </div>
                         ))}
                       </div>

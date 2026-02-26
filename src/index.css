@@ -74,6 +74,50 @@
     --ui-soft: rgba(124, 58, 237, 0.08); /* Fondo suave morado */
   }
 
+  /* ── DARK MODE VARIABLES ───────────────────────────────────────────── */
+  html.dark {
+    --ui-bg: #0a0f1e;
+    --ui-panel: #0f172a;
+    --ui-elev: #1e293b;
+    --ui-ink: #f1f5f9;
+    --ui-muted: #94a3b8;
+    --ui-border: rgba(255, 255, 255, 0.08);
+    --ui-soft: rgba(124, 58, 237, 0.12);
+  }
+
+  html.dark body {
+    background: var(--ui-bg);
+    color: var(--ui-ink);
+  }
+
+  /* ── UI PREFS VARIABLES (overridden via JS) ────────────────────── */
+  :root {
+    --ui-radius: 12px;
+    --ui-transition: 0.25s;
+  }
+
+  /* ── DENSITY SYSTEM ────────────────────────────────────────────── */
+  [data-density="compact"] {
+    --density-gap: 0.5rem;
+    --density-p: 0.75rem;
+  }
+  [data-density="normal"] {
+    --density-gap: 1rem;
+    --density-p: 1.25rem;
+  }
+  [data-density="spacious"] {
+    --density-gap: 1.5rem;
+    --density-p: 2rem;
+  }
+
+  /* Disable all transitions when animationSpeed = none */
+  [style*="--ui-transition: 0s"] *,
+  [style*="--ui-transition: 0s"] *::before,
+  [style*="--ui-transition: 0s"] *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+
   body {
     background: var(--ui-bg);
     color: var(--ui-ink);

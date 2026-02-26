@@ -3,426 +3,410 @@ import { auth, db } from '../firebase/config';
 import { signInWithEmailAndPassword, signInWithCustomToken, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { startAuthentication } from '@simplewebauthn/browser';
-import { LogIn, Mail, Lock, Loader2, ArrowLeft, Building2 } from 'lucide-react';
+import {
+  Mail, Lock, Loader2, Building2, Eye, EyeOff, Fingerprint,
+  ArrowRight, Zap, BarChart3, Shield, Users, X, CheckCircle2, ArrowLeft,
+} from 'lucide-react';
 import ReCAPTCHA from 'react-google-recaptcha';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import Logo from './ui/Logo';
+import ModeToggle from './ModeToggle';
+
+const FEATURES = [
+  { icon: Zap,        label: 'POS en tiempo real',     desc: 'Factura en segundos, sin cortes' },
+  { icon: BarChart3,  label: 'Dashboard inteligente',  desc: 'KPIs, flujo de caja y métricas en vivo' },
+  { icon: Shield,     label: 'Multi-tenant seguro',    desc: 'Datos aislados y cifrados por empresa' },
+  { icon: Users,      label: 'Roles granulares',       desc: 'Owner, Admin, Ventas, Auditor y más' },
+];
+
+const RATE_KEY  = 'login_rate_limit_v1';
+const MAX_ATT   = 5;
+const WIN_MS    = 10 * 60 * 1000;
+const LOCK_MS   = 10 * 60 * 1000;
+
+const sanitize  = (v: string) => v.replace(/[<>]/g, '').trim();
+const readRL    = () => { try { const r = localStorage.getItem(RATE_KEY); return r ? JSON.parse(r) as { count: number; firstAttempt: number; lockedUntil?: number } : null; } catch { return null; } };
+const writeRL   = (v: object) => localStorage.setItem(RATE_KEY, JSON.stringify(v));
 
 export default function Login() {
-  const [workspaceCode, setWorkspaceCode] = useState('');
-  const [email, setEmail] = useState('');
-  const [pass, setPass] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [passkeyLoading, setPasskeyLoading] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [hovered, setHovered] = useState(false);
-  const [showUserPicker, setShowUserPicker] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [recentUsers, setRecentUsers] = useState<Array<{ email: string; lastUsed: string }>>(() => {
-    try {
-      const raw = localStorage.getItem('erp_login_users');
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+  const [code,      setCode]      = useState('');
+  const [email,     setEmail]     = useState('');
+  const [pass,      setPass]      = useState('');
+  const [showPass,  setShowPass]  = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [pkLoading, setPkLoading] = useState(false);
+  const [error,     setError]     = useState('');
+  const [resetMode, setResetMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [rstLoad,   setRstLoad]   = useState(false);
+  const [picker,    setPicker]    = useState(false);
+  const [captcha,   setCaptcha]   = useState<string | null>(null);
+  const [recents,   setRecents]   = useState<Array<{ email: string; lastUsed: string }>>(() => {
+    try { const r = localStorage.getItem('erp_login_users'); return r ? JSON.parse(r) : []; } catch { return []; }
   });
-  const nav = useNavigate();
-  const { user, loading: authLoading } = useAuth();
-  const captchaKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined;
 
-  const RATE_LIMIT_KEY = 'login_rate_limit_v1';
-  const MAX_ATTEMPTS = 5;
-  const WINDOW_MS = 10 * 60 * 1000;
-  const LOCK_MS = 10 * 60 * 1000;
+  const nav                     = useNavigate();
+  const { user, loading: aLoad } = useAuth();
+  const captchaKey              = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined;
 
-  const sanitizeEmail = (value: string) => value.replace(/[<>]/g, '').trim();
+  React.useEffect(() => { if (user && !aLoad) nav('/'); }, [user, aLoad, nav]);
 
-  const readRateLimit = () => {
-    try {
-      const raw = localStorage.getItem(RATE_LIMIT_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw) as { count: number; firstAttempt: number; lockedUntil?: number };
-    } catch {
-      return null;
-    }
-  };
-
-  const writeRateLimit = (next: { count: number; firstAttempt: number; lockedUntil?: number }) => {
-    localStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(next));
-  };
-
-  // Redirige si el usuario ya está autenticado antes de que llegue al login
-  React.useEffect(() => {
-    if (user && !authLoading) nav('/');
-  }, [user, authLoading, nav]);
-
+  /* ── MAIN LOGIN ─────────────────────────────────────── */
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
 
-    if (!workspaceCode) {
-      setError('El Código de Espacio es obligatorio.');
-      setLoading(false);
-      return;
+    if (!code) { setError('El Código de Espacio es obligatorio.'); setLoading(false); return; }
+    if (captchaKey && !captcha) { setError('Completa el captcha.'); setLoading(false); return; }
+
+    const now = Date.now(), rl = readRL();
+    if (rl?.lockedUntil && now < rl.lockedUntil) {
+      setError(`Demasiados intentos. Intenta en ${Math.ceil((rl.lockedUntil - now) / 60000)} min.`);
+      setLoading(false); return;
     }
 
-    if (captchaKey && !captchaToken) {
-      setError('Completa el captcha antes de continuar.');
-      setLoading(false);
-      return;
-    }
-    if (!captchaKey) {
-      console.info('Modo Dev: Captcha omitido');
-    }
-
-    const now = Date.now();
-    const current = readRateLimit();
-    if (current?.lockedUntil && now < current.lockedUntil) {
-      const waitMs = current.lockedUntil - now;
-      setError(`Demasiados intentos. Intenta de nuevo en ${Math.ceil(waitMs / 60000)} min.`);
-      setLoading(false);
-      return;
-    }
-
-    const safeEmail = sanitizeEmail(email);
-
+    const safeEmail = sanitize(email);
     try {
-      // 1. Iniciar sesión normal
-      const cred = await signInWithEmailAndPassword(auth, safeEmail, pass);
-      
-      // 2. Validar empresa_id con paciencia (evitar carrera con AuthContext)
-      let userDoc = await getDoc(doc(db, 'users', cred.user.uid));
-      
-      // Re-intento corto si el documento aún no existe (para registros recién hechos)
-      if (!userDoc.exists()) {
-        await new Promise(r => setTimeout(r, 1000));
-        userDoc = await getDoc(doc(db, 'users', cred.user.uid));
-      }
+      const cred    = await signInWithEmailAndPassword(auth, safeEmail, pass);
+      let   userDoc = await getDoc(doc(db, 'users', cred.user.uid));
+      if (!userDoc.exists()) { await new Promise(r => setTimeout(r, 1000)); userDoc = await getDoc(doc(db, 'users', cred.user.uid)); }
+      if (!userDoc.exists()) { setError('Tu perfil está siendo procesado. Si persiste, contacta soporte.'); setLoading(false); return; }
 
-      if (!userDoc.exists()) {
-        // Si el documento NO existe, informamos pero NO deslogueamos. 
-        // El TenantGuard eventualmente lo enviará a /onboarding.
-        setError('Tu perfil está siendo procesado. Si el problema persiste, contacta a soporte.');
-        setLoading(false);
-        return;
-      }
-
-      const userData = userDoc.data();
-      const userBusinessId = userData.businessId || userData.empresa_id;
-
-      // VALIDACIÓN ESTRICTA DE CÓDIGO DE ESPACIO
-      if (userBusinessId && userBusinessId !== workspaceCode.trim()) {
+      const ud  = userDoc.data();
+      const bid = ud.businessId || ud.empresa_id;
+      if (bid && bid !== code.trim()) {
         await auth.signOut();
         setError('Acceso Denegado: El Código de Espacio no coincide con esta cuenta.');
-        setLoading(false);
-        return;
+        setLoading(false); return;
       }
 
-      // 3. Guardar usuario reciente y limpiar rate limit
-      const next = [
-        { email: safeEmail.toLowerCase(), lastUsed: new Date().toISOString() },
-        ...recentUsers.filter((u) => u.email.toLowerCase() !== safeEmail.toLowerCase()),
-      ].slice(0, 8);
-      setRecentUsers(next);
+      const next = [{ email: safeEmail.toLowerCase(), lastUsed: new Date().toISOString() }, ...recents.filter(u => u.email.toLowerCase() !== safeEmail.toLowerCase())].slice(0, 8);
+      setRecents(next);
       localStorage.setItem('erp_login_users', JSON.stringify(next));
-      localStorage.removeItem(RATE_LIMIT_KEY);
-      setCaptchaToken(null);
+      localStorage.removeItem(RATE_KEY);
+      setCaptcha(null);
 
-      // 4. Navegar directamente al destino correcto según el estado del perfil
-      const effectiveBusinessId = userBusinessId || workspaceCode.trim();
-      const userStatus = userData.status || 'ACTIVE';
-      if (userStatus === 'ACTIVE' && effectiveBusinessId) {
-        nav(`/${effectiveBusinessId}/admin/dashboard`, { replace: true });
-      } else {
-        // PENDING_SETUP u otro estado → onboarding
-        nav('/onboarding', { replace: true });
-      }
+      const eff = bid || code.trim();
+      if ((ud.status || 'ACTIVE') === 'ACTIVE' && eff) nav(`/${eff}/admin/dashboard`, { replace: true });
+      else nav('/onboarding', { replace: true });
       setLoading(false);
     } catch (err: any) {
-      console.error(err);
-      const nextWindow = current && now - current.firstAttempt <= WINDOW_MS
-        ? current
-        : { count: 0, firstAttempt: now };
-      const nextCount = nextWindow.count + 1;
-      const shouldLock = nextCount >= MAX_ATTEMPTS;
-      const lockedUntil = shouldLock ? now + LOCK_MS : undefined;
-      writeRateLimit({ count: nextCount, firstAttempt: nextWindow.firstAttempt, lockedUntil });
-      if (shouldLock && lockedUntil) {
-        setError('Demasiados intentos. Intenta de nuevo en 10 min.');
-      } else {
-        setError(err.message || 'Correo, contraseña o código incorrectos.');
-      }
+      const nw    = rl && now - rl.firstAttempt <= WIN_MS ? rl : { count: 0, firstAttempt: now };
+      const nc    = nw.count + 1;
+      const lock  = nc >= MAX_ATT;
+      writeRL({ count: nc, firstAttempt: nw.firstAttempt, lockedUntil: lock ? now + LOCK_MS : undefined });
+      setError(lock ? 'Demasiados intentos. Intenta en 10 min.' : (err.message || 'Correo, contraseña o código incorrectos.'));
       setLoading(false);
     }
   };
 
-  const handlePasskeyLogin = async () => {
+  /* ── PASSKEY ─────────────────────────────────────────── */
+  const handlePasskey = async () => {
     try {
-      setPasskeyLoading(true);
-      const optionsRes = await fetch('/api/passkey-auth-options', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      if (!optionsRes.ok) throw new Error('No se pudieron crear opciones de acceso.');
-      const { options, challengeId } = await optionsRes.json();
-      const assertionResponse = await startAuthentication(options);
-
-      const verifyRes = await fetch('/api/passkey-auth-verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assertionResponse, challengeId }),
-      });
-      if (!verifyRes.ok) throw new Error('No se pudo verificar la llave de acceso.');
-      const { token } = await verifyRes.json();
-      await signInWithCustomToken(auth, token);
-    } catch (e) {
-      console.error(e);
-      setError('No se pudo iniciar sesion con llave de acceso.');
-    } finally {
-      setPasskeyLoading(false);
-    }
+      setPkLoading(true); setError('');
+      const or  = await fetch('/api/passkey-auth-options', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      if (!or.ok) throw new Error('No se pudieron crear opciones de acceso.');
+      const { options, challengeId } = await or.json();
+      const ar  = await startAuthentication(options);
+      const vr  = await fetch('/api/passkey-auth-verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assertionResponse: ar, challengeId }) });
+      if (!vr.ok) throw new Error('No se pudo verificar la llave.');
+      await signInWithCustomToken(auth, (await vr.json()).token);
+    } catch { setError('No se pudo iniciar sesión con Passkey.'); }
+    finally   { setPkLoading(false); }
   };
 
-  const handleResetPassword = async () => {
-    const safeEmail = sanitizeEmail(email);
-    if (!safeEmail) {
-      setError('Ingresa tu correo para restablecer la contrasena.');
-      return;
-    }
-
-    try {
-      setResetLoading(true);
-      setError('');
-      await sendPasswordResetEmail(auth, safeEmail);
-      alert('Revisa tu correo para restablecer la contrasena.');
-    } catch (e) {
-      console.error(e);
-      setError('No se pudo enviar el correo de restablecimiento.');
-    } finally {
-      setResetLoading(false);
-    }
+  /* ── PASSWORD RESET ──────────────────────────────────── */
+  const handleReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const se = sanitize(email);
+    if (!se) { setError('Ingresa tu correo primero.'); return; }
+    setRstLoad(true); setError('');
+    try { await sendPasswordResetEmail(auth, se); setResetSent(true); }
+    catch { setError('No se pudo enviar el correo. Verifica la dirección.'); }
+    finally { setRstLoad(false); }
   };
 
-  const inputClasses = "w-full px-4 py-3 bg-white border border-slate-300 text-slate-900 rounded-xl placeholder:text-slate-400 focus:ring-2 focus:ring-slate-900 focus:border-slate-900 focus:outline-none text-sm transition-all";
+  /* ── SHARED INPUT CLASS ──────────────────────────────── */
+  const inp = 'w-full pl-11 pr-4 py-4 bg-white/[0.06] border border-white/[0.1] text-white rounded-xl placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500/40 text-sm font-medium transition-all';
 
+  /* ═══════════════════════════════════════════════════════
+     RENDER
+  ═══════════════════════════════════════════════════════ */
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-12 relative overflow-y-auto custom-scroll">
-      <button
-        onClick={() => nav('/')}
-        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors text-sm font-medium"
-      >
-        <ArrowLeft size={16} /> Volver al inicio
-      </button>
+    <div className="min-h-screen flex bg-[#07091a]">
 
-      <div className="w-full max-w-md">
-        <div
-          className={`bg-white shadow-xl rounded-[2rem] border border-slate-100 p-8 transition-transform duration-300 ${
-            hovered ? 'scale-[1.02]' : 'scale-100'
-          }`}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-        >
-          <div className="flex flex-col items-center text-center">
-            <Logo className="h-12 w-auto" textClassName="text-slate-900" />
-            <p className="text-xs text-slate-500 mt-2">
-              Acceso seguro y moderno
+      {/* ── LEFT BRAND PANEL ────────────────────────────── */}
+      <div className="hidden lg:flex w-[52%] flex-col justify-between relative overflow-hidden p-16">
+
+        {/* Atmospheric blobs */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-[20%] -left-[10%]  w-[70%] h-[70%] rounded-full bg-indigo-600/25  blur-[120px]" />
+          <div className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] rounded-full bg-violet-600/20  blur-[100px]" />
+          <div className="absolute top-[38%] left-[28%]    w-[40%] h-[40%] rounded-full bg-blue-600/12    blur-[80px]" />
+        </div>
+
+        {/* Grid */}
+        <div className="absolute inset-0 opacity-[0.035]"
+          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
+
+        {/* Floating dots */}
+        <div className="absolute top-[23%] right-[14%] w-3 h-3 rounded-full bg-indigo-400/50  animate-pulse" />
+        <div className="absolute top-[58%] left-[6%]   w-2 h-2 rounded-full bg-violet-400/50  animate-pulse [animation-delay:1s]" />
+        <div className="absolute bottom-[30%] right-[26%] w-4 h-4 rounded-full bg-blue-400/30 animate-pulse [animation-delay:0.5s]" />
+
+        {/* Logo */}
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-xl shadow-indigo-600/30">
+            <span className="text-white font-black text-xl">D</span>
+          </div>
+          <div>
+            <p className="text-white font-black text-xl tracking-tight">Dualis ERP</p>
+            <p className="text-white/25 text-[9px] font-bold uppercase tracking-widest">Sistema Empresarial</p>
+          </div>
+        </div>
+
+        {/* Hero copy */}
+        <div className="relative z-10 space-y-10">
+          <div>
+            <h2 className="text-[3.5rem] font-black text-white leading-[1.05] tracking-tight">
+              Tu empresa.<br />
+              Tu ritmo.<br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-violet-400 to-blue-400">
+                Tu control.
+              </span>
+            </h2>
+            <p className="text-white/35 mt-5 text-sm leading-relaxed max-w-xs">
+              ERP diseñado para PYMEs latinoamericanas. Ventas, inventario, CxC, nómina y más en un solo lugar.
             </p>
           </div>
 
-          {error && (
-            <div className="mt-6 p-3 bg-red-50 text-red-600 text-sm rounded-xl border border-red-100 text-center font-bold animate-pulse">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="mt-6 space-y-4">
-            <div>
-              <label className="text-xs font-black uppercase tracking-wider text-slate-400 ml-1 mb-2 block">
-                Código de Espacio
-              </label>
-              <div className="relative">
-                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  required
-                  type="text"
-                  className={`${inputClasses} pl-11 font-mono`}
-                  placeholder="key_..."
-                  value={workspaceCode}
-                  onChange={e => setWorkspaceCode(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between ml-1 mb-2">
-                <label className="text-xs font-black uppercase tracking-wider text-slate-400">
-                  Correo electrónico
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowUserPicker(true)}
-                  className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-800"
-                >
-                  Usuarios Recientes
-                </button>
-              </div>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  required
-                  type="email"
-                  className={`${inputClasses} pl-11`}
-                  placeholder="ejemplo@correo.com"
-                  value={email}
-                  onChange={e => setEmail(sanitizeEmail(e.target.value))}
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between ml-1 mb-2">
-                <label className="text-xs font-black uppercase tracking-wider text-slate-400">
-                  Contraseña
-                </label>
-                <button
-                  type="button"
-                  onClick={handleResetPassword}
-                  disabled={resetLoading}
-                  className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600"
-                >
-                  ¿Olvidaste tu clave?
-                </button>
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  required
-                  type="password"
-                  className={`${inputClasses} pl-11`}
-                  placeholder="••••••••"
-                  value={pass}
-                  onChange={e => setPass(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-4"
-            >
-              {loading ? <Loader2 className="animate-spin h-5 w-5" /> : 'Entrar al Sistema'}
-            </button>
-
-            <div className="flex justify-center pt-2">
-              {captchaKey ? (
-                <ReCAPTCHA sitekey={captchaKey} onChange={value => setCaptchaToken(value)} />
-              ) : (
-                <div className="text-[10px] font-mono text-slate-300">MODO_DEV: CAPTCHA_BYPASS</div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={handlePasskeyLogin}
-              disabled={passkeyLoading}
-              className="w-full py-3 bg-slate-50 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-widest border border-slate-100 hover:bg-slate-100 transition-all"
-            >
-              {passkeyLoading ? 'Validando...' : 'Usar llave de acceso (Passkey)'}
-            </button>
-          </form>
-
-          {showUserPicker && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
-              <div className="w-full max-w-sm bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-50">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-900">
-                    Usuarios Guardados
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setShowUserPicker(false)}
-                    className="text-slate-400 hover:text-slate-600"
-                  >
-                    ✕
-                  </button>
+          <div className="space-y-4">
+            {FEATURES.map(({ icon: Icon, label, desc }) => (
+              <div key={label} className="flex items-center gap-4">
+                <div className="h-10 w-10 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0">
+                  <Icon size={17} className="text-indigo-400" />
                 </div>
-                <div className="max-h-64 overflow-y-auto">
-                  {recentUsers.length === 0 ? (
-                    <div className="px-6 py-10 text-xs font-bold text-slate-400 text-center uppercase tracking-widest">
-                      Sin usuarios recientes
-                    </div>
-                  ) : (
-                    recentUsers.map((u) => (
-                      <div
-                        key={u.email}
-                        className="flex items-center justify-between px-6 py-4 hover:bg-slate-50 border-b border-slate-50 transition-colors"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEmail(u.email);
-                            setShowUserPicker(false);
-                          }}
-                          className="text-left flex-1"
-                        >
-                          <div className="text-sm font-black text-slate-800">{u.email}</div>
-                          <div className="text-[9px] font-black uppercase text-slate-300 mt-0.5 tracking-tighter">
-                            Visto: {new Date(u.lastUsed).toLocaleDateString()}
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = recentUsers.filter((x) => x.email !== u.email);
-                            setRecentUsers(next);
-                            localStorage.setItem('erp_login_users', JSON.stringify(next));
-                          }}
-                          className="text-[10px] font-black text-rose-400 hover:text-rose-600 uppercase"
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRecentUsers([]);
-                      localStorage.removeItem('erp_login_users');
-                      setShowUserPicker(false);
-                    }}
-                    className="w-full text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-rose-500 transition-colors"
-                  >
-                    Limpiar Todo
-                  </button>
+                <div>
+                  <p className="text-white font-bold text-sm">{label}</p>
+                  <p className="text-white/35 text-xs">{desc}</p>
                 </div>
               </div>
-            </div>
-          )}
-
-          <div className="mt-8 text-center">
-            <button 
-              onClick={() => nav('/register')} 
-              className="text-xs font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest"
-            >
-              ¿Eres nuevo? Crea una cuenta
-            </button>
+            ))}
           </div>
         </div>
 
-        <div className="mt-6 text-center">
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-            Dualis ERP &copy; 2026
-          </p>
+        {/* Stats */}
+        <div className="relative z-10 flex gap-10">
+          {[['500+', 'Empresas'], ['99.9%', 'Uptime'], ['4.9★', 'Calificación']].map(([v, l]) => (
+            <div key={l}>
+              <p className="text-white font-black text-2xl">{v}</p>
+              <p className="text-white/25 text-[9px] uppercase tracking-widest font-bold">{l}</p>
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* ── RIGHT FORM PANEL ────────────────────────────── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-14 relative">
+        <div className="absolute inset-0 lg:hidden pointer-events-none">
+          <div className="absolute -top-[15%] -right-[15%] w-[65%] h-[65%] rounded-full bg-indigo-600/10 blur-[80px]" />
+        </div>
+
+        {/* Top controls */}
+        <div className="absolute top-5 right-5 z-10"><ModeToggle /></div>
+        <button onClick={() => nav('/')} className="absolute top-5 left-5 z-10 flex items-center gap-1.5 text-white/25 hover:text-white/60 text-[10px] font-bold uppercase tracking-widest transition-colors">
+          <ArrowLeft size={13} /> Inicio
+        </button>
+
+        <div className="relative z-10 w-full max-w-[390px]">
+
+          {/* ── RESET SENT ── */}
+          {resetSent ? (
+            <div className="text-center space-y-6 animate-in fade-in-0 duration-500">
+              <div className="h-20 w-20 mx-auto rounded-[2rem] bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                <CheckCircle2 size={36} className="text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-white">¡Correo enviado!</h2>
+                <p className="text-white/35 text-sm mt-2">Revisa <span className="text-white/70 font-bold">{email}</span> y sigue las instrucciones.</p>
+              </div>
+              <button onClick={() => { setResetMode(false); setResetSent(false); setError(''); }} className="w-full py-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-xs uppercase tracking-widest">
+                Volver al inicio de sesión
+              </button>
+            </div>
+
+          /* ── RESET FORM ── */
+          ) : resetMode ? (
+            <div className="space-y-6 animate-in fade-in-0 slide-in-from-right-4 duration-400">
+              <button onClick={() => { setResetMode(false); setError(''); }} className="flex items-center gap-2 text-white/25 hover:text-white/60 text-[10px] font-bold uppercase tracking-widest transition-colors">
+                <ArrowRight size={12} className="rotate-180" /> Volver
+              </button>
+              <div>
+                <h1 className="text-3xl font-black text-white tracking-tight">Recuperar acceso</h1>
+                <p className="text-white/35 text-sm mt-2">Te enviaremos un enlace de recuperación.</p>
+              </div>
+              <form onSubmit={handleReset} className="space-y-4">
+                <div className="relative">
+                  <Mail size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" />
+                  <input type="email" required placeholder="tu@correo.com" value={email} onChange={e => setEmail(sanitize(e.target.value))} className={inp} />
+                </div>
+                {error && <p className="text-red-400 text-xs font-medium bg-red-500/10 border border-red-500/20 px-4 py-3 rounded-xl">⚠ {error}</p>}
+                <button type="submit" disabled={rstLoad} className="w-full py-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50">
+                  {rstLoad ? <Loader2 size={16} className="animate-spin" /> : 'Enviar enlace de recuperación'}
+                </button>
+              </form>
+            </div>
+
+          /* ── MAIN LOGIN ── */
+          ) : (
+            <div className="animate-in fade-in-0 duration-500">
+              {/* Mobile logo */}
+              <div className="lg:hidden flex items-center gap-3 mb-8">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
+                  <span className="text-white font-black">D</span>
+                </div>
+                <span className="text-white font-black text-lg">Dualis ERP</span>
+              </div>
+
+              <div className="mb-9">
+                <h1 className="text-4xl font-black text-white tracking-tight leading-tight">
+                  Bienvenido<br />de vuelta
+                </h1>
+                <p className="text-white/35 text-sm mt-2">Ingresa a tu panel de control empresarial.</p>
+              </div>
+
+              <form onSubmit={handleLogin} className="space-y-4">
+                {/* Workspace Code */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">
+                    Código de Espacio
+                  </label>
+                  <div className="relative">
+                    <Building2 size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" />
+                    <input
+                      type="text" required placeholder="key_..."
+                      value={code} onChange={e => setCode(e.target.value)}
+                      className={`${inp} font-mono text-emerald-300 placeholder:text-white/20`}
+                    />
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div>
+                  <div className="flex items-center justify-between ml-1 mb-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Correo</label>
+                    {recents.length > 0 && (
+                      <button type="button" onClick={() => setPicker(true)} className="text-[9px] font-black uppercase tracking-widest text-indigo-400 hover:text-indigo-300 transition-colors">
+                        Recientes ▾
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Mail size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" />
+                    <input
+                      type="email" required placeholder="tu@empresa.com"
+                      value={email} onChange={e => setEmail(sanitize(e.target.value))}
+                      className={inp}
+                    />
+                  </div>
+                </div>
+
+                {/* Password */}
+                <div>
+                  <div className="flex items-center justify-between ml-1 mb-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Contraseña</label>
+                    <button type="button" onClick={() => { setResetMode(true); setError(''); }} className="text-[9px] font-black uppercase tracking-widest text-white/25 hover:text-indigo-400 transition-colors">
+                      ¿Olvidaste tu clave?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Lock size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" />
+                    <input
+                      type={showPass ? 'text' : 'password'} required placeholder="••••••••"
+                      value={pass} onChange={e => setPass(e.target.value)}
+                      className={`${inp} pr-12`}
+                    />
+                    <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 hover:text-white/50 transition-colors">
+                      {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Error */}
+                {error && (
+                  <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium px-4 py-3 rounded-xl">
+                    <span>⚠</span> {error}
+                  </div>
+                )}
+
+                {/* Submit */}
+                <button
+                  type="submit" disabled={loading}
+                  className="w-full py-4 mt-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
+                >
+                  {loading ? <Loader2 size={18} className="animate-spin" /> : <>Entrar al sistema <ArrowRight size={15} /></>}
+                </button>
+
+                {/* Captcha */}
+                {captchaKey ? (
+                  <div className="flex justify-center">
+                    <ReCAPTCHA sitekey={captchaKey} onChange={v => setCaptcha(v)} theme="dark" />
+                  </div>
+                ) : (
+                  <p className="text-center text-[9px] font-mono text-white/10 uppercase tracking-widest">MODO_DEV · CAPTCHA_BYPASS</p>
+                )}
+
+                {/* Passkey */}
+                <button
+                  type="button" onClick={handlePasskey} disabled={pkLoading}
+                  className="w-full py-3.5 bg-white/[0.04] border border-white/[0.08] text-white/45 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/[0.08] hover:text-white/70 flex items-center justify-center gap-2 transition-all"
+                >
+                  <Fingerprint size={14} className="text-indigo-400" />
+                  {pkLoading ? 'Validando...' : 'Usar Passkey'}
+                </button>
+              </form>
+
+              {/* Register link */}
+              <div className="mt-8 pt-6 border-t border-white/[0.06] text-center">
+                <p className="text-xs text-white/25">
+                  ¿Nuevo en Dualis?{' '}
+                  <button onClick={() => nav('/register')} className="font-black text-indigo-400 hover:text-indigo-300 transition-colors">
+                    Crear cuenta gratis
+                  </button>
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── RECENTS MODAL ──────────────────────────────── */}
+      {picker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm bg-[#0f1729] border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
+              <h3 className="text-xs font-black uppercase tracking-widest text-white">Usuarios guardados</h3>
+              <button onClick={() => setPicker(false)} className="text-white/30 hover:text-white transition-colors"><X size={16} /></button>
+            </div>
+            <div className="max-h-64 overflow-y-auto divide-y divide-white/[0.04]">
+              {recents.length === 0 ? (
+                <div className="px-6 py-10 text-xs font-bold text-white/20 text-center uppercase tracking-widest">Sin usuarios recientes</div>
+              ) : recents.map(u => (
+                <div key={u.email} className="flex items-center gap-3 px-6 py-4 hover:bg-white/[0.04] transition-colors">
+                  <button type="button" onClick={() => { setEmail(u.email); setPicker(false); }} className="flex-1 text-left">
+                    <div className="text-sm font-bold text-white">{u.email}</div>
+                    <div className="text-[9px] font-bold text-white/20 mt-0.5">{new Date(u.lastUsed).toLocaleDateString()}</div>
+                  </button>
+                  <button type="button" onClick={() => { const n = recents.filter(x => x.email !== u.email); setRecents(n); localStorage.setItem('erp_login_users', JSON.stringify(n)); }} className="text-[10px] font-black text-rose-400/60 hover:text-rose-400 transition-colors">✕</button>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 border-t border-white/[0.06]">
+              <button onClick={() => { setRecents([]); localStorage.removeItem('erp_login_users'); setPicker(false); }} className="w-full text-[10px] font-black uppercase tracking-widest text-white/20 hover:text-rose-400 transition-colors">Limpiar todo</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

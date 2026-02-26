@@ -34,12 +34,16 @@ import {
   Fingerprint,
   Activity,
   X,
+  Sliders,
+  Type,
+  Zap,
+  Palette,
 } from 'lucide-react';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
 import AuditLogViewer from '../components/AuditLogViewer';
 
-type SectionType = 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion';
+type SectionType = 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia';
 
 interface ConfigData {
   companyName: string;
@@ -58,6 +62,55 @@ interface ConfigData {
   };
 }
 
+interface UiPrefs {
+  fontSize: 'xs' | 'sm' | 'base' | 'lg' | 'xl';
+  accentColor: 'indigo' | 'violet' | 'emerald' | 'rose' | 'amber' | 'blue';
+  borderRadius: 'sharp' | 'normal' | 'rounded' | 'pill';
+  density: 'compact' | 'normal' | 'spacious';
+  dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
+  numberFormat: 'dot' | 'comma';
+  animationSpeed: 'fast' | 'normal' | 'slow' | 'none';
+}
+
+const DEFAULT_UI_PREFS: UiPrefs = {
+  fontSize: 'base',
+  accentColor: 'violet',
+  borderRadius: 'normal',
+  density: 'normal',
+  dateFormat: 'DD/MM/YYYY',
+  numberFormat: 'dot',
+  animationSpeed: 'normal',
+};
+
+function applyUiPrefs(prefs: UiPrefs) {
+  const root = document.documentElement;
+  const fontSizes: Record<UiPrefs['fontSize'], string> = {
+    xs: '11px', sm: '13px', base: '14px', lg: '16px', xl: '18px',
+  };
+  root.style.fontSize = fontSizes[prefs.fontSize] ?? '14px';
+  const accents: Record<UiPrefs['accentColor'], { p: string; h: string; s: string }> = {
+    indigo:  { p: '#4f46e5', h: '#4338ca', s: 'rgba(79,70,229,0.08)'   },
+    violet:  { p: '#7c3aed', h: '#6d28d9', s: 'rgba(124,58,237,0.08)'  },
+    emerald: { p: '#059669', h: '#047857', s: 'rgba(5,150,105,0.08)'    },
+    rose:    { p: '#e11d48', h: '#be123c', s: 'rgba(225,29,72,0.08)'    },
+    amber:   { p: '#d97706', h: '#b45309', s: 'rgba(217,119,6,0.08)'    },
+    blue:    { p: '#2563eb', h: '#1d4ed8', s: 'rgba(37,99,235,0.08)'    },
+  };
+  const a = accents[prefs.accentColor] ?? accents.violet;
+  root.style.setProperty('--ui-accent', a.p);
+  root.style.setProperty('--ui-accent-hover', a.h);
+  root.style.setProperty('--ui-soft', a.s);
+  const radii: Record<UiPrefs['borderRadius'], string> = {
+    sharp: '4px', normal: '12px', rounded: '20px', pill: '9999px',
+  };
+  root.style.setProperty('--ui-radius', radii[prefs.borderRadius] ?? '12px');
+  root.setAttribute('data-density', prefs.density);
+  const speeds: Record<UiPrefs['animationSpeed'], string> = {
+    fast: '0.1s', normal: '0.25s', slow: '0.5s', none: '0s',
+  };
+  root.style.setProperty('--ui-transition', speeds[prefs.animationSpeed] ?? '0.25s');
+}
+
 const Configuracion: React.FC = () => {
   const navigate = useNavigate();
   const { userProfile, updateUserProfile } = useAuth();
@@ -68,6 +121,8 @@ const Configuracion: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copyToast, setCopyToast] = useState(false);
+  const [uiPrefs, setUiPrefs] = useState<UiPrefs>(DEFAULT_UI_PREFS);
+  const [savingPrefs, setSavingPrefs] = useState(false);
 
   // PIN Modal state
   const [pinModal, setPinModal] = useState(false);
@@ -119,6 +174,17 @@ const Configuracion: React.FC = () => {
     };
     loadData();
   }, [businessId]);
+
+  useEffect(() => {
+    if (!userProfile?.uid) return;
+    getDoc(doc(db, 'users', userProfile.uid)).then(snap => {
+      if (snap.exists() && snap.data().uiPrefs) {
+        const saved = { ...DEFAULT_UI_PREFS, ...snap.data().uiPrefs } as UiPrefs;
+        setUiPrefs(saved);
+        applyUiPrefs(saved);
+      }
+    }).catch(() => {});
+  }, [userProfile?.uid]);
 
   const handleSaveConfig = async () => {
     if (!isAdmin || !businessId || !userProfile?.uid) return;
@@ -172,6 +238,21 @@ const Configuracion: React.FC = () => {
     setTimeout(() => setCopyToast(false), 2000);
   };
 
+  const handleSaveUiPrefs = async () => {
+    if (!userProfile?.uid) return;
+    setSavingPrefs(true);
+    try {
+      await setDoc(doc(db, 'users', userProfile.uid), { uiPrefs }, { merge: true });
+      applyUiPrefs(uiPrefs);
+      toast.success('Preferencias de apariencia guardadas');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar preferencias');
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -186,6 +267,7 @@ const Configuracion: React.FC = () => {
     { id: 'equipo', label: 'Equipo y Permisos', icon: Users2 },
     { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
     { id: 'suscripcion', label: 'Suscripción', icon: CreditCard },
+    { id: 'apariencia', label: 'Apariencia', icon: Palette },
   ];
 
   const inputClasses =
@@ -503,6 +585,236 @@ const Configuracion: React.FC = () => {
                     </button>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* APARIENCIA */}
+            {activeSection === 'apariencia' && (
+              <div className="space-y-8 pb-20">
+
+                {/* Header card */}
+                <div className="bg-gradient-to-br from-violet-600 to-indigo-600 p-10 rounded-[3rem] text-white relative overflow-hidden shadow-2xl shadow-violet-500/20">
+                  <div className="absolute -right-10 -top-10 h-48 w-48 bg-white/5 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute -left-6 -bottom-6 h-32 w-32 bg-white/5 rounded-full blur-2xl pointer-events-none" />
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-3">
+                      <Palette size={22} className="text-violet-200" />
+                      <span className="text-[10px] font-black uppercase tracking-[0.3em] text-violet-200">Personalización por Usuario</span>
+                    </div>
+                    <h3 className="text-3xl font-black tracking-tight mb-2">Tu Espacio, Tu Estilo</h3>
+                    <p className="text-violet-200 text-sm font-medium leading-relaxed max-w-md">
+                      Ajusta la apariencia a tu gusto. Cada cambio se guarda por usuario y aplica al instante.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Font size */}
+                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6 flex items-center gap-2">
+                    <Type size={14} /> Tamaño de Fuente
+                  </h4>
+                  <div className="flex gap-3 flex-wrap">
+                    {([
+                      { val: 'xs',   label: 'XS',   size: 'text-xs'   },
+                      { val: 'sm',   label: 'SM',   size: 'text-sm'   },
+                      { val: 'base', label: 'Base', size: 'text-base' },
+                      { val: 'lg',   label: 'LG',   size: 'text-lg'   },
+                      { val: 'xl',   label: 'XL',   size: 'text-xl'   },
+                    ] as const).map(f => (
+                      <button
+                        key={f.val}
+                        onClick={() => setUiPrefs(p => ({ ...p, fontSize: f.val }))}
+                        className={`flex-1 min-w-[70px] flex flex-col items-center gap-2 py-6 px-3 rounded-2xl border-2 transition-all ${
+                          uiPrefs.fontSize === f.val
+                            ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
+                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                        }`}
+                      >
+                        <span className={`font-black text-slate-900 dark:text-white ${f.size}`}>Aa</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{f.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Accent color */}
+                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6 flex items-center gap-2">
+                    <Palette size={14} /> Color de Acento
+                  </h4>
+                  <div className="flex gap-5 flex-wrap">
+                    {([
+                      { val: 'indigo',  bg: 'bg-indigo-500',  ring: 'ring-indigo-400',  label: 'Índigo'    },
+                      { val: 'violet',  bg: 'bg-violet-500',  ring: 'ring-violet-400',  label: 'Violeta'   },
+                      { val: 'emerald', bg: 'bg-emerald-500', ring: 'ring-emerald-400', label: 'Esmeralda' },
+                      { val: 'rose',    bg: 'bg-rose-500',    ring: 'ring-rose-400',    label: 'Rosa'      },
+                      { val: 'amber',   bg: 'bg-amber-500',   ring: 'ring-amber-400',   label: 'Ámbar'     },
+                      { val: 'blue',    bg: 'bg-blue-500',    ring: 'ring-blue-400',    label: 'Azul'      },
+                    ] as const).map(c => (
+                      <button
+                        key={c.val}
+                        onClick={() => setUiPrefs(p => ({ ...p, accentColor: c.val }))}
+                        title={c.label}
+                        className="flex flex-col items-center gap-2 group"
+                      >
+                        <div className={`h-12 w-12 rounded-2xl ${c.bg} transition-all ${
+                          uiPrefs.accentColor === c.val
+                            ? `ring-4 ring-offset-2 ${c.ring} scale-110`
+                            : 'hover:scale-105 opacity-70 hover:opacity-100'
+                        }`} />
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">{c.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Border radius */}
+                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6 flex items-center gap-2">
+                    <Sliders size={14} /> Forma de los Bordes
+                  </h4>
+                  <div className="flex gap-4 flex-wrap">
+                    {([
+                      { val: 'sharp',   label: 'Recto',   cls: 'rounded-none' },
+                      { val: 'normal',  label: 'Normal',  cls: 'rounded-xl'   },
+                      { val: 'rounded', label: 'Suave',   cls: 'rounded-3xl'  },
+                      { val: 'pill',    label: 'Cápsula', cls: 'rounded-full' },
+                    ] as const).map(r => (
+                      <button
+                        key={r.val}
+                        onClick={() => setUiPrefs(p => ({ ...p, borderRadius: r.val }))}
+                        className={`flex-1 min-w-[80px] flex flex-col items-center gap-4 py-7 rounded-2xl border-2 transition-all ${
+                          uiPrefs.borderRadius === r.val
+                            ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
+                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                        }`}
+                      >
+                        <div className={`h-8 w-16 bg-slate-900 dark:bg-white/80 ${r.cls}`} />
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{r.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Density */}
+                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6">Densidad de Interfaz</h4>
+                  <div className="flex gap-4">
+                    {([
+                      { val: 'compact',  label: 'Compacto',  desc: 'Más contenido visible', bars: [4, 4, 4, 4] },
+                      { val: 'normal',   label: 'Normal',    desc: 'Espaciado balanceado',  bars: [6, 6, 6]    },
+                      { val: 'spacious', label: 'Espacioso', desc: 'Más fácil de leer',     bars: [10, 10]     },
+                    ] as const).map(d => (
+                      <button
+                        key={d.val}
+                        onClick={() => setUiPrefs(p => ({ ...p, density: d.val }))}
+                        className={`flex-1 p-6 rounded-2xl border-2 transition-all text-left ${
+                          uiPrefs.density === d.val
+                            ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
+                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                        }`}
+                      >
+                        <div className="flex flex-col gap-1 mb-4">
+                          {d.bars.map((h, i) => (
+                            <div key={i} className="rounded bg-slate-200 dark:bg-white/10 w-full" style={{ height: `${h}px` }} />
+                          ))}
+                        </div>
+                        <p className="text-xs font-black text-slate-900 dark:text-white">{d.label}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{d.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Animation speed */}
+                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6 flex items-center gap-2">
+                    <Zap size={14} /> Velocidad de Animaciones
+                  </h4>
+                  <div className="flex gap-3 flex-wrap">
+                    {([
+                      { val: 'fast',   label: 'Rápido'     },
+                      { val: 'normal', label: 'Normal'     },
+                      { val: 'slow',   label: 'Suave'      },
+                      { val: 'none',   label: 'Sin animar' },
+                    ] as const).map(s => (
+                      <button
+                        key={s.val}
+                        onClick={() => setUiPrefs(p => ({ ...p, animationSpeed: s.val }))}
+                        className={`flex-1 py-4 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${
+                          uiPrefs.animationSpeed === s.val
+                            ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400'
+                            : 'border-slate-100 dark:border-white/[0.06] text-slate-400 hover:border-slate-200 dark:hover:border-white/10'
+                        }`}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Date + number format */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Date format */}
+                  <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
+                    <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6">Formato de Fecha</h4>
+                    <div className="space-y-3">
+                      {(['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'] as const).map(fmt => (
+                        <button
+                          key={fmt}
+                          onClick={() => setUiPrefs(p => ({ ...p, dateFormat: fmt }))}
+                          className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 transition-all ${
+                            uiPrefs.dateFormat === fmt
+                              ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
+                              : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                          }`}
+                        >
+                          <span className="text-sm font-mono font-black text-slate-700 dark:text-slate-300">{fmt}</span>
+                          {uiPrefs.dateFormat === fmt && <div className="h-2 w-2 rounded-full bg-violet-500 shrink-0" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Number format */}
+                  <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
+                    <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6">Separador de Miles</h4>
+                    <div className="space-y-3">
+                      {([
+                        { val: 'dot',   example: '1.000.000,00', desc: 'Estilo europeo / latam' },
+                        { val: 'comma', example: '1,000,000.00', desc: 'Estilo americano'        },
+                      ] as const).map(n => (
+                        <button
+                          key={n.val}
+                          onClick={() => setUiPrefs(p => ({ ...p, numberFormat: n.val }))}
+                          className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 transition-all ${
+                            uiPrefs.numberFormat === n.val
+                              ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
+                              : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                          }`}
+                        >
+                          <div className="text-left">
+                            <span className="text-sm font-mono font-black text-slate-700 dark:text-slate-300 block">{n.example}</span>
+                            <span className="text-[10px] text-slate-400">{n.desc}</span>
+                          </div>
+                          {uiPrefs.numberFormat === n.val && <div className="h-2 w-2 rounded-full bg-violet-500 shrink-0" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Save button */}
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleSaveUiPrefs}
+                    disabled={savingPrefs}
+                    className="flex items-center gap-3 px-12 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:from-violet-700 hover:to-indigo-700 transition-all shadow-2xl shadow-violet-500/25 active:scale-95 disabled:opacity-50"
+                  >
+                    {savingPrefs ? <Loader2 className="animate-spin" size={18} /> : <><Save size={18} /> Guardar Preferencias</>}
+                  </button>
+                </div>
+
               </div>
             )}
 

@@ -57,6 +57,7 @@ import {
 } from 'firebase/firestore';
 import { Bell } from 'lucide-react';
 import { logAudit } from './utils/auditLogger';
+import ModeToggle from './components/ModeToggle';
 
 // ── Topbar ─────────────────────────────────────────────────────────────────────
 const Topbar: React.FC<{
@@ -67,33 +68,35 @@ const Topbar: React.FC<{
   onOpenCalculator: () => void;
   bcvRate: number;
 }> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, bcvRate }) => (
-  <header className="h-16 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-7 flex items-center justify-between sticky top-0 z-50">
+  <header className="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.08] px-7 flex items-center justify-between sticky top-0 z-50 transition-colors">
     <div>
-      <div className="font-syne font-bold text-[17px] text-slate-900 leading-tight capitalize">{topbarTitle}</div>
-      <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 mt-0.5">
+      <div className="font-syne font-bold text-[17px] text-slate-900 dark:text-white leading-tight capitalize">{topbarTitle}</div>
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5">
         <span>Dualis System</span>
-        <span className="text-slate-200">/</span>
-        <span className="text-slate-500 capitalize">{topbarTitle.toLowerCase()}</span>
+        <span className="text-slate-200 dark:text-white/10">/</span>
+        <span className="text-slate-500 dark:text-slate-400 capitalize">{topbarTitle.toLowerCase()}</span>
       </div>
     </div>
 
     <div className="flex items-center gap-3">
-      <div className="flex items-center gap-3 bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-1.5">
+      <div className="flex items-center gap-3 bg-slate-50 dark:bg-white/[0.05] border border-slate-200/60 dark:border-white/10 rounded-xl px-4 py-1.5">
         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         <div className="flex flex-col">
-          <span className="text-[10px] font-black uppercase tracking-tighter text-slate-400 leading-none">BCV</span>
-          <span className="text-[13px] font-mono font-bold text-amber-600">Bs. {bcvRate.toFixed(2)}</span>
+          <span className="text-[10px] font-black uppercase tracking-tighter text-slate-400 dark:text-slate-500 leading-none">BCV</span>
+          <span className="text-[13px] font-mono font-bold text-amber-600 dark:text-amber-400">Bs. {bcvRate.toFixed(2)}</span>
         </div>
       </div>
 
-      <div className="w-px h-8 bg-slate-100 mx-1" />
+      <div className="w-px h-8 bg-slate-100 dark:bg-white/[0.08] mx-1" />
+
+      <ModeToggle />
 
       <button
         onClick={onToggleNotifications}
         className={`relative w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${
           showNotifications
-            ? 'bg-blue-50 border-blue-200 text-[#4f6ef7]'
-            : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-white hover:border-blue-200 hover:text-blue-600'
+            ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30 text-[#4f6ef7]'
+            : 'bg-slate-50 dark:bg-white/[0.05] border-slate-100 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-white/10 hover:border-blue-200 hover:text-blue-600'
         }`}
       >
         <Bell size={16} />
@@ -106,7 +109,7 @@ const Topbar: React.FC<{
 
       <button
         onClick={onOpenCalculator}
-        className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 hover:bg-white hover:border-blue-200 hover:text-blue-600 transition-all font-mono text-sm font-bold"
+        className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-white/[0.05] border border-slate-100 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-white/10 hover:border-blue-200 hover:text-blue-600 transition-all font-mono text-sm font-bold"
       >
         =
       </button>
@@ -122,10 +125,10 @@ interface ConfirmState {
 
 const ConfirmDialog: React.FC<{ state: ConfirmState; onClose: () => void }> = ({ state, onClose }) => (
   <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-    <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-100 max-w-sm w-full p-8 animate-in zoom-in-95">
-      <h3 className="text-lg font-black text-slate-900 mb-6">{state.message}</h3>
+    <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl dark:shadow-black/40 border border-slate-100 dark:border-white/[0.08] max-w-sm w-full p-8 animate-in zoom-in-95">
+      <h3 className="text-lg font-black text-slate-900 dark:text-white mb-6">{state.message}</h3>
       <div className="flex gap-3">
-        <button onClick={onClose} className="flex-1 py-3.5 bg-slate-100 text-slate-700 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all">
+        <button onClick={onClose} className="flex-1 py-3.5 bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-white/10 transition-all">
           Cancelar
         </button>
         <button
@@ -383,7 +386,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   };
 
   return (
-    <div className="h-screen w-full flex bg-slate-50 overflow-hidden font-inter">
+    <div className="h-screen w-full flex bg-slate-50 dark:bg-[#0a0f1e] overflow-hidden font-inter transition-colors">
       {user && (
         <Sidebar
           activeTab={activeTab}
@@ -476,7 +479,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         </main>
 
         {/* STATUS BAR */}
-        <footer className="h-10 bg-white border-t border-slate-200 px-7 flex items-center justify-between font-mono text-[10px] text-slate-400 shrink-0">
+        <footer className="h-10 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-white/[0.06] px-7 flex items-center justify-between font-mono text-[10px] text-slate-400 dark:text-slate-600 shrink-0">
           <div className="flex items-center gap-5">
             <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>Firebase Live</span></div>
             <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>{user?.role || 'pending'}</span></div>

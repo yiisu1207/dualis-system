@@ -1,39 +1,66 @@
 import React from 'react';
 
-type ThemeMode = 'light';
+type ThemeMode = 'light' | 'dark';
 
 type ThemeContextValue = {
   mode: ThemeMode;
-  resolvedTheme: 'light';
+  resolvedTheme: ThemeMode;
   setMode: (mode: ThemeMode) => void;
   toggle: () => void;
 };
 
+const STORAGE_KEY = 'dualis_theme';
+
 const ThemeContext = React.createContext<ThemeContextValue | undefined>(undefined);
 
-const applyThemeClass = () => {
+const applyThemeClass = (mode: ThemeMode) => {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
-  root.classList.remove('dark');
-  root.style.colorScheme = 'light';
+  if (mode === 'dark') {
+    root.classList.add('dark');
+    root.style.colorScheme = 'dark';
+  } else {
+    root.classList.remove('dark');
+    root.style.colorScheme = 'light';
+  }
 };
 
-export const ThemeProvider: React.FC<{ children: React.FC<any> | React.ReactNode }> = ({ children }) => {
+const getInitialMode = (): ThemeMode => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'dark' || stored === 'light') return stored;
+    // Respetar preferencia del sistema operativo
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+  } catch { /* SSR safety */ }
+  return 'light';
+};
+
+export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [mode, setModeState] = React.useState<ThemeMode>(getInitialMode);
+
+  // Aplicar clase al montar y cada vez que cambia el modo
   React.useEffect(() => {
-    applyThemeClass();
+    applyThemeClass(mode);
+  }, [mode]);
+
+  const setMode = React.useCallback((newMode: ThemeMode) => {
+    setModeState(newMode);
+    try { localStorage.setItem(STORAGE_KEY, newMode); } catch { /* noop */ }
+    applyThemeClass(newMode);
   }, []);
 
-  const handleSetMode = React.useCallback(() => undefined, []);
-  const toggle = React.useCallback(() => undefined, []);
+  const toggle = React.useCallback(() => {
+    setModeState(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem(STORAGE_KEY, next); } catch { /* noop */ }
+      applyThemeClass(next);
+      return next;
+    });
+  }, []);
 
   const value = React.useMemo(
-    () => ({ 
-      mode: 'light' as const, 
-      resolvedTheme: 'light' as const, 
-      setMode: handleSetMode, 
-      toggle 
-    }),
-    [handleSetMode, toggle]
+    () => ({ mode, resolvedTheme: mode, setMode, toggle }),
+    [mode, setMode, toggle]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
