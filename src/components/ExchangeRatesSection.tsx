@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ExchangeRates } from '../../types';
+import { useToast } from '../context/ToastContext';
 
 interface ExchangeRatesSectionProps {
   rates: ExchangeRates;
@@ -7,6 +8,7 @@ interface ExchangeRatesSectionProps {
 }
 
 const ExchangeRatesSection: React.FC<ExchangeRatesSectionProps> = ({ rates, onUpdateRates }) => {
+  const { success } = useToast();
   const [bcv, setBcv] = useState(rates.bcv.toString());
   const [grupo, setGrupo] = useState(rates.grupo.toString());
 
@@ -17,7 +19,7 @@ const ExchangeRatesSection: React.FC<ExchangeRatesSectionProps> = ({ rates, onUp
       lastUpdated: new Date().toLocaleString(),
     };
     onUpdateRates(newRates);
-    alert('¡Tasas actualizadas exitosamente!');
+    success('Tasas actualizadas exitosamente.');
   };
 
   return (

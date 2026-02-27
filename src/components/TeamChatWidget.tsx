@@ -498,7 +498,7 @@ const TeamChatWidget: React.FC<TeamChatWidgetProps> = ({
   const filteredCustomers = useMemo(() => {
     const term = attachmentSearch.trim().toLowerCase();
     if (!term) return customers.slice(0, 6);
-    return customers.filter((customer) => customer.id.toLowerCase().includes(term)).slice(0, 6);
+    return customers.filter((customer) => (customer.id || '').toLowerCase().includes(term)).slice(0, 6);
   }, [attachmentSearch, customers]);
 
   const startDm = async (userId: string) => {

@@ -12,6 +12,7 @@ import {
   Sun,
   Bell,
 } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 interface ConfigSectionProps {
   config: AppConfig;
@@ -43,6 +44,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
   onUpdateUiVersion,
   businessId,
 }) => {
+  const { success, error, warning, info } = useToast();
   const navigate = useNavigate();
   const [localConfig, setLocalConfig] = useState<AppConfig>(config);
   const [activeTab, setActiveTab] = useState<
@@ -88,7 +90,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
       } catch (e) {}
     }
 
-    alert('✅ Configuración guardada correctamente.');
+    success('Configuración guardada correctamente.');
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

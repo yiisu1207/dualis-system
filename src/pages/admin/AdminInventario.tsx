@@ -303,7 +303,7 @@ export default function AdminInventario() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {products.filter(p => p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || p.codigo.toLowerCase().includes(searchTerm.toLowerCase())).map((p) => (
+                    {products.filter(p => (p.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) || (p.codigo || '').toLowerCase().includes(searchTerm.toLowerCase())).map((p) => (
                       <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
                         <td className="px-10 py-6">
                           <div className="flex items-center gap-4">

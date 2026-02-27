@@ -14,7 +14,7 @@ const StatementSection: React.FC<StatementSectionProps> = ({ customers, movement
   const filteredCustomers = useMemo(() => {
     if (!searchTerm) return [];
     return customers.filter(
-      (c) => c.id.toLowerCase().includes(searchTerm.toLowerCase()) || c.cedula.includes(searchTerm)
+      (c) => (c.id || '').toLowerCase().includes(searchTerm.toLowerCase()) || (c.cedula || '').includes(searchTerm)
     );
   }, [customers, searchTerm]);
 

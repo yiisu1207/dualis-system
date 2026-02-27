@@ -340,8 +340,8 @@ const PosContent = () => {
     const q = productFilter.trim().toLowerCase();
     if (!q) return products;
     return products.filter(p =>
-      p.name.toLowerCase().includes(q) ||
-      p.codigo.toLowerCase().includes(q) ||
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.codigo || '').toLowerCase().includes(q) ||
       (p.marca || '').toLowerCase().includes(q)
     );
   }, [products, productFilter]);

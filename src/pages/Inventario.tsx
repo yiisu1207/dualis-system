@@ -700,9 +700,9 @@ export default function Inventario() {
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {products.filter(p =>
-                      p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      p.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      p.categoria.toLowerCase().includes(searchTerm.toLowerCase())
+                      (p.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (p.codigo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (p.categoria || '').toLowerCase().includes(searchTerm.toLowerCase())
                     ).map((p) => (
                       <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
                         <td className="px-10 py-8">

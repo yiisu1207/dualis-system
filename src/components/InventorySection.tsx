@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ExchangeRates, InventoryItem } from '../../types';
 import { formatCurrency } from '../utils/formatters';
+import { useToast } from '../context/ToastContext';
 
 interface InventorySectionProps {
   inventory: InventoryItem[];
@@ -15,6 +16,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({
   onAddItem,
   onDeleteItem,
 }) => {
+  const { warning } = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [newItem, setNewItem] = useState({
     name: '',
@@ -37,7 +39,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({
     e.preventDefault();
     const safeName = sanitizeText(newItem.name);
     if (!safeName) {
-      alert('Nombre del producto requerido.');
+      warning('Nombre del producto requerido.');
       return;
     }
     const item: InventoryItem = {

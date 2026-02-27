@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useToast } from '../context/ToastContext';
 
 interface NewCustomerModalProps {
   customerName: string;
@@ -11,6 +12,7 @@ const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
   onConfirm,
   onCancel,
 }) => {
+  const { success, error, warning, info } = useToast();
   // Split inputs for ID
   const [idPrefix, setIdPrefix] = useState('V-');
   const [idNumber, setIdNumber] = useState('');
@@ -24,7 +26,7 @@ const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!idNumber || !phoneNumber || !direccion) {
-      alert('Por favor complete todos los campos obligatorios.');
+      warning('Por favor complete todos los campos obligatorios.');
       return;
     }
 

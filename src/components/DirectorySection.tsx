@@ -43,8 +43,8 @@ const DirectorySection: React.FC<DirectorySectionProps> = ({
 
   const filteredEntities = entities.filter(
     (e) =>
-      e.id.toLowerCase().includes(filter.toLowerCase().trim()) ||
-      e.cedula.toLowerCase().includes(filter.toLowerCase().trim())
+      (e.id || '').toLowerCase().includes(filter.toLowerCase().trim()) ||
+      (e.cedula || '').toLowerCase().includes(filter.toLowerCase().trim())
   );
 
   return (

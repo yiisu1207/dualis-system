@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AccountType, MovementType, Customer, ExchangeRates, PaymentCurrency } from '../../types';
 import Autocomplete from './Autocomplete';
+import { useToast } from '../context/ToastContext';
 
 interface MovementPanelProps {
   title: string;
@@ -34,6 +35,7 @@ const MovementPanel: React.FC<MovementPanelProps> = ({
   onRegister,
   onCreateCustomer,
 }) => {
+  const { success, error, warning, info } = useToast();
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [customerName, setCustomerName] = useState('');
   const [creatingInline, setCreatingInline] = useState(false);
@@ -75,7 +77,7 @@ const MovementPanel: React.FC<MovementPanelProps> = ({
 
   const suggestAIConcept = async () => {
     if (!amount || parseFloat(amount) <= 0) {
-      alert('Ingrese un monto primero.');
+      warning('Ingrese un monto primero.');
       return;
     }
     setIsSuggesting(true);
@@ -91,7 +93,7 @@ const MovementPanel: React.FC<MovementPanelProps> = ({
       setConcept(String(data?.result || '').trim());
     } catch (e) {
       console.error(e);
-      alert('IA no disponible en este momento.');
+      warning('IA no disponible en este momento.');
     } finally {
       setIsSuggesting(false);
     }

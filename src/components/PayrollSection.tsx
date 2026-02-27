@@ -10,6 +10,7 @@ import {
   PayrollReceipt,
 } from '../../types';
 import { formatCurrency } from '../utils/formatters';
+import { useToast } from '../context/ToastContext';
 
 interface PayrollSectionProps {
   employees: Employee[];
@@ -50,6 +51,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
   canManageAdvances,
   canProcessPayroll,
 }) => {
+  const { success, warning } = useToast();
   const [selectedEmpId, setSelectedEmpId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'empleados' | 'vales' | 'procesar' | 'historico'>(
     'empleados'
@@ -80,14 +82,14 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
     e.preventDefault();
     if (editEmployee) {
       if (!canEditEmployee) {
-        alert('No tienes permisos para editar empleados.');
+        warning('No tienes permisos para editar empleados.');
         return;
       }
       onUpdateEmployee(editEmployee.id, editEmployee);
       setEditEmployee(null);
     } else {
       if (!canCreateEmployee) {
-        alert('No tienes permisos para crear empleados.');
+        warning('No tienes permisos para crear empleados.');
         return;
       }
       const employee: Employee = {
@@ -111,7 +113,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
 
   const handleDelete = (id: string) => {
     if (!canDeleteEmployee) {
-      alert('No tienes permisos para eliminar empleados.');
+      warning('No tienes permisos para eliminar empleados.');
       return;
     }
     if (confirm('¿Seguro que deseas eliminar este empleado? Se perderá su historial.'))
@@ -123,7 +125,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
     e.preventDefault();
     if (!selectedEmpId || !newAdvance.amount) return;
     if (!canManageAdvances) {
-      alert('No tienes permisos para registrar vales.');
+      warning('No tienes permisos para registrar vales.');
       return;
     }
     const originalAmount = parseFloat(newAdvance.amount);
@@ -176,7 +178,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
 
   const handleCloseCycle = () => {
     if (!canProcessPayroll) {
-      alert('No tienes permisos para procesar la nómina.');
+      warning('No tienes permisos para procesar la nómina.');
       return;
     }
     if (
@@ -212,7 +214,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
       )
     );
     setMissedDaysInput({});
-    alert('✅ Ciclo de Nómina Cerrado Exitosamente.');
+    success('Ciclo de nómina cerrado exitosamente.');
     setActiveTab('historico');
   };
 

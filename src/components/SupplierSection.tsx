@@ -11,6 +11,7 @@ import {
 import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
 import { scanInvoiceImage } from '../lib/ai-scanner';
 import EmptyState from './EmptyState';
+import { useToast } from '../context/ToastContext';
 
 interface SupplierSectionProps {
   suppliers: Supplier[];
@@ -51,6 +52,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
   canEditMovement,
   canDeleteMovement,
 }) => {
+  const { success, warning } = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [editSupplier, setEditSupplier] = useState<Supplier | null>(null);
   const [newSupplier, setNewSupplier] = useState({
@@ -273,14 +275,14 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
     e.preventDefault();
     if (editSupplier) {
       if (!canEditSupplier) {
-        alert('No tienes permisos para editar proveedores.');
+        warning('No tienes permisos para editar proveedores.');
         return;
       }
       onUpdateSupplier(editSupplier.id, editSupplier);
       setEditSupplier(null);
     } else {
       if (!canCreateSupplier) {
-        alert('No tienes permisos para crear proveedores.');
+        warning('No tienes permisos para crear proveedores.');
         return;
       }
       if (!newSupplier.id) return;
@@ -356,7 +358,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
 
   const handleDelete = (id: string) => {
     if (!canDeleteSupplier) {
-      alert('No tienes permisos para eliminar proveedores.');
+      warning('No tienes permisos para eliminar proveedores.');
       return;
     }
     if (confirm('¿Eliminar proveedor y sus registros?')) onDeleteSupplier(id);
@@ -364,7 +366,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
 
   const handleSaveEditMovement = () => {
     if (!canEditMovement) {
-      alert('No tienes permisos para editar movimientos.');
+      warning('No tienes permisos para editar movimientos.');
       return;
     }
     if (editingMovement && editForm.amount) {
@@ -403,7 +405,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
           const file = e.target.files?.[0];
           if (!file || !invoiceTargetId) return;
           if (!canEditMovement) {
-            alert('No tienes permisos para adjuntar facturas.');
+            warning('No tienes permisos para adjuntar facturas.');
             return;
           }
           const reader = new FileReader();
@@ -832,7 +834,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                                     type="button"
                                     onClick={() => {
                                       if (!canEditMovement) {
-                                        alert('No tienes permisos para adjuntar facturas.');
+                                        warning('No tienes permisos para adjuntar facturas.');
                                         return;
                                       }
                                       setInvoiceTargetId(m.id);

@@ -18,6 +18,7 @@ import { scanInvoiceImage } from '../lib/ai-scanner';
 import EmptyState from './EmptyState';
 import WhatsAppTemplateModal, { TemplateContext } from './WhatsAppTemplateModal';
 import { DEFAULT_CONFIG } from '../utils/configDefaults';
+import { useToast } from '../context/ToastContext';
 
 interface CustomerViewerProps {
   customers: Customer[];
@@ -180,6 +181,7 @@ const ActionCard: React.FC<{
   onAction,
   onCreateCustomer,
 }) => {
+  const { success, error, warning, info } = useToast();
   const [localCustomer, setLocalCustomer] = useState(customerName || '');
   const [amount, setAmount] = useState('');
   const [concept, setConcept] = useState('');
@@ -232,7 +234,7 @@ const ActionCard: React.FC<{
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount || !localCustomer) {
-      if (!localCustomer) alert('Por favor seleccione un cliente.');
+      if (!localCustomer) { warning('Por favor seleccione un cliente.'); return; }
       return;
     }
     const numAmount = parseFloat(amount);
@@ -304,7 +306,7 @@ const ActionCard: React.FC<{
                 }
               } catch (err) {
                 console.error(err);
-                alert('No se pudo leer la imagen con IA.');
+                error('No se pudo leer la imagen con IA.');
               } finally {
                 setOcrLoading(false);
                 if (ocrInputRef.current) ocrInputRef.current.value = '';
@@ -617,6 +619,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
   openCreateCustomer,
   onCreateCustomerOpened,
 }) => {
+  const { success, error, warning, info } = useToast();
   const [viewMode, setViewMode] = useState<'LIST' | 'DETAIL' | 'AGING'>('LIST');
   const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null);
 
@@ -1806,9 +1809,9 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
       const composedPhone = `+58${phoneDigits}`;
       const safeDireccion = sanitizeText(editCustomer.direccion);
       const safeEmail = sanitizeText(editCustomer.email);
-      if (!docNumber) return alert('Cédula/RIF requerido.');
+      if (!docNumber) { warning('Cédula/RIF requerido.'); return; }
       if (phoneDigits.length !== 10) {
-        return alert('Telefono invalido. Usa formato WhatsApp (ej: 4121234567).');
+        { warning('Teléfono inválido. Usa formato WhatsApp (ej: 4121234567).'); return; }
       }
       onUpdateCustomer(editCustomer.id, {
         ...editCustomer,
@@ -1820,10 +1823,10 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
       setEditCustomer(null);
     } else {
       const safeName = sanitizeText(newCustomer.id);
-      if (!safeName) return alert('Nombre requerido.');
-      if (!docNumber) return alert('Cédula/RIF requerido.');
+      if (!safeName) { warning('Nombre requerido.'); return; }
+      if (!docNumber) { warning('Cédula/RIF requerido.'); return; }
       if (phoneDigits.length !== 10) {
-        return alert('Telefono invalido. Usa formato WhatsApp (ej: 4121234567).');
+        { warning('Teléfono inválido. Usa formato WhatsApp (ej: 4121234567).'); return; }
       }
       const composedCedula = `${docType}-${docNumber}`;
       const composedPhone = `+58${phoneDigits}`;
@@ -1992,7 +1995,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
   const handleCallNote = (item: (typeof agingGreen)[number]) => {
     const note = prompt(`Registrar llamada para ${item.customer}. Nota:`);
     if (!note) return;
-    alert(`Nota registrada: ${note}`);
+    success(`Nota registrada: ${note}`);
   };
 
   const getInitials = (name: string) =>

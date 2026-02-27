@@ -99,7 +99,7 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
       if (filterEntity && e.entity !== filterEntity) return false;
       if (search) {
         const q = search.toLowerCase();
-        if (!e.details.toLowerCase().includes(q) && !e.entity.toLowerCase().includes(q) && !e.userId.toLowerCase().includes(q)) return false;
+        if (!(e.details || '').toLowerCase().includes(q) && !(e.entity || '').toLowerCase().includes(q) && !(e.userId || '').toLowerCase().includes(q)) return false;
       }
       return true;
     });

@@ -8,6 +8,7 @@ import { buildClientStatus } from '../utils/clientStatus';
 import EmptyState from './EmptyState';
 import { useTranslation } from 'react-i18next';
 import { NumericFormat } from 'react-number-format';
+import { useToast } from '../context/ToastContext';
 
 interface SummarySectionProps {
   customerMovements: Movement[];
@@ -59,6 +60,7 @@ const SummarySection: React.FC<SummarySectionProps> = ({
     onQuickActionHandled
 }) => {
     const { t } = useTranslation();
+    const { success, error, warning } = useToast();
   
   // --- STATE FOR QUICK TERMINAL ---
     const [showQuickModal, setShowQuickModal] = useState(false);
@@ -217,7 +219,7 @@ const SummarySection: React.FC<SummarySectionProps> = ({
       e.preventDefault();
       if(!quickForm.customerName || !quickForm.amount) return;
             if (!canCreateMovement) {
-                alert('No tienes permisos para registrar movimientos.');
+                warning('No tienes permisos para registrar movimientos.');
                 return;
             }
 
@@ -254,15 +256,15 @@ const SummarySection: React.FC<SummarySectionProps> = ({
                 concept: '',
                 date: new Date().toISOString().split('T')[0],
             });
-      alert("✅ Operación Registrada Exitosamente");
+      success('Operación registrada exitosamente.');
   };
   
   const handleCreateInlineCustomer = async () => {
       if (!canCreateCustomer) {
-          alert('No tienes permisos para crear clientes.');
+          warning('No tienes permisos para crear clientes.');
           return;
       }
-      if(!newEntity.id) return alert('Nombre requerido');
+      if(!newEntity.id) { warning('Nombre requerido'); return; }
       const payload: Customer = { id: newEntity.id.toUpperCase(), cedula: newEntity.cedula || 'N/A', telefono: (newEntity.telefonoCountry || '') + (newEntity.telefono || ''), direccion: newEntity.direccion || '' };
       await onRegisterCustomer(payload);
       setQuickForm(prev => ({ ...prev, customerName: payload.id }));
@@ -272,10 +274,10 @@ const SummarySection: React.FC<SummarySectionProps> = ({
 
   const handleCreateInlineSupplier = async () => {
       if (!canCreateSupplier) {
-          alert('No tienes permisos para crear proveedores.');
+          warning('No tienes permisos para crear proveedores.');
           return;
       }
-      if(!newEntity.id) return alert('Nombre requerido');
+      if(!newEntity.id) { warning('Nombre requerido'); return; }
       const payload: Supplier = { id: newEntity.id.toUpperCase(), rif: newEntity.cedula || 'N/A', contacto: (newEntity.telefonoCountry || '') + (newEntity.telefono || ''), categoria: 'GENERAL' };
       await onRegisterSupplier(payload);
       setQuickForm(prev => ({ ...prev, customerName: payload.id }));
@@ -285,7 +287,7 @@ const SummarySection: React.FC<SummarySectionProps> = ({
 
   const openQuickModal = (type: MovementType) => {
       if (!canCreateMovement) {
-          alert('No tienes permisos para registrar movimientos.');
+          warning('No tienes permisos para registrar movimientos.');
           return;
       }
       setQuickType(type);
@@ -295,7 +297,7 @@ const SummarySection: React.FC<SummarySectionProps> = ({
 
   const openQuickModalForSupplier = (type: MovementType) => {
       if (!canCreateMovement) {
-          alert('No tienes permisos para registrar movimientos.');
+          warning('No tienes permisos para registrar movimientos.');
           return;
       }
       setQuickType(type);

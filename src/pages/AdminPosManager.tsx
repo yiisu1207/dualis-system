@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { useToast } from '../context/ToastContext';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 interface Terminal {
@@ -97,6 +98,7 @@ const KPICard = ({ title, value, subtext, icon: Icon, bg, text }: any) => (
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function AdminPosManager() {
+  const { success, error, warning, info } = useToast();
   const { userProfile } = useAuth();
   const { rates } = useRates();
   const businessId = userProfile?.businessId;
@@ -195,7 +197,7 @@ export default function AdminPosManager() {
       setNewTerminal({ nombre: '', tipo: 'detal' });
     } catch (err: any) {
       console.error('[AdminPosManager] Error creando terminal:', err);
-      alert(`Error al crear terminal: ${err?.message || String(err)}`);
+      error(`Error al crear terminal: ${err?.message || String(err)}`);
     } finally { setIsSaving(false); }
   };
 
@@ -221,17 +223,17 @@ export default function AdminPosManager() {
       setOpenShiftModal(false);
       const newTab = window.open(`/${businessId}/pos/${selectedForOpen.tipo}?cajaId=${selectedForOpen.id}`, '_blank');
       if (!newTab) {
-        alert('El navegador bloqueó la pestaña. Permite popups para este sitio e intenta de nuevo.');
+        warning('El navegador bloqueó la pestaña. Permite popups para este sitio e intenta de nuevo.');
       }
     } catch (err: any) {
       console.error('[AdminPosManager] Error abriendo turno:', err);
-      alert(`Error al abrir turno: ${err?.message || String(err)}`);
+      error(`Error al abrir turno: ${err?.message || String(err)}`);
     } finally { setIsOpeningShift(false); }
   };
 
   const handleEnterTerminal = (terminal: Terminal) => {
     const newTab = window.open(`/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}`, '_blank');
-    if (!newTab) alert('El navegador bloqueó la pestaña. Permite popups para este sitio.');
+    if (!newTab) warning('El navegador bloqueó la pestaña. Permite popups para este sitio.');
   };
 
   const handleCloseShift = async (terminal: Terminal) => {
@@ -246,7 +248,7 @@ export default function AdminPosManager() {
       });
     } catch (err: any) {
       console.error('[AdminPosManager] Error cerrando turno:', err);
-      alert(`Error al cerrar turno: ${err?.message || String(err)}`);
+      error(`Error al cerrar turno: ${err?.message || String(err)}`);
     }
   };
 

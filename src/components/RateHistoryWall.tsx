@@ -12,6 +12,7 @@ import {
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { createExchangeRateEntry } from '../firebase/api';
+import { useToast } from '../context/ToastContext';
 
 interface RateHistoryWallProps {
   businessId?: string | null;
@@ -147,6 +148,7 @@ const parseOcrEntriesFromPairs = (value: string) => {
 
 const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUser }) => {
   const { userProfile } = useAuth();
+  const { success, error, warning } = useToast();
   const [entries, setEntries] = useState<RateEntry[]>([]);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [manualBcv, setManualBcv] = useState('');
@@ -213,19 +215,19 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       await deleteDoc(doc(db, 'businesses', resolvedBusinessId, 'exchange_rates_history', entry.id));
     } catch (error) {
       console.error('No se pudo eliminar la tasa', error);
-      alert('No se pudo eliminar la tasa. Revisa permisos.');
+      error('No se pudo eliminar la tasa. Revisa permisos.');
     }
   };
 
   const handlePublish = async () => {
     if (!resolvedBusinessId) {
-      alert('No hay un espacio de trabajo activo.');
+      warning('No hay un espacio de trabajo activo.');
       return;
     }
     const bcv = Number(String(manualBcv).replace(',', '.'));
     const grupo = Number(String(manualGrupo).replace(',', '.'));
     if (!bcv || !grupo) {
-      alert('Ingresa BCV y Grupo validos.');
+      warning('Ingresa BCV y Grupo válidos.');
       return;
     }
     setIsPublishing(true);
@@ -246,7 +248,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       setManualGrupo('');
     } catch (error) {
       console.error('No se pudo publicar la tasa', error);
-      alert('No se pudo publicar la tasa. Revisa la conexion y permisos.');
+      error('No se pudo publicar la tasa. Revisa la conexión y permisos.');
     } finally {
       setIsPublishing(false);
     }
@@ -254,12 +256,12 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
 
   const handlePublishBatch = async () => {
     if (!resolvedBusinessId) {
-      alert('No hay un espacio de trabajo activo.');
+      warning('No hay un espacio de trabajo activo.');
       return;
     }
     const grupo = Number(String(manualGrupo).replace(',', '.'));
     if (!grupo) {
-      alert('Ingresa una tasa Grupo valida para publicar en lote.');
+      warning('Ingresa una tasa Grupo válida para publicar en lote.');
       return;
     }
     if (ocrDrafts.length === 0) return;
@@ -282,7 +284,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       setOcrDrafts([]);
     } catch (error) {
       console.error('No se pudo publicar el lote de tasas', error);
-      alert('No se pudo publicar el lote. Revisa la conexion y permisos.');
+      error('No se pudo publicar el lote. Revisa la conexión y permisos.');
     } finally {
       setIsPublishing(false);
     }
@@ -290,7 +292,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
 
   const handleScanImage = async (file: File) => {
     if (file.type === 'application/pdf') {
-      alert('Sube una imagen (JPG/PNG). Los PDF no son compatibles con el OCR en navegador.');
+      warning('Sube una imagen JPG/PNG. Los PDF no son compatibles con el OCR.');
       return;
     }
     setOcrLoading(true);
@@ -309,11 +311,11 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
         setManualBcv(String(finalBatch[0].bcv));
         setManualDate(finalBatch[0].date);
       } else {
-        alert('No se pudieron detectar tasas en la imagen.');
+        warning('No se pudieron detectar tasas en la imagen.');
       }
     } catch (error) {
       console.warn('OCR failed', error);
-      alert('No se pudo leer la imagen. Instala tesseract.js si es necesario.');
+      error('No se pudo leer la imagen.');
     } finally {
       setOcrLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

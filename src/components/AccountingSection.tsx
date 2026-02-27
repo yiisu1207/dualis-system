@@ -18,6 +18,7 @@ import { buildClientStatus } from '../utils/clientStatus';
 import ClientStatusBadge from './ClientStatusBadge';
 import WhatsAppTemplateModal, { TemplateContext } from './WhatsAppTemplateModal';
 import { DEFAULT_CONFIG } from '../utils/configDefaults';
+import { useToast } from '../context/ToastContext';
 
 interface AccountingSectionProps {
   movements: Movement[];
@@ -50,6 +51,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
   onNavigateToSuppliers,
   openEntityId,
 }) => {
+  const { success, error, warning, info } = useToast();
   // --- STATE ---
   const [viewMode, setViewMode] = useState<ViewMode>('DIRECTORY');
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
@@ -1087,7 +1089,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
   const handleGenerateReceipt = () => {
     if (!currentEntityInfo || !selectedEntityId) return;
     if (!(window as any).jspdf) {
-      alert('Librería PDF cargando...');
+      info('Generando PDF, espera un momento...');
       return;
     }
 
