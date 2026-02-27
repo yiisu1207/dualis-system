@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 6000,
         host: '0.0.0.0',
+        historyApiFallback: true,
       },
       plugins: [react()],
       
