@@ -74,10 +74,14 @@ const SmartDatePicker: React.FC<{
   onRateCheck?: (value: string) => void;
   className?: string;
   inputClassName?: string;
-}> = ({ value, onChange, rateDates, onRateCheck, className = '', inputClassName = '' }) => {
+  tabIndex?: number;
+}> = ({ value, onChange, rateDates: _rateDates, onRateCheck, className = '', inputClassName = '', tabIndex }) => {
   const [open, setOpen] = useState(false);
+  const [textVal, setTextVal] = useState(value);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const selected = value ? parseDateKey(value) : undefined;
+
+  useEffect(() => setTextVal(value), [value]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,25 +103,41 @@ const SmartDatePicker: React.FC<{
     setOpen(false);
   };
 
+  const applyTypedDate = () => {
+    const dmy = textVal.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmy) {
+      const fmt = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+      onChange(fmt); onRateCheck?.(fmt); return;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(textVal)) {
+      onChange(textVal); onRateCheck?.(textVal); return;
+    }
+    setTextVal(value);
+  };
+
   return (
     <div className={`relative ${className}`} ref={containerRef}>
+      <input
+        type="text"
+        tabIndex={tabIndex}
+        className={inputClassName || 'w-full px-3 py-3 pr-8 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all'}
+        value={textVal}
+        placeholder="DD/MM/AAAA"
+        onChange={(e) => setTextVal(e.target.value)}
+        onBlur={applyTypedDate}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyTypedDate(); } }}
+      />
       <button
         type="button"
+        tabIndex={-1}
         onClick={() => setOpen((prev) => !prev)}
-        className="w-full text-left"
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[var(--ui-accent)] transition-colors"
+        title="Abrir calendario"
       >
-        <input
-          type="text"
-          readOnly
-          className={
-            inputClassName ||
-            'w-full px-3 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm font-bold text-slate-700'
-          }
-          value={value}
-        />
+        <i className="fa-solid fa-calendar-days text-xs" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-2 rounded-2xl border border-slate-200 bg-white shadow-xl p-3">
+        <div className="absolute z-50 top-full mt-1.5 rounded-2xl border border-slate-100 bg-white shadow-xl p-3">
           <DayPicker
             mode="single"
             selected={selected}
@@ -642,15 +662,19 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
   const [showAgingModal, setShowAgingModal] = useState(false);
   const [agingModalItem, setAgingModalItem] = useState<AgingItem | null>(null);
 
+  const montoRef = useRef<HTMLInputElement>(null);
+  const conceptoRef = useRef<HTMLInputElement>(null);
+  const [successFlash, setSuccessFlash] = useState(false);
+
   const [quickForm, setQuickForm] = useState({
     customerName: '',
     amount: '',
     concept: '',
     type: MovementType.FACTURA,
-    accountType: AccountType.DIVISA,
-    rate: '',
+    accountType: AccountType.BCV,
+    rate: String(rates?.bcv ?? ''),
     reference: '',
-    useRate: false,
+    useRate: true,
     date: new Date().toISOString().split('T')[0],
   });
   const [rateHint, setRateHint] = useState<string | null>(null);
@@ -666,9 +690,48 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
       const rateValue =
         quickForm.accountType === AccountType.BCV ? entry.bcv : entry.grupo;
       setQuickForm((prev) => ({ ...prev, rate: String(rateValue) }));
-      setRateHint(`Tasa historica cargada: ${rateValue} Bs`);
+      setRateHint(`Tasa histórica cargada: ${rateValue} Bs`);
     } else {
-      setRateHint('No hay tasa registrada para esta fecha. Usando tasa actual.');
+      setRateHint(null);
+    }
+  };
+
+  const handleAccountTypeChange = (at: AccountType) => {
+    const newRate =
+      at === AccountType.BCV ? String(rates?.bcv ?? '') :
+      at === AccountType.GRUPO ? String(rates?.grupo ?? '') : '';
+    setQuickForm(prev => ({
+      ...prev,
+      accountType: at,
+      useRate: at !== AccountType.DIVISA,
+      rate: newRate,
+    }));
+    setRateHint(null);
+  };
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Escape') {
+      setQuickForm(prev => ({
+        ...prev,
+        customerName: '',
+        amount: '',
+        concept: '',
+        reference: '',
+        date: new Date().toISOString().split('T')[0],
+        accountType: AccountType.BCV,
+        rate: String(rates?.bcv ?? ''),
+        useRate: true,
+      }));
+      setRateHint(null);
+      return;
+    }
+    if (!e.altKey) return;
+    switch (e.key.toLowerCase()) {
+      case 'b': e.preventDefault(); handleAccountTypeChange(AccountType.BCV); break;
+      case 'g': e.preventDefault(); handleAccountTypeChange(AccountType.GRUPO); break;
+      case 'd': e.preventDefault(); handleAccountTypeChange(AccountType.DIVISA); break;
+      case 'f': e.preventDefault(); setQuickForm(p => ({ ...p, type: MovementType.FACTURA })); break;
+      case 'a': e.preventDefault(); setQuickForm(p => ({ ...p, type: MovementType.ABONO })); break;
     }
   };
 
@@ -1806,15 +1869,22 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
       reference: quickForm.reference || null,
     });
 
-    setShowQuickOp(false);
-    setQuickForm({
-      ...quickForm,
+    // Inline feedback — no alert bloqueante
+    setSuccessFlash(true);
+    setTimeout(() => setSuccessFlash(false), 2000);
+
+    // Mantener cliente + cuenta + tipo para entrada rápida consecutiva
+    setQuickForm(prev => ({
+      ...prev,
       amount: '',
       concept: '',
       reference: '',
       date: new Date().toISOString().split('T')[0],
-    });
-    alert('✅ Operación registrada con éxito');
+    }));
+    setRateHint(null);
+
+    // Re-enfocar monto para el siguiente registro
+    setTimeout(() => montoRef.current?.focus(), 50);
   };
 
   const handleExportCSV = () => {
@@ -2061,296 +2131,197 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               </div>
             </div>
           )}
-          <div className="px-6 pt-6 pb-4">
+          <div className="px-5 pt-4 pb-3">
             <form
               onSubmit={handleQuickOpSubmit}
-              className="bg-white/90 rounded-2xl border border-slate-200 p-4 flex flex-col gap-4"
+              onKeyDown={handleFormKeyDown}
+              className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col gap-3"
             >
-              <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr_1fr] gap-4 items-start">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Buscar cliente
-                  </label>
-                  <div className="mt-2">
-                    <Autocomplete
-                      items={customers}
-                      stringify={(i: any) => i.id}
-                      secondary={(i: any) => i.cedula || ''}
-                      placeholder="Buscar cliente por nombre o cédula..."
-                      value={quickForm.customerName}
-                      onChange={(v) => setQuickForm({ ...quickForm, customerName: v })}
-                      onSelect={(it: any) =>
-                        setQuickForm({ ...quickForm, customerName: it.id })
-                      }
-                      onCreate={(label: string) => {
-                        openCreateCustomerModal(label);
-                      }}
-                    />
-                  </div>
+              {/* ── Fila 1: Cliente + Cuenta + Tipo + Saldo ── */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex-1 min-w-[200px]">
+                  <Autocomplete
+                    autoFocus
+                    items={customers}
+                    stringify={(i: any) => i.id}
+                    secondary={(i: any) => i.cedula || ''}
+                    placeholder="🔍 Buscar o crear cliente..."
+                    value={quickForm.customerName}
+                    onChange={(v) => setQuickForm({ ...quickForm, customerName: v })}
+                    onSelect={(it: any) => setQuickForm({ ...quickForm, customerName: it.id })}
+                    onAfterSelect={() => montoRef.current?.focus()}
+                    onCreate={(label: string) => { openCreateCustomerModal(label); }}
+                  />
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Selector de cuenta
-                  </label>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setQuickForm((prev) => ({ ...prev, accountType: AccountType.BCV }))
-                      }
-                      className={`px-3 py-3 rounded-xl text-[11px] font-black uppercase transition-all flex items-center justify-center gap-2 border ${
-                        quickForm.accountType === AccountType.BCV
-                          ? 'bg-blue-600 text-slate-900 border-blue-600'
-                          : 'bg-blue-50 text-blue-700 border-blue-100'
-                      }`}
+                <div className="flex gap-1 p-1 bg-slate-100 rounded-xl shrink-0">
+                  {([
+                    { at: AccountType.BCV, label: 'BCV', kbd: 'B', active: 'text-blue-600' },
+                    { at: AccountType.GRUPO, label: 'Grupo', kbd: 'G', active: 'text-violet-600' },
+                    { at: AccountType.DIVISA, label: 'Divisa', kbd: 'D', active: 'text-emerald-600' },
+                  ] as const).map(({ at, label, kbd, active }) => (
+                    <button key={at} type="button"
+                      onClick={() => handleAccountTypeChange(at)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${quickForm.accountType === at ? `bg-white shadow ${active}` : 'text-slate-400 hover:text-slate-600'}`}
                     >
-                      🏛️ BCV
+                      {label} <kbd className="text-[9px] opacity-40 font-sans ml-0.5">⌥{kbd}</kbd>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setQuickForm((prev) => ({ ...prev, accountType: AccountType.GRUPO }))
-                      }
-                      className={`px-3 py-3 rounded-xl text-[11px] font-black uppercase transition-all flex items-center justify-center gap-2 border ${
-                        quickForm.accountType === AccountType.GRUPO
-                          ? 'bg-purple-600 text-slate-900 border-purple-600'
-                          : 'bg-purple-50 text-purple-700 border-purple-100'
-                      }`}
-                    >
-                      👥 Grupo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setQuickForm((prev) => ({ ...prev, accountType: AccountType.DIVISA }))
-                      }
-                      className={`px-3 py-3 rounded-xl text-[11px] font-black uppercase transition-all flex items-center justify-center gap-2 border ${
-                        quickForm.accountType === AccountType.DIVISA
-                          ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                      }`}
-                    >
-                      💲 Divisa
-                    </button>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setQuickForm((prev) => ({ ...prev, type: MovementType.FACTURA }))
-                      }
-                      className={`py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
-                        quickForm.type === MovementType.FACTURA
-                          ? 'bg-rose-500 text-slate-900 shadow'
-                          : 'text-slate-400'
-                      }`}
-                    >
-                      Generar Deuda
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setQuickForm((prev) => ({ ...prev, type: MovementType.ABONO }))
-                      }
-                      className={`py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
-                        quickForm.type === MovementType.ABONO
-                          ? 'bg-emerald-500 text-slate-900 shadow'
-                          : 'text-slate-400'
-                      }`}
-                    >
-                      Registrar Abono
-                    </button>
-                  </div>
+                  ))}
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Saldos actuales
-                  </label>
-                  <div className="mt-2 grid grid-cols-1 gap-2">
-                    {quickBalances ? (
-                      <>
-                        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                          <span className="text-[11px] font-black uppercase text-slate-400">BCV</span>
-                          <span
-                            className={`text-sm font-black ${
-                              quickBalances.bcv > 0 ? 'text-emerald-600' : 'text-rose-600'
-                            }`}
-                          >
-                            {formatCurrency(Math.abs(quickBalances.bcv), '$')}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                          <span className="text-[11px] font-black uppercase text-slate-400">Grupo</span>
-                          <span
-                            className={`text-sm font-black ${
-                              quickBalances.grupo > 0 ? 'text-emerald-600' : 'text-rose-600'
-                            }`}
-                          >
-                            {formatCurrency(Math.abs(quickBalances.grupo), '$')}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                          <span className="text-[11px] font-black uppercase text-slate-400">Divisa</span>
-                          <span
-                            className={`text-sm font-black ${
-                              quickBalances.div > 0 ? 'text-emerald-600' : 'text-rose-600'
-                            }`}
-                          >
-                            {formatCurrency(Math.abs(quickBalances.div), '$')}
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-6 text-xs text-slate-400 text-center">
-                        Selecciona un cliente para ver sus saldos.
-                      </div>
-                    )}
+                <div className="flex gap-1 p-1 bg-slate-100 rounded-xl shrink-0">
+                  <button type="button"
+                    onClick={() => setQuickForm(p => ({ ...p, type: MovementType.FACTURA }))}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${quickForm.type === MovementType.FACTURA ? 'bg-rose-500 text-white shadow' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Deuda <kbd className="text-[9px] opacity-40 font-sans ml-0.5">⌥F</kbd>
+                  </button>
+                  <button type="button"
+                    onClick={() => setQuickForm(p => ({ ...p, type: MovementType.ABONO }))}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${quickForm.type === MovementType.ABONO ? 'bg-emerald-500 text-white shadow' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Abono <kbd className="text-[9px] opacity-40 font-sans ml-0.5">⌥A</kbd>
+                  </button>
+                </div>
 
-                <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                  <div>
-                    <div className="text-[10px] font-black uppercase text-slate-500">
-                      Convertir usando tasa
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      Aplica division por tasa BCV/Grupo
+                {quickBalances && (
+                  <div className="text-right shrink-0 ml-1">
+                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Saldo</div>
+                    <div className={`text-sm font-black font-mono ${
+                      (quickForm.accountType === AccountType.BCV ? quickBalances.bcv :
+                       quickForm.accountType === AccountType.GRUPO ? quickBalances.grupo :
+                       quickBalances.div) > 0 ? 'text-emerald-600' : 'text-rose-500'
+                    }`}>
+                      {formatCurrency(Math.abs(
+                        quickForm.accountType === AccountType.BCV ? quickBalances.bcv :
+                        quickForm.accountType === AccountType.GRUPO ? quickBalances.grupo :
+                        quickBalances.div
+                      ), '$')}
                     </div>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={quickForm.useRate}
-                      onChange={(e) =>
-                        setQuickForm((prev) => ({ ...prev, useRate: e.target.checked }))
-                      }
-                      disabled={quickForm.accountType === AccountType.DIVISA}
-                    />
-                    <span
-                      className={`w-11 h-6 rounded-full transition-colors ${
-                        quickForm.accountType === AccountType.DIVISA
-                          ? 'bg-slate-200'
-                          : quickForm.useRate
-                          ? 'bg-indigo-600'
-                          : 'bg-slate-300'
-                      }`}
-                    ></span>
-                    <span
-                      className={`absolute left-1 top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                        quickForm.useRate ? 'translate-x-5' : ''
-                      }`}
-                    ></span>
-                  </label>
-                </div>
-                  </div>
-                </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-[1.2fr_0.6fr_0.6fr_0.8fr_auto] gap-3 items-end">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Monto
-                  </label>
+              {/* ── Fila 2: Monto + Tasa + Fecha + Concepto + Ref + Guardar ── */}
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="w-[110px]">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Monto</label>
                   <NumericFormat
+                    getInputRef={montoRef}
+                    tabIndex={1}
                     value={quickForm.amount}
-                    onValueChange={(values) =>
-                      setQuickForm({ ...quickForm, amount: values.value || '' })
-                    }
+                    onValueChange={(vals) => setQuickForm({ ...quickForm, amount: vals.value || '' })}
                     thousandSeparator="."
                     decimalSeparator=","
                     decimalScale={2}
                     allowNegative={false}
-                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm font-black text-slate-800"
+                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-black text-slate-800 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
                     placeholder="0,00"
                     required
+                    onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); conceptoRef.current?.focus(); } }}
                   />
                 </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Tasa
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full px-3 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm font-bold text-slate-700"
-                    value={quickForm.rate}
-                    onChange={(e) => setQuickForm({ ...quickForm, rate: e.target.value })}
-                    disabled={quickForm.accountType === AccountType.DIVISA}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Fecha
-                  </label>
+
+                {quickForm.accountType !== AccountType.DIVISA && (
+                  <div className="w-[88px]">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tasa Bs</label>
+                    <input
+                      type="number"
+                      tabIndex={2}
+                      step="0.01"
+                      className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                      value={quickForm.rate}
+                      onChange={(e) => setQuickForm({ ...quickForm, rate: e.target.value })}
+                      placeholder="0.00"
+                    />
+                  </div>
+                )}
+
+                <div className="w-[148px]">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Fecha</label>
                   <SmartDatePicker
+                    tabIndex={3}
                     value={quickForm.date}
                     onChange={handleQuickDateSelect}
                     rateDates={rateDates}
-                    inputClassName="w-full px-3 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm font-bold text-slate-700"
+                    className="mt-1"
+                    inputClassName="w-full px-3 py-2.5 pr-7 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
                   />
-                  {rateHint && (
-                    <div className="mt-2 text-[10px] font-semibold text-emerald-600">
-                      {rateHint}
-                    </div>
-                  )}
                 </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Concepto
-                  </label>
+
+                <div className="flex-1 min-w-[150px]">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Concepto</label>
                   <input
+                    ref={conceptoRef}
                     type="text"
-                    className="w-full px-3 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm font-bold text-slate-700"
-                    placeholder="Detalle de la operación"
+                    tabIndex={4}
+                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                    placeholder={quickForm.type === MovementType.FACTURA ? 'Factura / Venta / Servicio...' : 'Pago / Abono / Depósito...'}
                     value={quickForm.concept}
                     onChange={(e) => setQuickForm({ ...quickForm, concept: e.target.value })}
                     required
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleQuickOpSubmit(e as any); } }}
                   />
                 </div>
+
+                <div className="w-[130px]">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Ref. (opt)</label>
+                  <input
+                    type="text"
+                    tabIndex={5}
+                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-medium text-slate-600 placeholder:text-slate-300 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                    placeholder="Nro. control..."
+                    value={quickForm.reference}
+                    onChange={(e) => setQuickForm({ ...quickForm, reference: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleQuickOpSubmit(e as any); } }}
+                  />
+                </div>
+
                 <button
                   type="submit"
-                  className={`px-5 py-3 rounded-xl text-xs font-black uppercase text-slate-900 shadow-md ${
-                    quickForm.type === MovementType.FACTURA
-                      ? 'bg-rose-500 hover:bg-rose-600'
-                      : 'bg-emerald-500 hover:bg-emerald-600'
+                  tabIndex={6}
+                  className={`shrink-0 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wide shadow-sm transition-all active:scale-95 ${
+                    successFlash
+                      ? 'bg-emerald-500 text-white shadow-emerald-100'
+                      : quickForm.type === MovementType.FACTURA
+                      ? 'bg-rose-500 text-white hover:bg-rose-600 shadow-rose-100'
+                      : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-emerald-100'
                   }`}
                 >
-                  Guardar
+                  {successFlash ? '✓ Guardado' : 'Guardar ↵'}
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-3">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Referencia
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm font-bold text-slate-700"
-                    placeholder="Referencia o numero de control (opcional)"
-                    value={quickForm.reference}
-                    onChange={(e) => setQuickForm({ ...quickForm, reference: e.target.value })}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <span className="text-[11px] text-slate-500 font-semibold">
-                    Paso 1: Busca cliente. Paso 2: elige cuenta. Paso 3: registra el monto.
-                  </span>
-                </div>
-              </div>
+              {rateHint && (
+                <div className="text-[10px] font-semibold text-emerald-600 -mt-1">{rateHint}</div>
+              )}
             </form>
+
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-2 pb-0.5 text-[10px] text-slate-300 font-medium select-none">
+              <span>⌥B BCV</span><span className="text-slate-200">·</span>
+              <span>⌥G Grupo</span><span className="text-slate-200">·</span>
+              <span>⌥D Divisa</span><span className="text-slate-200">·</span>
+              <span>⌥F Deuda</span><span className="text-slate-200">·</span>
+              <span>⌥A Abono</span><span className="text-slate-200">·</span>
+              <span>↵ Guardar</span><span className="text-slate-200">·</span>
+              <span>Esc Limpiar</span>
+            </div>
           </div>
 
-          <div className="p-4 border-b border-slate-100 bg-slate-50 mt-4">
+          <div className="px-6 py-3 border-t border-slate-100 bg-white flex items-center gap-2">
+            <i className="fa-solid fa-magnifying-glass text-slate-300 text-xs" />
             <input
               type="text"
-              placeholder="🔍 Buscar cliente por nombre, cédula..."
-              className="w-full bg-transparent border-none outline-none font-bold text-slate-600"
+              placeholder="Filtrar clientes por nombre, cédula..."
+              className="flex-1 bg-transparent border-none outline-none text-sm font-semibold text-slate-600 placeholder:text-slate-300"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            {searchTerm && (
+              <button type="button" onClick={() => setSearchTerm('')} className="text-slate-300 hover:text-slate-500 transition-colors">
+                <i className="fa-solid fa-xmark text-xs" />
+              </button>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto custom-scroll">
             {directoryData.length === 0 ? (
@@ -2378,7 +2349,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   {directoryData.map((c) => (
                     <tr
                       key={c.id}
-                      className="hover:bg-slate-50:bg-slate-700/50 transition-colors group"
+                      className="hover:bg-slate-50/70 transition-colors group"
                     >
                       <td className="px-6 py-4 font-bold text-slate-700">
                         <div className="flex flex-col gap-2">
@@ -3374,7 +3345,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               );
             })()}
 
-            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+            <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -3396,8 +3367,8 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
             </div>
           </div>
 
-          <div className="flex-1 bg-white rounded-[1.5rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-slate-100 bg-slate-50">
+          <div className="flex-1 bg-white rounded-[1.5rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 bg-white">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">

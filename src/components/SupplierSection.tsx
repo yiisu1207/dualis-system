@@ -76,14 +76,18 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
     type: MovementType.FACTURA,
     expenseCategory: 'Inventario',
     invoiceImage: '',
-    accountType: AccountType.DIVISA,
-    rate: '1',
+    accountType: AccountType.BCV,
+    rate: String(rates?.bcv ?? '1'),
   });
 
   // Edit Movement State
   const [editingMovement, setEditingMovement] = useState<Movement | null>(null);
   const [editForm, setEditForm] = useState<{ amount: string }>({ amount: '' });
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [successFlash, setSuccessFlash] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const montoRef = useRef<HTMLInputElement | null>(null);
+  const conceptoRef = useRef<HTMLInputElement | null>(null);
   const ocrInputRef = useRef<HTMLInputElement | null>(null);
   const invoiceInputRef = useRef<HTMLInputElement | null>(null);
   const invoiceUpdateRef = useRef<HTMLInputElement | null>(null);
@@ -289,14 +293,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSupplierId || !movData.amount) return;
-    if (movData.type === MovementType.FACTURA && !movData.expenseCategory) {
-      alert('Debes seleccionar una categoria para el gasto.');
-      return;
-    }
-    if (!canCreateMovement) {
-      alert('No tienes permisos para registrar movimientos.');
-      return;
-    }
+    if (!canCreateMovement) return;
     const rateValue =
       movData.accountType === AccountType.DIVISA
         ? 1
@@ -315,14 +312,46 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
       rate: rateValue,
       isSupplierMovement: true,
     });
-    alert('Operación registrada correctamente.');
-    setMovData({
-      ...movData,
+    setSuccessFlash(true);
+    setTimeout(() => setSuccessFlash(false), 2000);
+    setMovData(prev => ({
+      ...prev,
       amount: '',
       concept: '',
       date: new Date().toISOString().split('T')[0],
       invoiceImage: '',
-    });
+    }));
+    setTimeout(() => montoRef.current?.focus(), 50);
+  };
+
+  const handleAccountTypeChange = (at: AccountType) => {
+    const newRate =
+      at === AccountType.BCV ? String(rates?.bcv ?? '1') :
+      at === AccountType.GRUPO ? String(rates?.grupo ?? '1') : '1';
+    setMovData(prev => ({ ...prev, accountType: at, rate: newRate }));
+  };
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Escape') {
+      setMovData(prev => ({
+        ...prev,
+        amount: '',
+        concept: '',
+        date: new Date().toISOString().split('T')[0],
+        invoiceImage: '',
+        accountType: AccountType.BCV,
+        rate: String(rates?.bcv ?? '1'),
+      }));
+      return;
+    }
+    if (!e.altKey) return;
+    switch (e.key.toLowerCase()) {
+      case 'b': handleAccountTypeChange(AccountType.BCV); break;
+      case 'g': handleAccountTypeChange(AccountType.GRUPO); break;
+      case 'd': handleAccountTypeChange(AccountType.DIVISA); break;
+      case 'f': setMovData(p => ({ ...p, type: MovementType.FACTURA })); break;
+      case 'a': setMovData(p => ({ ...p, type: MovementType.ABONO })); break;
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -405,6 +434,20 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
         {/* TABLA PROVEEDORES */}
         <div className="lg:col-span-2 app-panel overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2 bg-white">
+            <i className="fa-solid fa-magnifying-glass text-slate-300 text-xs" />
+            <input
+              className="flex-1 text-sm font-medium text-slate-700 outline-none placeholder:text-slate-300 bg-transparent"
+              placeholder="Buscar proveedor..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button type="button" onClick={() => setSearchTerm('')} className="text-slate-300 hover:text-slate-500">
+                <i className="fa-solid fa-xmark text-xs" />
+              </button>
+            )}
+          </div>
           <div className="overflow-y-auto custom-scroll flex-1">
             {supplierStats.length === 0 ? (
               <div className="p-6">
@@ -427,10 +470,14 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {supplierStats.map((s) => (
+                  {supplierStats.filter(s =>
+                    !searchTerm || s.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (s.rif || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (s.contacto || '').toLowerCase().includes(searchTerm.toLowerCase())
+                  ).map((s) => (
                     <tr
                       key={s.id}
-                      className={`hover:bg-slate-50:bg-slate-700/50 transition-colors cursor-pointer ${
+                      className={`hover:bg-slate-50 transition-colors cursor-pointer ${
                         selectedSupplierId === s.id ? 'bg-blue-50' : ''
                       }`}
                       onClick={() => setSelectedSupplierId(s.id)}
@@ -828,206 +875,243 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleRegister} className="p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <input
-                      ref={ocrInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setOcrLoading(true);
-                        try {
-                          const result = await scanInvoiceImage(file, 'SUPPLIER');
-                          const resolvedAccount =
-                            result?.accountType === 'BCV'
-                              ? AccountType.BCV
-                              : result?.accountType === 'GRUPO'
-                              ? AccountType.GRUPO
-                              : result?.currency === 'BS'
-                              ? AccountType.BCV
-                              : AccountType.DIVISA;
-                          if (result?.entityName) {
-                            const name = String(result.entityName).toUpperCase();
-                            setSelectedSupplierId(name);
-                          }
-                          if (result?.amount != null) {
-                            const rawAmount = Number(result.amount) || 0;
-                            setMovData((prev) => ({ ...prev, amount: rawAmount.toString() }));
-                          }
-                          if (result?.concept) {
-                            setMovData((prev) => ({ ...prev, concept: String(result.concept) }));
-                          }
-                          if (result?.movementType === 'ABONO') {
-                            setMovData((prev) => ({ ...prev, type: MovementType.ABONO }));
-                          }
-                          if (result?.movementType === 'FACTURA') {
-                            setMovData((prev) => ({ ...prev, type: MovementType.FACTURA }));
-                          }
-                          setMovData((prev) => ({
-                            ...prev,
-                            accountType: resolvedAccount,
-                            rate:
-                              resolvedAccount === AccountType.DIVISA
-                                ? '1'
-                                : String(
-                                    resolvedAccount === AccountType.BCV ? rates.bcv || 1 : rates.grupo || 1
-                                  ),
-                          }));
-                        } catch (err) {
-                          console.error(err);
-                          alert('No se pudo leer la imagen con IA.');
-                        } finally {
-                          setOcrLoading(false);
-                          if (ocrInputRef.current) ocrInputRef.current.value = '';
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => ocrInputRef.current?.click()}
-                      className="px-3 py-2 text-[10px] font-black uppercase bg-slate-100 rounded-lg border border-slate-200"
-                    >
-                      {ocrLoading ? 'OCR...' : 'OCR'}
-                    </button>
-                    <input
-                      ref={invoiceInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          setMovData((prev) => ({ ...prev, invoiceImage: reader.result as string }));
-                        };
-                        reader.readAsDataURL(file);
-                        if (invoiceInputRef.current) invoiceInputRef.current.value = '';
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => invoiceInputRef.current?.click()}
-                      className="px-3 py-2 text-[10px] font-black uppercase bg-amber-50 text-amber-700 rounded-lg border border-amber-200"
-                    >
-                      📎 Adjuntar
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() => setMovData({ ...movData, type: MovementType.FACTURA })}
-                      className={`py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
-                        movData.type === MovementType.FACTURA
-                          ? 'bg-white shadow text-amber-600'
-                          : 'text-slate-400'
-                      }`}
-                    >
-                      Registrar Gasto/Compra
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMovData({ ...movData, type: MovementType.ABONO })}
-                      className={`py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
-                        movData.type === MovementType.ABONO
-                          ? 'bg-rose-500 shadow text-slate-900'
-                          : 'text-slate-400'
-                      }`}
-                    >
-                      Registrar Pago
-                    </button>
-                  </div>
+                <div className="p-4 flex flex-col gap-3">
+                  {/* Hidden file inputs */}
+                  <input
+                    ref={ocrInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setOcrLoading(true);
+                      try {
+                        const result = await scanInvoiceImage(file, 'SUPPLIER');
+                        const resolvedAccount =
+                          result?.accountType === 'BCV' ? AccountType.BCV :
+                          result?.accountType === 'GRUPO' ? AccountType.GRUPO :
+                          result?.currency === 'BS' ? AccountType.BCV : AccountType.DIVISA;
+                        if (result?.entityName) setSelectedSupplierId(String(result.entityName).toUpperCase());
+                        if (result?.amount != null) setMovData(prev => ({ ...prev, amount: String(Number(result.amount) || 0) }));
+                        if (result?.concept) setMovData(prev => ({ ...prev, concept: String(result.concept) }));
+                        if (result?.movementType === 'ABONO') setMovData(prev => ({ ...prev, type: MovementType.ABONO }));
+                        if (result?.movementType === 'FACTURA') setMovData(prev => ({ ...prev, type: MovementType.FACTURA }));
+                        setMovData(prev => ({
+                          ...prev,
+                          accountType: resolvedAccount,
+                          rate: resolvedAccount === AccountType.DIVISA ? '1' :
+                            String(resolvedAccount === AccountType.BCV ? rates.bcv || 1 : rates.grupo || 1),
+                        }));
+                      } catch (err) {
+                        console.error(err);
+                      } finally {
+                        setOcrLoading(false);
+                        if (ocrInputRef.current) ocrInputRef.current.value = '';
+                      }
+                    }}
+                  />
+                  <input
+                    ref={invoiceInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onloadend = () => setMovData(prev => ({ ...prev, invoiceImage: reader.result as string }));
+                      reader.readAsDataURL(file);
+                      if (invoiceInputRef.current) invoiceInputRef.current.value = '';
+                    }}
+                  />
 
-                  <div className="space-y-2">
-                    <div>
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                        Cuenta / Moneda
-                      </label>
-                      <select
-                        className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-xs text-slate-600 outline-none"
-                        value={movData.accountType}
-                        onChange={(e) =>
-                          setMovData({ ...movData, accountType: e.target.value as AccountType })
-                        }
-                      >
-                        <option value={AccountType.BCV}>Bolívares (BCV)</option>
-                        <option value={AccountType.GRUPO}>Grupo ($)</option>
-                        <option value={AccountType.DIVISA}>Caja Divisa ($)</option>
-                      </select>
+                  <form onSubmit={handleRegister} onKeyDown={handleFormKeyDown}
+                    className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col gap-3">
+
+                    {/* Fila 1: Tipo + Cuenta + Adjuntos */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Type pills */}
+                      {([
+                        { t: MovementType.FACTURA, label: 'Gasto', hint: '⌥F', color: 'amber' },
+                        { t: MovementType.ABONO, label: 'Pago', hint: '⌥A', color: 'emerald' },
+                      ] as const).map(({ t, label, hint, color }) => (
+                        <button
+                          key={t} type="button"
+                          onClick={() => setMovData(p => ({ ...p, type: t }))}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase transition-all flex items-center gap-1.5 ${
+                            movData.type === t
+                              ? color === 'amber'
+                                ? 'bg-amber-500 text-white shadow-sm'
+                                : 'bg-emerald-500 text-white shadow-sm'
+                              : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                          }`}
+                        >
+                          {label}
+                          <span className="opacity-60 font-normal text-[9px]">{hint}</span>
+                        </button>
+                      ))}
+
+                      <div className="w-px h-4 bg-slate-200" />
+
+                      {/* Account type pills */}
+                      {([
+                        { at: AccountType.BCV, label: 'BCV', hint: '⌥B', color: 'indigo' },
+                        { at: AccountType.GRUPO, label: 'Grupo', hint: '⌥G', color: 'orange' },
+                        { at: AccountType.DIVISA, label: 'Divisa', hint: '⌥D', color: 'emerald' },
+                      ] as const).map(({ at, label, hint, color }) => (
+                        <button
+                          key={at} type="button"
+                          onClick={() => handleAccountTypeChange(at)}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase transition-all flex items-center gap-1.5 ${
+                            movData.accountType === at
+                              ? color === 'indigo'
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : color === 'orange'
+                                ? 'bg-orange-500 text-white shadow-sm'
+                                : 'bg-emerald-600 text-white shadow-sm'
+                              : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                          }`}
+                        >
+                          {label}
+                          <span className="opacity-60 font-normal text-[9px]">{hint}</span>
+                        </button>
+                      ))}
+
+                      <div className="ml-auto flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => ocrInputRef.current?.click()}
+                          className="px-2.5 py-1.5 text-[10px] font-black uppercase bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors"
+                        >
+                          {ocrLoading ? '...' : 'OCR'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => invoiceInputRef.current?.click()}
+                          className={`px-2.5 py-1.5 text-[10px] font-black uppercase rounded-lg border transition-colors ${
+                            movData.invoiceImage
+                              ? 'bg-amber-100 text-amber-700 border-amber-300'
+                              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200'
+                          }`}
+                        >
+                          {movData.invoiceImage ? '📎 ✓' : '📎'}
+                        </button>
+                      </div>
                     </div>
-                    {movData.accountType !== AccountType.DIVISA && (
-                      <div>
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                          Tasa aplicada
+
+                    {/* Fila 2: Monto + Tasa + Categoría + Fecha + Concepto + Guardar */}
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                          {movData.accountType === AccountType.DIVISA ? 'Monto ($)' : 'Monto (Bs)'}
                         </label>
-                        <input
-                          type="number"
-                          step="0.0001"
-                          className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-xs text-slate-600 outline-none"
-                          value={movData.rate}
-                          onChange={(e) => setMovData({ ...movData, rate: e.target.value })}
+                        <NumericFormat
+                          getInputRef={montoRef}
+                          value={movData.amount}
+                          onValueChange={vals => setMovData(prev => ({ ...prev, amount: vals.value || '' }))}
+                          thousandSeparator="."
+                          decimalSeparator=","
+                          decimalScale={2}
+                          allowNegative={false}
+                          tabIndex={1}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); conceptoRef.current?.focus(); } }}
+                          className="w-32 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black text-base text-slate-800 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                          placeholder="0,00"
                           required
                         />
                       </div>
-                    )}
-                    <NumericFormat
-                      value={movData.amount}
-                      onValueChange={(values) =>
-                        setMovData({ ...movData, amount: values.value || '' })
-                      }
-                      thousandSeparator="."
-                      decimalSeparator="," 
-                      decimalScale={2}
-                      allowNegative={false}
-                      className="w-full p-3 bg-slate-50 border-none rounded-xl font-black text-lg text-slate-800 outline-none"
-                      placeholder={
-                        movData.accountType === AccountType.DIVISA ? 'Monto ($)' : 'Monto (Bs)'
-                      }
-                      required
-                    />
-                    {movData.type === MovementType.FACTURA && (
-                      <select
-                        className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-xs text-slate-600 outline-none"
-                        value={movData.expenseCategory}
-                        onChange={(e) =>
-                          setMovData({ ...movData, expenseCategory: e.target.value })
-                        }
-                      >
-                        <option value="Inventario">Inventario</option>
-                        <option value="Servicios">Servicios</option>
-                        <option value="Nomina">Nomina</option>
-                        <option value="Alquiler">Alquiler</option>
-                        <option value="Mantenimiento">Mantenimiento</option>
-                        <option value="Otros">Otros</option>
-                      </select>
-                    )}
-                    <input
-                      type="date"
-                      className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-xs text-slate-600 outline-none"
-                      value={movData.date}
-                      onChange={(e) => setMovData({ ...movData, date: e.target.value })}
-                    />
-                    <input
-                      className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-xs text-slate-600 outline-none"
-                      value={movData.concept}
-                      onChange={(e) => setMovData({ ...movData, concept: e.target.value })}
-                      required
-                      placeholder="Nro Factura / Descripción"
-                    />
-                  </div>
 
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-white text-slate-900 rounded-xl font-black text-xs uppercase shadow-lg hover:bg-black transition-all"
-                  >
-                    {movData.type === MovementType.FACTURA
-                      ? 'Confirmar Gasto/Compra'
-                      : 'Confirmar Pago'}
-                  </button>
-                </form>
+                      {movData.accountType !== AccountType.DIVISA && (
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Tasa</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            tabIndex={2}
+                            className="w-24 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-600 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                            value={movData.rate}
+                            onChange={e => setMovData(prev => ({ ...prev, rate: e.target.value }))}
+                            required
+                          />
+                        </div>
+                      )}
+
+                      {movData.type === MovementType.FACTURA && (
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Categoría</label>
+                          <select
+                            tabIndex={3}
+                            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-600 outline-none focus:border-[var(--ui-accent)] transition-all"
+                            value={movData.expenseCategory}
+                            onChange={e => setMovData(prev => ({ ...prev, expenseCategory: e.target.value }))}
+                          >
+                            <option value="Inventario">Inventario</option>
+                            <option value="Servicios">Servicios</option>
+                            <option value="Nomina">Nómina</option>
+                            <option value="Alquiler">Alquiler</option>
+                            <option value="Mantenimiento">Mantenimiento</option>
+                            <option value="Otros">Otros</option>
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fecha</label>
+                        <input
+                          type="date"
+                          tabIndex={4}
+                          className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-600 outline-none focus:border-[var(--ui-accent)] transition-all"
+                          value={movData.date}
+                          onChange={e => setMovData(prev => ({ ...prev, date: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                          {movData.type === MovementType.FACTURA ? 'Nro Factura / Descripción' : 'Concepto / Referencia'}
+                        </label>
+                        <input
+                          ref={conceptoRef}
+                          tabIndex={5}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all placeholder:text-slate-300"
+                          value={movData.concept}
+                          onChange={e => setMovData(prev => ({ ...prev, concept: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleRegister(e as any); } }}
+                          placeholder={movData.type === MovementType.FACTURA ? 'FAC-001...' : 'Transferencia...'}
+                          required
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        tabIndex={6}
+                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all shadow-sm ${
+                          successFlash
+                            ? 'bg-emerald-500 text-white'
+                            : movData.type === MovementType.FACTURA
+                            ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                            : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                        }`}
+                      >
+                        {successFlash ? '✓ Guardado' : 'Guardar ↵'}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Keyboard hints */}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-300 px-1">
+                    <span>⌥F Gasto</span>
+                    <span>⌥A Pago</span>
+                    <span className="text-slate-200">·</span>
+                    <span>⌥B BCV</span>
+                    <span>⌥G Grupo</span>
+                    <span>⌥D Divisa</span>
+                    <span className="text-slate-200">·</span>
+                    <span>↵ Guardar</span>
+                    <span>Esc Limpiar</span>
+                  </div>
+                </div>
               )}
             </>
           ) : (
