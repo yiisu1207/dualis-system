@@ -471,7 +471,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {supplierStats.filter(s =>
-                    !searchTerm || s.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    !searchTerm || (s.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (s.rif || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (s.contacto || '').toLowerCase().includes(searchTerm.toLowerCase())
                   ).map((s) => (

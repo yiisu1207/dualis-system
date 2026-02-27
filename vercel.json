@@ -1,7 +1,5 @@
 {
   "version": 2,
-  "public": true,
-  "cleanUrls": true,
   "framework": "vite",
   "rewrites": [
     { "source": "/api/bcv", "destination": "/api/bcv.cjs" },
