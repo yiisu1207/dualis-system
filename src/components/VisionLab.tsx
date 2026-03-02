@@ -38,8 +38,6 @@ import {
   Legend,
 } from 'recharts';
 import { Movement, InventoryItem, ExchangeRates, Customer } from '../../types';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -410,7 +408,9 @@ Responde con datos concretos y recomendaciones accionables para una PYME venezol
 
   // ── PDF Export ─────────────────────────────────────────────────────────────
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    const { default: jsPDF } = await import('jspdf');
+    await import('jspdf-autotable');
     const doc = new jsPDF();
     const { currRevenue, currExpenses, utilidad, margen, ticketPromedio, pnlTable } = analytics;
 

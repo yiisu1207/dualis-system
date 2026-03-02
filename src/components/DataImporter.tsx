@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import ExcelJS from 'exceljs';
+
 import { AccountType, MovementType, PaymentCurrency, Customer } from '../../types';
 import { scanInvoiceImage } from '../lib/ai-scanner';
 import Autocomplete from './Autocomplete';
@@ -356,6 +356,7 @@ const DataImporter: React.FC<DataImporterProps> = ({
     setError(null);
     try {
       const buffer = await excelFile.arrayBuffer();
+      const { default: ExcelJS } = await import('exceljs');
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer);
 

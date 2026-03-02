@@ -363,6 +363,13 @@ const PosMayorContent = () => {
 
       await addDoc(collection(db, 'movements'), movementPayload);
 
+      // Descontar stock de cada producto vendido
+      for (const item of items) {
+        await updateDoc(doc(db, `businesses/${tenantId}/products`, item.id), {
+          stock: increment(-item.qty),
+        });
+      }
+
       // Update terminal stats
       if (cajaId && tenantId) {
         await updateDoc(doc(db, `businesses/${tenantId}/terminals`, cajaId), {

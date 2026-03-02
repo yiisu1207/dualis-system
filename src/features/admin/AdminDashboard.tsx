@@ -176,8 +176,7 @@ export default function AdminDashboard({
   useEffect(() => {
     if (!tenantId) return;
     const q = query(
-      collection(db, 'inventoryItems'),
-      where('businessId', '==', tenantId),
+      collection(db, `businesses/${tenantId}/products`)
     );
     const unsub = onSnapshot(q, (snap) => {
       setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as InventoryItem)));

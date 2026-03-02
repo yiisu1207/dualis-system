@@ -54,6 +54,20 @@ service cloud.firestore {
       allow read: if isMember(bid);
       allow write: if isAdmin(bid);
 
+      // Productos: ventas puede actualizar (para descontar stock en POS)
+      match /products/{productId} {
+        allow read: if isMember(bid);
+        allow create, delete: if isAdmin(bid);
+        allow update: if isMember(bid);
+      }
+
+      // Terminales: ventas puede actualizar estadísticas al procesar venta
+      match /terminals/{terminalId} {
+        allow read: if isMember(bid);
+        allow create, delete: if isAdmin(bid);
+        allow update: if isMember(bid);
+      }
+
       match /{allSubcollections=**} {
         allow read: if isMember(bid);
         allow write: if isAdmin(bid);

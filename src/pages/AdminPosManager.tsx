@@ -12,7 +12,7 @@ import {
   Calendar, User, Eye, Copy, CheckCircle2, BarChart3,
   AlertTriangle,
 } from 'lucide-react';
-import ExcelJS from 'exceljs';
+
 import { useToast } from '../context/ToastContext';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -119,6 +119,7 @@ export default function AdminPosManager() {
   const [cashierName, setCashierName] = useState('');
   const [isOpeningShift, setIsOpeningShift] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
 
   // Audit panel
   const [selectedAudit, setSelectedAudit] = useState<Terminal | null>(null);
@@ -237,7 +238,6 @@ export default function AdminPosManager() {
   };
 
   const handleCloseShift = async (terminal: Terminal) => {
-    if (!confirm(`¿Cerrar el turno de "${terminal.nombre}"?\nEl cajero no podrá seguir facturando.`)) return;
     try {
       const ref = doc(db, `businesses/${businessId}/terminals`, terminal.id);
       await updateDoc(ref, {
@@ -246,6 +246,7 @@ export default function AdminPosManager() {
         apertura: null,
         cierreAt: new Date().toISOString(),
       });
+      setCloseConfirmId(null);
     } catch (err: any) {
       console.error('[AdminPosManager] Error cerrando turno:', err);
       error(`Error al cerrar turno: ${err?.message || String(err)}`);
@@ -262,6 +263,7 @@ export default function AdminPosManager() {
 
   const handleExportExcel = async () => {
     if (!auditMovements.length || !selectedAudit) return;
+    const { default: ExcelJS } = await import('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Auditoria');
     ws.columns = [
@@ -464,10 +466,23 @@ export default function AdminPosManager() {
                   </button>
 
                   {isOpen && isAdmin && (
-                    <button onClick={() => handleCloseShift(t)}
-                      className="flex-1 h-11 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 dark:text-rose-400 font-black text-[9px] uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all border border-rose-100 dark:border-rose-500/20">
-                      Cerrar Turno
-                    </button>
+                    closeConfirmId === t.id ? (
+                      <div className="flex-1 flex items-center gap-1">
+                        <button onClick={() => handleCloseShift(t)}
+                          className="flex-1 h-11 rounded-xl bg-rose-600 text-white font-black text-[9px] uppercase tracking-widest hover:bg-rose-700 transition-all">
+                          Confirmar
+                        </button>
+                        <button onClick={() => setCloseConfirmId(null)}
+                          className="h-11 px-3 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 font-black text-[9px] uppercase tracking-widest transition-all">
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setCloseConfirmId(t.id)}
+                        className="flex-1 h-11 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 dark:text-rose-400 font-black text-[9px] uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all border border-rose-100 dark:border-rose-500/20">
+                        Cerrar Turno
+                      </button>
+                    )
                   )}
 
                   {!isOpen ? (

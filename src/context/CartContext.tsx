@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useTenant } from './TenantContext';
 
@@ -71,26 +71,39 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (!normalized) return false;
 
 
-      // Legacy: productos están en businesses/{empresaId}/products
-      const baseQuery = (field: 'codigo' | 'codigoAlterno') =>
-        query(
-          collection(db, `businesses/${tenantId}/products`),
-          where(field, '==', normalized)
-        );
+      const productsCol = collection(db, `businesses/${tenantId}/products`);
 
-      let snap = await getDocs(baseQuery('codigo'));
-      if (snap.empty) {
-        snap = await getDocs(baseQuery('codigoAlterno'));
+      // Buscar por 'codigo', luego 'codigoAlterno', luego por ID de documento
+      let foundId: string | null = null;
+      let foundData: Record<string, unknown> | null = null;
+
+      const snap1 = await getDocs(query(productsCol, where('codigo', '==', normalized)));
+      if (!snap1.empty) {
+        foundId = snap1.docs[0].id;
+        foundData = snap1.docs[0].data() as Record<string, unknown>;
+      } else {
+        const snap2 = await getDocs(query(productsCol, where('codigoAlterno', '==', normalized)));
+        if (!snap2.empty) {
+          foundId = snap2.docs[0].id;
+          foundData = snap2.docs[0].data() as Record<string, unknown>;
+        } else {
+          // Último recurso: buscar directamente por ID del documento
+          const directSnap = await getDoc(doc(productsCol, normalized));
+          if (directSnap.exists()) {
+            foundId = directSnap.id;
+            foundData = directSnap.data() as Record<string, unknown>;
+          }
+        }
       }
-      if (snap.empty) return false;
 
-      const docSnap = snap.docs[0];
-      const data = docSnap.data() as Record<string, unknown>;
+      if (!foundId || !foundData) return false;
+
+      const data = foundData;
       
       const priceUsd = resolvePrice(data, priceTier);
 
       const nextItem: CartItem = {
-        id: docSnap.id,
+        id: foundId,
         codigo: String(data.codigo || data.codigoAlterno || normalized),
         nombre: String(data.nombre || 'Producto sin nombre'),
         qty: 1,

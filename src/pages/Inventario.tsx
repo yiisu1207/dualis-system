@@ -215,6 +215,9 @@ export default function Inventario() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [adjData, setAdjData] = useState({ type: 'AJUSTE', quantity: 0, reason: '' });
 
+  // Delete confirmation state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
   // ── EXPORT states ──────────────────────────────────────────────────────────
   const [exportModal, setExportModal] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -740,7 +743,14 @@ export default function Inventario() {
                           <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
                             <button onClick={() => { setSelectedProduct(p); setAdjModalOpen(true); }} className="p-3 rounded-2xl bg-slate-900 text-white hover:bg-emerald-500 transition-all shadow-xl shadow-slate-200" title="Ajuste de Stock"><TrendingUp size={16} /></button>
                             <button onClick={() => { setEditingId(p.id); setForm(p); setModalOpen(true); }} className="p-3 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-900 hover:text-white transition-all"><Pencil size={16} /></button>
-                            <button onClick={async () => { if (confirm('¿Eliminar producto?')) await deleteDoc(doc(db, `businesses/${tenantId}/products`, p.id)); }} className="p-3 rounded-2xl bg-rose-50 text-rose-500 hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={16} /></button>
+                            {deleteConfirmId === p.id ? (
+                              <div className="flex items-center gap-1">
+                                <button onClick={async () => { await deleteDoc(doc(db, `businesses/${tenantId}/products`, p.id)); setDeleteConfirmId(null); }} className="p-2 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider">Sí</button>
+                                <button onClick={() => setDeleteConfirmId(null)} className="p-2 rounded-xl bg-slate-100 text-slate-500 text-[10px] font-black uppercase tracking-wider">No</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setDeleteConfirmId(p.id)} className="p-3 rounded-2xl bg-rose-50 text-rose-500 hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={16} /></button>
+                            )}
                           </div>
                         </td>
                       </tr>

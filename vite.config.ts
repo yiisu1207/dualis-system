@@ -31,8 +31,20 @@ export default defineConfig(({ mode }) => {
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, './src'), // 👈 Agregamos ./src
+          '@': path.resolve(__dirname, './src'),
         }
-      }
+      },
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+              'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+              'vendor-charts': ['recharts'],
+              'vendor-ui': ['lucide-react'],
+            },
+          },
+        },
+      },
     };
 });

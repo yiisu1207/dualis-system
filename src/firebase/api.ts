@@ -737,7 +737,7 @@ export async function listMovements(businessId: string) {
 }
 
 export async function listInventory(businessId: string) {
-  const q = query(collection(db, 'inventory'), where('businessId', '==', businessId));
+  const q = query(collection(db, `businesses/${businessId}/products`));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }

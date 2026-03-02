@@ -122,7 +122,7 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
     movements.filter(m => !m.isSupplierMovement).forEach(m => {
       if (!map[m.entityId]) {
         const c = customers.find(c => c.id === m.entityId);
-        map[m.entityId] = { name: (c as any)?.name || m.entityId, deuda: 0 };
+        map[m.entityId] = { name: (c as any)?.fullName || (c as any)?.nombre || m.entityId, deuda: 0 };
       }
       if (m.movementType === MovementType.FACTURA) map[m.entityId].deuda += (m.amountInUSD || 0);
       if (m.movementType === MovementType.ABONO) map[m.entityId].deuda -= (m.amountInUSD || 0);

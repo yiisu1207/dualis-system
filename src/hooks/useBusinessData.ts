@@ -73,8 +73,7 @@ export function useBusinessData(businessId: string): BusinessData {
     ));
 
     const qInv = query(
-      collection(db, 'inventoryItems'),
-      where('businessId', '==', businessId)
+      collection(db, `businesses/${businessId}/products`)
     );
     unsubs.push(onSnapshot(qInv, snap =>
       setInventoryItems(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
