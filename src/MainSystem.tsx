@@ -323,14 +323,23 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffStr = cutoff.toISOString().split('T')[0];
     const clientBalance: Record<string, number> = {};
-    movements.filter(m => !m.isSupplierMovement).forEach(m => {
-      if (!clientBalance[m.entityId]) clientBalance[m.entityId] = 0;
-      if (m.movementType === 'FACTURA') clientBalance[m.entityId] += (m.amountInUSD || 0);
-      if (m.movementType === 'ABONO') clientBalance[m.entityId] -= (m.amountInUSD || 0);
-    });
+    // Excluye ventas POS contado y Consumidor Final — no tienen CxC pendiente real
+    movements
+      .filter(m => !m.isSupplierMovement && !(m as any).pagado && m.entityId !== 'CONSUMIDOR_FINAL')
+      .forEach(m => {
+        if (!clientBalance[m.entityId]) clientBalance[m.entityId] = 0;
+        if (m.movementType === 'FACTURA') clientBalance[m.entityId] += (m.amountInUSD || 0);
+        if (m.movementType === 'ABONO') clientBalance[m.entityId] -= (m.amountInUSD || 0);
+      });
     const overdueCount = [...new Set(
       movements
-        .filter(m => !m.isSupplierMovement && m.movementType === 'FACTURA' && (m.date || '') < cutoffStr)
+        .filter(m =>
+          !m.isSupplierMovement &&
+          m.movementType === 'FACTURA' &&
+          (m.date || '') < cutoffStr &&
+          !(m as any).pagado &&
+          m.entityId !== 'CONSUMIDOR_FINAL'
+        )
         .filter(m => (clientBalance[m.entityId] || 0) > 0)
         .map(m => m.entityId)
     )].length;

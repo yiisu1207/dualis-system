@@ -23,6 +23,11 @@ import {
   Users,
   CheckCircle2,
   Clock,
+  UserCheck,
+  Award,
+  FileBarChart,
+  Minus,
+  ArrowRight,
 } from 'lucide-react';
 import { Movement, Customer, MovementType } from '../../types';
 
@@ -69,6 +74,7 @@ const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'S
 const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers }) => {
   const [period, setPeriod] = useState<Period>('month');
   const [movType, setMovType] = useState<'ALL' | 'FACTURA' | 'ABONO'>('ALL');
+  const [comisionRate, setComisionRate] = useState(3);
 
   const startDate = useMemo(() => getStartDate(period), [period]);
 
@@ -132,6 +138,79 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
       .sort((a, b) => b.deuda - a.deuda)
       .slice(0, 5);
   }, [movements, customers]);
+
+  // Estado de Resultados (P&L) del período
+  const pnl = useMemo(() => {
+    const ventas = filtered
+      .filter(m => m.movementType === MovementType.FACTURA && !m.isSupplierMovement)
+      .reduce((s, m) => s + (m.amountInUSD || 0), 0);
+
+    // IVA recaudado (solo movimientos POS que guardaron ivaAmount)
+    const ivaRecaudado = filtered
+      .filter(m => m.movementType === MovementType.FACTURA && !m.isSupplierMovement)
+      .reduce((s, m) => s + ((m as any).ivaAmount || 0), 0);
+
+    // IGTF recaudado
+    const igtfRecaudado = filtered
+      .filter(m => m.movementType === MovementType.FACTURA && !m.isSupplierMovement)
+      .reduce((s, m) => s + ((m as any).igtfAmount || 0), 0);
+
+    // Ventas netas (excluye impuestos recaudados)
+    const ventasNetas = ventas - ivaRecaudado - igtfRecaudado;
+
+    // Gastos (CxP: proveedor facturas)
+    const gastos = filtered
+      .filter(m => m.isSupplierMovement && m.movementType === MovementType.FACTURA)
+      .reduce((s, m) => s + (m.amountInUSD || 0), 0);
+
+    // Gastos por categoría
+    const gastosCat: Record<string, number> = {};
+    filtered
+      .filter(m => m.isSupplierMovement && m.movementType === MovementType.FACTURA)
+      .forEach(m => {
+        const cat = (m as any).expenseCategory || 'Sin categoría';
+        gastosCat[cat] = (gastosCat[cat] || 0) + (m.amountInUSD || 0);
+      });
+
+    const utilidadBruta = ventasNetas - gastos;
+    const margenBruto = ventasNetas > 0 ? (utilidadBruta / ventasNetas) * 100 : 0;
+
+    return {
+      ventas,
+      ivaRecaudado,
+      igtfRecaudado,
+      ventasNetas,
+      gastos,
+      gastosCat,
+      utilidadBruta,
+      margenBruto,
+    };
+  }, [filtered]);
+
+  // Comisiones por vendedor (solo FACTURA, período activo)
+  const comisionesPorVendedor = useMemo(() => {
+    const map: Record<string, { nombre: string; ventas: number; count: number }> = {};
+    filtered
+      .filter(m => m.movementType === MovementType.FACTURA && !(m as any).isSupplierMovement)
+      .forEach(m => {
+        const key = (m as any).vendedorId || 'sin_vendedor';
+        const nombre = (m as any).vendedorNombre || 'Sin asignar';
+        if (!map[key]) map[key] = { nombre, ventas: 0, count: 0 };
+        map[key].ventas += (m.amountInUSD || 0);
+        map[key].count += 1;
+      });
+    return Object.values(map)
+      .sort((a, b) => b.ventas - a.ventas)
+      .map(v => ({
+        ...v,
+        comision: v.ventas * (comisionRate / 100),
+      }));
+  }, [filtered, comisionRate]);
+
+  const totalComisiones = useMemo(
+    () => comisionesPorVendedor.reduce((s, v) => s + v.comision, 0),
+    [comisionesPorVendedor],
+  );
 
   const handleExport = () => {
     const rows = [
@@ -363,6 +442,143 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
           </div>
         )}
       </div>
+
+      {/* ── ESTADO DE RESULTADOS (P&L) ─────────────────────────────────────── */}
+      <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden">
+        <div className="px-6 py-5 border-b border-slate-50 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <FileBarChart size={16} />
+          </div>
+          <div>
+            <h3 className="font-syne font-bold text-slate-900 text-[14px]">Estado de Resultados</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">Período: {PERIODS.find(p => p.id === period)?.label}</p>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-1">
+          {/* Ingresos brutos */}
+          <PnlRow label="Ventas Brutas" value={pnl.ventas} indent={0} bold />
+          {pnl.ivaRecaudado > 0 && (
+            <PnlRow label="  (−) IVA recaudado" value={-pnl.ivaRecaudado} indent={1} dim />
+          )}
+          {pnl.igtfRecaudado > 0 && (
+            <PnlRow label="  (−) IGTF recaudado" value={-pnl.igtfRecaudado} indent={1} dim />
+          )}
+          <div className="border-t border-slate-100 my-2" />
+          <PnlRow label="Ventas Netas" value={pnl.ventasNetas} indent={0} bold highlight="blue" />
+
+          <div className="border-t border-dashed border-slate-100 my-3" />
+
+          {/* Gastos */}
+          <PnlRow label="(−) Gastos / Compras" value={-pnl.gastos} indent={0} bold />
+          {Object.entries(pnl.gastosCat).map(([cat, val]) => (
+            <PnlRow key={cat} label={`      ${cat}`} value={-val} indent={2} dim />
+          ))}
+
+          <div className="border-t border-slate-200 my-3" />
+
+          {/* Utilidad */}
+          <div className={`flex items-center justify-between px-4 py-3 rounded-2xl ${pnl.utilidadBruta >= 0 ? 'bg-emerald-50 border border-emerald-100' : 'bg-rose-50 border border-rose-100'}`}>
+            <div className="flex items-center gap-2">
+              {pnl.utilidadBruta >= 0
+                ? <TrendingUp size={15} className="text-emerald-600" />
+                : <TrendingDown size={15} className="text-rose-600" />
+              }
+              <span className={`text-[13px] font-black uppercase tracking-widest ${pnl.utilidadBruta >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                Utilidad Bruta
+              </span>
+            </div>
+            <div className="text-right">
+              <p className={`text-[18px] font-black ${pnl.utilidadBruta >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                {fmt(Math.abs(pnl.utilidadBruta))}
+                {pnl.utilidadBruta < 0 && <span className="text-[12px] ml-1">(pérdida)</span>}
+              </p>
+              <p className={`text-[10px] font-black ${pnl.utilidadBruta >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                Margen: {pnl.margenBruto.toFixed(1)}%
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── COMISIONES POR VENDEDOR ─────────────────────────────────────────── */}
+      <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden">
+        <div className="px-6 py-5 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Award size={16} />
+            </div>
+            <div>
+              <h3 className="font-syne font-bold text-slate-900 text-[14px]">Comisiones por Vendedor</h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">Basado en ventas del período · {comisionesPorVendedor.length} vendedores</p>
+            </div>
+          </div>
+          {/* Rate picker */}
+          <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-2.5">
+            <UserCheck size={13} className="text-slate-400 shrink-0" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tasa</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={0.5}
+              value={comisionRate}
+              onChange={e => setComisionRate(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+              className="w-16 text-center text-sm font-black text-slate-900 bg-white border border-slate-200 rounded-xl px-2 py-1 focus:ring-2 focus:ring-amber-400 outline-none"
+            />
+            <span className="text-[11px] font-black text-slate-500">%</span>
+          </div>
+        </div>
+
+        {comisionesPorVendedor.length === 0 ? (
+          <div className="py-12 flex flex-col items-center text-slate-300 gap-2">
+            <UserCheck size={32} />
+            <p className="text-[12px] font-semibold">No hay ventas POS con vendedor asignado en el período</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-50/60">
+                <tr>
+                  <th className="px-6 py-3 border-b border-slate-100">Vendedor</th>
+                  <th className="px-6 py-3 border-b border-slate-100 text-right">Ventas</th>
+                  <th className="px-6 py-3 border-b border-slate-100 text-center">Transacciones</th>
+                  <th className="px-6 py-3 border-b border-slate-100 text-right">Comisión ({comisionRate}%)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {comisionesPorVendedor.map((v, i) => (
+                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center font-black text-xs shrink-0">
+                          {v.nombre.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-[13px] font-bold text-slate-800">{v.nombre}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-3.5 text-right font-black text-slate-900">{fmt(v.ventas)}</td>
+                    <td className="px-6 py-3.5 text-center">
+                      <span className="text-[11px] font-black text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">{v.count}</span>
+                    </td>
+                    <td className="px-6 py-3.5 text-right">
+                      <span className="text-[14px] font-black text-amber-600">{fmt(v.comision)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-amber-50/60 border-t-2 border-amber-100">
+                  <td className="px-6 py-3.5 font-black text-[12px] text-slate-700 uppercase tracking-widest" colSpan={3}>
+                    Total comisiones a pagar
+                  </td>
+                  <td className="px-6 py-3.5 text-right font-black text-[16px] text-amber-700">{fmt(totalComisiones)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -386,6 +602,29 @@ const KpiCard: React.FC<KpiCardProps> = ({ label, value, icon, bg, trend }) => (
     </div>
     <p className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">{label}</p>
     <p className="text-[18px] font-black text-slate-900 leading-tight">{value}</p>
+  </div>
+);
+
+// ── P&L Row helper ───────────────────────────────────────────────────────────
+interface PnlRowProps {
+  label: string;
+  value: number;
+  indent: 0 | 1 | 2;
+  bold?: boolean;
+  dim?: boolean;
+  highlight?: 'blue';
+}
+
+const PnlRow: React.FC<PnlRowProps> = ({ label, value, bold, dim, highlight }) => (
+  <div className={`flex items-center justify-between py-1.5 px-2 rounded-xl ${highlight === 'blue' ? 'bg-blue-50' : ''}`}>
+    <span className={`text-[12px] ${bold ? 'font-black text-slate-700' : ''} ${dim ? 'font-medium text-slate-400' : ''}`}>
+      {label}
+    </span>
+    <span className={`text-[13px] tabular-nums ${bold ? 'font-black' : 'font-medium'} ${
+      value < 0 ? 'text-rose-600' : highlight === 'blue' ? 'text-blue-700' : 'text-slate-800'
+    }`}>
+      {value < 0 ? `(${fmt(Math.abs(value))})` : fmt(value)}
+    </span>
   </div>
 );
 

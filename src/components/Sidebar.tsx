@@ -19,6 +19,11 @@ import {
   Landmark,
   LogOut,
   ChevronRight,
+  ShoppingCart,
+  Receipt,
+  Wallet,
+  PieChart,
+  ClipboardList,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -38,8 +43,8 @@ type NavItem = {
   label: string;
   Icon: React.ElementType;
   path: string;
-  color: string;      // active text + glow color (Tailwind arbitrary)
-  bg: string;         // active bg
+  color: string;
+  bg: string;
 };
 
 type NavGroup = {
@@ -49,36 +54,41 @@ type NavGroup = {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: 'Core',
+    label: 'Dashboard',
     items: [
-      { id: 'resumen',      label: 'Resumen',          Icon: LayoutDashboard, path: 'dashboard',    color: 'text-indigo-400',  bg: 'bg-indigo-500/15' },
+      { id: 'resumen',      label: 'Dashboard',         Icon: LayoutDashboard, path: 'dashboard',    color: 'text-indigo-400',  bg: 'bg-indigo-500/15' },
     ],
   },
   {
-    label: 'Finanzas',
+    label: 'Gestión',
     items: [
-      { id: 'clientes',     label: 'Clientes / CxC',   Icon: FolderOpen,      path: 'cobranzas',    color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+      { id: 'inventario',   label: 'Inventario',        Icon: Package,         path: 'inventario',   color: 'text-sky-400',     bg: 'bg-sky-500/15' },
+      { id: 'cajas',        label: 'Ventas / Cajas',    Icon: ShoppingCart,    path: 'cajas',        color: 'text-sky-400',     bg: 'bg-sky-500/15' },
+      { id: 'rrhh',         label: 'RRHH / Nómina',    Icon: Users,           path: 'rrhh',         color: 'text-sky-400',     bg: 'bg-sky-500/15' },
+    ],
+  },
+  {
+    label: 'Administración',
+    items: [
+      { id: 'clientes',     label: 'Deudores / CxC',   Icon: Wallet,          path: 'cobranzas',    color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+      { id: 'proveedores',  label: 'Gastos / CxP',     Icon: Receipt,         path: 'cxp',          color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
       { id: 'contabilidad', label: 'Contabilidad',      Icon: BookOpen,        path: 'contabilidad', color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
       { id: 'tasas',        label: 'Tasas de Cambio',   Icon: TrendingUp,      path: 'tasas',        color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-      { id: 'proveedores',  label: 'Proveedores / CxP', Icon: FileText,        path: 'cxp',          color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
       { id: 'conciliacion', label: 'Conciliación',      Icon: Landmark,        path: 'conciliacion', color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-      { id: 'comparar',     label: 'Comparar Libros',   Icon: ArrowLeftRight,  path: 'comparar',     color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
     ],
   },
   {
-    label: 'Operaciones',
+    label: 'Reportes',
     items: [
-      { id: 'rrhh',         label: 'RRHH / Nómina',    Icon: Users,           path: 'rrhh',         color: 'text-sky-400',     bg: 'bg-sky-500/15' },
-      { id: 'inventario',   label: 'Inventario',        Icon: Package,         path: 'inventario',   color: 'text-sky-400',     bg: 'bg-sky-500/15' },
-      { id: 'cajas',        label: 'Cajas / Terminales',Icon: Monitor,         path: 'cajas',        color: 'text-sky-400',     bg: 'bg-sky-500/15' },
-      { id: 'reportes',     label: 'Reportes',          Icon: BarChart3,       path: 'reportes',     color: 'text-sky-400',     bg: 'bg-sky-500/15' },
+      { id: 'reportes',     label: 'Estadísticas',      Icon: BarChart3,       path: 'reportes',     color: 'text-violet-400',  bg: 'bg-violet-500/15' },
+      { id: 'vision',       label: 'Auditoría IA',      Icon: ClipboardList,   path: 'vision',       color: 'text-violet-400',  bg: 'bg-violet-500/15' },
+      { id: 'comparar',     label: 'Comparar Libros',   Icon: ArrowLeftRight,  path: 'comparar',     color: 'text-violet-400',  bg: 'bg-violet-500/15' },
     ],
   },
   {
-    label: 'Inteligencia',
+    label: 'Herramientas',
     items: [
-      { id: 'vision',       label: 'VisionLab IA',      Icon: Sparkles,        path: 'vision',       color: 'text-violet-400',  bg: 'bg-violet-500/15' },
-      { id: 'widgets',      label: 'Herramientas',       Icon: LayoutGrid,      path: 'widgets',      color: 'text-violet-400',  bg: 'bg-violet-500/15' },
+      { id: 'widgets',      label: 'Herramientas',      Icon: LayoutGrid,      path: 'widgets',      color: 'text-amber-400',   bg: 'bg-amber-500/15' },
     ],
   },
   {

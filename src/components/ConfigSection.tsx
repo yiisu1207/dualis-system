@@ -11,6 +11,8 @@ import {
   Save,
   Sun,
   Bell,
+  Calculator,
+  Camera,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
@@ -25,6 +27,7 @@ interface ConfigSectionProps {
     | 'USUARIOS'
     | 'PERSONALIZACION'
     | 'SISTEMA'
+    | 'FISCAL'
     | 'MENSAJES'
     | 'AUDITORIA';
   userUiVersion?: 'classic' | 'editorial';
@@ -48,7 +51,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
   const navigate = useNavigate();
   const [localConfig, setLocalConfig] = useState<AppConfig>(config);
   const [activeTab, setActiveTab] = useState<
-    'EMPRESA' | 'USUARIOS' | 'PERSONALIZACION' | 'SISTEMA' | 'MENSAJES' | 'AUDITORIA'
+    'EMPRESA' | 'USUARIOS' | 'PERSONALIZACION' | 'SISTEMA' | 'FISCAL' | 'MENSAJES' | 'AUDITORIA'
   >('EMPRESA');
   const [auditQuery, setAuditQuery] = useState('');
   const [auditActionFilter, setAuditActionFilter] = useState('ALL');
@@ -88,6 +91,15 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
       try {
         document.documentElement.setAttribute('data-ui', localConfig.theme.uiVersion);
       } catch (e) {}
+    }
+
+    // Fiscal / POS settings
+    const fiscal = localConfig.fiscal;
+    if (fiscal) {
+      localStorage.setItem('fiscal_igtf_enabled', String(fiscal.igtfEnabled ?? true));
+      localStorage.setItem('fiscal_igtf_rate', String(fiscal.igtfRate ?? 3));
+      localStorage.setItem('fiscal_iva_enabled', String(fiscal.ivaEnabled ?? true));
+      localStorage.setItem('fiscal_scanner_enabled', String(fiscal.scannerEnabled ?? true));
     }
 
     success('Configuración guardada correctamente.');
@@ -193,6 +205,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
             { id: 'USUARIOS', icon: Users, label: 'Usuarios' },
             { id: 'PERSONALIZACION', icon: Palette, label: 'Estilo' },
             { id: 'SISTEMA', icon: Settings, label: 'Sistema' },
+            { id: 'FISCAL', icon: Calculator, label: 'Fiscal / POS' },
             { id: 'AUDITORIA', icon: Shield, label: 'Auditoría' },
           ].map((tab) =>
             tab.id === 'AUDITORIA' && !['admin', 'owner'].includes(userRole) ? null : (
@@ -394,6 +407,83 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                 ⚠️ Factory Reset (Borrar Todo)
               </button>
             </div>
+          </div>
+        )}
+
+        {/* --- TAB: FISCAL / POS --- */}
+        {activeTab === 'FISCAL' && (
+          <div className="max-w-2xl mx-auto space-y-6 animate-in zoom-in-95 duration-300">
+
+            {/* IGTF */}
+            <div className="p-6 bg-amber-50 rounded-[2rem] border border-amber-100">
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <div>
+                  <h3 className="font-black text-amber-800 text-sm uppercase tracking-widest flex items-center gap-2">
+                    <Calculator size={16} /> IGTF
+                  </h3>
+                  <p className="text-xs text-amber-600 mt-0.5">Impuesto sobre pagos en divisas (Ley 2022)</p>
+                </div>
+                <button
+                  onClick={() => setLocalConfig({ ...localConfig, fiscal: { ...localConfig.fiscal, igtfEnabled: !(localConfig.fiscal?.igtfEnabled ?? true), igtfRate: localConfig.fiscal?.igtfRate ?? 3, ivaEnabled: localConfig.fiscal?.ivaEnabled ?? true, scannerEnabled: localConfig.fiscal?.scannerEnabled ?? true } })}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${(localConfig.fiscal?.igtfEnabled ?? true) ? 'bg-amber-500' : 'bg-slate-200'}`}
+                >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(localConfig.fiscal?.igtfEnabled ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              {(localConfig.fiscal?.igtfEnabled ?? true) && (
+                <div className="mt-4 flex items-center gap-4">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-amber-700 shrink-0">Tasa IGTF (%)</label>
+                  <input
+                    type="number" min="0" max="100" step="0.5"
+                    value={localConfig.fiscal?.igtfRate ?? 3}
+                    onChange={(e) => setLocalConfig({ ...localConfig, fiscal: { igtfEnabled: localConfig.fiscal?.igtfEnabled ?? true, igtfRate: parseFloat(e.target.value) || 3, ivaEnabled: localConfig.fiscal?.ivaEnabled ?? true, scannerEnabled: localConfig.fiscal?.scannerEnabled ?? true } })}
+                    className="w-24 px-3 py-2 bg-white border border-amber-200 rounded-xl text-sm font-black text-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-400 text-center"
+                  />
+                  <span className="text-xs font-bold text-amber-600">
+                    Actual: {localConfig.fiscal?.igtfRate ?? 3}%
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* IVA */}
+            <div className="p-6 bg-sky-50 rounded-[2rem] border border-sky-100">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-black text-sky-800 text-sm uppercase tracking-widest">IVA</h3>
+                  <p className="text-xs text-sky-600 mt-0.5">Mostrar desglose de IVA en el cobro</p>
+                </div>
+                <button
+                  onClick={() => setLocalConfig({ ...localConfig, fiscal: { igtfEnabled: localConfig.fiscal?.igtfEnabled ?? true, igtfRate: localConfig.fiscal?.igtfRate ?? 3, ivaEnabled: !(localConfig.fiscal?.ivaEnabled ?? true), scannerEnabled: localConfig.fiscal?.scannerEnabled ?? true } })}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${(localConfig.fiscal?.ivaEnabled ?? true) ? 'bg-sky-500' : 'bg-slate-200'}`}
+                >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(localConfig.fiscal?.ivaEnabled ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* ESCANER DE CÁMARA */}
+            <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <Camera size={20} className="text-slate-500 shrink-0" />
+                  <div>
+                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Escáner de Cámara</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Botón de escaneo QR / código de barras en los POS</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setLocalConfig({ ...localConfig, fiscal: { igtfEnabled: localConfig.fiscal?.igtfEnabled ?? true, igtfRate: localConfig.fiscal?.igtfRate ?? 3, ivaEnabled: localConfig.fiscal?.ivaEnabled ?? true, scannerEnabled: !(localConfig.fiscal?.scannerEnabled ?? true) } })}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${(localConfig.fiscal?.scannerEnabled ?? true) ? 'bg-slate-900' : 'bg-slate-200'}`}
+                >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(localConfig.fiscal?.scannerEnabled ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center">
+              Recuerda guardar los cambios para que apliquen en los terminales POS.
+            </p>
           </div>
         )}
 

@@ -129,6 +129,12 @@ export interface AppConfig {
     reconciliation: boolean;
     nomina: boolean;
   };
+  fiscal?: {
+    igtfEnabled: boolean;
+    igtfRate: number;       // porcentaje, ej: 3 para 3%
+    ivaEnabled: boolean;
+    scannerEnabled: boolean;
+  };
   messageTemplates?: MessageTemplate[];
   authorizedUsers?: User[]; // Nuevo: Gestión de usuarios
 }

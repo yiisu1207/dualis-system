@@ -4,15 +4,18 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useTenant, TenantProvider } from '../../context/TenantContext';
-import { useCart, CartProvider } from '../../context/CartContext';
+import { useCart, CartProvider, DiscountType } from '../../context/CartContext';
 import { useRates } from '../../context/RatesContext';
 import { useAuth } from '../../context/AuthContext';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   Factory, Search, ShoppingCart, Trash2, Plus, Minus, Receipt,
   Package, X, CheckCircle2, AlertTriangle, User, LogOut,
-  Banknote, Smartphone, Layers, ArrowLeftRight, Calendar, Clock,
+  Banknote, Smartphone, Layers, ArrowLeftRight, Calendar, Clock, Camera,
+  History, Tag,
 } from 'lucide-react';
+import BarcodeScannerModal from '../../components/BarcodeScannerModal';
+import SaleHistoryPanel from '../../components/SaleHistoryPanel';
 import { auth } from '../../firebase/config';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -38,6 +41,10 @@ type ClientRecord = {
 
 type PaymentMethod = 'efectivo_usd' | 'transferencia' | 'credito';
 
+// ── IGTF (Impuesto a las Grandes Transacciones Financieras) ────────────────────
+const IGTF_RATE = 0.03;
+const IGTF_METHODS = new Set<PaymentMethod>(['efectivo_usd']);
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const DAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -59,15 +66,18 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
 interface PaymentModalProps {
   totalUsd: number;
   totalBs: number;
+  discountUsd: number;
   rateLabel: string;
   paymentCondition: string;
   loading: boolean;
-  onConfirm: (method: PaymentMethod, reference: string) => void;
+  igtfEnabled: boolean;
+  igtfRate: number;
+  onConfirm: (method: PaymentMethod, reference: string, igtfAmount: number) => void;
   onClose: () => void;
 }
 
 const PaymentModal: React.FC<PaymentModalProps> = ({
-  totalUsd, totalBs, rateLabel, paymentCondition, loading, onConfirm, onClose,
+  totalUsd, totalBs, discountUsd, rateLabel, paymentCondition, loading, igtfEnabled, igtfRate, onConfirm, onClose,
 }) => {
   const [method, setMethod] = useState<PaymentMethod>(
     paymentCondition !== 'contado' ? 'credito' : 'efectivo_usd'
@@ -75,11 +85,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [cashInput, setCashInput] = useState('');
   const [reference, setReference] = useState('');
 
+  // ── IGTF ──────────────────────────────────────────────────────────────────
+  const igtfApplies = igtfEnabled && IGTF_METHODS.has(method);
+  const igtfAmount  = igtfApplies ? parseFloat((totalUsd * (igtfRate / 100)).toFixed(2)) : 0;
+  const grandUsd    = totalUsd + igtfAmount;
+  const grandBs     = totalBs  + igtfAmount * (totalBs / (totalUsd || 1));
+
   const changeUsd = method === 'efectivo_usd'
-    ? Math.max(0, parseFloat(cashInput || '0') - totalUsd) : 0;
+    ? Math.max(0, parseFloat(cashInput || '0') - grandUsd) : 0;
 
   const canConfirm = (() => {
-    if (method === 'efectivo_usd') return parseFloat(cashInput || '0') >= totalUsd;
+    if (method === 'efectivo_usd') return parseFloat(cashInput || '0') >= grandUsd;
     if (method === 'transferencia') return reference.trim().length > 0;
     if (method === 'credito') return true;
     return false;
@@ -88,18 +104,57 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
       <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-        <div className="p-6 bg-violet-900 text-white flex justify-between items-center">
-          <div>
+        <div className="p-6 bg-violet-900 text-white flex justify-between items-start gap-4">
+          <div className="flex-1 min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-400">Total del pedido</p>
-            <p className="text-4xl font-black tracking-tight mt-1">
-              ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-            </p>
-            <p className="text-sm font-bold text-violet-300 mt-0.5">
-              {totalBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs · {rateLabel}
-            </p>
+            {(igtfApplies || discountUsd > 0) ? (
+              <div className="mt-2 space-y-1.5">
+                {discountUsd > 0 && (
+                  <>
+                    <div className="flex justify-between items-center text-[11px] font-bold text-violet-300">
+                      <span>Subtotal</span>
+                      <span>${(totalUsd + discountUsd).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] font-black text-emerald-300">
+                      <span className="px-1.5 py-0.5 bg-emerald-400/20 rounded text-[9px] uppercase tracking-widest">Descuento</span>
+                      <span>-${discountUsd.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
+                {igtfApplies && (
+                  <>
+                    {!discountUsd && (
+                      <div className="flex justify-between items-center text-[11px] font-bold text-violet-300">
+                        <span>Subtotal</span>
+                        <span>${totalUsd.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-[11px] font-black text-yellow-300">
+                      <span className="px-1.5 py-0.5 bg-yellow-400/20 rounded text-[9px] uppercase tracking-widest">IGTF {igtfRate}%</span>
+                      <span>+${igtfAmount.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
+                <div className="border-t border-white/10 pt-2">
+                  <p className="text-3xl font-black tracking-tight">${grandUsd.toFixed(2)}</p>
+                  <p className="text-xs font-bold text-violet-300 mt-0.5">
+                    {grandBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs · {rateLabel}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-4xl font-black tracking-tight mt-1">
+                  ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-sm font-bold text-violet-300 mt-0.5">
+                  {totalBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs · {rateLabel}
+                </p>
+              </>
+            )}
           </div>
           <button onClick={onClose}
-            className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all">
+            className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all shrink-0">
             <X size={20} />
           </button>
         </div>
@@ -125,7 +180,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 <input autoFocus type="number" min="0" step="0.01"
                   value={cashInput}
                   onChange={e => setCashInput(e.target.value)}
-                  placeholder={`Mínimo: $${totalUsd.toFixed(2)}`}
+                  placeholder={`Mínimo: $${grandUsd.toFixed(2)}`}
                   className="w-full px-4 py-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-lg font-black focus:ring-2 focus:ring-violet-700 focus:border-violet-700 outline-none transition-all"
                 />
               </div>
@@ -164,7 +219,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
           <button
             disabled={!canConfirm || loading}
-            onClick={() => onConfirm(method, reference)}
+            onClick={() => onConfirm(method, reference, igtfAmount)}
             className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all ${canConfirm && !loading ? 'bg-violet-700 text-white hover:bg-violet-800 shadow-xl shadow-violet-200' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>
             {loading ? 'Procesando...' : <><Receipt size={16} />Registrar Pedido</>}
           </button>
@@ -181,7 +236,7 @@ const PosMayorContent = () => {
   const cajaId = searchParams.get('cajaId');
   const { userProfile } = useAuth();
   const { rates } = useRates();
-  const { items, addProductByCode, updateQty, removeItem, totals: cartTotals, setRateValue, rateValue, clearCart } = useCart();
+  const { items, addProductByCode, updateQty, removeItem, totals: cartTotals, setRateValue, rateValue, clearCart, discountType, discountValue, setDiscount } = useCart();
 
   const [rateMode, setRateMode] = useState<RateMode>('bcv');
   const [paymentCondition, setPaymentCondition] = useState('contado');
@@ -200,6 +255,16 @@ const PosMayorContent = () => {
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Fiscal config (read from localStorage, set by Configuración → Fiscal/POS)
+  const [fiscalConfig] = useState(() => ({
+    igtfEnabled: localStorage.getItem('fiscal_igtf_enabled') !== 'false',
+    igtfRate: parseFloat(localStorage.getItem('fiscal_igtf_rate') || '3'),
+    ivaEnabled: localStorage.getItem('fiscal_iva_enabled') !== 'false',
+    scannerEnabled: localStorage.getItem('fiscal_scanner_enabled') !== 'false',
+  }));
 
   const [terminalInfo, setTerminalInfo] = useState<{ nombre: string; cajeroNombre: string } | null>(null);
   const [now, setNow] = useState(new Date());
@@ -305,6 +370,18 @@ const PosMayorContent = () => {
     }
   };
 
+  const handleCameraScan = async (code: string) => {
+    setShowCameraScanner(false);
+    const ok = await addProductByCode(code, 'mayor');
+    if (ok) {
+      setSuccess(`Escaneado: ${code}`);
+      setTimeout(() => setSuccess(''), 2000);
+    } else {
+      setError(`Código no encontrado: ${code}`);
+      setTimeout(() => setError(''), 2500);
+    }
+  };
+
   const handleAddProduct = useCallback(async (product: QuickProduct) => {
     const ok = await addProductByCode(product.codigo, 'mayor');
     if (!ok) {
@@ -332,20 +409,28 @@ const PosMayorContent = () => {
     } catch { setError('No se pudo guardar el cliente.'); }
   };
 
-  const handleCharge = async (method: PaymentMethod, reference: string) => {
+  const handleCharge = async (method: PaymentMethod, reference: string, igtfAmount: number) => {
     if (!customer || items.length === 0) return;
     setPaymentLoading(true);
     try {
       const now = new Date();
       const isoDate = now.toISOString();
 
+      const grandTotal   = cartTotals.totalUsd + igtfAmount;
+      const grandTotalBs = cartTotals.totalBs  + igtfAmount * (rateMode !== 'divisas' ? rateValue : 1);
+
       const movementPayload: any = {
         businessId: tenantId,
         entityId: customer.id,
         concept: `Venta Mayor — ${customer.nombre}`,
-        amount: cartTotals.totalUsd,
-        amountInUSD: cartTotals.totalUsd,
-        originalAmount: rateMode !== 'divisas' ? cartTotals.totalBs : cartTotals.totalUsd,
+        amount: grandTotal,
+        amountInUSD: grandTotal,
+        subtotalUSD:    cartTotals.subtotalUsd,
+        ivaAmount:      cartTotals.taxUsd      > 0 ? cartTotals.taxUsd      : null,
+        discountAmount: cartTotals.discountUsd > 0 ? cartTotals.discountUsd : null,
+        igtfAmount:     igtfAmount             > 0 ? igtfAmount             : null,
+        igtfRate:       igtfAmount             > 0 ? fiscalConfig.igtfRate / 100 : null,
+        originalAmount: rateMode !== 'divisas' ? grandTotalBs : grandTotal,
         currency: rateMode === 'divisas' ? 'USD' : 'BS',
         date: isoDate.split('T')[0],
         createdAt: isoDate,
@@ -373,7 +458,7 @@ const PosMayorContent = () => {
       // Update terminal stats
       if (cajaId && tenantId) {
         await updateDoc(doc(db, `businesses/${tenantId}/terminals`, cajaId), {
-          totalFacturado: increment(cartTotals.totalUsd),
+          totalFacturado: increment(grandTotal),
           movimientos: increment(1),
           ultimaVenta: isoDate,
         });
@@ -419,16 +504,34 @@ const PosMayorContent = () => {
           </div>
         </div>
 
-        <div className="flex-1 max-w-xl relative">
-          <input
-            autoFocus
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan(); } }}
-            placeholder="Buscar producto o escanear código..."
-            className="w-full pl-11 pr-4 py-2.5 bg-slate-100 border-none rounded-2xl text-sm font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-violet-700 focus:bg-white transition-all shadow-inner"
-          />
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
+        <div className="flex-1 max-w-xl flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              autoFocus
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan(); } }}
+              placeholder="Buscar producto o escanear código..."
+              className="w-full pl-11 pr-4 py-2.5 bg-slate-100 border-none rounded-2xl text-sm font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-violet-700 focus:bg-white transition-all shadow-inner"
+            />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
+          </div>
+          {fiscalConfig.scannerEnabled && (
+            <button
+              onClick={() => setShowCameraScanner(true)}
+              title="Escanear con cámara"
+              className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 hover:bg-violet-700 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200"
+            >
+              <Camera size={16} />
+            </button>
+          )}
+          <button
+            onClick={() => setShowHistory(true)}
+            title="Historial de ventas"
+            className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 hover:bg-violet-700 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200"
+          >
+            <History size={16} />
+          </button>
         </div>
 
         <div className="flex items-center gap-4 shrink-0">
@@ -674,6 +777,36 @@ const PosMayorContent = () => {
               <div className="absolute -right-8 -top-8 h-36 w-36 bg-white/5 rounded-full blur-2xl pointer-events-none" />
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-400">Total Pedido</p>
+
+                {/* ── Descuento ── */}
+                <div className="mt-2 flex items-center gap-1.5">
+                  <Tag size={11} className="text-violet-400 shrink-0" />
+                  <select
+                    value={discountType}
+                    onChange={e => setDiscount(e.target.value as DiscountType, discountValue)}
+                    className="flex-1 bg-white/10 text-white text-[9px] font-black rounded-lg px-2 py-1 border border-white/10 appearance-none cursor-pointer"
+                  >
+                    <option value="none" className="text-slate-900">Sin descuento</option>
+                    <option value="percent" className="text-slate-900">Descuento %</option>
+                    <option value="fixed" className="text-slate-900">Descuento $</option>
+                  </select>
+                  {discountType !== 'none' && (
+                    <input
+                      type="number" min="0" step="any"
+                      value={discountValue || ''}
+                      onChange={e => setDiscount(discountType, parseFloat(e.target.value) || 0)}
+                      placeholder={discountType === 'percent' ? '%' : '$'}
+                      className="w-16 bg-white/10 text-white text-[10px] font-black rounded-lg px-2 py-1 border border-white/10 text-center"
+                    />
+                  )}
+                </div>
+                {cartTotals.discountUsd > 0 && (
+                  <div className="flex justify-between text-[10px] font-black text-emerald-400 mt-1">
+                    <span>Descuento</span>
+                    <span>-${cartTotals.discountUsd.toFixed(2)}</span>
+                  </div>
+                )}
+
                 <div className="text-4xl font-black tracking-tight flex items-start gap-1 mt-1">
                   <span className="text-xl mt-0.5 opacity-40">$</span>
                   {cartTotals.totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -701,11 +834,32 @@ const PosMayorContent = () => {
         <PaymentModal
           totalUsd={cartTotals.totalUsd}
           totalBs={cartTotals.totalBs}
+          discountUsd={cartTotals.discountUsd}
           rateLabel={rateModeLabel[rateMode]}
           paymentCondition={paymentCondition}
           loading={paymentLoading}
+          igtfEnabled={fiscalConfig.igtfEnabled}
+          igtfRate={fiscalConfig.igtfRate}
           onClose={() => setShowPaymentModal(false)}
           onConfirm={handleCharge}
+        />
+      )}
+
+      {/* ── CAMERA SCANNER MODAL ───────────────────────────────────────────── */}
+      {showCameraScanner && (
+        <BarcodeScannerModal
+          onScan={handleCameraScan}
+          onClose={() => setShowCameraScanner(false)}
+        />
+      )}
+
+      {/* ── HISTORY PANEL ──────────────────────────────────────────────────── */}
+      {showHistory && (
+        <SaleHistoryPanel
+          tenantId={tenantId!}
+          cajaId={cajaId}
+          accentColor="violet"
+          onClose={() => setShowHistory(false)}
         />
       )}
 

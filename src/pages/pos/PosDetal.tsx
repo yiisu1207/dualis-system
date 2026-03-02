@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
-import { useCart, CartProvider } from '../../context/CartContext';
+import { useCart, CartProvider, DiscountType } from '../../context/CartContext';
 import { useRates } from '../../context/RatesContext';
 import {
   collection, getDocs, query, where, addDoc, doc, updateDoc,
@@ -12,9 +12,12 @@ import { TenantProvider } from '../../context/TenantContext';
 import {
   Scan, ShoppingCart, Search, Trash2, Plus, Minus, Receipt,
   Package, CheckCircle2, AlertTriangle, LogOut, X, Banknote,
-  Smartphone, Layers, ArrowLeftRight, User, Clock,
+  Smartphone, Layers, ArrowLeftRight, User, Clock, Camera, History,
+  Tag, MessageCircle, Printer,
 } from 'lucide-react';
 import ReceiptModal from '../../components/ReceiptModal';
+import BarcodeScannerModal from '../../components/BarcodeScannerModal';
+import SaleHistoryPanel from '../../components/SaleHistoryPanel';
 import { auth } from '../../firebase/config';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -28,6 +31,11 @@ type QuickProduct = {
 };
 
 type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'transferencia' | 'mixto';
+
+// ── IGTF (Impuesto a las Grandes Transacciones Financieras) ────────────────────
+// Ley venezolana: 3 % sobre pagos en divisas o criptomonedas
+const IGTF_RATE = 0.03;
+const IGTF_METHODS = new Set<PaymentMethod>(['efectivo_usd', 'mixto']);
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const DAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -55,33 +63,47 @@ const METHOD_ICONS: Record<PaymentMethod, React.ReactNode> = {
 
 // ─── PAYMENT MODAL ────────────────────────────────────────────────────────────
 interface PaymentModalProps {
+  subtotalUsd: number;
+  taxUsd: number;
+  discountUsd: number;
   totalUsd: number;
   totalBs: number;
   rateValue: number;
-  onConfirm: (method: PaymentMethod, cashGiven: number, reference: string, mixCash: number, mixTransfer: number) => void;
+  igtfEnabled: boolean;
+  igtfRate: number;
+  onConfirm: (method: PaymentMethod, cashGiven: number, reference: string, mixCash: number, mixTransfer: number, igtfAmount: number) => void;
   onClose: () => void;
   loading: boolean;
 }
 
-const PaymentModal: React.FC<PaymentModalProps> = ({ totalUsd, totalBs, rateValue, onConfirm, onClose, loading }) => {
+const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discountUsd, totalUsd, totalBs, rateValue, igtfEnabled, igtfRate, onConfirm, onClose, loading }) => {
   const [method, setMethod] = useState<PaymentMethod>('efectivo_usd');
   const [cashInput, setCashInput] = useState('');
   const [reference, setReference] = useState('');
   const [mixCash, setMixCash] = useState('');
   const [mixTransfer, setMixTransfer] = useState('');
 
-  const changeUsd = method === 'efectivo_usd' ? Math.max(0, parseFloat(cashInput || '0') - totalUsd) : 0;
-  const changeBs = method === 'efectivo_bs' ? Math.max(0, parseFloat(cashInput || '0') - totalBs) : 0;
+  // ── IGTF ──────────────────────────────────────────────────────────────────
+  const igtfApplies  = igtfEnabled && IGTF_METHODS.has(method);
+  const igtfAmount   = igtfApplies ? parseFloat((totalUsd * (igtfRate / 100)).toFixed(2)) : 0;
+  const grandUsd     = totalUsd + igtfAmount;
+  const grandBs      = totalBs  + igtfAmount * rateValue;
+
+  const changeUsd = method === 'efectivo_usd' ? Math.max(0, parseFloat(cashInput || '0') - grandUsd) : 0;
+  const changeBs  = method === 'efectivo_bs'  ? Math.max(0, parseFloat(cashInput || '0') - totalBs)  : 0;
   const hasChange = changeUsd > 0 || changeBs > 0;
+  const isPaidExact =
+    (method === 'efectivo_usd' && parseFloat(cashInput || '0') >= grandUsd) ||
+    (method === 'efectivo_bs'  && parseFloat(cashInput || '0') >= totalBs);
 
   const canConfirm = (() => {
-    if (method === 'efectivo_usd') return parseFloat(cashInput || '0') >= totalUsd;
-    if (method === 'efectivo_bs') return parseFloat(cashInput || '0') >= totalBs;
+    if (method === 'efectivo_usd') return parseFloat(cashInput || '0') >= grandUsd;
+    if (method === 'efectivo_bs')  return parseFloat(cashInput || '0') >= totalBs;
     if (method === 'transferencia') return reference.trim().length > 0;
     if (method === 'mixto') {
       const c = parseFloat(mixCash || '0');
       const t = parseFloat(mixTransfer || '0');
-      return c + t >= totalUsd - 0.001;
+      return c + t >= grandUsd - 0.001;
     }
     return false;
   })();
@@ -94,6 +116,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ totalUsd, totalBs, rateValu
       reference,
       parseFloat(mixCash || '0'),
       parseFloat(mixTransfer || '0'),
+      igtfAmount,
     );
   };
 
@@ -101,17 +124,72 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ totalUsd, totalBs, rateValu
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
       <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
         {/* Header */}
-        <div className="p-6 bg-slate-900 text-white flex justify-between items-center">
-          <div>
+        <div className="p-6 bg-slate-900 text-white flex justify-between items-start gap-4">
+          <div className="flex-1 min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Total a cobrar</p>
-            <p className="text-4xl font-black tracking-tight mt-1">
-              ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-            </p>
-            <p className="text-sm font-bold text-slate-400 mt-0.5">
-              {totalBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs
-            </p>
+            {(igtfApplies || taxUsd > 0 || discountUsd > 0) ? (
+              <div className="mt-2 space-y-1.5">
+                {taxUsd > 0 && (
+                  <>
+                    <div className="flex justify-between items-center text-[11px] font-bold text-slate-400">
+                      <span>Base</span>
+                      <span>${subtotalUsd.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] font-black text-sky-300">
+                      <span className="px-1.5 py-0.5 bg-sky-400/20 rounded text-[9px] uppercase tracking-widest">
+                        IVA {((taxUsd / subtotalUsd) * 100).toFixed(0)}%
+                      </span>
+                      <span>+${taxUsd.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
+                {discountUsd > 0 && (
+                  <div className="flex justify-between items-center text-[11px] font-black text-emerald-300">
+                    <span className="px-1.5 py-0.5 bg-emerald-400/20 rounded text-[9px] uppercase tracking-widest">Descuento</span>
+                    <span>-${discountUsd.toFixed(2)}</span>
+                  </div>
+                )}
+                {!igtfApplies && (taxUsd > 0 || discountUsd > 0) && (
+                  <div className="border-t border-white/10 pt-1">
+                    <p className="text-3xl font-black tracking-tight">${totalUsd.toFixed(2)}</p>
+                    <p className="text-xs font-bold text-slate-400 mt-0.5">
+                      {totalBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs
+                    </p>
+                  </div>
+                )}
+                {igtfApplies && (
+                  <>
+                    {(taxUsd > 0 || discountUsd > 0) && (
+                      <div className="flex justify-between items-center text-[11px] font-bold text-slate-300">
+                        <span>Sub-total</span>
+                        <span>${totalUsd.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-[11px] font-black text-yellow-300">
+                      <span className="px-1.5 py-0.5 bg-yellow-400/20 rounded text-[9px] uppercase tracking-widest">IGTF 3%</span>
+                      <span>+${igtfAmount.toFixed(2)}</span>
+                    </div>
+                    <div className="border-t border-white/10 pt-2">
+                      <p className="text-3xl font-black tracking-tight">${grandUsd.toFixed(2)}</p>
+                      <p className="text-xs font-bold text-slate-400 mt-0.5">
+                        {grandBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <>
+                <p className="text-4xl font-black tracking-tight mt-1">
+                  ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-sm font-bold text-slate-400 mt-0.5">
+                  {totalBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs
+                </p>
+              </>
+            )}
           </div>
-          <button onClick={onClose} className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all">
+          <button onClick={onClose} className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all shrink-0">
             <X size={20} />
           </button>
         </div>
@@ -139,19 +217,19 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ totalUsd, totalBs, rateValu
                 <input autoFocus type="number" min="0" step="0.01"
                   value={cashInput}
                   onChange={e => setCashInput(e.target.value)}
-                  placeholder={`Mínimo: $${totalUsd.toFixed(2)}`}
+                  placeholder={`Mínimo: $${grandUsd.toFixed(2)}`}
                   className="w-full px-4 py-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-lg font-black focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-all text-slate-900"
                 />
               </div>
               {parseFloat(cashInput || '0') > 0 && (
-                <div className={`p-4 rounded-xl flex justify-between items-center ${hasChange ? 'bg-emerald-50 border border-emerald-200' : 'bg-rose-50 border border-rose-100'}`}>
+                <div className={`p-4 rounded-xl flex justify-between items-center transition-all ${isPaidExact ? 'bg-emerald-50 border border-emerald-200' : 'bg-rose-50 border border-rose-100'}`}>
                   <div className="flex items-center gap-2">
-                    <ArrowLeftRight size={14} className={hasChange ? 'text-emerald-600' : 'text-rose-400'} />
+                    <ArrowLeftRight size={14} className={isPaidExact ? 'text-emerald-600' : 'text-rose-400'} />
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      {hasChange ? 'Cambio a entregar' : 'Monto insuficiente'}
+                      {hasChange ? 'Cambio a entregar' : isPaidExact ? 'Pago exacto ✓' : 'Monto insuficiente'}
                     </span>
                   </div>
-                  <span className={`text-lg font-black ${hasChange ? 'text-emerald-700' : 'text-rose-500'}`}>
+                  <span className={`text-lg font-black ${isPaidExact ? 'text-emerald-700' : 'text-rose-500'}`}>
                     ${changeUsd.toFixed(2)}
                   </span>
                 </div>
@@ -172,14 +250,14 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ totalUsd, totalBs, rateValu
                 />
               </div>
               {parseFloat(cashInput || '0') > 0 && (
-                <div className={`p-4 rounded-xl flex justify-between items-center ${changeBs > 0 ? 'bg-emerald-50 border border-emerald-200' : 'bg-rose-50 border border-rose-100'}`}>
+                <div className={`p-4 rounded-xl flex justify-between items-center transition-all ${isPaidExact ? 'bg-emerald-50 border border-emerald-200' : 'bg-rose-50 border border-rose-100'}`}>
                   <div className="flex items-center gap-2">
-                    <ArrowLeftRight size={14} className={changeBs > 0 ? 'text-emerald-600' : 'text-rose-400'} />
+                    <ArrowLeftRight size={14} className={isPaidExact ? 'text-emerald-600' : 'text-rose-400'} />
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      {changeBs > 0 ? 'Cambio a entregar (Bs)' : 'Monto insuficiente'}
+                      {changeBs > 0 ? 'Cambio a entregar (Bs)' : isPaidExact ? 'Pago exacto ✓' : 'Monto insuficiente'}
                     </span>
                   </div>
-                  <span className={`text-lg font-black ${changeBs > 0 ? 'text-emerald-700' : 'text-rose-500'}`}>
+                  <span className={`text-lg font-black ${isPaidExact ? 'text-emerald-700' : 'text-rose-500'}`}>
                     {changeBs.toFixed(2)} Bs
                   </span>
                 </div>
@@ -222,7 +300,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ totalUsd, totalBs, rateValu
                 />
               </div>
               {(parseFloat(mixCash || '0') + parseFloat(mixTransfer || '0')) > 0 && (
-                <div className={`p-3 rounded-xl flex justify-between items-center text-sm font-black ${parseFloat(mixCash || '0') + parseFloat(mixTransfer || '0') >= totalUsd ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-500'}`}>
+                <div className={`p-3 rounded-xl flex justify-between items-center text-sm font-black ${parseFloat(mixCash || '0') + parseFloat(mixTransfer || '0') >= grandUsd ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-500'}`}>
                   <span>Total ingresado</span>
                   <span>${(parseFloat(mixCash || '0') + parseFloat(mixTransfer || '0')).toFixed(2)}</span>
                 </div>
@@ -251,7 +329,7 @@ const PosContent = () => {
   const { userProfile } = useAuth();
   const { rates } = useRates();
 
-  const { items, addProductByCode, updateQty, removeItem, totals, rateValue, setRateValue, clearCart } = useCart();
+  const { items, addProductByCode, updateQty, removeItem, totals, rateValue, setRateValue, clearCart, discountType, discountValue, setDiscount } = useCart();
 
   // Product grid
   const [products, setProducts] = useState<QuickProduct[]>([]);
@@ -264,8 +342,17 @@ const PosContent = () => {
   const [clients, setClients] = useState<any[]>([]);
   const [consumidorFinal, setConsumidorFinal] = useState(false);
 
+  // Fiscal config (read from localStorage, set by Configuración → Fiscal/POS)
+  const [fiscalConfig] = useState(() => ({
+    igtfEnabled: localStorage.getItem('fiscal_igtf_enabled') !== 'false',
+    igtfRate: parseFloat(localStorage.getItem('fiscal_igtf_rate') || '3'),
+    ivaEnabled: localStorage.getItem('fiscal_iva_enabled') !== 'false',
+    scannerEnabled: localStorage.getItem('fiscal_scanner_enabled') !== 'false',
+  }));
+
   // Scanner
   const [searchQuery, setSearchQuery] = useState('');
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -275,6 +362,9 @@ const PosContent = () => {
 
   // Receipt
   const [lastMovement, setLastMovement] = useState<any>(null);
+
+  // History panel
+  const [showHistory, setShowHistory] = useState(false);
 
   // Terminal info
   const [terminalInfo, setTerminalInfo] = useState<{ nombre: string; cajeroNombre: string } | null>(null);
@@ -366,12 +456,25 @@ const PosContent = () => {
     }
   };
 
+  const handleCameraScan = async (code: string) => {
+    setShowCameraScanner(false);
+    const ok = await addProductByCode(code, 'detal');
+    if (ok) {
+      setSuccess(`Escaneado: ${code}`);
+      setTimeout(() => setSuccess(''), 2000);
+    } else {
+      setError(`Código no encontrado: ${code}`);
+      setTimeout(() => setError(''), 2500);
+    }
+  };
+
   const handleCharge = async (
     method: PaymentMethod,
     cashGiven: number,
     reference: string,
     mixCash: number,
-    mixTransfer: number
+    mixTransfer: number,
+    igtfAmount: number,
   ) => {
     setPaymentLoading(true);
     try {
@@ -382,16 +485,23 @@ const PosContent = () => {
       const entityId = consumidorFinal ? 'CONSUMIDOR_FINAL' : customer?.id;
       const entityLabel = consumidorFinal ? 'Consumidor Final' : (customer?.fullName || customer?.nombre || 'Cliente');
 
-      const changeUsd = method === 'efectivo_usd' ? Math.max(0, cashGiven - totals.totalUsd) : 0;
-      const changeBs = method === 'efectivo_bs' ? Math.max(0, cashGiven - totals.totalBs) : 0;
+      const grandTotal   = totals.totalUsd + igtfAmount;
+      const grandTotalBs = totals.totalBs  + igtfAmount * rateValue;
+      const changeUsd = method === 'efectivo_usd' ? Math.max(0, cashGiven - grandTotal)   : 0;
+      const changeBs  = method === 'efectivo_bs'  ? Math.max(0, cashGiven - totals.totalBs) : 0;
 
       const movementPayload: any = {
         businessId: empresa_id,
         entityId,
         concept: `Venta POS Detal — ${entityLabel}`,
-        amount: totals.totalUsd,
-        originalAmount: totals.totalBs,
-        amountInUSD: totals.totalUsd,
+        amount: grandTotal,
+        originalAmount: grandTotalBs,
+        amountInUSD: grandTotal,
+        subtotalUSD: totals.subtotalUsd,
+        ivaAmount:      totals.taxUsd      > 0 ? totals.taxUsd      : null,
+        discountAmount: totals.discountUsd > 0 ? totals.discountUsd : null,
+        igtfAmount:     igtfAmount         > 0 ? igtfAmount         : null,
+        igtfRate:       igtfAmount         > 0 ? fiscalConfig.igtfRate / 100 : null,
         currency: 'USD',
         date: simpleDate,
         createdAt: isoDate,
@@ -409,6 +519,10 @@ const PosContent = () => {
         cajaId: cajaId || 'principal',
         vendedorId: userProfile?.uid || 'sistema',
         vendedorNombre: userProfile?.fullName || 'Vendedor',
+        // Venta Detal es siempre de contado — no genera CxC pendiente
+        pagado: true,
+        estadoPago: 'PAGADO',
+        esVentaContado: true,
       };
 
       await addDoc(collection(db, 'movements'), movementPayload);
@@ -423,7 +537,7 @@ const PosContent = () => {
       // Update terminal stats
       if (cajaId) {
         await updateDoc(doc(db, `businesses/${empresa_id}/terminals`, cajaId), {
-          totalFacturado: increment(totals.totalUsd),
+          totalFacturado: increment(grandTotal),
           movimientos: increment(1),
           ultimaVenta: isoDate,
         });
@@ -480,17 +594,35 @@ const PosContent = () => {
           </div>
         </div>
 
-        {/* Center: barcode scanner input */}
-        <div className="flex-1 max-w-xl relative">
-          <input
-            autoFocus
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan(); } }}
-            placeholder="Escanear código de barras o SKU..."
-            className="w-full pl-11 pr-4 py-2.5 bg-slate-100 border-none rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all shadow-inner"
-          />
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
+        {/* Center: barcode scanner input + camera button */}
+        <div className="flex-1 max-w-xl flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              autoFocus
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan(); } }}
+              placeholder="Escanear código de barras o SKU..."
+              className="w-full pl-11 pr-4 py-2.5 bg-slate-100 border-none rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-slate-900 focus:bg-white transition-all shadow-inner"
+            />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
+          </div>
+          {fiscalConfig.scannerEnabled && (
+            <button
+              onClick={() => setShowCameraScanner(true)}
+              title="Escanear con cámara"
+              className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-900 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200"
+            >
+              <Camera size={16} />
+            </button>
+          )}
+          <button
+            onClick={() => setShowHistory(true)}
+            title="Historial de ventas"
+            className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-900 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200"
+          >
+            <History size={16} />
+          </button>
         </div>
 
         {/* Right: date/time, rate, logout */}
@@ -732,6 +864,48 @@ const PosContent = () => {
               <div className="absolute -right-8 -top-8 h-36 w-36 bg-white/5 rounded-full blur-2xl pointer-events-none" />
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Total a Pagar</p>
+                {totals.taxUsd > 0 && (
+                  <div className="mt-2 space-y-0.5 mb-1">
+                    <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                      <span>Base</span>
+                      <span>${totals.subtotalUsd.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-black text-sky-400">
+                      <span>IVA</span>
+                      <span>+${totals.taxUsd.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Descuento ── */}
+                <div className="mt-2 flex items-center gap-1.5">
+                  <Tag size={11} className="text-slate-500 shrink-0" />
+                  <select
+                    value={discountType}
+                    onChange={e => setDiscount(e.target.value as DiscountType, discountValue)}
+                    className="flex-1 bg-white/10 text-white text-[9px] font-black rounded-lg px-2 py-1 border border-white/10 appearance-none cursor-pointer"
+                  >
+                    <option value="none" className="text-slate-900">Sin descuento</option>
+                    <option value="percent" className="text-slate-900">Descuento %</option>
+                    <option value="fixed" className="text-slate-900">Descuento $</option>
+                  </select>
+                  {discountType !== 'none' && (
+                    <input
+                      type="number" min="0" step="any"
+                      value={discountValue || ''}
+                      onChange={e => setDiscount(discountType, parseFloat(e.target.value) || 0)}
+                      placeholder={discountType === 'percent' ? '%' : '$'}
+                      className="w-16 bg-white/10 text-white text-[10px] font-black rounded-lg px-2 py-1 border border-white/10 text-center"
+                    />
+                  )}
+                </div>
+                {totals.discountUsd > 0 && (
+                  <div className="flex justify-between text-[10px] font-black text-emerald-400 mt-1">
+                    <span>Descuento</span>
+                    <span>-${totals.discountUsd.toFixed(2)}</span>
+                  </div>
+                )}
+
                 <div className="text-4xl font-black tracking-tight flex items-start gap-1 mt-1">
                   <span className="text-xl mt-0.5 opacity-40">$</span>
                   {totals.totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -755,9 +929,14 @@ const PosContent = () => {
       {/* ── PAYMENT MODAL ──────────────────────────────────────────────────── */}
       {showPaymentModal && (
         <PaymentModal
+          subtotalUsd={totals.subtotalUsd}
+          taxUsd={totals.taxUsd}
+          discountUsd={totals.discountUsd}
           totalUsd={totals.totalUsd}
           totalBs={totals.totalBs}
           rateValue={rateValue}
+          igtfEnabled={fiscalConfig.igtfEnabled}
+          igtfRate={fiscalConfig.igtfRate}
           loading={paymentLoading}
           onClose={() => setShowPaymentModal(false)}
           onConfirm={handleCharge}
@@ -769,7 +948,26 @@ const PosContent = () => {
         <ReceiptModal
           movement={lastMovement}
           config={{ companyName: userProfile?.fullName || 'Mi Negocio' } as any}
+          customerPhone={!consumidorFinal ? (customer?.telefono || customer?.phone || '') : ''}
           onClose={() => setLastMovement(null)}
+        />
+      )}
+
+      {/* ── CAMERA SCANNER MODAL ───────────────────────────────────────────── */}
+      {showCameraScanner && (
+        <BarcodeScannerModal
+          onScan={handleCameraScan}
+          onClose={() => setShowCameraScanner(false)}
+        />
+      )}
+
+      {/* ── HISTORY PANEL ──────────────────────────────────────────────────── */}
+      {showHistory && (
+        <SaleHistoryPanel
+          tenantId={empresa_id!}
+          cajaId={cajaId}
+          accentColor="slate"
+          onClose={() => setShowHistory(false)}
         />
       )}
     </div>

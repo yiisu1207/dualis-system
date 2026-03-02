@@ -25,6 +25,9 @@ import {
   Building2,
   Zap,
   BarChart3,
+  Star,
+  Activity,
+  Clock,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -114,7 +117,7 @@ const KpiCard: React.FC<KpiCardProps> = ({
 }) => (
   <div
     onClick={onClick}
-    className={`bg-white border border-slate-100 rounded-3xl p-5 flex flex-col gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-slate-100/80 ${onClick ? 'cursor-pointer' : ''}`}
+    className={`bg-white/90 backdrop-blur-sm border border-slate-100/80 rounded-3xl p-5 flex flex-col gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-50/60 hover:border-indigo-100/60 ${onClick ? 'cursor-pointer' : ''}`}
   >
     <div className="flex items-start justify-between gap-2">
       <div className={`w-10 h-10 rounded-2xl ${iconBg} flex items-center justify-center shrink-0`}>
@@ -206,7 +209,12 @@ export default function AdminDashboard({
     mvs.forEach(m => {
       const amt = (m as any).amountInUSD || m.amount || 0;
       if (!m.isSupplierMovement) {
-        if (m.movementType === 'FACTURA') { facturado += amt; invoiceCount++; }
+        if (m.movementType === 'FACTURA') {
+          facturado += amt;
+          invoiceCount++;
+          // Ventas POS de contado (pagado:true) son cobradas inmediatamente
+          if ((m as any).pagado) cobrado += amt;
+        }
         if (m.movementType === 'ABONO') cobrado += amt;
       }
     });
@@ -227,13 +235,16 @@ export default function AdminDashboard({
     : 0;
 
   // CxC / CxP acumulado (todo el historial)
+  // Excluye ventas POS contado (pagado:true) y Consumidor Final — no generan deuda pendiente
   const cxcTotal = useMemo(() => {
     let t = 0;
-    movements.filter(m => !m.isSupplierMovement).forEach(m => {
-      const amt = (m as any).amountInUSD || m.amount || 0;
-      if (m.movementType === 'FACTURA') t += amt;
-      if (m.movementType === 'ABONO') t -= amt;
-    });
+    movements
+      .filter(m => !m.isSupplierMovement && !(m as any).pagado && m.entityId !== 'CONSUMIDOR_FINAL')
+      .forEach(m => {
+        const amt = (m as any).amountInUSD || m.amount || 0;
+        if (m.movementType === 'FACTURA') t += amt;
+        if (m.movementType === 'ABONO') t -= amt;
+      });
     return Math.max(0, t);
   }, [movements]);
 
@@ -296,6 +307,96 @@ export default function AdminDashboard({
   }, [periodMvs]);
 
   const recentMvs = useMemo(() => movements.slice(0, 12), [movements]);
+
+  // ── Business Intelligence ──────────────────────────────────────────────────
+  const CHART_COLORS = ['#4f6ef7', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+
+  // Inversión por categoría: agrupado por categoria, suma stock × costoUSD
+  const inversionPorCategoria = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    products.forEach(p => {
+      const cat = (p as any).categoria || (p as any).category || 'Sin Categoría';
+      const costo = (p as any).costoUSD || (p as any).costPrice || (p as any).costo || 0;
+      const stock = (p as any).stock || (p as any).quantity || 0;
+      grouped[cat] = (grouped[cat] || 0) + (costo * stock);
+    });
+    return Object.entries(grouped)
+      .map(([name, value], i) => ({
+        name: name.slice(0, 18),
+        value: parseFloat(value.toFixed(2)),
+        color: CHART_COLORS[i % CHART_COLORS.length],
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 7);
+  }, [products]);
+
+  const totalInversion = useMemo(
+    () => inversionPorCategoria.reduce((s, c) => s + c.value, 0),
+    [inversionPorCategoria],
+  );
+
+  // Producto estrella del período (más vendido por cantidad)
+  const productoEstrella = useMemo(() => {
+    const itemCounts: Record<string, { nombre: string; qty: number; revenue: number }> = {};
+    periodMvs.forEach(m => {
+      const items = (m as any).items;
+      if (Array.isArray(items)) {
+        items.forEach((item: any) => {
+          if (!itemCounts[item.id]) itemCounts[item.id] = { nombre: item.nombre || 'Producto', qty: 0, revenue: 0 };
+          itemCounts[item.id].qty += Number(item.qty || 0);
+          itemCounts[item.id].revenue += Number(item.subtotal || 0);
+        });
+      }
+    });
+    const sorted = Object.values(itemCounts).sort((a, b) => b.qty - a.qty);
+    return sorted.length > 0 ? sorted[0] : null;
+  }, [periodMvs]);
+
+  // Salud del inventario (normal / crítico / agotado)
+  const saludInventario = useMemo(() => {
+    const agotado = products.filter(p => ((p as any).stock || 0) === 0).length;
+    const critico = products.filter(p => {
+      const stock = (p as any).stock || 0;
+      const min = (p as any).stockMinimo || (p as any).minStock || 10;
+      return stock > 0 && stock < min;
+    }).length;
+    const normal = products.length - critico - agotado;
+    return { agotado, critico, normal, total: products.length };
+  }, [products]);
+
+  // Alerta predictiva de reposición: días restantes = stock / (ventas/día en período)
+  const rotacionRiesgo = useMemo(() => {
+    const diasPeriodo = period === 'today' ? 1 : period === '7d' ? 7 : 30;
+    const itemVentas: Record<string, number> = {};
+    periodMvs.forEach(m => {
+      const items = (m as any).items;
+      if (Array.isArray(items)) {
+        items.forEach((item: any) => {
+          itemVentas[item.id] = (itemVentas[item.id] || 0) + Number(item.qty || 0);
+        });
+      }
+    });
+    return products
+      .filter(p => {
+        const stock = (p as any).stock || 0;
+        const vendidos = itemVentas[p.id] || 0;
+        return stock > 0 && vendidos > 0;
+      })
+      .map(p => {
+        const stock = (p as any).stock || 0;
+        const vendidos = itemVentas[p.id] || 0;
+        const ventaDiaria = vendidos / diasPeriodo;
+        const diasRestantes = Math.floor(stock / ventaDiaria);
+        return {
+          nombre: (p as any).nombre || (p as any).name || 'Producto',
+          stock,
+          diasRestantes,
+          urgente: diasRestantes <= 7,
+        };
+      })
+      .sort((a, b) => a.diasRestantes - b.diasRestantes)
+      .slice(0, 5);
+  }, [products, periodMvs, period]);
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -362,7 +463,7 @@ export default function AdminDashboard({
           </button>
           <button
             onClick={() => window.location.href = `/${tenantId}/pos/detal`}
-            className="px-4 py-2 bg-[#4f6ef7] text-white rounded-xl text-[12px] font-black hover:bg-blue-600 transition-all shadow-lg shadow-blue-200/50 flex items-center gap-2"
+            className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-xl text-[12px] font-black hover:from-indigo-600 hover:to-blue-700 transition-all shadow-lg shadow-blue-200/60 flex items-center gap-2 hover:scale-[1.02]"
           >
             <Zap size={13} /> Nueva Venta
           </button>
@@ -785,6 +886,193 @@ export default function AdminDashboard({
           </div>
         </div>
       </div>
+
+    {/* ── INTELIGENCIA DE NEGOCIO ── */}
+    <div>
+      <div className="font-mono text-[10px] uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
+        <Activity size={11} /> Inteligencia de Negocio · {periodLabel}
+        <span className="ml-2 px-2 py-0.5 bg-violet-100 text-violet-600 rounded-lg text-[9px] font-black">BI</span>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pb-8">
+
+        {/* Inversión por Categoría */}
+        <div className="lg:col-span-5 bg-white border border-slate-100 rounded-3xl overflow-hidden">
+          <div className="px-6 py-5 border-b border-slate-50 flex items-center justify-between">
+            <div>
+              <h3 className="font-syne font-bold text-slate-900 text-[14px]">Inversión por Categoría</h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">Capital en stock · {fmtUSD(totalInversion)}</p>
+            </div>
+            <button
+              onClick={() => onTabChange?.('inventario')}
+              className="text-[11px] font-black text-[#4f6ef7] hover:underline flex items-center gap-1"
+            >
+              Inventario <ArrowUpRight size={11} />
+            </button>
+          </div>
+          <div className="p-5">
+            {inversionPorCategoria.length === 0 ? (
+              <div className="py-8 flex flex-col items-center text-slate-300 gap-2">
+                <Package size={28} />
+                <p className="text-[11px] font-semibold">Sin productos con costo registrado</p>
+              </div>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={160}>
+                  <PieChart>
+                    <Pie
+                      data={inversionPorCategoria}
+                      cx="50%" cy="50%"
+                      innerRadius={42} outerRadius={72}
+                      paddingAngle={3} dataKey="value"
+                    >
+                      {inversionPorCategoria.map((_, i) => (
+                        <Cell key={i} fill={inversionPorCategoria[i].color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: any) => [fmtUSD(v), 'Capital']}
+                      contentStyle={{ borderRadius: '12px', border: '1px solid #f1f5f9', fontSize: 11, boxShadow: '0 4px 24px rgba(0,0,0,.06)' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2 mt-2">
+                  {inversionPorCategoria.map((d, i) => (
+                    <div key={i} className="flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.color }} />
+                        <span className="text-slate-600 truncate max-w-[130px]">{d.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900">{fmtUSD(d.value)}</span>
+                        <span className="text-[10px] text-slate-300">
+                          {totalInversion > 0 ? `${((d.value / totalInversion) * 100).toFixed(0)}%` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Right column: Estrella + Salud + Reposición */}
+        <div className="lg:col-span-7 flex flex-col gap-5">
+
+          {/* Top row: Producto Estrella + Salud del Stock */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+            {/* Producto Estrella */}
+            <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-3xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shadow-sm">
+                  <Star size={14} fill="currentColor" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Producto Estrella</p>
+                  <p className="text-[9px] text-amber-500 font-medium">{periodLabel}</p>
+                </div>
+              </div>
+              {productoEstrella ? (
+                <>
+                  <p className="text-[15px] font-black text-slate-900 leading-tight truncate">{productoEstrella.nombre}</p>
+                  <p className="text-[11px] text-slate-500 mt-1.5">{productoEstrella.qty} unidades vendidas</p>
+                  <p className="text-xl font-black text-amber-600 mt-2">{fmtUSD(productoEstrella.revenue)}</p>
+                </>
+              ) : (
+                <p className="text-[12px] text-amber-600/60 mt-3 font-medium">
+                  Registra ventas por POS para activar este indicador
+                </p>
+              )}
+            </div>
+
+            {/* Salud del Inventario */}
+            <div className="bg-white border border-slate-100 rounded-3xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <Activity size={14} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Salud del Stock</p>
+                  <p className="text-[9px] text-slate-400 font-medium">{saludInventario.total} SKUs totales</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { label: 'Normal', val: saludInventario.normal, color: 'bg-emerald-500', text: 'text-emerald-700' },
+                  { label: 'Crítico', val: saludInventario.critico, color: 'bg-amber-400', text: 'text-amber-700' },
+                  { label: 'Agotado', val: saludInventario.agotado, color: 'bg-rose-500', text: 'text-rose-700' },
+                ].map(row => (
+                  <div key={row.label} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${row.color}`} />
+                      <span className="text-[11px] text-slate-600">{row.label}</span>
+                    </div>
+                    <span className={`text-[11px] font-black ${row.text}`}>{row.val}</span>
+                  </div>
+                ))}
+              </div>
+              {saludInventario.total > 0 && (
+                <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden flex">
+                  <div className="bg-emerald-400 h-full transition-all duration-700" style={{ width: `${(saludInventario.normal / saludInventario.total) * 100}%` }} />
+                  <div className="bg-amber-400 h-full transition-all duration-700" style={{ width: `${(saludInventario.critico / saludInventario.total) * 100}%` }} />
+                  <div className="bg-rose-500 h-full transition-all duration-700" style={{ width: `${(saludInventario.agotado / saludInventario.total) * 100}%` }} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Alerta Predictiva de Reposición */}
+          <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden flex-1">
+            <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center">
+                  <Clock size={14} />
+                </div>
+                <div>
+                  <h3 className="font-syne font-bold text-slate-900 text-[13px]">Alerta de Reposición</h3>
+                  <p className="text-[10px] text-slate-400">Días de stock restantes · basado en ventas del período</p>
+                </div>
+              </div>
+              <span className="text-[9px] font-black uppercase tracking-widest text-violet-500 bg-violet-50 border border-violet-100 px-2.5 py-1 rounded-xl">
+                Predictivo
+              </span>
+            </div>
+            <div className="p-4">
+              {rotacionRiesgo.length === 0 ? (
+                <div className="py-5 flex flex-col items-center text-slate-300 gap-2">
+                  <div className="text-3xl">🎯</div>
+                  <p className="text-[12px] font-semibold">Sin ventas POS en el período</p>
+                  <p className="text-[11px]">Las alertas se activan automáticamente al vender por POS</p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {rotacionRiesgo.map((item, i) => (
+                    <div key={i} className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${item.urgente ? 'bg-rose-50 border border-rose-100' : 'bg-slate-50'}`}>
+                      <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center shrink-0 ${item.urgente ? 'bg-rose-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                        <span className="text-[14px] font-black leading-none">{item.diasRestantes}</span>
+                        <span className="text-[8px] font-black uppercase">días</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-bold text-slate-800 truncate">{item.nombre}</p>
+                        <p className="text-[10px] text-slate-400">{item.stock} unidades en stock</p>
+                      </div>
+                      {item.urgente && (
+                        <span className="text-[9px] font-black text-rose-600 bg-rose-100 border border-rose-200 px-2.5 py-1 rounded-xl uppercase shrink-0">
+                          ¡Reponer!
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
+
+  </div>
   );
 }

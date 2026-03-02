@@ -35,6 +35,12 @@ export const DEFAULT_CONFIG: AppConfig = {
     reconciliation: true,
     nomina: true,
   },
+  fiscal: {
+    igtfEnabled: true,
+    igtfRate: 3,
+    ivaEnabled: true,
+    scannerEnabled: true,
+  },
   messageTemplates: [
     {
       id: 'recordatorio',
@@ -74,6 +80,10 @@ export const mergeConfig = (incoming?: Partial<AppConfig>): AppConfig => {
     modules: {
       ...DEFAULT_CONFIG.modules,
       ...(data.modules || {}),
+    },
+    fiscal: {
+      ...DEFAULT_CONFIG.fiscal,
+      ...(data.fiscal || {}),
     },
     messageTemplates:
       data.messageTemplates && data.messageTemplates.length > 0

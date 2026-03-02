@@ -24,6 +24,7 @@
     "firebase": "^12.8.0",
     "firebase-admin": "^12.5.0",
     "html2canvas": "^1.4.1",
+    "html5-qrcode": "^2.3.8",
     "i18next": "^25.8.10",
     "jsbarcode": "^3.12.3",
     "jspdf": "^4.1.0",

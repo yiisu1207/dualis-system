@@ -5,6 +5,8 @@ import { useTenant } from './TenantContext';
 
 type PriceTier = 'detal' | 'mayor' | 'granMayor';
 
+export type DiscountType = 'none' | 'percent' | 'fixed';
+
 type CartItem = {
   id: string;
   codigo: string;
@@ -18,6 +20,7 @@ type CartItem = {
 type CartTotals = {
   subtotalUsd: number;
   taxUsd: number;
+  discountUsd: number;
   totalUsd: number;
   totalBs: number;
 };
@@ -27,6 +30,9 @@ type CartContextValue = {
   rateValue: number;
   setRateValue: (value: number) => void;
   totals: CartTotals;
+  discountType: DiscountType;
+  discountValue: number;
+  setDiscount: (type: DiscountType, value: number) => void;
   addProductByCode: (code: string, priceTier?: PriceTier) => Promise<boolean>;
   updateQty: (id: string, qty: number) => void;
   removeItem: (id: string) => void;
@@ -37,18 +43,13 @@ const CartContext = createContext<CartContextValue | null>(null);
 
 function resolvePrice(data: Record<string, unknown>, priceTier: PriceTier) {
   if (priceTier === 'mayor') {
-    // Para mayoristas, usamos estrictamente precioMayor
     const mayor = Number(data.precioMayor);
     return Number.isFinite(mayor) && mayor > 0 ? mayor : 0;
   }
-  
   if (priceTier === 'granMayor') {
     const granMayor = Number(data.precioGranMayor ?? data.precioPromo);
     return Number.isFinite(granMayor) && granMayor > 0 ? granMayor : 0;
   }
-
-  // Por defecto (detal), usamos precioDetal
-  // Mantengo una pequeña compatibilidad con 'price' o 'marketPrice' solo si NO existe precioDetal
   const detal = Number(data.precioDetal ?? data.marketPrice ?? data.precioVenta ?? data.salePrice ?? data.price);
   return Number.isFinite(detal) && detal > 0 ? detal : 0;
 }
@@ -63,6 +64,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const { tenantId } = useTenant();
   const [items, setItems] = useState<CartItem[]>([]);
   const [rateValue, setRateValue] = useState(36.5);
+  const [discountType, setDiscountType] = useState<DiscountType>('none');
+  const [discountValue, setDiscountValue] = useState(0);
+
+  const setDiscount = useCallback((type: DiscountType, value: number) => {
+    setDiscountType(type);
+    setDiscountValue(value);
+  }, []);
 
   const addProductByCode = useCallback(
     async (code: string, priceTier: PriceTier = 'detal') => {
@@ -70,10 +78,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const normalized = code.trim();
       if (!normalized) return false;
 
-
       const productsCol = collection(db, `businesses/${tenantId}/products`);
 
-      // Buscar por 'codigo', luego 'codigoAlterno', luego por ID de documento
       let foundId: string | null = null;
       let foundData: Record<string, unknown> | null = null;
 
@@ -87,7 +93,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           foundId = snap2.docs[0].id;
           foundData = snap2.docs[0].data() as Record<string, unknown>;
         } else {
-          // Último recurso: buscar directamente por ID del documento
           const directSnap = await getDoc(doc(productsCol, normalized));
           if (directSnap.exists()) {
             foundId = directSnap.id;
@@ -99,7 +104,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (!foundId || !foundData) return false;
 
       const data = foundData;
-      
       const priceUsd = resolvePrice(data, priceTier);
 
       const nextItem: CartItem = {
@@ -136,6 +140,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = useCallback(() => {
     setItems([]);
+    setDiscountType('none');
+    setDiscountValue(0);
   }, []);
 
   const totals = useMemo<CartTotals>(() => {
@@ -144,10 +150,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       (sum, item) => sum + item.qty * item.priceUsd * item.ivaRate,
       0
     );
-    const totalUsd = subtotalUsd + taxUsd;
+    const preTotalUsd = subtotalUsd + taxUsd;
+    const discountUsd =
+      discountType === 'percent'
+        ? parseFloat((preTotalUsd * (discountValue / 100)).toFixed(2))
+        : discountType === 'fixed'
+        ? Math.min(discountValue, preTotalUsd)
+        : 0;
+    const totalUsd = Math.max(0, preTotalUsd - discountUsd);
     const totalBs = totalUsd * rateValue;
-    return { subtotalUsd, taxUsd, totalUsd, totalBs };
-  }, [items, rateValue]);
+    return { subtotalUsd, taxUsd, discountUsd, totalUsd, totalBs };
+  }, [items, rateValue, discountType, discountValue]);
 
   const value = useMemo<CartContextValue>(
     () => ({
@@ -155,12 +168,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       rateValue,
       setRateValue,
       totals,
+      discountType,
+      discountValue,
+      setDiscount,
       addProductByCode,
       updateQty,
       removeItem,
       clearCart,
     }),
-    [items, rateValue, totals, addProductByCode, updateQty, removeItem, clearCart]
+    [items, rateValue, totals, discountType, discountValue, setDiscount, addProductByCode, updateQty, removeItem, clearCart]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
