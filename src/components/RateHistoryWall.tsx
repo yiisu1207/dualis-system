@@ -11,8 +11,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
+import { useRates } from '../context/RatesContext';
 import { createExchangeRateEntry } from '../firebase/api';
 import { useToast } from '../context/ToastContext';
+import { Globe, Loader2, RefreshCw, CheckCircle2, AlertTriangle, Wifi, Info, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface RateHistoryWallProps {
   businessId?: string | null;
@@ -146,9 +148,16 @@ const parseOcrEntriesFromPairs = (value: string) => {
   return results;
 };
 
+// ── BCV PREVIEW STATE ─────────────────────────────────────────────────────────
+type BcvPreview = {
+  rate: number;
+  fechaActualizacion: string;
+};
+
 const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUser }) => {
   const { userProfile } = useAuth();
   const { success, error, warning } = useToast();
+  const { updateRates } = useRates();
   const [entries, setEntries] = useState<RateEntry[]>([]);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [manualBcv, setManualBcv] = useState('');
@@ -158,7 +167,70 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrDrafts, setOcrDrafts] = useState<Array<{ date: string; bcv: number }>>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const [csvPreview, setCsvPreview] = useState<Array<{ date: string; bcv: number }>>([]);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const resolvedBusinessId = (businessId || userProfile?.businessId || '').trim();
+
+  // ── BCV FETCH ──────────────────────────────────────────────────────────────
+  const [fetchingBCV, setFetchingBCV] = useState(false);
+  const [bcvPreview, setBcvPreview] = useState<BcvPreview | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const handleFetchBCV = async () => {
+    setFetchingBCV(true);
+    setFetchError(null);
+    setBcvPreview(null);
+    try {
+      const res = await fetch('https://ve.dolarapi.com/v1/dolares/bcv');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const rate = Number(data?.venta ?? data?.promedio ?? data?.precio);
+      if (!rate || isNaN(rate)) throw new Error('Formato inesperado');
+      setBcvPreview({
+        rate,
+        fechaActualizacion: data?.fechaActualizacion || new Date().toISOString(),
+      });
+    } catch {
+      setFetchError('No se pudo obtener la tasa. Verifica tu conexión a internet.');
+    } finally {
+      setFetchingBCV(false);
+    }
+  };
+
+  const handleConfirmBCV = async () => {
+    if (!bcvPreview || !resolvedBusinessId) return;
+    setIsPublishing(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const grupoNum = Number(String(manualGrupo).replace(',', '.')) || 0;
+
+      // 1. Actualizar businessConfigs → se propaga en tiempo real a todos los dispositivos
+      await updateRates({ tasaBCV: bcvPreview.rate });
+
+      // 2. Guardar en historial
+      await createExchangeRateEntry(
+        resolvedBusinessId,
+        today,
+        { bcv: bcvPreview.rate, grupo: grupoNum, lastUpdated: today },
+        currentUser?.uid
+          ? { uid: currentUser.uid, displayName: currentUser.displayName || null, photoURL: currentUser.photoURL || null }
+          : undefined,
+        `Obtenida automáticamente desde BCV.ORG.VE — ${new Date(bcvPreview.fechaActualizacion).toLocaleString('es-VE')}`,
+      );
+
+      // 3. Pre-llenar formulario manual
+      setManualBcv(String(bcvPreview.rate));
+      setManualDate(today);
+      setBcvPreview(null);
+      success(`Tasa BCV ${bcvPreview.rate} Bs/$ aplicada en todos los dispositivos.`);
+    } catch {
+      error('No se pudo aplicar la tasa. Revisa la conexión.');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
 
   useEffect(() => {
     if (!resolvedBusinessId) {
@@ -290,6 +362,99 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     }
   };
 
+  const normalizeDate = (raw: string): string | null => {
+    const trimmed = raw.trim();
+    // YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    // DD/MM/YYYY or DD-MM-YYYY
+    const dmy = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (dmy) {
+      const [, d, m, y] = dmy;
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    return null;
+  };
+
+  const handleImportCsv = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = (e.target?.result as string) || '';
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      if (lines.length === 0) { warning('El archivo CSV está vacío.'); return; }
+
+      // Detect delimiter (comma or semicolon)
+      const delim = lines[0].includes(';') ? ';' : ',';
+
+      // Detect header row
+      const header = lines[0].toLowerCase();
+      const hasFechaCol = header.includes('fecha') || header.includes('date');
+      const hasBcvCol = header.includes('bcv') || header.includes('tasa');
+      const dataLines = (hasFechaCol || hasBcvCol) ? lines.slice(1) : lines;
+
+      // Detect column indices from header
+      let fechaIdx = 0;
+      let bcvIdx = 1;
+      if (hasFechaCol || hasBcvCol) {
+        const cols = lines[0].split(delim).map((c) => c.toLowerCase().trim());
+        const fi = cols.findIndex((c) => c.includes('fecha') || c.includes('date'));
+        const bi = cols.findIndex((c) => c.includes('bcv') || c.includes('tasa'));
+        if (fi !== -1) fechaIdx = fi;
+        if (bi !== -1) bcvIdx = bi;
+      }
+
+      const parsed: Array<{ date: string; bcv: number }> = [];
+      for (const line of dataLines) {
+        const cols = line.split(delim);
+        const rawDate = cols[fechaIdx]?.replace(/"/g, '').trim() ?? '';
+        const rawBcv = cols[bcvIdx]?.replace(/"/g, '').replace(',', '.').trim() ?? '';
+        const date = normalizeDate(rawDate);
+        const bcv = Number(rawBcv);
+        if (date && Number.isFinite(bcv) && bcv > 0) parsed.push({ date, bcv });
+      }
+
+      // Deduplicate — keep first occurrence per date
+      const deduped = new Map<string, number>();
+      parsed.forEach(({ date, bcv }) => { if (!deduped.has(date)) deduped.set(date, bcv); });
+      const final = Array.from(deduped.entries())
+        .map(([date, bcv]) => ({ date, bcv }))
+        .sort((a, b) => b.date.localeCompare(a.date));
+
+      if (final.length === 0) {
+        warning('No se encontraron filas válidas. Verifica el formato: fecha,bcv');
+        return;
+      }
+      setCsvPreview(final);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+
+  const handlePublishCsv = async () => {
+    if (!resolvedBusinessId || csvPreview.length === 0) return;
+    setCsvImporting(true);
+    let imported = 0;
+    try {
+      for (const row of csvPreview) {
+        await createExchangeRateEntry(
+          resolvedBusinessId,
+          row.date,
+          { bcv: row.bcv, grupo: 0, lastUpdated: row.date },
+          currentUser?.uid
+            ? { uid: currentUser.uid, displayName: currentUser.displayName || null, photoURL: currentUser.photoURL || null }
+            : undefined,
+          'Importado desde CSV'
+        );
+        imported++;
+      }
+      success(`${imported} tasas importadas exitosamente.`);
+      setCsvPreview([]);
+    } catch {
+      error(`Se importaron ${imported} de ${csvPreview.length}. Error al continuar.`);
+    } finally {
+      setCsvImporting(false);
+    }
+  };
+
   const handleScanImage = async (file: File) => {
     if (file.type === 'application/pdf') {
       warning('Sube una imagen JPG/PNG. Los PDF no son compatibles con el OCR.');
@@ -372,14 +537,39 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-widest text-white/50">
-              Panel de Control
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-black uppercase tracking-widest text-white/50">
+                Panel de Control
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowHelp((v) => !v)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-white/40 hover:text-white/70 text-[10px] font-black uppercase tracking-wider transition-colors"
+                title="Ver instrucciones"
+              >
+                <Info size={10} />
+                {showHelp ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                Ayuda
+              </button>
+            </div>
             <p className="text-xs text-white/30 font-semibold mt-0.5">
-              Publica una tasa manual o carga una imagen para autocompletar.
+              Publica una tasa manual, búscala en BCV, escanea una imagen o importa un CSV histórico.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {/* ── BUSCAR TASA BCV ── */}
+            <button
+              type="button"
+              onClick={handleFetchBCV}
+              disabled={fetchingBCV}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600/80 to-violet-600/80 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+            >
+              {fetchingBCV
+                ? <Loader2 size={13} className="animate-spin" />
+                : <Globe size={13} />}
+              {fetchingBCV ? 'Buscando...' : 'Buscar Tasa BCV'}
+            </button>
+
             <input
               type="file"
               accept="image/*"
@@ -390,6 +580,16 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                 if (file) void handleScanImage(file);
               }}
             />
+            <input
+              type="file"
+              accept=".csv,.txt"
+              ref={csvInputRef}
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) handleImportCsv(file);
+              }}
+            />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -398,8 +598,163 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             >
               {ocrLoading ? 'Leyendo...' : '📸 Escanear Imagen'}
             </button>
+            <button
+              type="button"
+              onClick={() => csvInputRef.current?.click()}
+              className="px-4 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] text-white/70 text-xs font-black uppercase transition-colors"
+            >
+              📥 Importar CSV
+            </button>
           </div>
         </div>
+
+        {/* ── PANEL DE AYUDA ── */}
+        {showHelp && (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* BCV Auto */}
+            <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] p-3.5">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="w-7 h-7 rounded-lg bg-indigo-500/20 flex items-center justify-center shrink-0">
+                  <Globe size={13} className="text-indigo-400" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-400">Buscar Tasa BCV</span>
+              </div>
+              <ol className="space-y-1.5">
+                {['Haz clic en "Buscar Tasa BCV".', 'El sistema consulta la fuente oficial BCV en tiempo real.', 'Revisa el valor mostrado y confirma con "Aplicar".', 'La tasa se actualiza al instante en todos los dispositivos conectados.'].map((s, i) => (
+                  <li key={i} className="flex gap-2 text-[10px] text-white/40 font-semibold leading-tight">
+                    <span className="text-indigo-400/60 font-black shrink-0">{i + 1}.</span>{s}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Manual */}
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3.5">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0">
+                  <span className="text-emerald-400 text-sm leading-none">✏️</span>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Registro Manual</span>
+              </div>
+              <ol className="space-y-1.5">
+                {['Ingresa la Tasa BCV y la Tasa Grupo en los campos.', 'Selecciona la fecha (hoy por defecto).', 'Haz clic en "Publicar Tasa".', 'La entrada queda registrada en el historial para revisión del equipo.'].map((s, i) => (
+                  <li key={i} className="flex gap-2 text-[10px] text-white/40 font-semibold leading-tight">
+                    <span className="text-emerald-400/60 font-black shrink-0">{i + 1}.</span>{s}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* OCR */}
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-3.5">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
+                  <span className="text-amber-400 text-sm leading-none">📸</span>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">Escanear Imagen</span>
+              </div>
+              <ol className="space-y-1.5">
+                {['Haz clic en "Escanear Imagen".', 'Sube una captura JPG o PNG del sitio del BCV (no PDF).', 'El OCR detecta automáticamente las tasas y fechas.', 'Ingresa la Tasa Grupo manualmente, luego publica el lote.'].map((s, i) => (
+                  <li key={i} className="flex gap-2 text-[10px] text-white/40 font-semibold leading-tight">
+                    <span className="text-amber-400/60 font-black shrink-0">{i + 1}.</span>{s}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* CSV */}
+            <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.05] p-3.5">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center shrink-0">
+                  <span className="text-violet-400 text-sm leading-none">📥</span>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-violet-400">Importar CSV</span>
+              </div>
+              <ol className="space-y-1.5">
+                {['Crea un archivo .csv con dos columnas: fecha y bcv.', 'Fechas en formato YYYY-MM-DD o DD/MM/YYYY.', 'Haz clic en "Importar CSV" y selecciona el archivo.', 'Revisa el preview y confirma. La Tasa Grupo quedará en 0.'].map((s, i) => (
+                  <li key={i} className="flex gap-2 text-[10px] text-white/40 font-semibold leading-tight">
+                    <span className="text-violet-400/60 font-black shrink-0">{i + 1}.</span>{s}
+                  </li>
+                ))}
+              </ol>
+              <div className="mt-2.5 px-2.5 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                <p className="text-[9px] font-black text-white/30 uppercase tracking-wider mb-1">Ejemplo CSV</p>
+                <pre className="text-[9px] text-violet-300/50 font-mono leading-relaxed">
+{`fecha,bcv
+2025-01-02,68.30
+2025-01-03,68.51
+2025-02-10,71.20`}
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── ERROR DE FETCH ── */}
+        {fetchError && (
+          <div className="mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold">
+            <AlertTriangle size={14} className="shrink-0" />
+            {fetchError}
+            <button onClick={() => setFetchError(null)} className="ml-auto text-rose-400/60 hover:text-rose-400">✕</button>
+          </div>
+        )}
+
+        {/* ── CONFIRMACIÓN DE TASA ENCONTRADA ── */}
+        {bcvPreview && (
+          <div className="mt-4 rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-600/[0.12] to-violet-600/[0.06] p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                  <Wifi size={18} className="text-indigo-400" />
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-indigo-400/70 mb-0.5">
+                    Tasa Encontrada · BCV Oficial
+                  </p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-black text-white tracking-tight">{bcvPreview.rate.toFixed(2)}</span>
+                    <span className="text-sm font-black text-white/40">Bs / $</span>
+                  </div>
+                  <p className="text-[10px] font-bold text-white/30 mt-0.5">
+                    Actualizado por BCV: {new Date(bcvPreview.fechaActualizacion).toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setBcvPreview(null)}
+                className="text-white/20 hover:text-white/50 transition-colors shrink-0 text-lg leading-none mt-0.5"
+              >✕</button>
+            </div>
+
+            <div className="mt-4 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.06]">
+              <RefreshCw size={11} className="text-indigo-400 shrink-0" />
+              <p className="text-[10px] font-bold text-white/40">
+                Al aplicar, esta tasa se actualizará en <span className="text-white/70">todos los dispositivos</span> conectados y quedará registrada en el historial.
+              </p>
+            </div>
+
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={handleConfirmBCV}
+                disabled={isPublishing}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/25 disabled:opacity-50"
+              >
+                {isPublishing
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : <CheckCircle2 size={13} />}
+                {isPublishing ? 'Aplicando...' : `Aplicar ${bcvPreview.rate.toFixed(2)} Bs`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBcvPreview(null)}
+                className="px-5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white/50 text-xs font-black uppercase transition-all"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-3">
           <div>
             <label className="text-[10px] font-black uppercase tracking-widest text-white/40">
@@ -449,6 +804,52 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             </button>
           </div>
         </div>
+        {csvPreview.length > 0 && (
+          <div className="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.05] p-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-indigo-400/70">
+                  CSV Listo para Importar
+                </div>
+                <p className="text-xs text-white/50 font-semibold mt-0.5">
+                  {csvPreview.length} tasas detectadas. Revisa antes de publicar.
+                </p>
+                <p className="text-[10px] text-white/30 font-semibold mt-0.5">
+                  Nota: La tasa Grupo se registrará como 0 — edítala manualmente si es necesario.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCsvPreview([])}
+                  className="px-3 py-2 rounded-lg text-xs font-black uppercase text-white/40 hover:text-white/60 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePublishCsv}
+                  disabled={csvImporting}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase transition-colors disabled:opacity-50"
+                >
+                  {csvImporting ? <Loader2 size={11} className="animate-spin" /> : null}
+                  {csvImporting ? 'Importando...' : `Publicar ${csvPreview.length} tasas`}
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs font-semibold text-white/60 max-h-48 overflow-y-auto">
+              {csvPreview.map((row) => (
+                <div
+                  key={row.date}
+                  className="flex items-center justify-between rounded-lg bg-white/[0.05] px-3 py-2 border border-white/[0.07]"
+                >
+                  <span className="text-[10px] text-white/50">{row.date}</span>
+                  <span className="font-black text-white ml-2">{row.bcv}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {ocrDrafts.length > 0 && (
           <div className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">

@@ -685,7 +685,7 @@ const PosMayorContent = () => {
                     </td>
                   </tr>
                 ) : items.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50/50 group transition-colors">
+                  <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.04] group transition-colors">
                     <td className="px-5 py-3.5">
                       <p className="text-sm font-black text-slate-800 dark:text-slate-200 leading-none">{item.nombre}</p>
                       <p className="text-[10px] font-mono text-slate-400 mt-0.5">{item.codigo}</p>
@@ -718,7 +718,7 @@ const PosMayorContent = () => {
           </div>
 
           {/* ── CHECKOUT PANEL ──────────────────────────────────────────────── */}
-          <div className="border-t border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-slate-800/50/60 p-5 flex gap-5">
+          <div className="border-t border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-[#0d1424] p-5 flex gap-5">
             <div className="flex-1 space-y-3 min-w-0">
               {/* Client */}
               <div className="flex items-center justify-between">
@@ -801,11 +801,11 @@ const PosMayorContent = () => {
                   <select
                     value={discountType}
                     onChange={e => setDiscount(e.target.value as DiscountType, discountValue)}
-                    className="flex-1 bg-white dark:bg-slate-900/10 text-white text-[9px] font-black rounded-lg px-2 py-1 border border-white/10 appearance-none cursor-pointer"
+                    className="flex-1 bg-white/[0.08] text-white text-[9px] font-black rounded-lg px-2 py-1 border border-white/10 appearance-none cursor-pointer"
                   >
-                    <option value="none" className="text-slate-900 dark:text-white">Sin descuento</option>
-                    <option value="percent" className="text-slate-900 dark:text-white">Descuento %</option>
-                    <option value="fixed" className="text-slate-900 dark:text-white">Descuento $</option>
+                    <option value="none" className="text-slate-900">Sin descuento</option>
+                    <option value="percent" className="text-slate-900">Descuento %</option>
+                    <option value="fixed" className="text-slate-900">Descuento $</option>
                   </select>
                   {discountType !== 'none' && (
                     <input
@@ -813,7 +813,7 @@ const PosMayorContent = () => {
                       value={discountValue || ''}
                       onChange={e => setDiscount(discountType, parseFloat(e.target.value) || 0)}
                       placeholder={discountType === 'percent' ? '%' : '$'}
-                      className="w-16 bg-white dark:bg-slate-900/10 text-white text-[10px] font-black rounded-lg px-2 py-1 border border-white/10 text-center"
+                      className="w-16 bg-white/[0.08] text-white text-[10px] font-black rounded-lg px-2 py-1 border border-white/10 text-center"
                     />
                   )}
                 </div>
@@ -838,7 +838,7 @@ const PosMayorContent = () => {
               <button
                 disabled={!customer || items.length === 0}
                 onClick={() => setShowPaymentModal(true)}
-                className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${customer && items.length > 0 ? 'bg-white dark:bg-slate-900 text-violet-900 hover:bg-violet-400 hover:text-white shadow-xl hover:scale-[1.02]' : 'bg-white dark:bg-slate-900/10 text-white/30 cursor-not-allowed'}`}>
+                className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${customer && items.length > 0 ? 'bg-white text-violet-900 hover:bg-violet-400 hover:text-white shadow-xl hover:scale-[1.02]' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
                 <Receipt size={15} />Procesar Pedido
               </button>
             </div>

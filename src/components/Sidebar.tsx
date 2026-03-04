@@ -1,17 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, useLocation, useParams } from 'react-router-dom';
 import { User, AppConfig } from '../../types';
 import {
   LayoutDashboard,
-  FolderOpen,
   BookOpen,
   TrendingUp,
-  FileText,
   Users,
   Package,
-  Sparkles,
   LayoutGrid,
-  Monitor,
   ArrowLeftRight,
   Settings2,
   HelpCircle,
@@ -19,10 +15,10 @@ import {
   Landmark,
   LogOut,
   ChevronRight,
+  ChevronLeft,
   ShoppingCart,
   Receipt,
   Wallet,
-  PieChart,
   ClipboardList,
 } from 'lucide-react';
 
@@ -37,14 +33,12 @@ interface SidebarProps {
   onOpenProfile: () => void;
 }
 
-// ─── GROUPS ──────────────────────────────────────────────────────────────────
+// ─── TYPES ────────────────────────────────────────────────────────────────────
 type NavItem = {
   id: string;
   label: string;
   Icon: React.ElementType;
   path: string;
-  color: string;
-  bg: string;
 };
 
 type NavGroup = {
@@ -52,62 +46,82 @@ type NavGroup = {
   items: NavItem[];
 };
 
+// ─── NAV DATA ─────────────────────────────────────────────────────────────────
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Dashboard',
     items: [
-      { id: 'resumen',      label: 'Dashboard',         Icon: LayoutDashboard, path: 'dashboard',    color: 'text-indigo-300',  bg: 'bg-indigo-500/25' },
+      { id: 'resumen',      label: 'Dashboard',       Icon: LayoutDashboard, path: 'dashboard'     },
     ],
   },
   {
-    label: 'Gestión',
+    label: 'Operaciones',
     items: [
-      { id: 'inventario',   label: 'Inventario',        Icon: Package,         path: 'inventario',   color: 'text-sky-300',     bg: 'bg-sky-500/25' },
-      { id: 'cajas',        label: 'Ventas / Cajas',    Icon: ShoppingCart,    path: 'cajas',        color: 'text-sky-300',     bg: 'bg-sky-500/25' },
-      { id: 'rrhh',         label: 'RRHH / Nómina',    Icon: Users,           path: 'rrhh',         color: 'text-sky-300',     bg: 'bg-sky-500/25' },
+      { id: 'inventario',   label: 'Inventario',      Icon: Package,         path: 'inventario'    },
+      { id: 'cajas',        label: 'Ventas / Cajas',  Icon: ShoppingCart,    path: 'cajas'         },
+      { id: 'rrhh',         label: 'RRHH / Nómina',  Icon: Users,           path: 'rrhh'          },
     ],
   },
   {
-    label: 'Administración',
+    label: 'Finanzas',
     items: [
-      { id: 'clientes',     label: 'Deudores / CxC',   Icon: Wallet,          path: 'cobranzas',    color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
-      { id: 'proveedores',  label: 'Gastos / CxP',     Icon: Receipt,         path: 'cxp',          color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
-      { id: 'contabilidad', label: 'Contabilidad',      Icon: BookOpen,        path: 'contabilidad', color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
-      { id: 'tasas',        label: 'Tasas de Cambio',   Icon: TrendingUp,      path: 'tasas',        color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
-      { id: 'conciliacion', label: 'Conciliación',      Icon: Landmark,        path: 'conciliacion', color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
+      { id: 'clientes',     label: 'Deudores / CxC',  Icon: Wallet,          path: 'cobranzas'     },
+      { id: 'proveedores',  label: 'Gastos / CxP',    Icon: Receipt,         path: 'cxp'           },
+      { id: 'contabilidad', label: 'Contabilidad',    Icon: BookOpen,        path: 'contabilidad'  },
+      { id: 'tasas',        label: 'Tasas de Cambio', Icon: TrendingUp,      path: 'tasas'         },
+      { id: 'conciliacion', label: 'Conciliación',    Icon: Landmark,        path: 'conciliacion'  },
     ],
   },
   {
-    label: 'Reportes',
+    label: 'Inteligencia',
     items: [
-      { id: 'reportes',     label: 'Estadísticas',      Icon: BarChart3,       path: 'reportes',     color: 'text-violet-300',  bg: 'bg-violet-500/25' },
-      { id: 'vision',       label: 'Auditoría IA',      Icon: ClipboardList,   path: 'vision',       color: 'text-violet-300',  bg: 'bg-violet-500/25' },
-      { id: 'comparar',     label: 'Comparar Libros',   Icon: ArrowLeftRight,  path: 'comparar',     color: 'text-violet-300',  bg: 'bg-violet-500/25' },
+      { id: 'reportes',     label: 'Estadísticas',    Icon: BarChart3,       path: 'reportes'      },
+      { id: 'vision',       label: 'Auditoría IA',    Icon: ClipboardList,   path: 'vision'        },
+      { id: 'comparar',     label: 'Comparar Libros', Icon: ArrowLeftRight,  path: 'comparar'      },
     ],
   },
   {
     label: 'Herramientas',
     items: [
-      { id: 'widgets',      label: 'Herramientas',      Icon: LayoutGrid,      path: 'widgets',      color: 'text-amber-300',   bg: 'bg-amber-500/25' },
+      { id: 'widgets',      label: 'Herramientas',    Icon: LayoutGrid,      path: 'widgets'       },
     ],
   },
   {
     label: 'Sistema',
     items: [
-      { id: 'config',       label: 'Configuración',     Icon: Settings2,       path: 'configuracion', color: 'text-slate-300',   bg: 'bg-slate-500/25' },
-      { id: 'help',         label: 'Ayuda',             Icon: HelpCircle,      path: 'help',          color: 'text-slate-300',   bg: 'bg-slate-500/25' },
+      { id: 'config',       label: 'Configuración',   Icon: Settings2,       path: 'configuracion' },
+      { id: 'help',         label: 'Ayuda',           Icon: HelpCircle,      path: 'help'          },
     ],
   },
 ];
 
 const moduleMap: Record<string, string> = {
-  clientes: 'cxc',
-  proveedores: 'cxp',
+  clientes:     'cxc',
+  proveedores:  'cxp',
   contabilidad: 'ledger',
   conciliacion: 'reconciliation',
-  rrhh: 'nomina',
-  vision: 'vision',
+  rrhh:         'nomina',
+  vision:       'vision',
 };
+
+// ─── TOOLTIP helper (collapsed mode) ─────────────────────────────────────────
+const Tip: React.FC<{ children: React.ReactNode; alignBottom?: boolean }> = ({ children, alignBottom }) => (
+  <span
+    className={`
+      pointer-events-none absolute left-[calc(100%+12px)] z-[200]
+      flex items-center gap-2
+      px-3 py-2 rounded-xl bg-[#1a2235] border border-white/[0.08]
+      text-white text-[11px] font-semibold tracking-wide whitespace-nowrap
+      shadow-2xl shadow-black/50
+      opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0
+      transition-all duration-150
+      ${alignBottom ? 'bottom-0' : 'top-1/2 -translate-y-1/2'}
+    `}
+  >
+    <ChevronRight size={9} className="text-indigo-400/60 shrink-0" />
+    {children}
+  </span>
+);
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 const Sidebar: React.FC<SidebarProps> = ({
@@ -120,74 +134,141 @@ const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onOpenProfile,
 }) => {
-  const location = useLocation();
+  const location  = useLocation();
   const { empresa_id } = useParams();
 
-  const base = empresa_id ? `/${empresa_id}/admin` : '';
+  // Persist collapsed state across sessions
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('dualis_sidebar_collapsed') === 'true'; } catch { return false; }
+  });
+
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try { localStorage.setItem('dualis_sidebar_collapsed', String(next)); } catch { /* ignore */ }
+  };
+
+  const base   = empresa_id ? `/${empresa_id}/admin` : '';
   const toPath = (p: string) => `${base}/${p}`;
 
   const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
 
   const isVisible = (item: NavItem) => {
     const modKey = moduleMap[item.id];
-    if (modKey && config.modules?.[modKey as keyof AppConfig['modules']] === false) return false;
+    if (modKey && (config as any).modules?.[modKey] === false) return false;
     if (item.id === 'comparar' && !canCompare) return false;
     if (!isOwnerOrAdmin && item.id !== 'cajas' && item.id !== 'help') return false;
     return true;
   };
 
   const roleLabel: Record<string, string> = {
-    owner: 'Dueño',
-    admin: 'Admin',
-    ventas: 'Ventas',
+    owner:   'Dueño',
+    admin:   'Admin',
+    ventas:  'Ventas',
     auditor: 'Auditor',
-    staff: 'Staff',
-    member: 'Miembro',
+    staff:   'Staff',
+    member:  'Miembro',
     pending: 'Pendiente',
   };
+
+  // Accent colors per group index for icons
+  const groupIconColor = [
+    'text-indigo-400',   // Dashboard
+    'text-sky-400',      // Operaciones
+    'text-emerald-400',  // Finanzas
+    'text-violet-400',   // Inteligencia
+    'text-amber-400',    // Herramientas
+    'text-slate-400',    // Sistema
+  ];
 
   return (
     <>
       {/* Mobile overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       <aside
         className={`
-          fixed lg:static top-0 left-0 h-full z-50
-          transition-transform lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-          w-[72px] flex flex-col
-          bg-[#090e1a] border-r border-white/[0.05]
+          fixed lg:static top-0 left-0 h-full z-50 flex flex-col overflow-hidden
+          transition-[width] duration-300 ease-in-out
+          lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+          ${collapsed ? 'w-[72px]' : 'w-[220px]'}
+          bg-[#070b14] relative
         `}
       >
-        {/* ── LOGO ─────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-center py-5 border-b border-white/[0.05] shrink-0">
-          <div className="relative">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center font-syne font-extrabold text-[18px] text-white select-none shadow-[0_0_28px_rgba(99,102,241,0.55)]">
+        {/* ── Decorative background layers ── */}
+        {/* Top accent line */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent pointer-events-none" />
+        {/* Right border gradient */}
+        <div className="absolute right-0 inset-y-0 w-px bg-gradient-to-b from-transparent via-indigo-500/20 to-transparent pointer-events-none z-10" />
+        {/* Top glow orb */}
+        <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-32 h-32 bg-indigo-600/8 rounded-full blur-3xl pointer-events-none" />
+
+        {/* ── LOGO HEADER ─────────────────────────────────────────── */}
+        <div
+          className={`
+            relative z-10 flex items-center border-b border-white/[0.06] shrink-0 h-[60px]
+            ${collapsed ? 'justify-center px-0' : 'px-4 justify-between'}
+          `}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Logo mark */}
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center font-black text-[15px] text-white select-none shadow-[0_0_20px_rgba(99,102,241,0.45)] shrink-0">
               D
             </div>
-            {/* subtle ring */}
-            <div className="absolute inset-0 rounded-2xl ring-1 ring-indigo-400/20" />
+            {/* Brand name (expanded only) */}
+            {!collapsed && (
+              <div className="min-w-0">
+                <p className="text-white font-black text-[14px] leading-none tracking-tight">Dualis</p>
+                <p className="text-[8px] font-bold text-white/25 uppercase tracking-[0.18em] mt-0.5">Sistema ERP</p>
+              </div>
+            )}
           </div>
+
+          {/* Collapse button (expanded only) */}
+          {!collapsed && (
+            <button
+              onClick={toggleCollapsed}
+              className="w-6 h-6 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] text-white/20 hover:text-white/60 flex items-center justify-center transition-all shrink-0"
+              title="Colapsar menú"
+            >
+              <ChevronLeft size={12} />
+            </button>
+          )}
         </div>
 
-        {/* ── NAV ──────────────────────────────────────────────────── */}
-        <nav className="flex-1 flex flex-col items-center py-3 overflow-y-auto custom-scroll gap-0 px-2.5">
+        {/* ── NAV ─────────────────────────────────────────────────── */}
+        <nav
+          className={`
+            relative z-10 flex-1 overflow-y-auto custom-scroll py-3
+            ${collapsed ? 'flex flex-col items-center px-2.5' : 'px-2'}
+          `}
+        >
           {NAV_GROUPS.map((group, gi) => {
             const visibleItems = group.items.filter(isVisible);
             if (visibleItems.length === 0) return null;
+            const iconColor = groupIconColor[gi] ?? 'text-white/50';
 
             return (
               <React.Fragment key={group.label}>
-                {gi > 0 && (
-                  <div className="w-8 h-px bg-white/[0.06] my-2 shrink-0" />
+                {/* Group header */}
+                {collapsed ? (
+                  gi > 0 && <div className="w-8 h-px bg-white/[0.06] my-2.5 shrink-0" />
+                ) : (
+                  <div className={`${gi > 0 ? 'mt-4' : 'mt-0'} mb-1 px-2`}>
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/20">
+                      {group.label}
+                    </p>
+                  </div>
                 )}
+
+                {/* Items */}
                 {visibleItems.map((item) => {
-                  const href = toPath(item.path);
+                  const href     = toPath(item.path);
                   const isActive = activeTab === item.id || location.pathname === href;
 
                   return (
@@ -195,51 +276,40 @@ const Sidebar: React.FC<SidebarProps> = ({
                       key={item.id}
                       to={href}
                       onClick={() => setIsOpen(false)}
-                      title={item.label}
                       className={`
-                        relative group w-11 h-11 flex items-center justify-center rounded-xl
-                        transition-all duration-200 shrink-0 my-0.5
+                        relative group flex items-center rounded-xl transition-all duration-200 shrink-0
+                        ${collapsed
+                          ? 'w-11 h-11 justify-center my-0.5'
+                          : 'gap-2.5 px-2.5 py-2 w-full mb-0.5'
+                        }
                         ${isActive
-                          ? `${item.bg} ${item.color}`
-                          : 'text-white/20 hover:bg-white/[0.06] hover:text-white/50'
+                          ? 'bg-gradient-to-r from-indigo-600/[0.18] to-violet-600/[0.08] border border-indigo-500/[0.12] text-white'
+                          : `${iconColor} hover:bg-white/[0.05] hover:text-white`
                         }
                       `}
                     >
-                      {/* Active left bar + glow */}
+                      {/* Active: left accent bar */}
                       {isActive && (
-                        <>
-                          <span
-                            className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full"
-                            style={{ background: 'currentColor', filter: 'blur(0px)' }}
-                          />
-                          <span
-                            className="absolute inset-0 rounded-xl opacity-40"
-                            style={{ boxShadow: '0 0 12px currentColor' }}
-                          />
-                        </>
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full bg-gradient-to-b from-indigo-400 to-violet-400 shadow-[0_0_8px_rgba(99,102,241,0.7)]" />
                       )}
 
                       <item.Icon
-                        size={18}
+                        size={15}
                         strokeWidth={isActive ? 2.2 : 1.7}
-                        className="relative z-10"
+                        className="relative z-10 shrink-0"
                       />
 
-                      {/* Tooltip */}
-                      <span
-                        className="
-                          pointer-events-none absolute left-[calc(100%+12px)] z-[200]
-                          flex items-center gap-2
-                          px-3 py-2 rounded-xl bg-[#1e293b] border border-white/[0.08]
-                          text-white text-[11px] font-bold tracking-wide whitespace-nowrap
-                          shadow-2xl
-                          opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0
-                          transition-all duration-150
-                        "
-                      >
-                        <ChevronRight size={10} className="text-white/30 shrink-0" />
-                        {item.label}
-                      </span>
+                      {/* Label (expanded) */}
+                      {!collapsed && (
+                        <span
+                          className={`text-[12px] font-medium tracking-tight truncate relative z-10 transition-colors ${isActive ? 'text-white' : ''}`}
+                        >
+                          {item.label}
+                        </span>
+                      )}
+
+                      {/* Tooltip (collapsed) */}
+                      {collapsed && <Tip>{item.label}</Tip>}
                     </NavLink>
                   );
                 })}
@@ -249,62 +319,86 @@ const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* ── BOTTOM ───────────────────────────────────────────────── */}
-        <div className="shrink-0 border-t border-white/[0.05] flex flex-col items-center gap-2 py-4 px-2.5">
+        <div
+          className={`
+            relative z-10 shrink-0 border-t border-white/[0.06] py-3
+            ${collapsed ? 'flex flex-col items-center gap-1 px-2.5' : 'px-2 space-y-0.5'}
+          `}
+        >
+          {/* Expand button (collapsed only) */}
+          {collapsed && (
+            <button
+              onClick={toggleCollapsed}
+              title="Expandir menú"
+              className="w-11 h-11 flex items-center justify-center rounded-xl text-white/20 hover:bg-white/[0.06] hover:text-white/50 transition-all"
+            >
+              <ChevronRight size={15} />
+            </button>
+          )}
+
           {/* Logout */}
           <button
             onClick={onLogout}
-            title="Cerrar sesión"
-            className="
-              relative group w-11 h-11 flex items-center justify-center rounded-xl
-              text-white/20 hover:bg-rose-500/10 hover:text-rose-400
-              transition-all duration-200
-            "
+            className={`
+              relative group flex items-center rounded-xl text-white/25
+              hover:bg-rose-500/[0.12] hover:text-rose-400 transition-all
+              ${collapsed ? 'w-11 h-11 justify-center' : 'gap-2.5 px-2.5 py-2 w-full'}
+            `}
           >
-            <LogOut size={17} strokeWidth={1.8} />
-            <span
-              className="
-                pointer-events-none absolute left-[calc(100%+12px)] z-[200]
-                flex items-center gap-2
-                px-3 py-2 rounded-xl bg-[#1e293b] border border-white/[0.08]
-                text-white text-[11px] font-bold tracking-wide whitespace-nowrap
-                shadow-2xl
-                opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0
-                transition-all duration-150
-              "
-            >
-              <ChevronRight size={10} className="text-white/30 shrink-0" />
-              Cerrar sesión
-            </span>
+            <LogOut size={14} strokeWidth={1.8} className="shrink-0" />
+            {!collapsed && <span className="text-[12px] font-medium">Cerrar sesión</span>}
+            {collapsed && <Tip>Cerrar sesión</Tip>}
           </button>
 
-          {/* Avatar */}
+          {/* Avatar / Profile */}
           <button
             onClick={onOpenProfile}
-            title={user.name}
-            className="relative group"
+            className={`
+              relative group flex items-center rounded-xl
+              hover:bg-white/[0.05] transition-all
+              ${collapsed ? 'w-11 h-11 justify-center' : 'gap-2.5 px-2.5 py-2 w-full'}
+            `}
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 flex items-center justify-center text-white font-black text-[14px] select-none shadow-[0_0_16px_rgba(245,158,11,0.35)] hover:scale-105 transition-transform">
-              {user.name.charAt(0).toUpperCase()}
+            <div className="relative shrink-0">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 flex items-center justify-center text-white font-black text-[12px] select-none shadow-[0_0_12px_rgba(245,158,11,0.3)]">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              {/* Role badge */}
+              {collapsed && (
+                <span className="absolute -bottom-1 -right-1 px-1 py-px rounded bg-[#1a2235] border border-white/[0.08] text-[7px] font-black text-white/50 uppercase leading-none">
+                  {(roleLabel[user.role] || user.role).slice(0, 3)}
+                </span>
+              )}
             </div>
-            {/* Role badge */}
-            <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-md bg-[#1e293b] border border-white/10 text-[8px] font-black text-white/60 uppercase tracking-widest leading-none">
-              {(roleLabel[user.role] || user.role).slice(0, 3)}
-            </span>
 
-            {/* Hover tooltip with full name + role */}
-            <span
-              className="
-                pointer-events-none absolute left-[calc(100%+12px)] bottom-0 z-[200]
-                flex flex-col gap-0.5
-                px-3 py-2.5 rounded-xl bg-[#1e293b] border border-white/[0.08]
-                shadow-2xl min-w-[140px]
-                opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0
-                transition-all duration-150
-              "
-            >
-              <span className="text-white text-[12px] font-black leading-tight">{user.name}</span>
-              <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">{roleLabel[user.role] || user.role}</span>
-            </span>
+            {/* Name + role (expanded) */}
+            {!collapsed && (
+              <div className="min-w-0 flex-1 text-left">
+                <p className="text-[12px] font-black text-white/70 truncate leading-none">{user.name}</p>
+                <p className="text-[9px] font-bold text-white/25 uppercase tracking-[0.15em] mt-0.5">
+                  {roleLabel[user.role] || user.role}
+                </p>
+              </div>
+            )}
+
+            {/* Tooltip (collapsed) */}
+            {collapsed && (
+              <span
+                className="
+                  pointer-events-none absolute left-[calc(100%+12px)] bottom-0 z-[200]
+                  flex flex-col gap-0.5
+                  px-3 py-2.5 rounded-xl bg-[#1a2235] border border-white/[0.08]
+                  shadow-2xl shadow-black/50 min-w-[140px]
+                  opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0
+                  transition-all duration-150
+                "
+              >
+                <span className="text-white text-[12px] font-black leading-tight">{user.name}</span>
+                <span className="text-white/40 text-[9px] font-bold uppercase tracking-widest">
+                  {roleLabel[user.role] || user.role}
+                </span>
+              </span>
+            )}
           </button>
         </div>
       </aside>
