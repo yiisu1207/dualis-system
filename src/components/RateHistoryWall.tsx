@@ -183,14 +183,19 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     setFetchError(null);
     setBcvPreview(null);
     try {
-      const res = await fetch('https://ve.dolarapi.com/v1/dolares/bcv');
+      const res = await fetch('https://ve.dolarapi.com/v1/dolares');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const rate = Number(data?.venta ?? data?.promedio ?? data?.precio);
+      // API returns an array — find the BCV/oficial entry
+      const list = Array.isArray(data) ? data : [data];
+      const entry = list.find((d: any) =>
+        d?.fuente === 'oficial' || d?.fuente === 'bcv' || d?.nombre?.toLowerCase().includes('oficial') || d?.nombre?.toLowerCase().includes('bcv')
+      ) ?? list[0];
+      const rate = Number(entry?.venta ?? entry?.promedio ?? entry?.precio ?? entry?.compra);
       if (!rate || isNaN(rate)) throw new Error('Formato inesperado');
       setBcvPreview({
         rate,
-        fechaActualizacion: data?.fechaActualizacion || new Date().toISOString(),
+        fechaActualizacion: entry?.fechaActualizacion || new Date().toISOString(),
       });
     } catch {
       setFetchError('No se pudo obtener la tasa. Verifica tu conexión a internet.');
