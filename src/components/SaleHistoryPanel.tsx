@@ -48,8 +48,8 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const accent = accentColor === 'violet'
-    ? { btn: 'bg-violet-700 hover:bg-violet-800', badge: 'bg-violet-100 text-violet-700' }
-    : { btn: 'bg-slate-900 hover:bg-slate-800', badge: 'bg-slate-100 text-slate-700' };
+    ? { btn: 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:opacity-90 shadow-md shadow-violet-500/25', badge: 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300' }
+    : { btn: 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-90 shadow-md shadow-indigo-500/25', badge: 'bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300' };
 
   const loadSales = useCallback(async () => {
     if (!tenantId) return;
@@ -128,23 +128,23 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
       <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Panel */}
-      <div className="w-full max-w-md bg-white h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
+      <div className="w-full max-w-md bg-white dark:bg-[#0d1424] h-full flex flex-col shadow-2xl shadow-black/30 animate-in slide-in-from-right duration-300">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-white/[0.07]">
           <div>
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+            <h2 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2">
               <Clock size={16} /> Historial de Ventas
             </h2>
             <p className="text-[10px] font-bold text-slate-400 mt-0.5">Últimas 30 transacciones</p>
           </div>
-          <button onClick={onClose} className="h-9 w-9 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-all">
+          <button onClick={onClose} className="h-9 w-9 rounded-full bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center hover:bg-slate-200 dark:hover:bg-white/[0.12] transition-all">
             <X size={16} />
           </button>
         </div>
 
         {/* Feedback */}
         {msg && (
-          <div className={`mx-4 mt-3 px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 ${msg.type === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+          <div className={`mx-4 mt-3 px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 ${msg.type === 'ok' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400'}`}>
             {msg.type === 'ok' ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
             {msg.text}
           </div>
@@ -162,25 +162,25 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
             sales.map(sale => (
               <div
                 key={sale.id}
-                className={`p-4 rounded-2xl border transition-all ${sale.anulada ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-100 hover:border-slate-200 shadow-sm'}`}
+                className={`p-4 rounded-2xl border transition-all ${sale.anulada ? 'bg-slate-50 dark:bg-white/[0.02] border-slate-100 dark:border-white/[0.05] opacity-60' : 'bg-white dark:bg-white/[0.04] border-slate-100 dark:border-white/[0.07] hover:border-slate-200 dark:hover:border-white/[0.15] shadow-sm'}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-xs font-black text-slate-800 truncate">
+                      <p className="text-xs font-black text-slate-800 dark:text-slate-200 truncate">
                         {sale.entityId === 'CONSUMIDOR_FINAL' ? 'Consumidor Final' : sale.entityId}
                       </p>
                       {sale.anulada && (
-                        <span className="px-1.5 py-0.5 bg-rose-100 text-rose-600 text-[9px] font-black uppercase rounded">
+                        <span className="px-1.5 py-0.5 bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase rounded">
                           Anulada
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                    <p className="text-[10px] text-slate-400 dark:text-slate-400 font-bold mt-0.5">
                       {sale.metodoPago || 'N/A'} · {sale.date}
                     </p>
                     {sale.items && sale.items.length > 0 && (
-                      <p className="text-[10px] text-slate-400 mt-0.5">
+                      <p className="text-[10px] text-slate-400 dark:text-slate-400 mt-0.5">
                         {sale.items.length} producto{sale.items.length > 1 ? 's' : ''}
                         {' · '}{sale.items.map(i => i.nombre).slice(0, 2).join(', ')}
                         {sale.items.length > 2 ? '...' : ''}
@@ -188,12 +188,12 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
                     )}
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-black text-slate-900">${sale.amountInUSD?.toFixed(2)}</p>
+                    <p className="text-sm font-black text-slate-900 dark:text-white">${sale.amountInUSD?.toFixed(2)}</p>
                     {!sale.anulada && (
                       <button
                         disabled={anulando === sale.id}
                         onClick={() => handleAnular(sale)}
-                        className="mt-1.5 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 text-[9px] font-black uppercase transition-all disabled:opacity-50"
+                        className="mt-1.5 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-[9px] font-black uppercase transition-all disabled:opacity-50"
                       >
                         {anulando === sale.id
                           ? <Loader2 size={10} className="animate-spin" />
@@ -209,7 +209,7 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-4 border-t border-slate-100">
+        <div className="px-4 py-4 border-t border-slate-100 dark:border-white/[0.07]">
           <button
             onClick={loadSales}
             className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest text-white transition-all ${accent.btn}`}

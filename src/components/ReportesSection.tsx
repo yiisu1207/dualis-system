@@ -239,12 +239,12 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-black text-slate-900 text-2xl leading-tight">Reportes</h1>
+          <h1 className="font-black text-slate-900 dark:text-white text-2xl leading-tight">Reportes</h1>
           <p className="text-slate-400 text-sm mt-0.5 font-medium">Análisis financiero y operativo</p>
         </div>
         <button
           onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2.5 bg-[#4f6ef7] text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-md shadow-blue-200"
+          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[12px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-md shadow-indigo-500/25"
         >
           <Download size={14} />
           Exportar CSV
@@ -253,16 +253,16 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
 
       {/* Period + Type filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-2xl p-1">
-          <Calendar size={13} className="text-slate-400 ml-2 mr-1" />
+        <div className="flex items-center gap-1 bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.07] rounded-xl p-1">
+          <Calendar size={13} className="text-slate-400 dark:text-white/30 ml-2 mr-1" />
           {PERIODS.map(p => (
             <button
               key={p.id}
               onClick={() => setPeriod(p.id)}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all ${
                 period === p.id
-                  ? 'bg-[#4f6ef7] text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25'
+                  : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.06]'
               }`}
             >
               {p.label}
@@ -270,16 +270,16 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
           ))}
         </div>
 
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-2xl p-1">
-          <Filter size={13} className="text-slate-400 ml-2 mr-1" />
+        <div className="flex items-center gap-1 bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.07] rounded-xl p-1">
+          <Filter size={13} className="text-slate-400 dark:text-white/30 ml-2 mr-1" />
           {(['ALL', 'FACTURA', 'ABONO'] as const).map(t => (
             <button
               key={t}
               onClick={() => setMovType(t)}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all ${
                 movType === t
-                  ? 'bg-slate-800 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25'
+                  : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.06]'
               }`}
             >
               {t === 'ALL' ? 'Todos' : t === 'FACTURA' ? 'Facturas' : 'Abonos'}
@@ -324,10 +324,10 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Monthly bar chart */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+        <div className="lg:col-span-2 bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-5">
             <BarChart3 size={16} className="text-[#4f6ef7]" />
-            <h3 className="font-black text-slate-800 text-[14px]">Facturado vs Cobrado · {new Date().getFullYear()}</h3>
+            <h3 className="font-black text-slate-800 dark:text-slate-200 text-[14px]">Facturado vs Cobrado · {new Date().getFullYear()}</h3>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={monthlyData} barSize={10} barGap={2}>
@@ -345,10 +345,10 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
         </div>
 
         {/* Top clientes */}
-        <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+        <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-5">
             <Users size={16} className="text-amber-500" />
-            <h3 className="font-black text-slate-800 text-[14px]">Top CxC por cliente</h3>
+            <h3 className="font-black text-slate-800 dark:text-slate-200 text-[14px]">Top CxC por cliente</h3>
           </div>
           {topClientes.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-2">
@@ -361,8 +361,8 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
                 <div key={i} className="flex items-center gap-3">
                   <span className="w-5 text-[11px] font-black text-slate-400">{i + 1}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-black text-slate-700 truncate">{c.name}</p>
-                    <div className="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <p className="text-[12px] font-black text-slate-700 dark:text-slate-300 truncate">{c.name}</p>
+                    <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.07] overflow-hidden">
                       <div
                         className="h-full rounded-full bg-amber-400"
                         style={{ width: `${Math.min(100, (c.deuda / topClientes[0].deuda) * 100)}%` }}
@@ -378,12 +378,12 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
       </div>
 
       {/* Movements table */}
-      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.07] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileText size={15} className="text-slate-400" />
-            <span className="font-black text-slate-800 text-[14px]">Movimientos</span>
-            <span className="ml-1 bg-slate-100 text-slate-500 text-[10px] font-black px-2 py-0.5 rounded-lg">
+            <span className="font-black text-slate-800 dark:text-slate-200 text-[14px]">Movimientos</span>
+            <span className="ml-1 bg-slate-100 dark:bg-white/[0.07] text-slate-500 text-[10px] font-black px-2 py-0.5 rounded-lg">
               {filtered.length}
             </span>
           </div>
@@ -398,7 +398,7 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
               <thead>
-                <tr className="border-b border-slate-100">
+                <tr className="border-b border-slate-100 dark:border-white/[0.07]">
                   {['Fecha', 'Concepto', 'Tipo', 'Cuenta', 'Monto USD', 'Referencia'].map(h => (
                     <th key={h} className="px-5 py-3 text-left font-black text-slate-400 uppercase tracking-widest text-[10px]">
                       {h}
@@ -410,10 +410,10 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
                 {filtered.slice(0, 100).map((m, i) => (
                   <tr
                     key={m.id || i}
-                    className="border-b border-slate-50 hover:bg-slate-50/60 transition-all"
+                    className="border-b border-slate-50 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-all"
                   >
-                    <td className="px-5 py-3 font-medium text-slate-600">{m.date || m.createdAt?.split('T')[0] || '—'}</td>
-                    <td className="px-5 py-3 font-medium text-slate-800 max-w-[180px] truncate">{m.concept}</td>
+                    <td className="px-5 py-3 font-medium text-slate-600 dark:text-slate-400">{m.date || m.createdAt?.split('T')[0] || '—'}</td>
+                    <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200 max-w-[180px] truncate">{m.concept}</td>
                     <td className="px-5 py-3">
                       <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${
                         m.movementType === MovementType.FACTURA
@@ -444,13 +444,13 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
       </div>
 
       {/* ── ESTADO DE RESULTADOS (P&L) ─────────────────────────────────────── */}
-      <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden">
+      <div className="bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.07] rounded-2xl overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-50 flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
             <FileBarChart size={16} />
           </div>
           <div>
-            <h3 className="font-syne font-bold text-slate-900 text-[14px]">Estado de Resultados</h3>
+            <h3 className="font-syne font-bold text-slate-900 dark:text-white text-[14px]">Estado de Resultados</h3>
             <p className="text-[11px] text-slate-400 mt-0.5">Período: {PERIODS.find(p => p.id === period)?.label}</p>
           </div>
         </div>
@@ -464,10 +464,10 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
           {pnl.igtfRecaudado > 0 && (
             <PnlRow label="  (−) IGTF recaudado" value={-pnl.igtfRecaudado} indent={1} dim />
           )}
-          <div className="border-t border-slate-100 my-2" />
+          <div className="border-t border-slate-100 dark:border-white/[0.07] my-2" />
           <PnlRow label="Ventas Netas" value={pnl.ventasNetas} indent={0} bold highlight="blue" />
 
-          <div className="border-t border-dashed border-slate-100 my-3" />
+          <div className="border-t border-dashed border-slate-100 dark:border-white/[0.07] my-3" />
 
           {/* Gastos */}
           <PnlRow label="(−) Gastos / Compras" value={-pnl.gastos} indent={0} bold />
@@ -475,7 +475,7 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
             <PnlRow key={cat} label={`      ${cat}`} value={-val} indent={2} dim />
           ))}
 
-          <div className="border-t border-slate-200 my-3" />
+          <div className="border-t border-slate-200 dark:border-white/10 my-3" />
 
           {/* Utilidad */}
           <div className={`flex items-center justify-between px-4 py-3 rounded-2xl ${pnl.utilidadBruta >= 0 ? 'bg-emerald-50 border border-emerald-100' : 'bg-rose-50 border border-rose-100'}`}>
@@ -502,19 +502,19 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
       </div>
 
       {/* ── COMISIONES POR VENDEDOR ─────────────────────────────────────────── */}
-      <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden">
+      <div className="bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.07] rounded-2xl overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
               <Award size={16} />
             </div>
             <div>
-              <h3 className="font-syne font-bold text-slate-900 text-[14px]">Comisiones por Vendedor</h3>
+              <h3 className="font-syne font-bold text-slate-900 dark:text-white text-[14px]">Comisiones por Vendedor</h3>
               <p className="text-[11px] text-slate-400 mt-0.5">Basado en ventas del período · {comisionesPorVendedor.length} vendedores</p>
             </div>
           </div>
           {/* Rate picker */}
-          <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-2.5">
+          <div className="flex items-center gap-3 bg-slate-50 dark:bg-white/[0.04] rounded-xl px-4 py-2.5">
             <UserCheck size={13} className="text-slate-400 shrink-0" />
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tasa</span>
             <input
@@ -524,7 +524,7 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
               step={0.5}
               value={comisionRate}
               onChange={e => setComisionRate(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
-              className="w-16 text-center text-sm font-black text-slate-900 bg-white border border-slate-200 rounded-xl px-2 py-1 focus:ring-2 focus:ring-amber-400 outline-none"
+              className="w-16 text-center text-sm font-black text-slate-900 dark:text-white bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl px-2 py-1 focus:ring-2 focus:ring-amber-400 outline-none"
             />
             <span className="text-[11px] font-black text-slate-500">%</span>
           </div>
@@ -538,28 +538,28 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              <thead className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-50/60">
+              <thead className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 bg-slate-50/50 dark:bg-white/[0.02]">
                 <tr>
-                  <th className="px-6 py-3 border-b border-slate-100">Vendedor</th>
-                  <th className="px-6 py-3 border-b border-slate-100 text-right">Ventas</th>
-                  <th className="px-6 py-3 border-b border-slate-100 text-center">Transacciones</th>
-                  <th className="px-6 py-3 border-b border-slate-100 text-right">Comisión ({comisionRate}%)</th>
+                  <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07]">Vendedor</th>
+                  <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07] text-right">Ventas</th>
+                  <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07] text-center">Transacciones</th>
+                  <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07] text-right">Comisión ({comisionRate}%)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {comisionesPorVendedor.map((v, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                  <tr key={i} className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
                     <td className="px-6 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center font-black text-xs shrink-0">
                           {v.nombre.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-[13px] font-bold text-slate-800">{v.nombre}</span>
+                        <span className="text-[13px] font-bold text-slate-800 dark:text-slate-200">{v.nombre}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-3.5 text-right font-black text-slate-900">{fmt(v.ventas)}</td>
+                    <td className="px-6 py-3.5 text-right font-black text-slate-900 dark:text-white">{fmt(v.ventas)}</td>
                     <td className="px-6 py-3.5 text-center">
-                      <span className="text-[11px] font-black text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">{v.count}</span>
+                      <span className="text-[11px] font-black text-slate-500 bg-slate-100 dark:bg-white/[0.07] px-2.5 py-1 rounded-xl">{v.count}</span>
                     </td>
                     <td className="px-6 py-3.5 text-right">
                       <span className="text-[14px] font-black text-amber-600">{fmt(v.comision)}</span>
@@ -569,7 +569,7 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
               </tbody>
               <tfoot>
                 <tr className="bg-amber-50/60 border-t-2 border-amber-100">
-                  <td className="px-6 py-3.5 font-black text-[12px] text-slate-700 uppercase tracking-widest" colSpan={3}>
+                  <td className="px-6 py-3.5 font-black text-[12px] text-slate-700 dark:text-slate-300 uppercase tracking-widest" colSpan={3}>
                     Total comisiones a pagar
                   </td>
                   <td className="px-6 py-3.5 text-right font-black text-[16px] text-amber-700">{fmt(totalComisiones)}</td>
@@ -594,14 +594,14 @@ interface KpiCardProps {
 }
 
 const KpiCard: React.FC<KpiCardProps> = ({ label, value, icon, bg, trend }) => (
-  <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-sm">
+  <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] p-5 shadow-sm">
     <div className="flex items-center justify-between mb-4">
       <div className={`w-9 h-9 rounded-2xl ${bg} flex items-center justify-center`}>{icon}</div>
       {trend === 'up' && <TrendingUp size={13} className="text-emerald-500" />}
       {trend === 'down' && <TrendingDown size={13} className="text-amber-500" />}
     </div>
     <p className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">{label}</p>
-    <p className="text-[18px] font-black text-slate-900 leading-tight">{value}</p>
+    <p className="text-[18px] font-black text-slate-900 dark:text-white leading-tight">{value}</p>
   </div>
 );
 
@@ -617,11 +617,11 @@ interface PnlRowProps {
 
 const PnlRow: React.FC<PnlRowProps> = ({ label, value, bold, dim, highlight }) => (
   <div className={`flex items-center justify-between py-1.5 px-2 rounded-xl ${highlight === 'blue' ? 'bg-blue-50' : ''}`}>
-    <span className={`text-[12px] ${bold ? 'font-black text-slate-700' : ''} ${dim ? 'font-medium text-slate-400' : ''}`}>
+    <span className={`text-[12px] ${bold ? 'font-black text-slate-700 dark:text-slate-300' : ''} ${dim ? 'font-medium text-slate-400' : ''}`}>
       {label}
     </span>
     <span className={`text-[13px] tabular-nums ${bold ? 'font-black' : 'font-medium'} ${
-      value < 0 ? 'text-rose-600' : highlight === 'blue' ? 'text-blue-700' : 'text-slate-800'
+      value < 0 ? 'text-rose-600' : highlight === 'blue' ? 'text-blue-700' : 'text-slate-800 dark:text-slate-200'
     }`}>
       {value < 0 ? `(${fmt(Math.abs(value))})` : fmt(value)}
     </span>

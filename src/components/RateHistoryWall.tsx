@@ -334,46 +334,48 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
 
   if (!resolvedBusinessId) {
     return (
-      <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-500">
+      <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/[0.07] text-sm text-slate-400">
         Primero configura tu espacio de trabajo para ver el historial de tasas.
       </div>
     );
   }
 
+  const inp = "mt-2 w-full px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.06] text-sm font-bold text-white placeholder:text-white/20 focus:outline-none focus:border-white/25 focus:ring-2 focus:ring-white/10 transition-all";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h2 className="text-xl font-black text-slate-800">Rate Wall</h2>
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+          <h2 className="text-xl font-black text-white">Rate Wall</h2>
+          <p className="text-xs font-bold uppercase tracking-widest text-white/40">
             Historial colaborativo de tasas
           </p>
         </div>
         {summary && (
-          <div className="app-chip px-4 py-2 rounded-2xl flex gap-6">
+          <div className="inline-flex items-center gap-6 px-5 py-3 rounded-2xl bg-white/[0.04] border border-white/[0.08]">
             <div>
-              <div className="text-[9px] uppercase font-bold text-slate-400">BCV</div>
-              <div className="text-lg font-black text-slate-800">{summary.bcv}</div>
+              <div className="text-[9px] uppercase font-bold text-white/40">BCV</div>
+              <div className="text-lg font-black text-white">{summary.bcv}</div>
             </div>
             <div>
-              <div className="text-[9px] uppercase font-bold text-slate-400">Grupo</div>
-              <div className="text-lg font-black text-slate-800">{summary.parallel}</div>
+              <div className="text-[9px] uppercase font-bold text-white/40">Grupo</div>
+              <div className="text-lg font-black text-white">{summary.parallel}</div>
             </div>
             <div>
-              <div className="text-[9px] uppercase font-bold text-slate-400">Fecha</div>
-              <div className="text-sm font-bold text-slate-600">{summary.date}</div>
+              <div className="text-[9px] uppercase font-bold text-white/40">Fecha</div>
+              <div className="text-sm font-bold text-white/60">{summary.date}</div>
             </div>
           </div>
         )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">
+            <h3 className="text-sm font-black uppercase tracking-widest text-white/50">
               Panel de Control
             </h3>
-            <p className="text-xs text-slate-500 font-semibold">
+            <p className="text-xs text-white/30 font-semibold mt-0.5">
               Publica una tasa manual o carga una imagen para autocompletar.
             </p>
           </div>
@@ -391,7 +393,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-black uppercase"
+              className="px-4 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] text-white/70 text-xs font-black uppercase transition-colors"
               disabled={ocrLoading}
             >
               {ocrLoading ? 'Leyendo...' : '📸 Escanear Imagen'}
@@ -400,38 +402,38 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
         </div>
         <div className="mt-4 grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-3">
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">
               Tasa BCV
             </label>
             <input
               type="number"
               step="0.01"
-              className="mt-2 w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-700"
+              className={inp}
               value={manualBcv}
               onChange={(event) => setManualBcv(event.target.value)}
               placeholder="0.00"
             />
           </div>
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">
               Tasa Grupo
             </label>
             <input
               type="number"
               step="0.01"
-              className="mt-2 w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-700"
+              className={inp}
               value={manualGrupo}
               onChange={(event) => setManualGrupo(event.target.value)}
               placeholder="0.00"
             />
           </div>
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">
               Fecha
             </label>
             <input
               type="date"
-              className="mt-2 w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-700"
+              className={inp}
               value={manualDate}
               onChange={(event) => setManualDate(event.target.value)}
             />
@@ -440,7 +442,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             <button
               type="button"
               onClick={handlePublish}
-              className="w-full px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase"
+              className="w-full px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black uppercase transition-colors shadow-lg shadow-emerald-500/20"
               disabled={isPublishing}
             >
               {isPublishing ? 'Publicando...' : 'Publicar Tasa'}
@@ -448,13 +450,13 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
           </div>
         </div>
         {ocrDrafts.length > 0 && (
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>
-                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <div className="text-[10px] font-black uppercase tracking-widest text-white/40">
                   OCR Detectado
                 </div>
-                <p className="text-xs text-slate-600 font-semibold">
+                <p className="text-xs text-white/50 font-semibold mt-0.5">
                   {ocrDrafts.length} tasas encontradas. Se usara la tasa Grupo manual.
                 </p>
               </div>
@@ -462,28 +464,28 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                 <button
                   type="button"
                   onClick={() => setOcrDrafts([])}
-                  className="px-3 py-2 rounded-lg text-xs font-black uppercase text-slate-500"
+                  className="px-3 py-2 rounded-lg text-xs font-black uppercase text-white/40 hover:text-white/60 transition-colors"
                 >
                   Limpiar
                 </button>
                 <button
                   type="button"
                   onClick={handlePublishBatch}
-                  className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-black uppercase"
+                  className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black uppercase transition-colors"
                   disabled={isPublishing}
                 >
                   Publicar {ocrDrafts.length} tasas
                 </button>
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs font-semibold text-slate-600">
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs font-semibold text-white/60">
               {ocrDrafts.map((draft) => (
                 <div
                   key={draft.date}
-                  className="flex items-center justify-between rounded-lg bg-white px-3 py-2 border border-slate-200"
+                  className="flex items-center justify-between rounded-lg bg-white/[0.05] px-3 py-2 border border-white/[0.07]"
                 >
                   <span>{draft.date}</span>
-                  <span className="font-black">{draft.bcv}</span>
+                  <span className="font-black text-white">{draft.bcv}</span>
                 </div>
               ))}
             </div>
@@ -492,7 +494,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       </div>
 
       {entries.length === 0 ? (
-        <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-500">
+        <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/[0.07] text-sm text-white/40">
           No hay tasas registradas aun.
         </div>
       ) : (
@@ -508,12 +510,12 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             return (
               <div
                 key={entry.id}
-                className={`p-4 rounded-2xl border bg-white shadow-sm transition-colors ${
+                className={`p-4 rounded-2xl border transition-colors ${
                   isVerified
-                    ? 'border-emerald-300 ring-2 ring-emerald-100'
+                    ? 'border-emerald-500/30 bg-emerald-500/5'
                     : isRejected
-                    ? 'border-rose-300 ring-2 ring-rose-100'
-                    : 'border-slate-200'
+                    ? 'border-rose-500/30 bg-rose-500/5'
+                    : 'border-white/[0.07] bg-white/[0.03]'
                 }`}
               >
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -525,18 +527,18 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                         className="w-10 h-10 rounded-full object-cover"
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-black">
+                      <div className="w-10 h-10 rounded-full bg-white/10 text-white/60 flex items-center justify-center text-xs font-black">
                         {getInitials(creatorName)}
                       </div>
                     )}
                     <div>
-                      <div className="text-sm font-black text-slate-800">{creatorName}</div>
-                      <div className="text-[10px] font-bold text-slate-400">
+                      <div className="text-sm font-black text-white">{creatorName}</div>
+                      <div className="text-[10px] font-bold text-white/40">
                         {entry.date}
                         {entry.createdBy?.timestamp &&
                           ` • ${formatTimestamp(entry.createdBy.timestamp)}`}
                       </div>
-                      <div className="text-[10px] font-bold text-slate-400">
+                      <div className="text-[10px] font-bold text-white/40">
                         Hora: {formatTimeShort(entry.timestamp || entry.createdBy?.timestamp)}
                       </div>
                     </div>
@@ -544,18 +546,18 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
 
                   <div className="flex items-center gap-6">
                     <div className="text-right">
-                      <div className="text-[9px] uppercase font-bold text-slate-400">BCV</div>
-                      <div className="text-lg font-black text-slate-800">{entry.bcv}</div>
+                      <div className="text-[9px] uppercase font-bold text-white/40">BCV</div>
+                      <div className="text-lg font-black text-white">{entry.bcv}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-[9px] uppercase font-bold text-slate-400">Grupo</div>
-                      <div className="text-lg font-black text-slate-800">{entry.parallel}</div>
+                      <div className="text-[9px] uppercase font-bold text-white/40">Grupo</div>
+                      <div className="text-lg font-black text-white">{entry.parallel}</div>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleDelete(entry)}
-                    className="text-slate-400 hover:text-rose-500 text-sm"
+                    className="text-white/20 hover:text-rose-400 text-sm transition-colors"
                     title="Eliminar"
                   >
                     🗑️
@@ -567,10 +569,10 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                     <button
                       type="button"
                       onClick={() => handleReaction(entry, '✅')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-black ${
+                      className={`px-3 py-1.5 rounded-full text-xs font-black transition-colors ${
                         isVerified
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-emerald-50 text-emerald-700'
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
                       }`}
                     >
                       ✅ Verificar {verifyCount > 0 ? `(${verifyCount})` : ''}
@@ -578,8 +580,8 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                     <button
                       type="button"
                       onClick={() => handleReaction(entry, '❌')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-black ${
-                        isRejected ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700'
+                      className={`px-3 py-1.5 rounded-full text-xs font-black transition-colors ${
+                        isRejected ? 'bg-rose-500 text-white' : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
                       }`}
                     >
                       ❌ Rechazar {rejectCount > 0 ? `(${rejectCount})` : ''}
@@ -594,7 +596,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                           [entry.id]: !prev[entry.id],
                         }))
                       }
-                      className="text-xs font-bold text-slate-500 hover:text-slate-700"
+                      className="text-xs font-bold text-white/30 hover:text-white/60 transition-colors"
                     >
                       {noteOpen ? 'Ocultar nota' : 'Ver nota'}
                     </button>
@@ -602,7 +604,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                 </div>
 
                 {noteOpen && entry.notes && (
-                  <div className="mt-3 p-3 rounded-xl bg-slate-50 text-xs text-slate-600 font-semibold">
+                  <div className="mt-3 p-3 rounded-xl bg-white/[0.05] text-xs text-white/50 font-semibold">
                     {entry.notes}
                   </div>
                 )}

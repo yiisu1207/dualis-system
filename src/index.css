@@ -156,7 +156,7 @@
   .app-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 24px -6px rgba(124, 58, 237, 0.12);
-    border-color: #e2e8f0;
+    border-color: var(--ui-border);
   }
 
   /* Sección contenedor — sin bg propio, hereda del layout */
@@ -189,7 +189,7 @@
   }
 
   .app-chip {
-    background: white;
+    background: var(--ui-panel);
     border: 1px solid var(--ui-border);
     color: var(--ui-muted);
     border-radius: 9999px;
@@ -201,13 +201,14 @@
   }
 
   .app-input {
-    background: #ffffff;
+    background: var(--ui-elev);
     border: 1px solid var(--ui-border);
     border-radius: 12px;
     padding: 0.75rem 1rem;
     color: var(--ui-ink);
     font-size: 0.875rem;
     font-weight: 500;
+    width: 100%;
     transition: all 0.2s;
   }
 

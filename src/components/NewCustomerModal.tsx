@@ -42,13 +42,13 @@ const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
   };
 
   const inputBaseClasses =
-    'px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all w-full';
+    'px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none transition-all w-full';
   const selectClasses =
-    'px-2 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all w-24 font-bold';
+    'px-2 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none transition-all w-24 font-bold';
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
-      <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-300">
+      <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-300">
         <div className="bg-indigo-600 p-8 text-white text-center">
           <div className="text-4xl mb-2">✨</div>
           <h2 className="text-2xl font-black tracking-tight">¡Nuevo Registro!</h2>
@@ -130,7 +130,7 @@ const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 py-3 px-4 border border-slate-200 rounded-xl text-slate-600 font-bold hover:bg-slate-50 transition-colors"
+              className="flex-1 py-3 px-4 border border-slate-200 dark:border-white/10 rounded-xl text-slate-600 dark:text-slate-400 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 transition-colors"
             >
               Cancelar
             </button>

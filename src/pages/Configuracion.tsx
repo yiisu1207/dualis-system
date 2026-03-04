@@ -255,8 +255,8 @@ const Configuracion: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="animate-spin h-12 w-12 text-slate-400" />
+      <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] flex items-center justify-center">
+        <Loader2 className="animate-spin h-10 w-10 text-indigo-500" />
       </div>
     );
   }
@@ -271,22 +271,22 @@ const Configuracion: React.FC = () => {
   ];
 
   const inputClasses =
-    'w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 transition-all shadow-inner outline-none placeholder:text-slate-300';
+    'w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold dark:text-white focus:ring-2 focus:ring-indigo-500 transition-all outline-none placeholder:text-slate-300 dark:placeholder:text-white/20';
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-inter">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] flex flex-col font-inter">
       {/* HEADER */}
-      <header className="h-24 bg-white border-b border-slate-200 px-10 flex items-center justify-between shrink-0 z-20 shadow-sm">
-        <div className="flex items-center gap-6">
+      <header className="h-16 bg-white dark:bg-[#0d1424] border-b border-slate-200 dark:border-white/[0.07] px-6 flex items-center justify-between shrink-0 z-20 shadow-sm shadow-black/5">
+        <div className="flex items-center gap-4">
           <button
             onClick={() => navigate(-1)}
-            className="h-12 w-12 flex items-center justify-center rounded-2xl hover:bg-slate-50 text-slate-400 transition-all border border-transparent hover:border-slate-100"
+            className="h-9 w-9 flex items-center justify-center rounded-xl hover:bg-slate-50 dark:hover:bg-white/[0.08] text-slate-400 dark:text-white/40 transition-all border border-transparent hover:border-slate-100 dark:hover:border-white/[0.08]"
           >
-            <ArrowLeft size={22} />
+            <ArrowLeft size={18} />
           </button>
           <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Centro de Configuración</h1>
-            <div className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mt-1 flex items-center gap-2">
+            <h1 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">Centro de Configuración</h1>
+            <div className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Workspace Enterprise
             </div>
@@ -295,73 +295,73 @@ const Configuracion: React.FC = () => {
         <button
           disabled={saving}
           onClick={handleSaveConfig}
-          className="flex items-center gap-3 px-10 py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 transition-all shadow-2xl shadow-slate-300 active:scale-95 disabled:opacity-50"
+          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:from-indigo-500 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/25 active:scale-95 disabled:opacity-50"
         >
-          {saving ? <Loader2 className="animate-spin" size={18} /> : <><Save size={18} /> Guardar Cambios</>}
+          {saving ? <Loader2 className="animate-spin" size={15} /> : <><Save size={15} /> Guardar Cambios</>}
         </button>
       </header>
 
       <div className="flex-1 flex overflow-hidden">
         {/* ASIDE */}
-        <aside className="w-80 border-r border-slate-200 bg-white p-8 overflow-y-auto custom-scroll">
-          <nav className="space-y-3">
+        <aside className="w-60 border-r border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] p-4 overflow-y-auto custom-scroll">
+          <nav className="space-y-1">
             {menuItems.map(item => (
               <button
                 key={item.id}
                 onClick={() => setActiveSection(item.id as SectionType)}
-                className={`w-full flex items-center gap-4 px-6 py-5 rounded-3xl font-black text-[10px] uppercase tracking-widest transition-all ${
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${
                   activeSection === item.id
-                    ? 'bg-slate-900 text-white shadow-2xl shadow-slate-300 translate-x-2'
-                    : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                    ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/20'
+                    : 'text-slate-400 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.06] hover:text-slate-600 dark:hover:text-white'
                 }`}
               >
-                <item.icon size={18} className={activeSection === item.id ? 'text-indigo-400' : 'text-slate-300'} />
+                <item.icon size={16} className={activeSection === item.id ? 'text-indigo-200' : 'text-slate-300 dark:text-white/30'} />
                 {item.label}
               </button>
             ))}
           </nav>
 
-          <div className="mt-20 pt-8 border-t border-slate-100">
+          <div className="mt-8 pt-4 border-t border-slate-100 dark:border-white/[0.07]">
             <button
               onClick={() => auth.signOut()}
-              className="w-full flex items-center gap-4 px-6 py-5 rounded-3xl font-black text-[10px] uppercase tracking-widest text-rose-400 hover:bg-rose-50 transition-all"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all"
             >
-              <LogOut size={18} /> Cerrar Sesión
+              <LogOut size={16} /> Cerrar Sesión
             </button>
           </div>
         </aside>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 p-12 overflow-y-auto custom-scroll bg-slate-50/30">
+        <main className="flex-1 p-6 overflow-y-auto custom-scroll bg-slate-50 dark:bg-[#070b14]">
           <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-right-6 duration-700">
 
             {/* IDENTIDAD */}
             {activeSection === 'identidad' && (
-              <div className="space-y-10 pb-20">
-                <div className="bg-white p-12 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50">
-                  <div className="flex justify-between items-start mb-12">
+              <div className="space-y-5 pb-10">
+                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <div className="flex justify-between items-start mb-5">
                     <div>
-                      <h3 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-                        <Building2 className="text-indigo-500" size={28} /> Identidad del Negocio
+                      <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                        <Building2 className="text-indigo-500" size={22} /> Identidad del Negocio
                       </h3>
-                      <p className="text-sm text-slate-400 font-medium mt-2">Configura los datos fiscales y públicos de tu empresa.</p>
+                      <p className="text-xs text-slate-400 dark:text-white/30 font-medium mt-1">Configura los datos fiscales y públicos de tu empresa.</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-10 mb-12 pb-12 border-b border-slate-50">
+                  <div className="flex items-center gap-6 mb-5 pb-5 border-b border-slate-50 dark:border-white/[0.06]">
                     <div className="relative group">
-                      <div className="h-40 w-40 rounded-[3rem] bg-slate-50 flex items-center justify-center border-4 border-white shadow-2xl overflow-hidden group-hover:scale-105 transition-transform duration-500">
-                        <Building2 size={60} className="text-slate-200" />
+                      <div className="h-24 w-24 rounded-2xl bg-slate-50 dark:bg-white/[0.05] flex items-center justify-center border-2 border-white dark:border-white/[0.1] shadow-lg overflow-hidden group-hover:scale-105 transition-transform duration-300">
+                        <Building2 size={36} className="text-slate-300 dark:text-white/20" />
                       </div>
-                      <button className="absolute -bottom-2 -right-2 h-12 w-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-2xl border-4 border-white hover:scale-110 active:scale-95 transition-all">
-                        <Camera size={20} />
+                      <button className="absolute -bottom-1.5 -right-1.5 h-8 w-8 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg border-2 border-white dark:border-[#0d1424] hover:bg-indigo-500 active:scale-95 transition-all">
+                        <Camera size={14} />
                       </button>
                     </div>
-                    <div className="space-y-2">
-                      <h4 className="text-lg font-black text-slate-900 uppercase tracking-tight">Logo Corporativo</h4>
-                      <p className="text-xs text-slate-400 font-medium leading-relaxed max-w-xs">Aparecerá en facturas, tickets y correos. Se recomienda SVG o PNG transparente.</p>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Logo Corporativo</h4>
+                      <p className="text-xs text-slate-400 dark:text-white/30 font-medium leading-relaxed max-w-xs">Aparecerá en facturas, tickets y correos. SVG o PNG transparente.</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 flex items-center gap-2"><Globe size={12} /> Nombre Comercial</label>
                       <input value={configData.companyName} onChange={e => setConfigData({ ...configData, companyName: e.target.value })} placeholder="Ej. Mi Empresa" className={inputClasses} />
@@ -389,12 +389,12 @@ const Configuracion: React.FC = () => {
 
             {/* FACTURACIÓN */}
             {activeSection === 'facturacion' && (
-              <div className="space-y-10 pb-20">
-                <div className="bg-white p-12 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50">
-                  <h3 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3 mb-12">
-                    <Receipt className="text-emerald-500" size={28} /> Parámetros de Venta
+              <div className="space-y-5 pb-10">
+                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2 mb-5">
+                    <Receipt className="text-emerald-500" size={22} /> Parámetros de Venta
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 flex items-center gap-2"><Percent size={12} /> IVA por Defecto (%)</label>
                       <input type="number" value={configData.defaultIva} onChange={e => setConfigData({ ...configData, defaultIva: Number(e.target.value) })} className={inputClasses} />
@@ -421,52 +421,52 @@ const Configuracion: React.FC = () => {
 
             {/* EQUIPO */}
             {activeSection === 'equipo' && (
-              <div className="bg-white rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden pb-10">
-                <div className="p-12 border-b border-slate-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-slate-50/20">
+              <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden pb-4">
+                <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/50 dark:bg-white/[0.02]">
                   <div>
-                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">Gestión de Equipo</h3>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Control de Roles y Autorizaciones</p>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Gestión de Equipo</h3>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mt-0.5">Control de Roles y Autorizaciones</p>
                   </div>
-                  <button className="flex items-center gap-3 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-slate-300 hover:bg-slate-800 transition-all active:scale-95">
-                    <Plus size={18} /> Invitar Miembro
+                  <button className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md shadow-indigo-500/25 hover:from-indigo-500 hover:to-violet-500 transition-all active:scale-95">
+                    <Plus size={14} /> Invitar Miembro
                   </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead>
-                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-300">
-                        <th className="px-12 py-8">Identidad</th>
-                        <th className="px-12 py-8 text-center">Nivel</th>
-                        <th className="px-12 py-8 text-center">Estado</th>
-                        <th className="px-12 py-8 text-right">Control</th>
+                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-50 dark:border-white/[0.05]">
+                        <th className="px-5 py-3.5">Identidad</th>
+                        <th className="px-5 py-3.5 text-center">Nivel</th>
+                        <th className="px-5 py-3.5 text-center">Estado</th>
+                        <th className="px-5 py-3.5 text-right">Control</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-50">
+                    <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                       {users.map(u => (
-                        <tr key={u.uid} className="group transition-all hover:bg-slate-50/50">
-                          <td className="px-12 py-8">
-                            <div className="flex items-center gap-5">
-                              <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center font-black text-slate-400 text-xl shadow-inner group-hover:bg-slate-900 group-hover:text-white transition-all">
+                        <tr key={u.uid} className="group transition-all hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="h-9 w-9 rounded-xl bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center font-black text-slate-400 text-base group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:to-violet-600 group-hover:text-white transition-all">
                                 {u.fullName?.charAt(0) || u.email?.charAt(0)}
                               </div>
                               <div>
-                                <p className="text-sm font-black text-slate-900">{u.fullName || 'Sin nombre'}</p>
-                                <p className="text-[10px] font-bold text-slate-400 tracking-tight mt-0.5">{u.email}</p>
+                                <p className="text-sm font-black text-slate-900 dark:text-white">{u.fullName || 'Sin nombre'}</p>
+                                <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 tracking-tight mt-0.5">{u.email}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-12 py-8 text-center">
-                            <span className="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase tracking-widest border border-indigo-100">{u.role}</span>
+                          <td className="px-5 py-3.5 text-center">
+                            <span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 rounded-lg text-[9px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/30">{u.role}</span>
                           </td>
-                          <td className="px-12 py-8 text-center">
-                            <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${u.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                          <td className="px-5 py-3.5 text-center">
+                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${u.status === 'ACTIVE' ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30' : 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/30'}`}>
                               <div className={`h-1.5 w-1.5 rounded-full ${u.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
                               {u.status}
                             </div>
                           </td>
-                          <td className="px-12 py-8 text-right">
-                            <button className="p-3 rounded-2xl text-slate-300 hover:bg-white hover:text-slate-900 hover:shadow-lg transition-all opacity-0 group-hover:opacity-100">
-                              <ChevronRight size={20} />
+                          <td className="px-5 py-3.5 text-right">
+                            <button className="p-2 rounded-xl text-slate-300 dark:text-white/20 hover:bg-white dark:hover:bg-white/[0.08] hover:text-slate-900 dark:hover:text-white transition-all opacity-0 group-hover:opacity-100">
+                              <ChevronRight size={16} />
                             </button>
                           </td>
                         </tr>
@@ -474,7 +474,7 @@ const Configuracion: React.FC = () => {
                     </tbody>
                   </table>
                   {users.length === 0 && (
-                    <div className="px-12 py-16 text-center text-slate-400 text-sm font-semibold">Sin miembros registrados aún</div>
+                    <div className="px-5 py-12 text-center text-slate-400 dark:text-white/30 text-sm font-semibold">Sin miembros registrados aún</div>
                   )}
                 </div>
               </div>
@@ -482,64 +482,64 @@ const Configuracion: React.FC = () => {
 
             {/* SEGURIDAD */}
             {activeSection === 'seguridad' && (
-              <div className="space-y-10 pb-20">
-                <div className="bg-white p-12 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50">
-                  <h3 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3 mb-12">
-                    <ShieldCheck className="text-indigo-500" size={28} /> Protocolos de Seguridad
+              <div className="space-y-5 pb-10">
+                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2 mb-5">
+                    <ShieldCheck className="text-indigo-500" size={22} /> Protocolos de Seguridad
                   </h3>
-                  <div className="grid grid-cols-1 gap-6">
+                  <div className="grid grid-cols-1 gap-3">
                     {[
                       { id: 'twoFactor', title: 'Autenticación de Dos Factores (2FA)', desc: 'Protege tu acceso con un código dinámico adicional.', enabled: configData.security.twoFactor, icon: Fingerprint },
                       { id: 'auditLogs', title: 'Registros de Auditoría', desc: 'Seguimiento de inicios de sesión y acciones críticas.', enabled: configData.security.auditLogs, icon: Activity },
                       { id: 'terminalMonitor', title: 'Monitoreo de Terminales', desc: 'Controla qué dispositivos están autorizados para facturar.', enabled: configData.security.terminalMonitor, icon: Monitor },
                     ].map(opt => (
-                      <div key={opt.id} className="flex items-center justify-between p-8 bg-slate-50/50 rounded-[2rem] border border-slate-100 group hover:bg-white hover:shadow-xl transition-all duration-500">
-                        <div className="flex items-center gap-6">
-                          <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${opt.enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                            <opt.icon size={24} />
+                      <div key={opt.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/[0.03] rounded-xl border border-slate-100 dark:border-white/[0.07] group hover:bg-white dark:hover:bg-white/[0.06] hover:shadow-md transition-all duration-300">
+                        <div className="flex items-center gap-4">
+                          <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${opt.enabled ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400 dark:text-white/30'}`}>
+                            <opt.icon size={20} />
                           </div>
                           <div>
-                            <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">{opt.title}</h4>
-                            <p className="text-xs text-slate-400 font-medium mt-1">{opt.desc}</p>
+                            <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">{opt.title}</h4>
+                            <p className="text-xs text-slate-400 dark:text-white/30 font-medium mt-0.5">{opt.desc}</p>
                           </div>
                         </div>
                         <div
                           onClick={() => setConfigData({ ...configData, security: { ...configData.security, [opt.id]: !opt.enabled } })}
-                          className={`h-8 w-14 rounded-full relative cursor-pointer transition-colors ${opt.enabled ? 'bg-slate-900' : 'bg-slate-200'}`}
+                          className={`h-7 w-12 rounded-full relative cursor-pointer transition-colors shrink-0 ${opt.enabled ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/10'}`}
                         >
-                          <div className={`absolute top-1.5 h-5 w-5 bg-white rounded-full transition-all shadow-sm ${opt.enabled ? 'right-1.5' : 'left-1.5'}`} />
+                          <div className={`absolute top-1 h-5 w-5 bg-white rounded-full transition-all shadow-sm ${opt.enabled ? 'right-1' : 'left-1'}`} />
                         </div>
                       </div>
                     ))}
 
                     {/* AUDIT LOG VIEWER */}
                     {configData.security.auditLogs && businessId && (
-                      <div className="mt-8">
+                      <div className="mt-4">
                         <AuditLogViewer businessId={businessId} />
                       </div>
                     )}
 
                     {/* PIN MAESTRO */}
-                    <div className="mt-8 p-12 bg-slate-900 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
-                      <div className="absolute -right-20 -top-20 h-64 w-64 bg-white/5 rounded-full blur-3xl pointer-events-none" />
+                    <div className="mt-4 p-6 bg-gradient-to-br from-slate-900 to-[#0d1220] rounded-2xl text-white shadow-2xl shadow-black/30 relative overflow-hidden group border border-white/[0.06]">
+                      <div className="absolute -right-10 -top-10 h-40 w-40 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
                       <div className="relative z-10">
-                        <h4 className="text-2xl font-black mb-2 flex items-center gap-3">
-                          <Fingerprint className="text-indigo-400" /> PIN de Autoridad Maestro
+                        <h4 className="text-lg font-black mb-1.5 flex items-center gap-2">
+                          <Fingerprint className="text-indigo-400" size={20} /> PIN de Autoridad Maestro
                         </h4>
-                        <p className="text-slate-400 text-sm font-medium mb-10 max-w-md">
+                        <p className="text-white/40 text-xs font-medium mb-5 max-w-md">
                           Código de 4 dígitos requerido para eliminar facturas, clientes o realizar ajustes críticos.
                         </p>
-                        <div className="flex flex-col md:flex-row items-center gap-8">
-                          <div className="flex gap-4">
+                        <div className="flex flex-col md:flex-row items-center gap-5">
+                          <div className="flex gap-2.5">
                             {[1, 2, 3, 4].map(i => (
-                              <div key={i} className={`h-16 w-14 rounded-2xl border-2 flex items-center justify-center text-2xl font-black transition-all ${userProfile?.pin ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-white/20'}`}>
+                              <div key={i} className={`h-12 w-10 rounded-xl border-2 flex items-center justify-center text-xl font-black transition-all ${userProfile?.pin ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-white/20'}`}>
                                 {userProfile?.pin ? '●' : ''}
                               </div>
                             ))}
                           </div>
                           <button
                             onClick={() => { setNewPinValue(''); setPinModal(true); }}
-                            className="px-10 py-5 bg-white text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-2xl"
+                            className="px-6 py-2.5 bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
                           >
                             {userProfile?.pin ? 'Cambiar PIN Maestro' : 'Establecer PIN Ahora'}
                           </button>
@@ -553,35 +553,36 @@ const Configuracion: React.FC = () => {
 
             {/* SUSCRIPCION */}
             {activeSection === 'suscripcion' && (
-              <div className="space-y-10 pb-20">
-                <div className="bg-slate-900 p-12 rounded-[3.5rem] shadow-2xl text-white relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-125 transition-transform duration-700 pointer-events-none">
-                    <ShieldCheck size={180} />
+              <div className="space-y-5 pb-10">
+                <div className="bg-gradient-to-br from-slate-900 via-indigo-950/50 to-[#0d1220] p-6 rounded-2xl shadow-2xl shadow-black/30 text-white relative overflow-hidden group border border-white/[0.06]">
+                  <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 group-hover:scale-110 transition-all duration-700 pointer-events-none">
+                    <ShieldCheck size={140} />
                   </div>
+                  <div className="absolute -left-10 -bottom-10 h-40 w-40 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
                   <div className="relative z-10">
-                    <div className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-500 text-[10px] font-black uppercase tracking-[0.2em] rounded-full mb-8">
-                      <div className="h-1.5 w-1.5 rounded-full bg-white animate-ping" /> Plan Enterprise Activo
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-[0.2em] rounded-full mb-4">
+                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Plan Enterprise Activo
                     </div>
-                    <h3 className="text-5xl font-black tracking-tighter mb-4">Enterprise Pro</h3>
-                    <p className="text-slate-400 font-medium text-lg mb-12 max-w-md leading-relaxed">Infraestructura dedicada, terminales ilimitadas y soporte técnico prioritario 24/7.</p>
-                    <div className="flex gap-6">
-                      <button className="px-10 py-5 bg-white text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all">Historial de Facturas</button>
-                      <button className="px-10 py-5 bg-white/10 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest border border-white/10 hover:bg-white/20 transition-all">Gestionar Plan</button>
+                    <h3 className="text-3xl font-black tracking-tighter mb-2">Enterprise Pro</h3>
+                    <p className="text-white/40 font-medium text-sm mb-5 max-w-md">Infraestructura dedicada, terminales ilimitadas y soporte técnico prioritario 24/7.</p>
+                    <div className="flex gap-3">
+                      <button className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">Historial de Facturas</button>
+                      <button className="px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">Gestionar Plan</button>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white p-12 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50">
-                  <h4 className="text-xl font-black text-slate-900 mb-2 tracking-tight">Acceso a la Organización</h4>
-                  <p className="text-sm text-slate-400 font-medium mb-10 leading-relaxed">Usa este identificador para conectar sucursales o invitar personal.</p>
-                  <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] p-10 text-center">
-                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-300 mb-4">CÓDIGO DE ESPACIO ÚNICO</p>
-                    <p className="text-3xl font-mono font-black text-slate-900 break-all select-all tracking-wider">{businessId}</p>
+                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h4 className="text-base font-black text-slate-900 dark:text-white mb-1 tracking-tight">Acceso a la Organización</h4>
+                  <p className="text-xs text-slate-400 dark:text-white/30 font-medium mb-5">Usa este identificador para conectar sucursales o invitar personal.</p>
+                  <div className="bg-slate-50 dark:bg-white/[0.03] border border-dashed border-slate-200 dark:border-white/[0.08] rounded-2xl p-6 text-center">
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-white/30 mb-3">CÓDIGO DE ESPACIO ÚNICO</p>
+                    <p className="text-xl font-mono font-black text-slate-900 dark:text-white break-all select-all tracking-wider">{businessId}</p>
                     <button
                       onClick={() => handleCopyToClipboard(businessId || '')}
-                      className="mt-8 flex items-center gap-3 mx-auto px-8 py-3.5 bg-white border border-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 hover:border-slate-900 hover:text-slate-900 transition-all shadow-xl active:scale-95"
+                      className="mt-4 flex items-center gap-2 mx-auto px-5 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-white/[0.10] hover:text-indigo-600 dark:hover:text-white transition-all active:scale-95"
                     >
-                      <Copy size={16} /> {copyToast ? '¡Copiado!' : 'Copiar Identificador'}
+                      <Copy size={14} /> {copyToast ? '¡Copiado!' : 'Copiar Identificador'}
                     </button>
                   </div>
                 </div>
@@ -590,30 +591,30 @@ const Configuracion: React.FC = () => {
 
             {/* APARIENCIA */}
             {activeSection === 'apariencia' && (
-              <div className="space-y-8 pb-20">
+              <div className="space-y-4 pb-10">
 
                 {/* Header card */}
-                <div className="bg-gradient-to-br from-violet-600 to-indigo-600 p-10 rounded-[3rem] text-white relative overflow-hidden shadow-2xl shadow-violet-500/20">
-                  <div className="absolute -right-10 -top-10 h-48 w-48 bg-white/5 rounded-full blur-3xl pointer-events-none" />
-                  <div className="absolute -left-6 -bottom-6 h-32 w-32 bg-white/5 rounded-full blur-2xl pointer-events-none" />
+                <div className="bg-gradient-to-br from-violet-600 to-indigo-600 p-5 rounded-2xl text-white relative overflow-hidden shadow-xl shadow-violet-500/20">
+                  <div className="absolute -right-6 -top-6 h-32 w-32 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                  <div className="absolute -left-4 -bottom-4 h-20 w-20 bg-white/5 rounded-full blur-xl pointer-events-none" />
                   <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-3">
-                      <Palette size={22} className="text-violet-200" />
-                      <span className="text-[10px] font-black uppercase tracking-[0.3em] text-violet-200">Personalización por Usuario</span>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Palette size={18} className="text-violet-200" />
+                      <span className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-200">Personalización por Usuario</span>
                     </div>
-                    <h3 className="text-3xl font-black tracking-tight mb-2">Tu Espacio, Tu Estilo</h3>
-                    <p className="text-violet-200 text-sm font-medium leading-relaxed max-w-md">
+                    <h3 className="text-2xl font-black tracking-tight mb-1">Tu Espacio, Tu Estilo</h3>
+                    <p className="text-violet-200/80 text-xs font-medium leading-relaxed max-w-md">
                       Ajusta la apariencia a tu gusto. Cada cambio se guarda por usuario y aplica al instante.
                     </p>
                   </div>
                 </div>
 
                 {/* Font size */}
-                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
-                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6 flex items-center gap-2">
-                    <Type size={14} /> Tamaño de Fuente
+                <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 mb-4 flex items-center gap-2">
+                    <Type size={13} /> Tamaño de Fuente
                   </h4>
-                  <div className="flex gap-3 flex-wrap">
+                  <div className="flex gap-2 flex-wrap">
                     {([
                       { val: 'xs',   label: 'XS',   size: 'text-xs'   },
                       { val: 'sm',   label: 'SM',   size: 'text-sm'   },
@@ -624,25 +625,25 @@ const Configuracion: React.FC = () => {
                       <button
                         key={f.val}
                         onClick={() => setUiPrefs(p => ({ ...p, fontSize: f.val }))}
-                        className={`flex-1 min-w-[70px] flex flex-col items-center gap-2 py-6 px-3 rounded-2xl border-2 transition-all ${
+                        className={`flex-1 min-w-[60px] flex flex-col items-center gap-1.5 py-4 px-2 rounded-xl border-2 transition-all ${
                           uiPrefs.fontSize === f.val
                             ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
-                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/[0.12]'
                         }`}
                       >
                         <span className={`font-black text-slate-900 dark:text-white ${f.size}`}>Aa</span>
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{f.label}</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">{f.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
                 {/* Accent color */}
-                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
-                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6 flex items-center gap-2">
-                    <Palette size={14} /> Color de Acento
+                <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 mb-4 flex items-center gap-2">
+                    <Palette size={13} /> Color de Acento
                   </h4>
-                  <div className="flex gap-5 flex-wrap">
+                  <div className="flex gap-4 flex-wrap">
                     {([
                       { val: 'indigo',  bg: 'bg-indigo-500',  ring: 'ring-indigo-400',  label: 'Índigo'    },
                       { val: 'violet',  bg: 'bg-violet-500',  ring: 'ring-violet-400',  label: 'Violeta'   },
@@ -655,25 +656,25 @@ const Configuracion: React.FC = () => {
                         key={c.val}
                         onClick={() => setUiPrefs(p => ({ ...p, accentColor: c.val }))}
                         title={c.label}
-                        className="flex flex-col items-center gap-2 group"
+                        className="flex flex-col items-center gap-1.5 group"
                       >
-                        <div className={`h-12 w-12 rounded-2xl ${c.bg} transition-all ${
+                        <div className={`h-10 w-10 rounded-xl ${c.bg} transition-all ${
                           uiPrefs.accentColor === c.val
-                            ? `ring-4 ring-offset-2 ${c.ring} scale-110`
-                            : 'hover:scale-105 opacity-70 hover:opacity-100'
+                            ? `ring-4 ring-offset-2 dark:ring-offset-[#0d1424] ${c.ring} scale-110`
+                            : 'hover:scale-105 opacity-60 hover:opacity-100'
                         }`} />
-                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">{c.label}</span>
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 group-hover:text-slate-600 dark:group-hover:text-white/60 transition-colors">{c.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
                 {/* Border radius */}
-                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
-                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6 flex items-center gap-2">
-                    <Sliders size={14} /> Forma de los Bordes
+                <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 mb-4 flex items-center gap-2">
+                    <Sliders size={13} /> Forma de los Bordes
                   </h4>
-                  <div className="flex gap-4 flex-wrap">
+                  <div className="flex gap-3 flex-wrap">
                     {([
                       { val: 'sharp',   label: 'Recto',   cls: 'rounded-none' },
                       { val: 'normal',  label: 'Normal',  cls: 'rounded-xl'   },
@@ -683,55 +684,55 @@ const Configuracion: React.FC = () => {
                       <button
                         key={r.val}
                         onClick={() => setUiPrefs(p => ({ ...p, borderRadius: r.val }))}
-                        className={`flex-1 min-w-[80px] flex flex-col items-center gap-4 py-7 rounded-2xl border-2 transition-all ${
+                        className={`flex-1 min-w-[70px] flex flex-col items-center gap-3 py-5 rounded-xl border-2 transition-all ${
                           uiPrefs.borderRadius === r.val
                             ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
-                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/[0.12]'
                         }`}
                       >
-                        <div className={`h-8 w-16 bg-slate-900 dark:bg-white/80 ${r.cls}`} />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{r.label}</span>
+                        <div className={`h-6 w-12 bg-slate-800 dark:bg-white/60 ${r.cls}`} />
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">{r.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
                 {/* Density */}
-                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
-                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6">Densidad de Interfaz</h4>
-                  <div className="flex gap-4">
+                <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 mb-4">Densidad de Interfaz</h4>
+                  <div className="flex gap-3">
                     {([
-                      { val: 'compact',  label: 'Compacto',  desc: 'Más contenido visible', bars: [4, 4, 4, 4] },
-                      { val: 'normal',   label: 'Normal',    desc: 'Espaciado balanceado',  bars: [6, 6, 6]    },
-                      { val: 'spacious', label: 'Espacioso', desc: 'Más fácil de leer',     bars: [10, 10]     },
+                      { val: 'compact',  label: 'Compacto',  desc: 'Más contenido', bars: [4, 4, 4, 4] },
+                      { val: 'normal',   label: 'Normal',    desc: 'Balanceado',    bars: [6, 6, 6]    },
+                      { val: 'spacious', label: 'Espacioso', desc: 'Fácil de leer', bars: [10, 10]     },
                     ] as const).map(d => (
                       <button
                         key={d.val}
                         onClick={() => setUiPrefs(p => ({ ...p, density: d.val }))}
-                        className={`flex-1 p-6 rounded-2xl border-2 transition-all text-left ${
+                        className={`flex-1 p-4 rounded-xl border-2 transition-all text-left ${
                           uiPrefs.density === d.val
                             ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
-                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/[0.12]'
                         }`}
                       >
-                        <div className="flex flex-col gap-1 mb-4">
+                        <div className="flex flex-col gap-1 mb-3">
                           {d.bars.map((h, i) => (
                             <div key={i} className="rounded bg-slate-200 dark:bg-white/10 w-full" style={{ height: `${h}px` }} />
                           ))}
                         </div>
                         <p className="text-xs font-black text-slate-900 dark:text-white">{d.label}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{d.desc}</p>
+                        <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5">{d.desc}</p>
                       </button>
                     ))}
                   </div>
                 </div>
 
                 {/* Animation speed */}
-                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
-                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6 flex items-center gap-2">
-                    <Zap size={14} /> Velocidad de Animaciones
+                <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 mb-4 flex items-center gap-2">
+                    <Zap size={13} /> Velocidad de Animaciones
                   </h4>
-                  <div className="flex gap-3 flex-wrap">
+                  <div className="flex gap-2 flex-wrap">
                     {([
                       { val: 'fast',   label: 'Rápido'     },
                       { val: 'normal', label: 'Normal'     },
@@ -741,10 +742,10 @@ const Configuracion: React.FC = () => {
                       <button
                         key={s.val}
                         onClick={() => setUiPrefs(p => ({ ...p, animationSpeed: s.val }))}
-                        className={`flex-1 py-4 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${
+                        className={`flex-1 py-3 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${
                           uiPrefs.animationSpeed === s.val
                             ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400'
-                            : 'border-slate-100 dark:border-white/[0.06] text-slate-400 hover:border-slate-200 dark:hover:border-white/10'
+                            : 'border-slate-100 dark:border-white/[0.06] text-slate-400 dark:text-white/30 hover:border-slate-200 dark:hover:border-white/[0.12]'
                         }`}
                       >
                         {s.label}
@@ -754,19 +755,19 @@ const Configuracion: React.FC = () => {
                 </div>
 
                 {/* Date + number format */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Date format */}
-                  <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
-                    <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6">Formato de Fecha</h4>
-                    <div className="space-y-3">
+                  <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                    <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 mb-3">Formato de Fecha</h4>
+                    <div className="space-y-2">
                       {(['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'] as const).map(fmt => (
                         <button
                           key={fmt}
                           onClick={() => setUiPrefs(p => ({ ...p, dateFormat: fmt }))}
-                          className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 transition-all ${
+                          className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
                             uiPrefs.dateFormat === fmt
                               ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
-                              : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                              : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/[0.12]'
                           }`}
                         >
                           <span className="text-sm font-mono font-black text-slate-700 dark:text-slate-300">{fmt}</span>
@@ -777,9 +778,9 @@ const Configuracion: React.FC = () => {
                   </div>
 
                   {/* Number format */}
-                  <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 dark:bg-slate-900 dark:border-white/[0.06]">
-                    <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6">Separador de Miles</h4>
-                    <div className="space-y-3">
+                  <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                    <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 mb-3">Separador de Miles</h4>
+                    <div className="space-y-2">
                       {([
                         { val: 'dot',   example: '1.000.000,00', desc: 'Estilo europeo / latam' },
                         { val: 'comma', example: '1,000,000.00', desc: 'Estilo americano'        },
@@ -787,15 +788,15 @@ const Configuracion: React.FC = () => {
                         <button
                           key={n.val}
                           onClick={() => setUiPrefs(p => ({ ...p, numberFormat: n.val }))}
-                          className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl border-2 transition-all ${
+                          className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
                             uiPrefs.numberFormat === n.val
                               ? 'border-violet-500 bg-violet-50 dark:bg-violet-500/10'
-                              : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/10'
+                              : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/[0.12]'
                           }`}
                         >
                           <div className="text-left">
                             <span className="text-sm font-mono font-black text-slate-700 dark:text-slate-300 block">{n.example}</span>
-                            <span className="text-[10px] text-slate-400">{n.desc}</span>
+                            <span className="text-[10px] text-slate-400 dark:text-white/30">{n.desc}</span>
                           </div>
                           {uiPrefs.numberFormat === n.val && <div className="h-2 w-2 rounded-full bg-violet-500 shrink-0" />}
                         </button>
@@ -805,13 +806,13 @@ const Configuracion: React.FC = () => {
                 </div>
 
                 {/* Save button */}
-                <div className="flex justify-end pt-2">
+                <div className="flex justify-end pt-1">
                   <button
                     onClick={handleSaveUiPrefs}
                     disabled={savingPrefs}
-                    className="flex items-center gap-3 px-12 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:from-violet-700 hover:to-indigo-700 transition-all shadow-2xl shadow-violet-500/25 active:scale-95 disabled:opacity-50"
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:from-violet-500 hover:to-indigo-500 transition-all shadow-lg shadow-violet-500/25 active:scale-95 disabled:opacity-50"
                   >
-                    {savingPrefs ? <Loader2 className="animate-spin" size={18} /> : <><Save size={18} /> Guardar Preferencias</>}
+                    {savingPrefs ? <Loader2 className="animate-spin" size={15} /> : <><Save size={15} /> Guardar Preferencias</>}
                   </button>
                 </div>
 
@@ -824,39 +825,39 @@ const Configuracion: React.FC = () => {
 
       {/* PIN MODAL */}
       {pinModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95">
-            <div className="px-8 py-6 border-b border-slate-50 flex justify-between items-center">
-              <h2 className="text-xl font-black text-slate-900">Nuevo PIN Maestro</h2>
-              <button onClick={() => { setPinModal(false); setNewPinValue(''); }} className="p-2 hover:bg-slate-100 rounded-full transition-all">
-                <X size={20} />
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
+          <div className="bg-white dark:bg-[#0d1424] w-full max-w-sm rounded-2xl shadow-2xl shadow-black/40 border border-slate-100 dark:border-white/[0.08] overflow-hidden animate-in zoom-in-95">
+            <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] flex justify-between items-center bg-slate-50/50 dark:bg-white/[0.02]">
+              <h2 className="text-base font-black text-slate-900 dark:text-white">Nuevo PIN Maestro</h2>
+              <button onClick={() => { setPinModal(false); setNewPinValue(''); }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl transition-all text-slate-400 dark:text-white/40">
+                <X size={18} />
               </button>
             </div>
-            <div className="p-8 space-y-6">
-              <p className="text-sm text-slate-400 font-medium">Ingresa exactamente 4 dígitos numéricos.</p>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-slate-400 dark:text-white/40 font-medium">Ingresa exactamente 4 dígitos numéricos.</p>
               <input
                 type="password"
                 inputMode="numeric"
                 maxLength={4}
                 value={newPinValue}
                 onChange={e => setNewPinValue(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                className="w-full text-center text-3xl font-mono tracking-[1rem] px-6 py-5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-slate-900 outline-none"
+                className="w-full text-center text-3xl font-mono tracking-[1rem] px-5 py-4 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none dark:text-white"
                 placeholder="••••"
                 autoFocus
               />
               <div className="flex gap-3">
                 <button
                   onClick={() => { setPinModal(false); setNewPinValue(''); }}
-                  className="flex-1 py-4 bg-slate-100 text-slate-700 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
+                  className="flex-1 py-3 bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-white/[0.12] transition-all"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={handleSavePin}
                   disabled={newPinValue.length !== 4 || saving}
-                  className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-600 transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                  className="flex-1 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 transition-all disabled:opacity-40 flex items-center justify-center gap-2"
                 >
-                  {saving ? <Loader2 className="animate-spin" size={16} /> : 'Guardar PIN'}
+                  {saving ? <Loader2 className="animate-spin" size={14} /> : 'Guardar PIN'}
                 </button>
               </div>
             </div>

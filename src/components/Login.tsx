@@ -127,7 +127,7 @@ export default function Login() {
   };
 
   /* ── SHARED INPUT CLASS ──────────────────────────────── */
-  const inp = 'w-full pl-11 pr-4 py-4 bg-white/[0.06] border border-white/[0.1] text-white rounded-xl placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500/40 text-sm font-medium transition-all';
+  const inp = 'w-full pl-11 pr-4 py-4 bg-white dark:bg-slate-800/[0.06] border border-white/[0.1] text-white rounded-xl placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500/40 text-sm font-medium transition-all';
 
   /* ═══════════════════════════════════════════════════════
      RENDER
@@ -183,7 +183,7 @@ export default function Login() {
           <div className="space-y-4">
             {FEATURES.map(({ icon: Icon, label, desc }) => (
               <div key={label} className="flex items-center gap-4">
-                <div className="h-10 w-10 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0">
+                <div className="h-10 w-10 rounded-xl bg-white dark:bg-slate-900/[0.06] border border-white/10 flex items-center justify-center shrink-0">
                   <Icon size={17} className="text-indigo-400" />
                 </div>
                 <div>
@@ -359,7 +359,7 @@ export default function Login() {
                 {/* Passkey */}
                 <button
                   type="button" onClick={handlePasskey} disabled={pkLoading}
-                  className="w-full py-3.5 bg-white/[0.04] border border-white/[0.08] text-white/45 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/[0.08] hover:text-white/70 flex items-center justify-center gap-2 transition-all"
+                  className="w-full py-3.5 bg-white dark:bg-slate-900/[0.04] border border-white/[0.08] text-white/45 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white dark:hover:bg-slate-800 dark:bg-slate-900/[0.08] hover:text-white/70 flex items-center justify-center gap-2 transition-all"
                 >
                   <Fingerprint size={14} className="text-indigo-400" />
                   {pkLoading ? 'Validando...' : 'Usar Passkey'}
@@ -392,7 +392,7 @@ export default function Login() {
               {recents.length === 0 ? (
                 <div className="px-6 py-10 text-xs font-bold text-white/20 text-center uppercase tracking-widest">Sin usuarios recientes</div>
               ) : recents.map(u => (
-                <div key={u.email} className="flex items-center gap-3 px-6 py-4 hover:bg-white/[0.04] transition-colors">
+                <div key={u.email} className="flex items-center gap-3 px-6 py-4 hover:bg-white dark:hover:bg-slate-800 dark:bg-slate-900/[0.04] transition-colors">
                   <button type="button" onClick={() => { setEmail(u.email); setPicker(false); }} className="flex-1 text-left">
                     <div className="text-sm font-bold text-white">{u.email}</div>
                     <div className="text-[9px] font-bold text-white/20 mt-0.5">{new Date(u.lastUsed).toLocaleDateString()}</div>

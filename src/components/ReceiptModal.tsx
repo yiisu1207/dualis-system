@@ -88,11 +88,11 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
         {/* AREA DE CAPTURA */}
         <div
           ref={receiptRef}
-          className="bg-white p-10 rounded-t-[2rem] border-b-2 border-dashed border-slate-100 relative"
+          className="bg-white dark:bg-slate-900 p-10 rounded-t-[2rem] border-b-2 border-dashed border-slate-100 dark:border-white/[0.07] relative"
         >
           <div className="text-center mb-8">
             <div className="text-4xl mb-4">👗</div>
-            <h2 className="text-xl font-black text-slate-800 uppercase italic leading-none">
+            <h2 className="text-xl font-black text-slate-800 dark:text-slate-200 uppercase italic leading-none">
               {config.companyName}
             </h2>
             <p className="text-[10px] font-black text-indigo-500 tracking-[0.3em] uppercase mt-2">
@@ -101,24 +101,24 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
           </div>
 
           <div className="space-y-4 mb-8">
-            <div className="flex justify-between border-b pb-2">
+            <div className="flex justify-between border-b dark:border-white/[0.07] pb-2">
               <span className="text-[9px] font-black text-slate-400 uppercase">Fecha</span>
-              <span className="text-xs font-bold text-slate-800">{movement.date}</span>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{movement.date}</span>
             </div>
-            <div className="flex justify-between border-b pb-2">
+            <div className="flex justify-between border-b dark:border-white/[0.07] pb-2">
               <span className="text-[9px] font-black text-slate-400 uppercase">Cliente</span>
-              <span className="text-xs font-bold text-slate-800 uppercase">
-                {movement.entityId}
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">
+                {movement.entityId === 'CONSUMIDOR_FINAL' ? 'Consumidor Final' : (movement.entityId || '—')}
               </span>
             </div>
-            <div className="flex justify-between border-b pb-2">
+            <div className="flex justify-between border-b dark:border-white/[0.07] pb-2">
               <span className="text-[9px] font-black text-slate-400 uppercase">Operación</span>
               {/* Fix: Changed mismatched </p> to </span> to correctly close the opening tag */}
               <span
                 className={`text-[10px] font-black px-2 py-0.5 rounded ${
                   movement.movementType === MovementType.FACTURA
-                    ? 'bg-rose-50 text-rose-500'
-                    : 'bg-emerald-50 text-emerald-500'
+                    ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400'
+                    : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 dark:text-emerald-400'
                 }`}
               >
                 {movement.movementType}
@@ -126,16 +126,16 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
             </div>
             <div className="pt-2">
               <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Concepto</p>
-              <p className="text-sm font-bold text-slate-700 leading-tight">{movement.concept}</p>
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300 leading-tight">{movement.concept}</p>
             </div>
           </div>
 
-          <div className="bg-slate-50 p-6 rounded-3xl">
+          <div className="bg-slate-50 dark:bg-white/[0.04] p-6 rounded-3xl">
             {((movement as any).ivaAmount > 0 || (movement as any).igtfAmount > 0 || (movement as any).discountAmount > 0) && (
               <div className="space-y-1.5 mb-4 text-[11px]">
                 {(movement as any).ivaAmount > 0 && (
                   <>
-                    <div className="flex justify-between font-bold text-slate-500">
+                    <div className="flex justify-between font-bold text-slate-500 dark:text-slate-400">
                       <span>Base</span>
                       <span>{formatCurrency((movement as any).subtotalUSD ?? getMovementUsdAmount(movement))}</span>
                     </div>
@@ -154,7 +154,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
                 {(movement as any).igtfAmount > 0 && (
                   <>
                     {((movement as any).ivaAmount > 0 || (movement as any).discountAmount > 0) && (
-                      <div className="flex justify-between font-bold text-slate-400">
+                      <div className="flex justify-between font-bold text-slate-400 dark:text-slate-500">
                         <span>Sub-total</span>
                         <span>{formatCurrency(getMovementUsdAmount(movement) - ((movement as any).igtfAmount ?? 0))}</span>
                       </div>
@@ -165,14 +165,14 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
                     </div>
                   </>
                 )}
-                <div className="border-t border-slate-200 pt-1.5" />
+                <div className="border-t border-slate-200 dark:border-white/10 pt-1.5" />
               </div>
             )}
             <div className="text-center">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
                 Total Transacción
               </p>
-              <p className="text-3xl font-black text-slate-900">
+              <p className="text-3xl font-black text-slate-900 dark:text-white">
                 {formatCurrency(getMovementUsdAmount(movement))}
               </p>
               {movement.rateUsed > 1 && (
@@ -183,11 +183,11 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
             </div>
           </div>
 
-          <div className="absolute -bottom-3 -left-3 w-6 h-6 bg-slate-900 rounded-full"></div>
-          <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-slate-900 rounded-full"></div>
+          <div className="absolute -bottom-3 -left-3 w-6 h-6 bg-slate-900 dark:bg-slate-950 rounded-full"></div>
+          <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-slate-900 dark:bg-slate-950 rounded-full"></div>
         </div>
 
-        <div className="bg-white px-10 pb-10 rounded-b-[2rem] flex flex-col gap-3">
+        <div className="bg-white dark:bg-slate-900 px-10 pb-10 rounded-b-[2rem] flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => printTicket(movement, config.companyName)}
@@ -216,14 +216,14 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
           {customerPhone && (
             <button
               onClick={downloadReceipt}
-              className="w-full py-3 bg-indigo-50 text-indigo-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-100 transition-all"
+              className="w-full py-3 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all"
             >
               Descargar Imagen
             </button>
           )}
           <button
             onClick={onClose}
-            className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
+            className="w-full py-4 bg-slate-100 dark:bg-white/[0.07] text-slate-500 dark:text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-white/[0.12] transition-all"
           >
             Cerrar
           </button>

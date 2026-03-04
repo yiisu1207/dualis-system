@@ -45,12 +45,12 @@ interface Props {
 }
 
 const ACTION_META: Record<AuditAction, { label: string; color: string; bg: string; Icon: React.ElementType }> = {
-  CREAR:    { label: 'Creado',    color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-100', Icon: Plus },
-  EDITAR:   { label: 'Editado',   color: 'text-blue-700',    bg: 'bg-blue-50 border-blue-100',       Icon: Pencil },
-  ELIMINAR: { label: 'Eliminado', color: 'text-rose-700',    bg: 'bg-rose-50 border-rose-100',       Icon: Trash2 },
-  LOGIN:    { label: 'Acceso',    color: 'text-violet-700',  bg: 'bg-violet-50 border-violet-100',   Icon: LogIn },
-  AJUSTE:   { label: 'Ajuste',    color: 'text-amber-700',   bg: 'bg-amber-50 border-amber-100',     Icon: SlidersHorizontal },
-  EXPORTAR: { label: 'Exportado', color: 'text-slate-600',   bg: 'bg-slate-50 border-slate-200',     Icon: FileOutput },
+  CREAR:    { label: 'Creado',    color: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-50 border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20', Icon: Plus },
+  EDITAR:   { label: 'Editado',   color: 'text-blue-700 dark:text-blue-400',       bg: 'bg-blue-50 border-blue-100 dark:bg-blue-500/10 dark:border-blue-500/20',             Icon: Pencil },
+  ELIMINAR: { label: 'Eliminado', color: 'text-rose-700 dark:text-rose-400',       bg: 'bg-rose-50 border-rose-100 dark:bg-rose-500/10 dark:border-rose-500/20',             Icon: Trash2 },
+  LOGIN:    { label: 'Acceso',    color: 'text-violet-700 dark:text-violet-400',   bg: 'bg-violet-50 border-violet-100 dark:bg-violet-500/10 dark:border-violet-500/20',     Icon: LogIn },
+  AJUSTE:   { label: 'Ajuste',    color: 'text-amber-700 dark:text-amber-400',     bg: 'bg-amber-50 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20',         Icon: SlidersHorizontal },
+  EXPORTAR: { label: 'Exportado', color: 'text-slate-600 dark:text-slate-400',     bg: 'bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/10',            Icon: FileOutput },
 };
 
 // Tipos de movimiento para el filtro Kardex
@@ -241,16 +241,16 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
   const hasFilters = filterAction !== 'TODOS' || filterEntity || search || fromDate !== getDefaultFromDate() || toDate !== new Date().toISOString().split('T')[0];
 
   return (
-    <div className="bg-white rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden">
+    <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-100 dark:border-white/[0.07] shadow-xl shadow-slate-200/50 dark:shadow-black/30 overflow-hidden">
 
       {/* Header */}
-      <div className="p-8 border-b border-slate-50 bg-gradient-to-br from-slate-50 to-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-8 border-b border-slate-50 dark:border-white/[0.07] bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="h-12 w-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <div className="h-12 w-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
             <Activity size={22} />
           </div>
           <div>
-            <h4 className="text-lg font-black text-slate-900 tracking-tight">Kardex / Historial de Auditoría</h4>
+            <h4 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">Kardex / Historial de Auditoría</h4>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
               {filtered.length} registro{filtered.length !== 1 ? 's' : ''} visibles
               {fromDate && toDate ? ` · ${fromDate} → ${toDate}` : ''}
@@ -285,36 +285,36 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
       </div>
 
       {/* Filters */}
-      <div className="px-8 py-5 border-b border-slate-50 flex flex-wrap gap-3 items-center bg-white">
+      <div className="px-8 py-5 border-b border-slate-50 dark:border-white/[0.07] flex flex-wrap gap-3 items-center bg-white dark:bg-slate-900">
 
         {/* Date range */}
-        <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-2.5">
+        <div className="flex items-center gap-2 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl px-4 py-2.5">
           <Calendar size={13} className="text-indigo-400 shrink-0" />
           <input
             type="date"
             value={fromDate}
             onChange={e => setFromDate(e.target.value)}
-            className="bg-transparent text-xs font-bold text-slate-700 outline-none w-[120px]"
+            className="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-300 outline-none w-[120px] dark:[color-scheme:dark]"
             title="Desde"
           />
-          <span className="text-slate-300 text-xs">→</span>
+          <span className="text-slate-300 dark:text-slate-600 dark:text-slate-400 text-xs">→</span>
           <input
             type="date"
             value={toDate}
             onChange={e => setToDate(e.target.value)}
-            className="bg-transparent text-xs font-bold text-slate-700 outline-none w-[120px]"
+            className="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-300 outline-none w-[120px] dark:[color-scheme:dark]"
             title="Hasta"
           />
         </div>
 
         {/* Search */}
-        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 flex-1 min-w-[180px]">
+        <div className="flex items-center gap-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 flex-1 min-w-[180px]">
           <Search size={13} className="text-slate-400 shrink-0" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar detalles, referencia, usuario…"
-            className="bg-transparent text-xs font-semibold text-slate-700 placeholder:text-slate-300 outline-none w-full"
+            className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 placeholder:text-slate-300 dark:placeholder:text-slate-500 outline-none w-full"
           />
         </div>
 
@@ -323,7 +323,7 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
           <select
             value={filterAction}
             onChange={e => setFilterAction(e.target.value as any)}
-            className="appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-8 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-600 outline-none cursor-pointer hover:border-slate-300 transition-all"
+            className="appearance-none bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-xl pl-4 pr-8 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 outline-none cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20 transition-all dark:[color-scheme:dark]"
           >
             <option value="TODOS">Todos los tipos</option>
             {ACTIONS.map(a => (
@@ -339,7 +339,7 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
             <select
               value={filterEntity}
               onChange={e => setFilterEntity(e.target.value)}
-              className="appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-8 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-600 outline-none cursor-pointer hover:border-slate-300 transition-all"
+              className="appearance-none bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-xl pl-4 pr-8 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 outline-none cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20 transition-all dark:[color-scheme:dark]"
             >
               <option value="">Todas las entidades</option>
               {entities.map(en => <option key={en} value={en}>{en}</option>)}
@@ -357,7 +357,7 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
               setFromDate(getDefaultFromDate());
               setToDate(new Date().toISOString().split('T')[0]);
             }}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-rose-500 border border-rose-100 bg-rose-50 hover:bg-rose-100 transition-all"
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-rose-500 dark:text-rose-400 border border-rose-100 dark:border-rose-500/20 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all"
           >
             <RefreshCw size={11} /> Limpiar
           </button>
@@ -367,20 +367,20 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
       {/* Table */}
       <div className="overflow-x-auto">
         {loading ? (
-          <div className="py-16 flex items-center justify-center gap-3 text-slate-400">
+          <div className="py-16 flex items-center justify-center gap-3 text-slate-400 dark:text-slate-500">
             <RefreshCw size={18} className="animate-spin" />
             <span className="text-sm font-semibold">Cargando registros…</span>
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center">
-            <Activity size={32} className="mx-auto text-slate-200 mb-3" />
-            <p className="text-sm font-semibold text-slate-400">Sin registros para los filtros aplicados</p>
-            <p className="text-xs text-slate-300 mt-1">Intenta ampliar el rango de fechas o cambiar los filtros</p>
+            <Activity size={32} className="mx-auto text-slate-200 dark:text-slate-700 dark:text-slate-300 mb-3" />
+            <p className="text-sm font-semibold text-slate-400 dark:text-slate-500">Sin registros para los filtros aplicados</p>
+            <p className="text-xs text-slate-300 dark:text-slate-600 dark:text-slate-400 mt-1">Intenta ampliar el rango de fechas o cambiar los filtros</p>
           </div>
         ) : (
           <table className="w-full text-left">
             <thead>
-              <tr className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-300 border-b border-slate-50 bg-slate-50/40">
+              <tr className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 border-b border-slate-50 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02]">
                 <th className="px-8 py-4">Fecha / Hora</th>
                 <th className="px-5 py-4">Tipo</th>
                 <th className="px-5 py-4">Entidad</th>
@@ -390,16 +390,16 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
                 <th className="px-5 py-4">Usuario</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
               {filtered.map(entry => {
                 const meta = ACTION_META[entry.action] ?? ACTION_META['AJUSTE'];
                 const { date, time } = fmt(entry.timestamp);
                 const motivo = entry.referencia || entry.details || '—';
                 const hasStock = entry.stockAnterior != null || entry.stockNuevo != null;
                 return (
-                  <tr key={entry.id} className="group hover:bg-slate-50/60 transition-colors">
+                  <tr key={entry.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50/60 dark:hover:bg-white dark:hover:bg-slate-800 dark:bg-slate-900/[0.03] transition-colors">
                     <td className="px-8 py-4 whitespace-nowrap">
-                      <span className="text-[11px] font-bold text-slate-700">{date}</span>
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{date}</span>
                       <span className="ml-2 text-[10px] font-medium text-slate-400">{time}</span>
                     </td>
                     <td className="px-5 py-4">
@@ -409,13 +409,13 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
                       </span>
                     </td>
                     <td className="px-5 py-4">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-white/[0.07] px-3 py-1.5 rounded-lg">
                         {entry.entity}
                       </span>
                     </td>
                     <td className="px-5 py-4 max-w-xs">
                       <span
-                        className="text-xs font-medium text-slate-600 truncate block max-w-[240px]"
+                        className="text-xs font-medium text-slate-600 dark:text-slate-400 truncate block max-w-[240px]"
                         title={motivo}
                       >
                         {motivo}
@@ -423,28 +423,28 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
                     </td>
                     <td className="px-5 py-4 text-center">
                       {hasStock && entry.stockAnterior != null ? (
-                        <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-white/[0.07] px-2 py-0.5 rounded-md">
                           {entry.stockAnterior}
                         </span>
                       ) : (
-                        <span className="text-slate-200 text-xs">—</span>
+                        <span className="text-slate-200 dark:text-slate-700 dark:text-slate-300 text-xs">—</span>
                       )}
                     </td>
                     <td className="px-5 py-4 text-center">
                       {hasStock && entry.stockNuevo != null ? (
                         <span className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
                           entry.stockNuevo > (entry.stockAnterior ?? 0)
-                            ? 'text-emerald-700 bg-emerald-50'
-                            : 'text-rose-600 bg-rose-50'
+                            ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
+                            : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10'
                         }`}>
                           {entry.stockNuevo}
                         </span>
                       ) : (
-                        <span className="text-slate-200 text-xs">—</span>
+                        <span className="text-slate-200 dark:text-slate-700 dark:text-slate-300 text-xs">—</span>
                       )}
                     </td>
                     <td className="px-5 py-4">
-                      <span className="text-[10px] font-mono text-slate-400">{shortUid(entry.userId)}</span>
+                      <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">{shortUid(entry.userId)}</span>
                     </td>
                   </tr>
                 );
@@ -456,11 +456,11 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
 
       {/* Footer summary */}
       {filtered.length > 0 && (
-        <div className="px-8 py-4 border-t border-slate-50 bg-slate-50/30 flex items-center justify-between">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+        <div className="px-8 py-4 border-t border-slate-50 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] flex items-center justify-between">
+          <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
             Mostrando {filtered.length} de {entries.length} registros
           </p>
-          <p className="text-[10px] font-bold text-slate-300">
+          <p className="text-[10px] font-bold text-slate-300 dark:text-slate-600 dark:text-slate-400">
             {entries.length >= PAGE_SIZE ? `Límite: ${PAGE_SIZE} entradas más recientes` : 'Todos los registros cargados'}
           </p>
         </div>

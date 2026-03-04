@@ -81,7 +81,7 @@ const DirectorySection: React.FC<DirectorySectionProps> = ({
               <th className="px-6 py-4 text-right">Acciones</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
             {filteredEntities.length === 0 ? (
               <tr>
                 <td

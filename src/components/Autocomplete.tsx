@@ -101,7 +101,7 @@ function Autocomplete<T>({
     <div ref={containerRef} className="relative">
       <input
         autoFocus={autoFocus}
-        className={inputClassName || 'w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all'}
+        className={inputClassName || 'w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl font-bold text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all'}
         placeholder={placeholder || 'Buscar...'}
         value={term}
         onChange={(e) => {
@@ -115,7 +115,7 @@ function Autocomplete<T>({
       />
 
       {open && (
-        <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden max-h-56 overflow-y-auto">
+        <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-white/[0.07] overflow-hidden max-h-56 overflow-y-auto">
           {filtered.map((it, idx) => (
             <button
               key={idx}
@@ -123,11 +123,11 @@ function Autocomplete<T>({
               className={`w-full text-left px-4 py-2.5 transition-colors ${
                 idx === highlighted
                   ? 'bg-[var(--ui-soft)] text-[var(--ui-accent)]'
-                  : 'hover:bg-slate-50'
+                  : 'hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50'
               }`}
               onClick={() => selectItem(it)}
             >
-              <div className={`font-bold text-sm ${idx === highlighted ? 'text-[var(--ui-accent)]' : 'text-slate-800'}`}>
+              <div className={`font-bold text-sm ${idx === highlighted ? 'text-[var(--ui-accent)]' : 'text-slate-800 dark:text-slate-200'}`}>
                 {stringify(it)}
               </div>
               {secondary && <div className="text-[11px] text-slate-400">{secondary(it)}</div>}
@@ -135,10 +135,10 @@ function Autocomplete<T>({
           ))}
 
           {!exactExists && term.trim().length > 0 && onCreate && (
-            <div className="p-2 border-t border-slate-100">
+            <div className="p-2 border-t border-slate-100 dark:border-white/[0.07]">
               <button
                 type="button"
-                className="w-full text-left px-3 py-2 rounded-lg bg-slate-50 hover:bg-[var(--ui-soft)] text-xs font-bold text-slate-600 hover:text-[var(--ui-accent)] transition-colors"
+                className="w-full text-left px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 hover:bg-[var(--ui-soft)] text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-[var(--ui-accent)] transition-colors"
                 onClick={() => {
                   if (onChange) onChange(term);
                   onCreate(term);

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../firebase/config';
 import { doc, setDoc, addDoc, collection, getDoc } from 'firebase/firestore';
@@ -16,7 +15,6 @@ const SETUP_STEPS_META = [
 ];
 
 export default function OnboardingWizard() {
-  const navigate = useNavigate();
   const { user, userProfile, updateUserProfile } = useAuth();
   const tenantId = userProfile?.businessId;
 
@@ -53,6 +51,27 @@ export default function OnboardingWizard() {
 
   const f = (key: string, val: unknown) =>
     setFormData(prev => ({ ...prev, [key]: val }));
+
+  // ── Formateadores venezolanos ──────────────────────────────────────────────
+  const formatRif = (raw: string): string => {
+    const clean = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (!clean) return '';
+    const first = clean[0];
+    if (!/[JVGECPF]/.test(first)) return clean.slice(0, 9); // solo dígitos
+    const digits = clean.slice(1).replace(/\D/g, '').slice(0, 9);
+    if (digits.length === 0) return first;
+    if (digits.length < 9) return `${first}-${digits}`;
+    return `${first}-${digits.slice(0, 8)}-${digits.slice(8, 9)}`;
+  };
+
+  const formatPhone = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return raw;
+    if (digits.startsWith('58')) return `+${digits}`;
+    if (digits.startsWith('04') || digits.startsWith('02')) return `+58${digits.slice(1)}`;
+    if (digits.startsWith('4') || digits.startsWith('2')) return `+58${digits}`;
+    return raw;
+  };
 
   // Pre-fill company name if business already has one
   useEffect(() => {
@@ -180,9 +199,11 @@ export default function OnboardingWizard() {
         });
       }
 
+      // Force full reload so the auth context re-reads the fresh status from Firestore
+      // before entering the admin system (avoids redirect loops from stale React state).
       setTimeout(() => {
-        navigate(`/${currentTenantId}/admin/dashboard`, { replace: true });
-      }, 500);
+        window.location.replace(`/${currentTenantId}/admin/dashboard`);
+      }, 600);
     } catch (err: any) {
       console.error(err);
       setError(err?.message || 'Error al guardar la configuración. Intenta de nuevo.');
@@ -191,7 +212,7 @@ export default function OnboardingWizard() {
     }
   };
 
-  const inputClasses = "w-full px-5 py-4 bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-2xl text-sm font-bold focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-white/10 focus:border-slate-900 dark:focus:border-white/30 transition-all outline-none shadow-inner dark:shadow-none placeholder:text-slate-400 dark:placeholder:text-white/20";
+  const inputClasses = "w-full px-5 py-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-2xl text-sm font-bold focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-white/10 focus:border-slate-900 dark:focus:border-white/30 transition-all outline-none shadow-inner dark:shadow-none placeholder:text-slate-400 dark:placeholder:text-white/20";
 
   const pinBoxClass = (entered: boolean, valid: boolean) =>
     `h-14 w-12 rounded-2xl border-2 flex items-center justify-center text-2xl font-black transition-all ${
@@ -199,7 +220,7 @@ export default function OnboardingWizard() {
         ? valid
           ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
           : 'border-rose-500 bg-rose-500/10 text-rose-400'
-        : 'border-white/10 bg-white/5 text-white/20'
+        : 'border-white/10 bg-white dark:bg-slate-900/5 text-white/20'
     }`;
 
   return (
@@ -211,7 +232,7 @@ export default function OnboardingWizard() {
           <div className="flex items-center gap-3 mb-8 px-2">
             <div className="flex items-center gap-1.5 flex-1">
               {[1,2,3,4].map(i => (
-                <div key={i} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= i ? 'bg-slate-900 dark:bg-white' : 'bg-slate-200 dark:bg-white/10'}`} />
+                <div key={i} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= i ? 'bg-slate-900 dark:bg-white' : 'bg-slate-200 dark:bg-slate-700'}`} />
               ))}
             </div>
             <span className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest shrink-0">
@@ -334,7 +355,7 @@ export default function OnboardingWizard() {
                       className={`${inputClasses} pl-14`}
                       placeholder="J-12345678-0"
                       value={formData.rif}
-                      onChange={e => f('rif', e.target.value.toUpperCase())}
+                      onChange={e => f('rif', formatRif(e.target.value))}
                     />
                   </div>
                 </div>
@@ -345,9 +366,9 @@ export default function OnboardingWizard() {
                       <Phone className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                       <input
                         className={`${inputClasses} pl-14`}
-                        placeholder="+58 412 0000000"
+                        placeholder="04XX-0000000"
                         value={formData.phone}
-                        onChange={e => f('phone', e.target.value)}
+                        onChange={e => f('phone', formatPhone(e.target.value))}
                       />
                     </div>
                   </div>
@@ -422,9 +443,9 @@ export default function OnboardingWizard() {
                     <button
                       type="button"
                       onClick={() => f('igtfEnabled', !formData.igtfEnabled)}
-                      className={`relative h-7 w-12 rounded-full transition-colors ${formData.igtfEnabled ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-white/10'}`}
+                      className={`relative h-7 w-12 rounded-full transition-colors ${formData.igtfEnabled ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`}
                     >
-                      <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-all duration-200 ${formData.igtfEnabled ? 'left-6' : 'left-1'}`} />
+                      <span className={`absolute top-1 h-5 w-5 rounded-full bg-white dark:bg-slate-900 shadow-sm transition-all duration-200 ${formData.igtfEnabled ? 'left-6' : 'left-1'}`} />
                     </button>
                   </div>
                   {formData.igtfEnabled && (
@@ -445,10 +466,10 @@ export default function OnboardingWizard() {
                 </div>
               </div>
               <div className="flex gap-4">
-                <button onClick={() => setStep(1)} className="flex-1 py-5 bg-slate-50 dark:bg-white/[0.05] text-slate-400 dark:text-white/40 rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
+                <button onClick={() => setStep(1)} className="flex-1 py-5 bg-slate-50 dark:bg-white/[0.05] text-slate-400 dark:text-white/40 rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
                   Volver
                 </button>
-                <button onClick={() => tryNext(3)} className="flex-[2] py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl">
+                <button onClick={() => tryNext(3)} className="flex-[2] py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors">
                   Continuar
                 </button>
               </div>
@@ -495,10 +516,10 @@ export default function OnboardingWizard() {
                 </div>
               </div>
               <div className="flex gap-4">
-                <button onClick={() => setStep(2)} className="flex-1 py-5 bg-slate-50 dark:bg-white/[0.05] text-slate-400 dark:text-white/40 rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
+                <button onClick={() => setStep(2)} className="flex-1 py-5 bg-slate-50 dark:bg-white/[0.05] text-slate-400 dark:text-white/40 rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
                   Volver
                 </button>
-                <button onClick={() => tryNext(4)} className="flex-[2] py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl">
+                <button onClick={() => tryNext(4)} className="flex-[2] py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-slate-800 dark:hover:bg-slate-100 transition-colors">
                   Continuar
                 </button>
               </div>
@@ -593,13 +614,13 @@ export default function OnboardingWizard() {
               </div>
 
               <div className="flex gap-4 pt-2">
-                <button onClick={() => setStep(3)} className="flex-1 py-5 bg-slate-50 dark:bg-white/[0.05] text-slate-400 dark:text-white/40 rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
+                <button onClick={() => setStep(3)} className="flex-1 py-5 bg-slate-50 dark:bg-white/[0.05] text-slate-400 dark:text-white/40 rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
                   Volver
                 </button>
                 <button
                   disabled={loading || formData.pin.length < 4 || formData.pin !== formData.pinConfirm}
                   onClick={handleFinish}
-                  className="flex-[2] py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl disabled:opacity-50 flex items-center justify-center gap-3 transition-all"
+                  className="flex-[2] py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl disabled:opacity-50 flex items-center justify-center gap-3 hover:bg-slate-800 dark:hover:bg-slate-100 transition-all"
                 >
                   {loading
                     ? <Loader2 className="animate-spin" size={18} />

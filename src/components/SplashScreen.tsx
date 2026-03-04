@@ -50,7 +50,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({
       <button
         type="button"
         onClick={startFade}
-        className="absolute top-6 right-6 px-4 py-2 rounded-full bg-white/10 text-white text-[10px] font-black uppercase tracking-widest border border-white/20 hover:bg-white/20 transition"
+        className="absolute top-6 right-6 px-4 py-2 rounded-full bg-white dark:bg-slate-900/10 text-white text-[10px] font-black uppercase tracking-widest border border-white/20 hover:bg-white dark:hover:bg-slate-800 dark:bg-slate-900/20 transition"
       >
         Omitir
       </button>

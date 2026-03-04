@@ -124,7 +124,7 @@ const StatementSection: React.FC<StatementSectionProps> = ({ customers, movement
                   <th className="px-8 py-4 text-right bg-indigo-50/30">Saldo Adeudado</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
                 {statementData.length === 0 ? (
                   <tr>
                     <td

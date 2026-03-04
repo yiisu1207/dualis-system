@@ -426,7 +426,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
           onClick={() => setShowAdd(!showAdd)}
           disabled={!canCreateSupplier}
           className={`px-6 py-2 text-[10px] app-btn ${
-            canCreateSupplier ? 'app-btn-primary' : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+            canCreateSupplier ? 'app-btn-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed'
           }`}
         >
           + Nuevo Proveedor
@@ -436,10 +436,10 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
         {/* TABLA PROVEEDORES */}
         <div className="lg:col-span-2 app-panel overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2 bg-white">
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-white/[0.07] flex items-center gap-2 bg-white dark:bg-slate-800">
             <i className="fa-solid fa-magnifying-glass text-slate-300 text-xs" />
             <input
-              className="flex-1 text-sm font-medium text-slate-700 outline-none placeholder:text-slate-300 bg-transparent"
+              className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-500 bg-transparent"
               placeholder="Buscar proveedor..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
@@ -463,7 +463,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
               </div>
             ) : (
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black tracking-widest sticky top-0">
+                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 text-[10px] uppercase font-black tracking-widest sticky top-0">
                   <tr>
                     <th className="p-4">Empresa / Fábrica</th>
                     <th className="p-4">Contacto</th>
@@ -471,7 +471,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                     <th className="p-4 text-center">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
                   {supplierStats.filter(s =>
                     !searchTerm || (s.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (s.rif || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -479,16 +479,16 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                   ).map((s) => (
                     <tr
                       key={s.id}
-                      className={`hover:bg-slate-50 transition-colors cursor-pointer ${
-                        selectedSupplierId === s.id ? 'bg-blue-50' : ''
+                      className={`hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
+                        selectedSupplierId === s.id ? 'bg-blue-50 dark:bg-blue-500/10' : ''
                       }`}
                       onClick={() => setSelectedSupplierId(s.id)}
                     >
                       <td className="p-4">
-                        <p className="font-bold text-slate-700">{s.id}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">{s.rif}</p>
+                        <p className="font-bold text-slate-700 dark:text-slate-200">{s.id}</p>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase">{s.rif}</p>
                       </td>
-                      <td className="p-4 text-xs font-medium text-slate-500">{s.contacto}</td>
+                      <td className="p-4 text-xs font-medium text-slate-500 dark:text-slate-400">{s.contacto}</td>
                       <td className="p-4 text-right align-top">
                         <div className="flex flex-col items-end text-[11px] font-semibold">
                           <div
@@ -498,7 +498,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                           >
                             <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
                             <span
-                              className="uppercase text-[10px] font-black text-slate-500"
+                              className="uppercase text-[10px] font-black text-slate-500 dark:text-slate-400"
                               title="Saldo en bolivares segun tasa BCV"
                             >
                               BCV
@@ -514,7 +514,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                           >
                             <span className="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>
                             <span
-                              className="uppercase text-[10px] font-black text-slate-500"
+                              className="uppercase text-[10px] font-black text-slate-500 dark:text-slate-400"
                               title="Saldo en divisa manejado internamente"
                             >
                               GRUPO
@@ -530,7 +530,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                           >
                             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
                             <span
-                              className="uppercase text-[10px] font-black text-slate-500"
+                              className="uppercase text-[10px] font-black text-slate-500 dark:text-slate-400"
                               title="Saldo en caja divisa (USD)"
                             >
                               DIVISA
@@ -586,11 +586,11 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
         </div>
 
         {/* PANEL DE ACCIÓN & HISTORIAL */}
-        <div className="bg-white rounded-[1.5rem] shadow-md border border-slate-200 flex flex-col h-fit overflow-hidden max-h-full">
+        <div className="bg-white dark:bg-slate-900 rounded-[1.5rem] shadow-md dark:shadow-black/20 border border-slate-200 dark:border-white/10 flex flex-col h-fit overflow-hidden max-h-full">
           {selectedSupplierId ? (
             <>
-              <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                <h3 className="font-black text-slate-700 text-xs uppercase tracking-widest">
+              <div className="p-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center">
+                <h3 className="font-black text-slate-700 dark:text-slate-200 text-xs uppercase tracking-widest">
                   {viewHistory ? 'Historial Detallado' : 'Operaciones Rápidas'}
                 </h3>
                 <button
@@ -601,8 +601,8 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                 </button>
               </div>
 
-              <div className="text-center p-4 bg-slate-50">
-                <h3 className="font-black text-slate-800 leading-none">
+              <div className="text-center p-4 bg-slate-50 dark:bg-slate-800/50">
+                <h3 className="font-black text-slate-800 dark:text-slate-200 leading-none">
                   {selectedSupplierId}
                 </h3>
               </div>
@@ -615,8 +615,8 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                       onClick={() => setDetailAccountFilter('ALL')}
                       className={`px-3 py-1 text-[10px] font-black uppercase rounded-full border transition-colors ${
                         detailAccountFilter === 'ALL'
-                          ? 'bg-white text-slate-900 border-slate-900'
-                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white border-slate-900 dark:border-white/30'
+                          : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10'
                       }`}
                     >
                       Global
@@ -627,7 +627,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                       className={`px-3 py-1 text-[10px] font-black uppercase rounded-full border transition-colors ${
                         detailAccountFilter === AccountType.BCV
                           ? 'bg-indigo-600 text-white border-indigo-600'
-                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                          : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10'
                       }`}
                     >
                       BCV
@@ -637,8 +637,8 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                       onClick={() => setDetailAccountFilter(AccountType.GRUPO)}
                       className={`px-3 py-1 text-[10px] font-black uppercase rounded-full border transition-colors ${
                         detailAccountFilter === AccountType.GRUPO
-                          ? 'bg-amber-500 text-slate-900 border-amber-500'
-                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                          ? 'bg-amber-500 text-slate-900 dark:text-white border-amber-500'
+                          : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10'
                       }`}
                     >
                       Grupo
@@ -649,17 +649,17 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                       className={`px-3 py-1 text-[10px] font-black uppercase rounded-full border transition-colors ${
                         detailAccountFilter === AccountType.DIVISA
                           ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-slate-100 text-slate-500 border-slate-200'
+                          : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10'
                       }`}
                     >
                       Divisa
                     </button>
                     <div className="flex flex-col gap-1 min-w-[200px]">
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
                         Periodo / Rango
                       </label>
                       <select
-                        className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700"
+                        className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200"
                         value={detailRangeFilter}
                         onChange={(e) =>
                           setDetailRangeFilter(
@@ -682,23 +682,23 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                     {detailRangeFilter === 'CUSTOM' && (
                       <div className="flex flex-wrap items-end gap-2">
                         <div className="flex flex-col gap-1">
-                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
                             Desde
                           </label>
                           <input
                             type="date"
-                            className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700"
+                            className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200"
                             value={detailRangeFrom}
                             onChange={(e) => setDetailRangeFrom(e.target.value)}
                           />
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
                             Hasta
                           </label>
                           <input
                             type="date"
-                            className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700"
+                            className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-200"
                             value={detailRangeTo}
                             onChange={(e) => setDetailRangeTo(e.target.value)}
                           />
@@ -707,13 +707,13 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                     )}
                   </div>
                   <div className="px-4 pb-3">
-                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">
                       Saldos Totales
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <div className="bg-white p-3 rounded-lg border border-slate-100 text-right">
+                      <div className="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-white/[0.07] text-right">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black text-blue-700 uppercase">BCV</span>
+                          <span className="text-[10px] font-black text-blue-700 dark:text-blue-400 uppercase">BCV</span>
                           <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                         </div>
                         <div
@@ -724,9 +724,9 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                           {formatCurrency(Math.abs(selectedSupplierTotals.bcv), '$')}
                         </div>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border border-slate-100 text-right">
+                      <div className="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-white/[0.07] text-right">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black text-orange-700 uppercase">Grupo</span>
+                          <span className="text-[10px] font-black text-orange-700 dark:text-orange-400 uppercase">Grupo</span>
                           <span className="w-2 h-2 rounded-full bg-orange-500"></span>
                         </div>
                         <div
@@ -737,9 +737,9 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                           {formatCurrency(Math.abs(selectedSupplierTotals.grupo), '$')}
                         </div>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border border-slate-100 text-right">
+                      <div className="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-white/[0.07] text-right">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black text-emerald-700 uppercase">Divisa</span>
+                          <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase">Divisa</span>
                           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                         </div>
                         <div
@@ -754,7 +754,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                   </div>
                   <div className="flex-1 overflow-y-auto custom-scroll">
                     <table className="w-full text-[11px]">
-                      <thead className="sticky top-0 bg-slate-50 text-slate-400 uppercase text-[9px] font-black tracking-widest">
+                      <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 uppercase text-[9px] font-black tracking-widest">
                         <tr>
                           <th className="p-3 text-left">Fecha</th>
                           <th className="p-3 text-left">Concepto</th>
@@ -766,25 +766,25 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                           <th className="p-3 text-center">Acciones</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
                         {detailMovementsDisplay.map((m: any) => {
                           const amountUsd = m.amountUsd ?? getMovementUsdAmount(m, rates);
                           const runningBalance = m.runningBalance ?? 0;
                           return (
-                            <tr key={m.id} className="hover:bg-slate-50:bg-white/70">
-                              <td className="p-3 text-slate-500 font-semibold">{m.date}</td>
+                            <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50:bg-white dark:bg-slate-900/70">
+                              <td className="p-3 text-slate-500 dark:text-slate-400 font-semibold">{m.date}</td>
                               <td className="p-3">
-                                <p className="font-bold text-slate-700 truncate">
+                                <p className="font-bold text-slate-700 dark:text-slate-200 truncate">
                                   {m.concept}
                                 </p>
                                 {m.expenseCategory && (
-                                  <p className="text-[9px] uppercase text-slate-400 font-bold">
+                                  <p className="text-[9px] uppercase text-slate-400 dark:text-slate-500 font-bold">
                                     {m.expenseCategory}
                                   </p>
                                 )}
                               </td>
                               <td className="p-3">
-                                <span className="inline-flex items-center gap-2 text-[9px] font-black uppercase text-slate-600">
+                                <span className="inline-flex items-center gap-2 text-[9px] font-black uppercase text-slate-600 dark:text-slate-400">
                                   <span
                                     className={`w-2 h-2 rounded-full ${resolveAccountDotClass(
                                       m.accountType || AccountType.DIVISA
@@ -797,8 +797,8 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                                 <span
                                   className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${
                                     m.movementType === MovementType.FACTURA
-                                      ? 'bg-rose-100 text-rose-600'
-                                      : 'bg-emerald-100 text-emerald-600'
+                                      ? 'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                                      : 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                                   }`}
                                 >
                                   {m.movementType}
@@ -929,7 +929,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                   />
 
                   <form onSubmit={handleRegister} onKeyDown={handleFormKeyDown}
-                    className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col gap-3">
+                    className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-sm dark:shadow-black/20 p-4 flex flex-col gap-3">
 
                     {/* Fila 1: Tipo + Cuenta + Adjuntos */}
                     <div className="flex flex-wrap items-center gap-2">
@@ -946,7 +946,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                               ? color === 'amber'
                                 ? 'bg-amber-500 text-white shadow-sm'
                                 : 'bg-emerald-500 text-white shadow-sm'
-                              : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                              : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400 hover:bg-slate-200'
                           }`}
                         >
                           {label}
@@ -972,7 +972,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                                 : color === 'orange'
                                 ? 'bg-orange-500 text-white shadow-sm'
                                 : 'bg-emerald-600 text-white shadow-sm'
-                              : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                              : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400 hover:bg-slate-200'
                           }`}
                         >
                           {label}
@@ -984,7 +984,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                         <button
                           type="button"
                           onClick={() => ocrInputRef.current?.click()}
-                          className="px-2.5 py-1.5 text-[10px] font-black uppercase bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors"
+                          className="px-2.5 py-1.5 text-[10px] font-black uppercase bg-slate-100 dark:bg-white/[0.07] hover:bg-slate-200 rounded-lg border border-slate-200 dark:border-white/10 transition-colors"
                         >
                           {ocrLoading ? '...' : 'OCR'}
                         </button>
@@ -994,7 +994,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                           className={`px-2.5 py-1.5 text-[10px] font-black uppercase rounded-lg border transition-colors ${
                             movData.invoiceImage
                               ? 'bg-amber-100 text-amber-700 border-amber-300'
-                              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200'
+                              : 'bg-slate-100 dark:bg-white/[0.07] text-slate-500 border-slate-200 dark:border-white/10 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200'
                           }`}
                         >
                           {movData.invoiceImage ? '📎 ✓' : '📎'}
@@ -1018,7 +1018,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                           allowNegative={false}
                           tabIndex={1}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); conceptoRef.current?.focus(); } }}
-                          className="w-32 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black text-base text-slate-800 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                          className="w-32 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl font-black text-base text-slate-800 dark:text-slate-200 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
                           placeholder="0,00"
                           required
                         />
@@ -1031,7 +1031,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                             type="number"
                             step="0.0001"
                             tabIndex={2}
-                            className="w-24 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-600 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                            className="w-24 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl font-bold text-sm text-slate-600 dark:text-slate-400 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
                             value={movData.rate}
                             onChange={e => setMovData(prev => ({ ...prev, rate: e.target.value }))}
                             required
@@ -1044,7 +1044,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Categoría</label>
                           <select
                             tabIndex={3}
-                            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-600 outline-none focus:border-[var(--ui-accent)] transition-all"
+                            className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 outline-none focus:border-[var(--ui-accent)] transition-all"
                             value={movData.expenseCategory}
                             onChange={e => setMovData(prev => ({ ...prev, expenseCategory: e.target.value }))}
                           >
@@ -1063,7 +1063,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                         <input
                           type="date"
                           tabIndex={4}
-                          className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-600 outline-none focus:border-[var(--ui-accent)] transition-all"
+                          className="px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 outline-none focus:border-[var(--ui-accent)] transition-all"
                           value={movData.date}
                           onChange={e => setMovData(prev => ({ ...prev, date: e.target.value }))}
                         />
@@ -1076,7 +1076,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                         <input
                           ref={conceptoRef}
                           tabIndex={5}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all placeholder:text-slate-300"
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl font-bold text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all placeholder:text-slate-300"
                           value={movData.concept}
                           onChange={e => setMovData(prev => ({ ...prev, concept: e.target.value }))}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleRegister(e as any); } }}
@@ -1128,7 +1128,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
       {/* MODAL EDIT MOVEMENT */}
       {editingMovement && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-sm">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl w-full max-w-sm">
             <h3 className="font-bold text-lg mb-4">Corregir Monto</h3>
             <NumericFormat
               value={editForm.amount}
@@ -1162,15 +1162,15 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <form
             onSubmit={handleSaveSupplier}
-            className="bg-white p-8 rounded-[2rem] shadow-2xl w-full max-w-md animate-in zoom-in"
+            className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] shadow-2xl w-full max-w-md animate-in zoom-in"
           >
-            <h3 className="font-black text-slate-800 uppercase italic text-lg mb-6">
+            <h3 className="font-black text-slate-800 dark:text-slate-200 uppercase italic text-lg mb-6">
               {editSupplier ? 'Editar Proveedor' : 'Nuevo Proveedor'}
             </h3>
             <div className="space-y-3">
               <input
                 placeholder="Nombre Empresa"
-                className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold outline-none"
+                className="w-full p-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold outline-none"
                 value={editSupplier ? editSupplier.id : newSupplier.id}
                 onChange={(e) =>
                   editSupplier
@@ -1181,7 +1181,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
               />
               <input
                 placeholder="RIF"
-                className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold outline-none"
+                className="w-full p-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold outline-none"
                 value={editSupplier ? editSupplier.rif : newSupplier.rif}
                 onChange={(e) =>
                   editSupplier
@@ -1191,7 +1191,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
               />
               <input
                 placeholder="Contacto / Tel"
-                className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold outline-none"
+                className="w-full p-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold outline-none"
                 value={editSupplier ? editSupplier.contacto : newSupplier.contacto}
                 onChange={(e) =>
                   editSupplier
@@ -1201,7 +1201,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
               />
               <input
                 placeholder="Categoría (Telas, Hilos...)"
-                className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold outline-none"
+                className="w-full p-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold outline-none"
                 value={editSupplier ? editSupplier.categoria : newSupplier.categoria}
                 onChange={(e) =>
                   editSupplier
@@ -1223,7 +1223,7 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
               </button>
               <button
                 type="submit"
-                className="flex-1 py-3 bg-blue-600 text-slate-900 rounded-xl font-black uppercase text-xs"
+                className="flex-1 py-3 bg-blue-600 text-slate-900 dark:text-white rounded-xl font-black uppercase text-xs"
               >
                 Guardar
               </button>
@@ -1234,10 +1234,10 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
 
       {previewImage && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl p-4 shadow-2xl">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-2xl p-4 shadow-2xl">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div>
-                <h3 className="text-sm font-black uppercase text-slate-700">Factura adjunta</h3>
+                <h3 className="text-sm font-black uppercase text-slate-700 dark:text-slate-300">Factura adjunta</h3>
                 <p className="text-xs text-slate-500 truncate">{previewTitle}</p>
               </div>
               <button
@@ -1246,19 +1246,19 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                   setPreviewImage(null);
                   setPreviewTitle('');
                 }}
-                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200"
               >
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
-            <div className="bg-slate-50 rounded-xl p-2 flex items-center justify-center">
+            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-2 flex items-center justify-center">
               <img src={previewImage} alt="Factura" className="max-h-[70vh] w-auto rounded-lg" />
             </div>
             <div className="mt-3 flex justify-end">
               <a
                 href={previewImage}
                 download
-                className="px-4 py-2 rounded-lg bg-white text-slate-900 text-xs font-black uppercase"
+                className="px-4 py-2 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-black uppercase"
               >
                 Descargar
               </a>

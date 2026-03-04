@@ -64,22 +64,22 @@ interface PayrollRun {
 }
 
 // ── KPI CARD ───────────────────────────────────────────────────────────────────
-const KPICard = ({ title, value, subtext, icon: Icon, colorClass, onClick, actionLabel }: any) => (
-  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 flex flex-col justify-between group hover:shadow-2xl transition-all duration-500 flex-1 min-w-[280px] relative overflow-hidden">
-    <div className="flex justify-between items-start mb-6 relative z-10">
-      <div className={`h-14 w-14 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 duration-500 ${colorClass}`}>
-        <Icon size={28} />
+const KPICard = ({ title, value, subtext, icon: Icon, colorClass, darkBg, onClick, actionLabel }: any) => (
+  <div className={`p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 hover:shadow-xl hover:shadow-black/20 transition-all duration-300 flex-1 min-w-[200px] relative overflow-hidden group bg-white ${darkBg || 'dark:bg-[#0d1424]'}`}>
+    <div className="flex justify-between items-start mb-4 relative z-10">
+      <div className={`h-11 w-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 duration-300 ${colorClass}`}>
+        <Icon size={22} />
       </div>
       {onClick && (
-        <button onClick={onClick} className="px-4 py-2 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-600 transition-all shadow-lg">
+        <button onClick={onClick} className="px-3 py-1.5 bg-slate-900 dark:bg-white/[0.1] dark:hover:bg-white/[0.2] text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-emerald-600 transition-all shadow-md">
           {actionLabel}
         </button>
       )}
     </div>
     <div className="relative z-10">
-      <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] mb-1">{title}</p>
-      <p className="text-3xl font-black text-slate-900 tracking-tight">{value}</p>
-      <p className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">{subtext}</p>
+      <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/40 tracking-[0.18em] mb-1">{title}</p>
+      <p className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{value}</p>
+      <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 mt-1.5 uppercase tracking-widest">{subtext}</p>
     </div>
   </div>
 );
@@ -92,22 +92,22 @@ interface ConfirmState {
 }
 
 const ConfirmDialog = ({ state, onCancel }: { state: ConfirmState; onCancel: () => void }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-    <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-100 max-w-sm w-full p-8 animate-in zoom-in-95">
-      <div className="flex items-center gap-4 mb-4">
-        <div className="h-12 w-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
-          <AlertTriangle size={22} />
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="bg-white dark:bg-[#0d1424] rounded-2xl shadow-2xl shadow-black/40 border border-slate-100 dark:border-white/[0.08] max-w-sm w-full p-6 animate-in zoom-in-95">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+          <AlertTriangle size={18} />
         </div>
-        <h3 className="text-lg font-black text-slate-900">{state.message}</h3>
+        <h3 className="text-base font-black text-slate-900 dark:text-white">{state.message}</h3>
       </div>
-      {state.detail && <p className="text-sm text-slate-400 mb-6 ml-16">{state.detail}</p>}
-      <div className="flex gap-3 mt-6">
-        <button onClick={onCancel} className="flex-1 py-3.5 bg-slate-100 text-slate-700 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all">
+      {state.detail && <p className="text-xs text-slate-400 mb-5 ml-13 pl-[52px]">{state.detail}</p>}
+      <div className="flex gap-3 mt-5">
+        <button onClick={onCancel} className="flex-1 py-3 bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-white/[0.12] transition-all">
           Cancelar
         </button>
         <button
           onClick={() => { state.onConfirm(); onCancel(); }}
-          className="flex-1 py-3.5 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all"
+          className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all"
         >
           Confirmar
         </button>
@@ -300,7 +300,6 @@ export default function RecursosHumanos() {
             })),
           };
           await addDoc(collection(db, `businesses/${businessId}/payroll_runs`), run);
-          // Mark pending vouchers as DESCONTADO
           const pending = vouchers.filter(v => v.status === 'PENDIENTE');
           if (pending.length > 0) {
             const batch = writeBatch(db);
@@ -321,54 +320,87 @@ export default function RecursosHumanos() {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="animate-spin text-slate-400" size={40} />
+      <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-[#070b14]">
+        <Loader2 className="animate-spin text-indigo-500" size={36} />
       </div>
     );
   }
 
+  const tabBtn = (tab: SubTab, _label: string, accent?: string) =>
+    `px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+      activeTab === tab
+        ? accent === 'violet'
+          ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25'
+          : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25'
+        : 'text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+    }`;
+
   return (
-    <div className="min-h-screen bg-slate-50 p-8 pt-8 font-inter">
-      <div className="max-w-7xl mx-auto space-y-10">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] p-5 pt-5 font-inter">
+      <div className="max-w-7xl mx-auto space-y-5">
 
         {/* HEADER */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-none">Capital Humano</h1>
-            <p className="text-slate-400 font-medium text-sm mt-3 uppercase tracking-widest">Gestión de Personal y Control de Adelantos</p>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Capital Humano</h1>
+            <p className="text-slate-400 dark:text-white/40 font-medium text-[10px] mt-2 uppercase tracking-[0.2em]">Gestión de Personal · Control de Adelantos</p>
           </div>
-          <div className="flex gap-3 p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm">
-            <button onClick={() => setActiveTab('directory')} className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'directory' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}>Directorio</button>
-            <button onClick={() => setActiveTab('vouchers')} className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'vouchers' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}>Control de Vales</button>
-            <button onClick={() => setActiveTab('nomina')} className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'nomina' ? 'bg-[#4f6ef7] text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}>Nómina</button>
+          <div className="flex gap-1.5 p-1.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-2xl shadow-sm">
+            <button onClick={() => setActiveTab('directory')} className={tabBtn('directory', 'Directorio')}>Directorio</button>
+            <button onClick={() => setActiveTab('vouchers')} className={tabBtn('vouchers', 'Vales')}>Control de Vales</button>
+            <button onClick={() => setActiveTab('nomina')} className={tabBtn('nomina', 'Nómina', 'violet')}>Nómina</button>
           </div>
         </div>
 
         {/* KPIs */}
-        <div className="flex flex-wrap gap-8">
-          <KPICard title="Total Plantilla" value={employees.length} subtext="Colaboradores registrados" icon={Users} colorClass="bg-indigo-50 text-indigo-600" />
-          <KPICard title="Vales Pendientes" value={`$${pendingVoucherTotal.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtext="Por descontar en quincena" icon={AlertCircle} colorClass="bg-rose-50 text-rose-600" />
-          <KPICard title="Cierre Quincenal" value="CORTE" subtext="Liquidar adelantos pendientes" icon={Scissors} colorClass="bg-slate-900 text-white" onClick={handleExecuteCorte} actionLabel="Ejecutar Corte" />
+        <div className="flex flex-wrap gap-4">
+          <KPICard
+            title="Total Plantilla"
+            value={employees.length}
+            subtext="Colaboradores registrados"
+            icon={Users}
+            colorClass="bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400"
+            darkBg="dark:bg-gradient-to-br dark:from-indigo-950/60 dark:to-[#0d1424]"
+          />
+          <KPICard
+            title="Vales Pendientes"
+            value={`$${pendingVoucherTotal.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            subtext="Por descontar en quincena"
+            icon={AlertCircle}
+            colorClass="bg-rose-50 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400"
+            darkBg="dark:bg-gradient-to-br dark:from-rose-950/40 dark:to-[#0d1424]"
+          />
+          <KPICard
+            title="Cierre Quincenal"
+            value="CORTE"
+            subtext="Liquidar adelantos pendientes"
+            icon={Scissors}
+            colorClass="bg-slate-100 dark:bg-white/[0.1] text-slate-700 dark:text-white"
+            darkBg="dark:bg-gradient-to-br dark:from-slate-800/60 dark:to-[#0d1424]"
+            onClick={handleExecuteCorte}
+            actionLabel="Ejecutar"
+          />
         </div>
 
-        {/* CONTENT */}
-        <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden animate-in fade-in slide-in-from-bottom-4">
+        {/* CONTENT CARD */}
+        <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden animate-in fade-in slide-in-from-bottom-4">
 
           {activeTab === 'nomina' ? (
             <>
-              <div className="p-10 bg-slate-50/30 border-b border-slate-100 flex items-center justify-between">
+              {/* Nómina header */}
+              <div className="px-5 py-4 bg-slate-50 dark:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-widest">Cálculo de Nómina</h3>
-                  <p className="text-[10px] font-black uppercase text-slate-400 mt-1 tracking-widest">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Cálculo de Nómina</h3>
+                  <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/40 mt-0.5 tracking-widest">
                     Período: {new Date().toLocaleDateString('es-VE', { month: 'long', year: 'numeric' })}
                   </p>
                 </div>
                 <button
                   onClick={handleProcessPayroll}
                   disabled={processingPayroll || nominaPreview.length === 0}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#4f6ef7] text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all shadow-md shadow-blue-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 transition-all shadow-md shadow-indigo-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {processingPayroll ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  {processingPayroll ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                   Procesar Nómina
                 </button>
               </div>
@@ -376,53 +408,53 @@ export default function RecursosHumanos() {
               {/* Preview table */}
               <div className="overflow-x-auto">
                 {nominaPreview.length === 0 ? (
-                  <div className="py-20 text-center text-slate-300">
-                    <Users size={60} className="mx-auto mb-4" />
-                    <p className="text-sm font-black uppercase tracking-widest">Sin empleados activos</p>
+                  <div className="py-16 text-center text-slate-300 dark:text-white/20">
+                    <Users size={48} className="mx-auto mb-3" />
+                    <p className="text-xs font-black uppercase tracking-widest">Sin empleados activos</p>
                   </div>
                 ) : (
                   <table className="w-full text-left">
                     <thead>
-                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-300 border-b border-slate-50">
-                        <th className="px-12 py-6">Empleado</th>
-                        <th className="px-12 py-6 text-center">Salario Base</th>
-                        <th className="px-12 py-6 text-center">Deducciones</th>
-                        <th className="px-12 py-6 text-center">Vales Pend.</th>
-                        <th className="px-12 py-6 text-right">Neto a Pagar</th>
+                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
+                        <th className="px-5 py-3.5">Empleado</th>
+                        <th className="px-5 py-3.5 text-center">Salario Base</th>
+                        <th className="px-5 py-3.5 text-center">Deducciones</th>
+                        <th className="px-5 py-3.5 text-center">Vales Pend.</th>
+                        <th className="px-5 py-3.5 text-right">Neto a Pagar</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-50">
+                    <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                       {nominaPreview.map(({ emp, deductions, net, voucherCount }) => (
-                        <tr key={emp.id} className="hover:bg-slate-50/50 transition-all">
-                          <td className="px-12 py-6">
-                            <p className="text-sm font-black text-slate-900">{emp.fullName}</p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-widest mt-0.5">{emp.role}</p>
+                        <tr key={emp.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-all">
+                          <td className="px-5 py-3.5">
+                            <p className="text-sm font-black text-slate-900 dark:text-white">{emp.fullName}</p>
+                            <p className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest mt-0.5">{emp.role}</p>
                           </td>
-                          <td className="px-12 py-6 text-center font-black text-slate-700">${(emp.salary || 0).toFixed(2)}</td>
-                          <td className="px-12 py-6 text-center">
+                          <td className="px-5 py-3.5 text-center font-black text-slate-700 dark:text-slate-300 text-sm">${(emp.salary || 0).toFixed(2)}</td>
+                          <td className="px-5 py-3.5 text-center">
                             {deductions > 0
-                              ? <span className="font-black text-rose-600">-${deductions.toFixed(2)}</span>
-                              : <span className="text-slate-300 font-black">—</span>
+                              ? <span className="font-black text-rose-600 dark:text-rose-400">-${deductions.toFixed(2)}</span>
+                              : <span className="text-slate-300 dark:text-white/20 font-black">—</span>
                             }
                           </td>
-                          <td className="px-12 py-6 text-center">
+                          <td className="px-5 py-3.5 text-center">
                             {voucherCount > 0
-                              ? <span className="px-2 py-0.5 bg-rose-50 text-rose-600 rounded-lg text-[10px] font-black">{voucherCount}</span>
-                              : <span className="text-slate-300">0</span>
+                              ? <span className="px-2 py-0.5 bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 rounded-md text-[10px] font-black">{voucherCount}</span>
+                              : <span className="text-slate-300 dark:text-white/20">0</span>
                             }
                           </td>
-                          <td className="px-12 py-6 text-right">
-                            <span className="text-lg font-black text-emerald-700">${net.toFixed(2)}</span>
+                          <td className="px-5 py-3.5 text-right">
+                            <span className="text-base font-black text-emerald-600 dark:text-emerald-400">${net.toFixed(2)}</span>
                           </td>
                         </tr>
                       ))}
                       {/* Totals row */}
-                      <tr className="bg-slate-50 border-t-2 border-slate-100">
-                        <td className="px-12 py-6 font-black text-slate-500 text-[11px] uppercase tracking-widest">TOTALES ({nominaPreview.length} empleados)</td>
-                        <td className="px-12 py-6 text-center font-black text-slate-800">${nominaTotals.gross.toFixed(2)}</td>
-                        <td className="px-12 py-6 text-center font-black text-rose-600">{nominaTotals.deductions > 0 ? `-$${nominaTotals.deductions.toFixed(2)}` : '—'}</td>
-                        <td className="px-12 py-6"></td>
-                        <td className="px-12 py-6 text-right font-black text-emerald-700 text-xl">${nominaTotals.net.toFixed(2)}</td>
+                      <tr className="bg-slate-50 dark:bg-white/[0.03] border-t-2 border-slate-100 dark:border-white/[0.07]">
+                        <td className="px-5 py-3.5 font-black text-slate-500 dark:text-white/40 text-[11px] uppercase tracking-widest">TOTALES ({nominaPreview.length} empleados)</td>
+                        <td className="px-5 py-3.5 text-center font-black text-slate-800 dark:text-slate-200 text-sm">${nominaTotals.gross.toFixed(2)}</td>
+                        <td className="px-5 py-3.5 text-center font-black text-rose-600 dark:text-rose-400">{nominaTotals.deductions > 0 ? `-$${nominaTotals.deductions.toFixed(2)}` : '—'}</td>
+                        <td className="px-5 py-3.5"></td>
+                        <td className="px-5 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400 text-lg">${nominaTotals.net.toFixed(2)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -431,34 +463,34 @@ export default function RecursosHumanos() {
 
               {/* Payroll history */}
               {payrollHistory.length > 0 && (
-                <div className="border-t border-slate-100">
-                  <div className="p-10 pb-4">
-                    <h4 className="text-[12px] font-black uppercase tracking-widest text-slate-400">Historial de Nóminas</h4>
+                <div className="border-t border-slate-100 dark:border-white/[0.06]">
+                  <div className="px-5 py-3.5 bg-slate-50/50 dark:bg-white/[0.02]">
+                    <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Historial de Nóminas</h4>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
                       <thead>
-                        <tr className="text-[10px] font-black uppercase tracking-widest text-slate-300 border-b border-slate-50">
-                          <th className="px-12 py-4">Período</th>
-                          <th className="px-12 py-4 text-center">Empleados</th>
-                          <th className="px-12 py-4 text-center">Bruto</th>
-                          <th className="px-12 py-4 text-center">Deducciones</th>
-                          <th className="px-12 py-4 text-right">Neto Pagado</th>
+                        <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05]">
+                          <th className="px-5 py-3">Período</th>
+                          <th className="px-5 py-3 text-center">Empleados</th>
+                          <th className="px-5 py-3 text-center">Bruto</th>
+                          <th className="px-5 py-3 text-center">Deducciones</th>
+                          <th className="px-5 py-3 text-right">Neto Pagado</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-50">
+                      <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                         {payrollHistory.slice(0, 12).map(run => (
-                          <tr key={run.id} className="hover:bg-slate-50/40 transition-all">
-                            <td className="px-12 py-4">
-                              <p className="font-black text-slate-800 text-sm">{run.period}</p>
-                              <p className="text-[10px] text-slate-400 mt-0.5">
+                          <tr key={run.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-all">
+                            <td className="px-5 py-3">
+                              <p className="font-black text-slate-800 dark:text-slate-200 text-sm">{run.period}</p>
+                              <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5">
                                 {run.processedAt?.toDate ? run.processedAt.toDate().toLocaleString('es-VE') : 'Reciente'}
                               </p>
                             </td>
-                            <td className="px-12 py-4 text-center font-bold text-slate-600">{run.employeeCount}</td>
-                            <td className="px-12 py-4 text-center font-black text-slate-700">${run.totalGross.toFixed(2)}</td>
-                            <td className="px-12 py-4 text-center font-black text-rose-500">{run.totalDeductions > 0 ? `-$${run.totalDeductions.toFixed(2)}` : '—'}</td>
-                            <td className="px-12 py-4 text-right font-black text-emerald-700 text-base">${run.totalNet.toFixed(2)}</td>
+                            <td className="px-5 py-3 text-center font-bold text-slate-600 dark:text-slate-400">{run.employeeCount}</td>
+                            <td className="px-5 py-3 text-center font-black text-slate-700 dark:text-slate-300 text-sm">${run.totalGross.toFixed(2)}</td>
+                            <td className="px-5 py-3 text-center font-black text-rose-500 dark:text-rose-400">{run.totalDeductions > 0 ? `-$${run.totalDeductions.toFixed(2)}` : '—'}</td>
+                            <td className="px-5 py-3 text-right font-black text-emerald-600 dark:text-emerald-400">${run.totalNet.toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -467,59 +499,61 @@ export default function RecursosHumanos() {
                 </div>
               )}
             </>
+
           ) : activeTab === 'directory' ? (
             <>
-              <div className="p-10 border-b border-slate-50 flex justify-between items-center bg-slate-50/20">
-                <h3 className="text-xl font-black text-slate-900 uppercase tracking-widest">Directorio de Personal</h3>
+              {/* Directory header */}
+              <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] flex justify-between items-center bg-slate-50/50 dark:bg-white/[0.02]">
+                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Directorio de Personal</h3>
                 <button
                   onClick={() => { setEditingId(null); setEmpForm({ fullName: '', email: '', role: 'Vendedor', salary: 0, status: 'Activo' }); setIsEmpModalOpen(true); }}
-                  className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-600 transition-all"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 transition-all shadow-md shadow-indigo-500/25"
                 >
-                  <UserPlus size={16} /> Nuevo Empleado
+                  <UserPlus size={14} /> Nuevo Empleado
                 </button>
               </div>
               <div className="overflow-x-auto">
                 {employees.length === 0 ? (
-                  <div className="py-20 text-center text-slate-300">
-                    <Users size={60} className="mx-auto mb-4" />
-                    <p className="text-sm font-black uppercase tracking-widest">Sin empleados registrados</p>
+                  <div className="py-16 text-center text-slate-300 dark:text-white/20">
+                    <Users size={48} className="mx-auto mb-3" />
+                    <p className="text-xs font-black uppercase tracking-widest">Sin empleados registrados</p>
                   </div>
                 ) : (
                   <table className="w-full text-left">
                     <thead>
-                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-300 border-b border-slate-50">
-                        <th className="px-12 py-8">Identidad</th>
-                        <th className="px-12 py-8 text-center">Rol</th>
-                        <th className="px-12 py-8 text-center">Estado</th>
-                        <th className="px-12 py-8 text-center">Salario</th>
-                        <th className="px-12 py-8 text-right">Acción</th>
+                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
+                        <th className="px-5 py-3.5">Identidad</th>
+                        <th className="px-5 py-3.5 text-center">Rol</th>
+                        <th className="px-5 py-3.5 text-center">Estado</th>
+                        <th className="px-5 py-3.5 text-center">Salario</th>
+                        <th className="px-5 py-3.5 text-right">Acción</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-50">
+                    <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                       {employees.map(e => (
-                        <tr key={e.id} className="group hover:bg-slate-50/50 transition-all">
-                          <td className="px-12 py-8">
-                            <p className="text-sm font-black text-slate-900">{e.fullName}</p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">{e.email}</p>
+                        <tr key={e.id} className="group hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-all">
+                          <td className="px-5 py-3.5">
+                            <p className="text-sm font-black text-slate-900 dark:text-white">{e.fullName}</p>
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 uppercase tracking-tighter mt-0.5">{e.email}</p>
                           </td>
-                          <td className="px-12 py-8 text-center">
-                            <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[9px] font-black uppercase border border-indigo-100">{e.role}</span>
+                          <td className="px-5 py-3.5 text-center">
+                            <span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 rounded-lg text-[9px] font-black uppercase border border-indigo-100 dark:border-indigo-500/30">{e.role}</span>
                           </td>
-                          <td className="px-12 py-8 text-center">
-                            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase border ${e.status === 'Activo' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
-                              <Circle size={8} fill="currentColor" /> {e.status}
+                          <td className="px-5 py-3.5 text-center">
+                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase border ${e.status === 'Activo' ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400 border-slate-200 dark:border-white/10'}`}>
+                              <Circle size={6} fill="currentColor" /> {e.status}
                             </div>
                           </td>
-                          <td className="px-12 py-8 text-center">
-                            <span className="font-mono font-bold text-slate-700 text-sm">${e.salary?.toLocaleString() || '—'}</span>
+                          <td className="px-5 py-3.5 text-center">
+                            <span className="font-mono font-bold text-slate-700 dark:text-slate-300 text-sm">${e.salary?.toLocaleString() || '—'}</span>
                           </td>
-                          <td className="px-12 py-8 text-right">
-                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                              <button onClick={() => { setEditingId(e.id); setEmpForm(e as any); setIsEmpModalOpen(true); }} className="p-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all">
-                                <Pencil size={14} />
+                          <td className="px-5 py-3.5 text-right">
+                            <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-all">
+                              <button onClick={() => { setEditingId(e.id); setEmpForm(e as any); setIsEmpModalOpen(true); }} className="p-2 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/[0.12] transition-all">
+                                <Pencil size={13} />
                               </button>
-                              <button onClick={() => handleDeleteEmployee(e)} className="p-2.5 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 transition-all">
-                                <Trash2 size={14} />
+                              <button onClick={() => handleDeleteEmployee(e)} className="p-2 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-500 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/25 transition-all">
+                                <Trash2 size={13} />
                               </button>
                             </div>
                           </td>
@@ -530,58 +564,60 @@ export default function RecursosHumanos() {
                 )}
               </div>
             </>
+
           ) : (
+            /* VOUCHERS TAB */
             <>
-              <div className="p-10 bg-slate-50/30 border-b border-slate-100">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
+              <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.06]">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-5">
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-widest flex items-center gap-3">
-                      <Ticket size={24} className="text-indigo-500" /> Auditoría de Vales
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
+                      <Ticket size={18} className="text-indigo-500" /> Auditoría de Vales
                     </h3>
-                    <p className="text-[10px] font-black uppercase text-slate-400 mt-1 tracking-widest">Ingreso masivo de adelantos</p>
+                    <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/30 mt-0.5 tracking-widest">Ingreso masivo de adelantos</p>
                   </div>
                 </div>
-                <form onSubmit={handleQuickAddVoucher} className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white p-6 rounded-[2rem] border border-slate-200 shadow-xl shadow-slate-200/20 items-end">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Empleado</label>
-                    <select required value={quickVouch.employeeId} onChange={e => setQuickVouch({ ...quickVouch, employeeId: e.target.value })} className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 outline-none">
+                <form onSubmit={handleQuickAddVoucher} className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md shadow-black/5 items-end">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Empleado</label>
+                    <select required value={quickVouch.employeeId} onChange={e => setQuickVouch({ ...quickVouch, employeeId: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none">
                       <option value="">Seleccionar...</option>
                       {employees.filter(e => e.status === 'Activo').map(e => <option key={e.id} value={e.id}>{e.fullName}</option>)}
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Monto ($)</label>
-                    <input required type="number" step="0.01" value={quickVouch.amount} onChange={e => setQuickVouch({ ...quickVouch, amount: e.target.value })} placeholder="0.00" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black focus:ring-2 focus:ring-slate-900 outline-none" />
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Monto ($)</label>
+                    <input required type="number" step="0.01" value={quickVouch.amount} onChange={e => setQuickVouch({ ...quickVouch, amount: e.target.value })} placeholder="0.00" className="w-full px-4 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Concepto</label>
-                    <input required value={quickVouch.reason} onChange={e => setQuickVouch({ ...quickVouch, reason: e.target.value })} className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 outline-none" />
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Concepto</label>
+                    <input required value={quickVouch.reason} onChange={e => setQuickVouch({ ...quickVouch, reason: e.target.value })} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                   </div>
-                  <button disabled={isSaving} className="h-[52px] bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50">
-                    {isSaving ? <Loader2 className="animate-spin h-4 w-4" /> : <><Plus size={16} /> Registrar Vale</>}
+                  <button disabled={isSaving} className="h-[42px] bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.15em] shadow-md shadow-indigo-500/25 hover:from-indigo-500 hover:to-violet-500 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50">
+                    {isSaving ? <Loader2 className="animate-spin h-4 w-4" /> : <><Plus size={14} /> Registrar Vale</>}
                   </button>
                 </form>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="text-[10px] font-black uppercase tracking-widest text-slate-300 border-b border-slate-50">
-                      <th className="px-12 py-8">Fecha</th>
-                      <th className="px-12 py-8">Beneficiario</th>
-                      <th className="px-12 py-8 text-center">Monto</th>
-                      <th className="px-12 py-8">Concepto</th>
-                      <th className="px-12 py-8 text-right">Estatus</th>
+                    <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
+                      <th className="px-5 py-3.5">Fecha</th>
+                      <th className="px-5 py-3.5">Beneficiario</th>
+                      <th className="px-5 py-3.5 text-center">Monto</th>
+                      <th className="px-5 py-3.5">Concepto</th>
+                      <th className="px-5 py-3.5 text-right">Estatus</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50">
+                  <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                     {vouchers.map(v => (
-                      <tr key={v.id} className="text-xs font-bold text-slate-600 hover:bg-slate-50/50 transition-colors">
-                        <td className="px-12 py-8 text-slate-400 font-mono">{v.createdAt?.toDate ? v.createdAt.toDate().toLocaleString('es-VE') : 'Reciente'}</td>
-                        <td className="px-12 py-8 text-slate-900 font-black">{v.employeeName}</td>
-                        <td className="px-12 py-8 text-center font-black text-slate-900 text-base">${Number(v.amount).toFixed(2)}</td>
-                        <td className="px-12 py-8 text-slate-400 italic font-medium">{v.reason}</td>
-                        <td className="px-12 py-8 text-right">
-                          <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${v.status === 'PENDIENTE' ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                      <tr key={v.id} className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
+                        <td className="px-5 py-3.5 text-slate-400 dark:text-white/30 font-mono">{v.createdAt?.toDate ? v.createdAt.toDate().toLocaleString('es-VE') : 'Reciente'}</td>
+                        <td className="px-5 py-3.5 text-slate-900 dark:text-white font-black">{v.employeeName}</td>
+                        <td className="px-5 py-3.5 text-center font-black text-slate-900 dark:text-white text-sm">${Number(v.amount).toFixed(2)}</td>
+                        <td className="px-5 py-3.5 text-slate-400 dark:text-white/40 italic font-medium">{v.reason}</td>
+                        <td className="px-5 py-3.5 text-right">
+                          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${v.status === 'PENDIENTE' ? 'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/30' : 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30'}`}>
                             {v.status}
                           </span>
                         </td>
@@ -589,9 +625,9 @@ export default function RecursosHumanos() {
                     ))}
                     {vouchers.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-12 py-20 text-center opacity-30">
-                          <Ticket size={60} className="mx-auto text-slate-300 mb-4" />
-                          <p className="text-sm font-black uppercase tracking-widest text-slate-400">Sin movimientos de vales</p>
+                        <td colSpan={5} className="px-5 py-16 text-center">
+                          <Ticket size={48} className="mx-auto text-slate-300 dark:text-white/20 mb-3" />
+                          <p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin movimientos de vales</p>
                         </td>
                       </tr>
                     )}
@@ -605,41 +641,41 @@ export default function RecursosHumanos() {
 
       {/* MODAL: EMPLEADO */}
       {isEmpModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-          <div className="bg-white w-full max-w-xl rounded-[3rem] shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95">
-            <div className="px-10 py-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
+          <div className="bg-white dark:bg-[#0d1424] w-full max-w-xl rounded-2xl shadow-2xl shadow-black/40 border border-slate-200 dark:border-white/[0.08] overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 border-b border-slate-50 dark:border-white/[0.06] flex justify-between items-center bg-slate-50/50 dark:bg-white/[0.03]">
               <div>
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">{editingId ? 'Editar Ficha' : 'Nuevo Registro'}</h2>
-                <p className="text-[10px] font-black uppercase text-slate-400 mt-1 tracking-widest">Módulo de Personal</p>
+                <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">{editingId ? 'Editar Ficha' : 'Nuevo Registro'}</h2>
+                <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/40 mt-0.5 tracking-widest">Módulo de Personal</p>
               </div>
-              <button onClick={() => setIsEmpModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-all"><X size={24} /></button>
+              <button onClick={() => setIsEmpModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl transition-all text-slate-400 dark:text-white/40"><X size={20} /></button>
             </div>
-            <form onSubmit={handleSaveEmployee} className="p-10 space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nombre Completo</label>
-                  <input required value={empForm.fullName} onChange={e => setEmpForm({ ...empForm, fullName: e.target.value })} className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 outline-none" />
+            <form onSubmit={handleSaveEmployee} className="p-6 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Nombre Completo</label>
+                  <input required value={empForm.fullName} onChange={e => setEmpForm({ ...empForm, fullName: e.target.value })} className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Correo Corporativo</label>
-                  <input required type="email" value={empForm.email} onChange={e => setEmpForm({ ...empForm, email: e.target.value })} className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 outline-none" />
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Correo Corporativo</label>
+                  <input required type="email" value={empForm.email} onChange={e => setEmpForm({ ...empForm, email: e.target.value })} className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Rol</label>
-                  <select value={empForm.role} onChange={e => setEmpForm({ ...empForm, role: e.target.value as any })} className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 outline-none">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Rol</label>
+                  <select value={empForm.role} onChange={e => setEmpForm({ ...empForm, role: e.target.value as any })} className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none">
                     <option value="Administrador">Administrador</option>
                     <option value="Cajero">Cajero</option>
                     <option value="Gerente">Gerente</option>
                     <option value="Vendedor">Vendedor</option>
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Salario Mensual ($)</label>
-                  <input type="number" value={empForm.salary} onChange={e => setEmpForm({ ...empForm, salary: Number(e.target.value) })} className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-slate-900 outline-none" />
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Salario Mensual ($)</label>
+                  <input type="number" value={empForm.salary} onChange={e => setEmpForm({ ...empForm, salary: Number(e.target.value) })} className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                 </div>
               </div>
-              <button disabled={isSaving} className="w-full py-5 bg-slate-900 text-white rounded-[1.5rem] font-black text-[10px] uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-600 transition-all flex items-center justify-center gap-2">
-                {isSaving ? <Loader2 className="animate-spin" /> : <><Save size={18} /> Guardar</>}
+              <button disabled={isSaving} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/25 hover:from-indigo-500 hover:to-violet-500 transition-all flex items-center justify-center gap-2">
+                {isSaving ? <Loader2 className="animate-spin" size={16} /> : <><Save size={16} /> Guardar</>}
               </button>
             </form>
           </div>

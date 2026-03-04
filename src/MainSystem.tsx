@@ -55,9 +55,10 @@ import {
   deleteDoc,
   updateDoc,
 } from 'firebase/firestore';
-import { Bell } from 'lucide-react';
+import { Bell, HelpCircle } from 'lucide-react';
 import { logAudit } from './utils/auditLogger';
 import ModeToggle from './components/ModeToggle';
+import HelpPanel from './components/HelpPanel';
 
 // ── Topbar ─────────────────────────────────────────────────────────────────────
 const Topbar: React.FC<{
@@ -66,8 +67,9 @@ const Topbar: React.FC<{
   showNotifications: boolean;
   onToggleNotifications: () => void;
   onOpenCalculator: () => void;
+  onOpenHelp: () => void;
   bcvRate: number;
-}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, bcvRate }) => (
+}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, bcvRate }) => (
   <header className="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.08] px-7 flex items-center justify-between sticky top-0 z-50 transition-colors">
     <div>
       <div className="font-syne font-bold text-[17px] text-slate-900 dark:text-white leading-tight capitalize">{topbarTitle}</div>
@@ -112,6 +114,14 @@ const Topbar: React.FC<{
         className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-white/[0.05] border border-slate-100 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-white/10 hover:border-blue-200 hover:text-blue-600 transition-all font-mono text-sm font-bold"
       >
         =
+      </button>
+
+      <button
+        onClick={onOpenHelp}
+        title="Ayuda y tutoriales"
+        className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-white/[0.05] border border-slate-100 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-white/10 hover:border-violet-300 hover:text-violet-500 transition-all"
+      >
+        <HelpCircle size={16} />
       </button>
     </div>
   </header>
@@ -159,6 +169,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isImporterOpen, setIsImporterOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
     try {
@@ -415,6 +426,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           showNotifications={showNotifications}
           onToggleNotifications={() => setShowNotifications(p => !p)}
           onOpenCalculator={() => widgetManager.openWidget('calculator')}
+          onOpenHelp={() => setHelpOpen(true)}
           bcvRate={rates.tasaBCV}
         />
 
@@ -510,6 +522,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           onDismissAll={handleDismissAllNotifs}
         />
       )}
+
+      {/* HELP PANEL */}
+      <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       {/* MODALS */}
       <UserProfileModalComp isOpen={isProfileOpen} profile={userProfile as any} onClose={() => setIsProfileOpen(false)} onSave={handleSaveProfile} />

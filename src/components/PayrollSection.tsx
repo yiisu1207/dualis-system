@@ -292,7 +292,7 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
                     <th className="px-6 py-4 text-center">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
                   {employees.map((e) => (
                     <tr key={e.id} className="hover:bg-slate-50:bg-slate-700/50">
                       <td className="px-6 py-4 font-bold text-slate-700">

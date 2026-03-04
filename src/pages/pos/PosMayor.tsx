@@ -12,7 +12,7 @@ import {
   Factory, Search, ShoppingCart, Trash2, Plus, Minus, Receipt,
   Package, X, CheckCircle2, AlertTriangle, User, LogOut,
   Banknote, Smartphone, Layers, ArrowLeftRight, Calendar, Clock, Camera,
-  History, Tag,
+  History, Tag, WifiOff,
 } from 'lucide-react';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import SaleHistoryPanel from '../../components/SaleHistoryPanel';
@@ -91,11 +91,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const grandUsd    = totalUsd + igtfAmount;
   const grandBs     = totalBs  + igtfAmount * (totalBs / (totalUsd || 1));
 
-  const changeUsd = method === 'efectivo_usd'
-    ? Math.max(0, parseFloat(cashInput || '0') - grandUsd) : 0;
+  const cashVal    = parseFloat(cashInput || '0');
+  const diffUsd    = method === 'efectivo_usd' ? cashVal - grandUsd : 0;
+  const changeUsd  = Math.max(0,  diffUsd);
+  const missingUsd = Math.max(0, -diffUsd);
 
   const canConfirm = (() => {
-    if (method === 'efectivo_usd') return parseFloat(cashInput || '0') >= grandUsd;
+    if (method === 'efectivo_usd') return cashVal >= grandUsd;
     if (method === 'transferencia') return reference.trim().length > 0;
     if (method === 'credito') return true;
     return false;
@@ -103,7 +105,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
-      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
         <div className="p-6 bg-violet-900 text-white flex justify-between items-start gap-4">
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-400">Total del pedido</p>
@@ -154,7 +156,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             )}
           </div>
           <button onClick={onClose}
-            className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all shrink-0">
+            className="h-10 w-10 rounded-full bg-white dark:bg-slate-900/10 flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 dark:bg-slate-900/20 transition-all shrink-0">
             <X size={20} />
           </button>
         </div>
@@ -165,7 +167,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             <div className="grid grid-cols-3 gap-2">
               {(Object.keys(PAYMENT_LABELS) as PaymentMethod[]).map(m => (
                 <button key={m} onClick={() => setMethod(m)}
-                  className={`flex flex-col items-center gap-2 py-3.5 rounded-xl border-2 text-[9px] font-black uppercase tracking-widest transition-all ${method === m ? 'border-violet-700 bg-violet-700 text-white' : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200'}`}>
+                  className={`flex flex-col items-center gap-2 py-3.5 rounded-xl border-2 text-[9px] font-black uppercase tracking-widest transition-all ${method === m ? 'border-violet-700 bg-violet-700 text-white' : 'border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-slate-800/50 text-slate-400 hover:border-slate-200 dark:border-white/10'}`}>
                   {m === 'efectivo_usd' ? <Banknote size={18} /> : m === 'transferencia' ? <Smartphone size={18} /> : <Layers size={18} />}
                   <span className="text-center leading-tight">{PAYMENT_LABELS[m]}</span>
                 </button>
@@ -181,19 +183,19 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   value={cashInput}
                   onChange={e => setCashInput(e.target.value)}
                   placeholder={`Mínimo: $${grandUsd.toFixed(2)}`}
-                  className="w-full px-4 py-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-lg font-black focus:ring-2 focus:ring-violet-700 focus:border-violet-700 outline-none transition-all"
+                  className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-white/10 rounded-xl text-lg font-black focus:ring-2 focus:ring-violet-700 focus:border-violet-700 outline-none transition-all"
                 />
               </div>
-              {parseFloat(cashInput || '0') > 0 && (
-                <div className={`p-4 rounded-xl flex justify-between items-center ${changeUsd > 0 ? 'bg-emerald-50 border border-emerald-200' : 'bg-rose-50 border border-rose-100'}`}>
+              {cashVal > 0 && (
+                <div className={`p-4 rounded-xl flex justify-between items-center ${missingUsd > 0.001 ? 'bg-rose-50 border border-rose-100' : 'bg-emerald-50 border border-emerald-200'}`}>
                   <div className="flex items-center gap-2">
-                    <ArrowLeftRight size={14} className={changeUsd > 0 ? 'text-emerald-600' : 'text-rose-400'} />
+                    <ArrowLeftRight size={14} className={missingUsd > 0.001 ? 'text-rose-400' : 'text-emerald-600'} />
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      {changeUsd > 0 ? 'Cambio a entregar' : 'Monto insuficiente'}
+                      {changeUsd > 0.001 ? 'Cambio a entregar' : missingUsd > 0.001 ? 'Faltan' : 'Pago exacto ✓'}
                     </span>
                   </div>
-                  <span className={`text-lg font-black ${changeUsd > 0 ? 'text-emerald-700' : 'text-rose-500'}`}>
-                    ${changeUsd.toFixed(2)}
+                  <span className={`text-lg font-black ${missingUsd > 0.001 ? 'text-rose-500' : 'text-emerald-700'}`}>
+                    {missingUsd > 0.001 ? `$${missingUsd.toFixed(2)}` : changeUsd > 0.001 ? `$${changeUsd.toFixed(2)}` : '—'}
                   </span>
                 </div>
               )}
@@ -205,7 +207,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Número de Referencia</label>
               <input autoFocus value={reference} onChange={e => setReference(e.target.value)}
                 placeholder="Ej. 00123456789"
-                className="w-full px-4 py-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-violet-700 focus:border-violet-700 outline-none transition-all"
+                className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold focus:ring-2 focus:ring-violet-700 focus:border-violet-700 outline-none transition-all"
               />
             </div>
           )}
@@ -220,7 +222,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           <button
             disabled={!canConfirm || loading}
             onClick={() => onConfirm(method, reference, igtfAmount)}
-            className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all ${canConfirm && !loading ? 'bg-violet-700 text-white hover:bg-violet-800 shadow-xl shadow-violet-200' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>
+            className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all ${canConfirm && !loading ? 'bg-violet-700 text-white hover:bg-violet-800 shadow-xl shadow-violet-200' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-300 cursor-not-allowed'}`}>
             {loading ? 'Procesando...' : <><Receipt size={16} />Registrar Pedido</>}
           </button>
         </div>
@@ -243,6 +245,16 @@ const PosMayorContent = () => {
   const [customer, setCustomer] = useState<ClientRecord | null>(null);
   const [clientQuery, setClientQuery] = useState('');
   const [allClients, setAllClients] = useState<ClientRecord[]>([]);
+  // Offline indicator
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const up = () => setIsOnline(true);
+    const down = () => setIsOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); };
+  }, []);
+
   const [products, setProducts] = useState<QuickProduct[]>([]);
   const [productFilter, setProductFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -350,14 +362,14 @@ const PosMayorContent = () => {
   }, [clientQuery, allClients]);
 
   const displayProducts = useMemo(() => {
-    const q = productFilter.trim().toLowerCase();
+    const q = (productFilter || searchQuery).trim().toLowerCase();
     if (!q) return products;
     return products.filter(p =>
       (p.name || '').toLowerCase().includes(q) ||
       (p.codigo || '').toLowerCase().includes(q) ||
       (p.marca || '').toLowerCase().includes(q)
     );
-  }, [products, productFilter]);
+  }, [products, productFilter, searchQuery]);
 
   const handleScan = async () => {
     const code = searchQuery.trim();
@@ -479,7 +491,7 @@ const PosMayorContent = () => {
 
   if (loading) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800/50 gap-4">
         <div className="animate-spin h-9 w-9 border-4 border-violet-700 border-t-transparent rounded-full" />
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Cargando Terminal Mayor...</p>
       </div>
@@ -487,16 +499,16 @@ const PosMayorContent = () => {
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 text-slate-900 font-inter">
+    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white font-inter">
 
       {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <header className="h-16 bg-white border-b border-slate-200 px-5 flex items-center justify-between shrink-0 z-30 shadow-sm gap-4">
+      <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 px-5 flex items-center justify-between shrink-0 z-30 shadow-sm gap-4">
         <div className="flex items-center gap-3 shrink-0">
           <div className="h-10 w-10 rounded-xl bg-violet-700 text-white flex items-center justify-center shadow-md shadow-violet-200">
             <Factory size={19} />
           </div>
           <div>
-            <h1 className="text-sm font-black text-slate-900 uppercase tracking-tight leading-none">{terminalLabel}</h1>
+            <h1 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight leading-none">{terminalLabel}</h1>
             <div className="flex items-center gap-2 mt-0.5">
               <User size={10} className="text-slate-400" />
               <p className="text-[10px] font-bold text-slate-400">{cajeroLabel}</p>
@@ -505,14 +517,19 @@ const PosMayorContent = () => {
         </div>
 
         <div className="flex-1 max-w-xl flex items-center gap-2">
+          {!isOnline && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl text-[9px] font-black uppercase tracking-wider shrink-0">
+              <WifiOff size={11} /> Offline
+            </div>
+          )}
           <div className="relative flex-1">
             <input
               autoFocus
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan(); } }}
-              placeholder="Buscar producto o escanear código..."
-              className="w-full pl-11 pr-4 py-2.5 bg-slate-100 border-none rounded-2xl text-sm font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-violet-700 focus:bg-white transition-all shadow-inner"
+              placeholder="Buscar por nombre, código o escanear..."
+              className="w-full pl-11 pr-4 py-2.5 bg-slate-100 dark:bg-white/[0.07] border-none rounded-2xl text-sm font-bold placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-violet-700 focus:bg-white dark:bg-slate-800 transition-all shadow-inner"
             />
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
           </div>
@@ -520,7 +537,7 @@ const PosMayorContent = () => {
             <button
               onClick={() => setShowCameraScanner(true)}
               title="Escanear con cámara"
-              className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 hover:bg-violet-700 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200"
+              className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-violet-700 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200 dark:border-white/10"
             >
               <Camera size={16} />
             </button>
@@ -528,7 +545,7 @@ const PosMayorContent = () => {
           <button
             onClick={() => setShowHistory(true)}
             title="Historial de ventas"
-            className="h-10 w-10 rounded-xl bg-slate-100 text-slate-500 hover:bg-violet-700 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200"
+            className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-violet-700 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200 dark:border-white/10"
           >
             <History size={16} />
           </button>
@@ -547,13 +564,13 @@ const PosMayorContent = () => {
           )}
           <div className="text-right hidden lg:block">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">{formatLiveDate(now)}</p>
-            <p className="text-sm font-black text-slate-700">{formatLiveTime(now)}</p>
+            <p className="text-sm font-black text-slate-700 dark:text-slate-300">{formatLiveTime(now)}</p>
           </div>
           <div className="text-right">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Tasa</p>
             <p className="text-sm font-black text-violet-700">{rateValue.toFixed(2)} Bs</p>
           </div>
-          <div className="w-px h-8 bg-slate-100" />
+          <div className="w-px h-8 bg-slate-100 dark:bg-white/[0.07]" />
           <button onClick={() => auth.signOut()}
             className="h-9 w-9 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all border border-rose-100">
             <LogOut size={16} />
@@ -562,11 +579,11 @@ const PosMayorContent = () => {
       </header>
 
       {/* ── CONTROLS BAR ─────────────────────────────────────────────────────── */}
-      <div className="px-5 py-2.5 bg-white border-b border-slate-100 flex gap-3 items-center z-20 shadow-sm">
+      <div className="px-5 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-white/[0.07] flex gap-3 items-center z-20 shadow-sm">
         <div>
           <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 mb-1 block">Tasa</label>
           <select value={rateMode} onChange={e => setRateMode(e.target.value as RateMode)}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-700">
+            className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-violet-700">
             <option value="bcv">BCV · {(rates.tasaBCV || 0).toFixed(2)} Bs</option>
             <option value="grupo">Grupo · {(rates.tasaGrupo || 0).toFixed(2)} Bs</option>
             <option value="divisas">Divisas (USD)</option>
@@ -575,7 +592,7 @@ const PosMayorContent = () => {
         <div>
           <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 mb-1 block">Condición</label>
           <select value={paymentCondition} onChange={e => setPaymentCondition(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-700">
+            className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-violet-700">
             <option value="contado">Contado</option>
             <option value="credito15">Crédito 15 Días</option>
             <option value="credito30">Crédito 30 Días</option>
@@ -593,14 +610,14 @@ const PosMayorContent = () => {
       <div className="flex-1 flex overflow-hidden">
 
         {/* ── LEFT: CATALOG ────────────────────────────────────────────────────── */}
-        <section className="w-[32%] min-w-[260px] border-r border-slate-100 bg-white flex flex-col">
-          <div className="px-4 py-3 border-b border-slate-100">
+        <section className="w-[32%] min-w-[260px] border-r border-slate-100 dark:border-white/[0.07] bg-white dark:bg-slate-900 flex flex-col">
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-white/[0.07]">
             <div className="relative">
               <input
                 value={productFilter}
                 onChange={e => setProductFilter(e.target.value)}
                 placeholder="Filtrar catálogo..."
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 rounded-xl text-xs font-bold text-slate-700 placeholder:text-slate-400 border border-slate-100 focus:ring-2 focus:ring-violet-700 outline-none transition-all"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 border border-slate-100 dark:border-white/[0.07] focus:ring-2 focus:ring-violet-700 outline-none transition-all"
               />
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 h-3.5 w-3.5" />
               {productFilter && (
@@ -618,13 +635,13 @@ const PosMayorContent = () => {
           <div className="flex-1 overflow-y-auto p-3 custom-scroll space-y-2">
             {displayProducts.map(product => (
               <button key={product.id} onClick={() => handleAddProduct(product)}
-                className="group w-full bg-white p-3.5 rounded-xl border border-slate-100 shadow-sm hover:border-violet-300 hover:shadow-md transition-all text-left flex items-center justify-between gap-3">
+                className="group w-full bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-100 dark:border-white/[0.07] shadow-sm hover:border-violet-300 hover:shadow-md transition-all text-left flex items-center justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 mb-0.5">
                     <span className="text-[8px] font-mono text-slate-400 truncate">{product.codigo}</span>
                     {product.marca && <span className="text-[8px] font-black text-violet-500 uppercase">[{product.marca}]</span>}
                   </div>
-                  <p className="text-xs font-black text-slate-800 group-hover:text-violet-700 transition-colors">{product.name}</p>
+                  <p className="text-xs font-black text-slate-800 dark:text-slate-200 group-hover:text-violet-700 transition-colors">{product.name}</p>
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-sm font-black text-violet-700">{product.priceDisplay}</p>
@@ -642,25 +659,25 @@ const PosMayorContent = () => {
         </section>
 
         {/* ── RIGHT: CART + CHECKOUT ─────────────────────────────────────────── */}
-        <aside className="flex-1 flex flex-col bg-white">
+        <aside className="flex-1 flex flex-col bg-white dark:bg-slate-900">
 
           {/* Cart table */}
           <div className="flex-1 overflow-y-auto custom-scroll">
             <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-white z-10 text-[10px] font-black uppercase tracking-widest text-slate-400 shadow-sm">
+              <thead className="sticky top-0 bg-white dark:bg-slate-900 z-10 text-[10px] font-black uppercase tracking-widest text-slate-400 shadow-sm">
                 <tr>
-                  <th className="px-5 py-3.5 border-b border-slate-100">Producto</th>
-                  <th className="px-5 py-3.5 border-b border-slate-100 text-center">Cant.</th>
-                  <th className="px-5 py-3.5 border-b border-slate-100 text-right">P/U</th>
-                  <th className="px-5 py-3.5 border-b border-slate-100 text-right">Total</th>
-                  <th className="px-5 py-3.5 border-b border-slate-100" />
+                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07]">Producto</th>
+                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-center">Cant.</th>
+                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right">P/U</th>
+                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right">Total</th>
+                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07]" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {items.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-5 py-24 text-center pointer-events-none select-none">
-                      <div className="inline-flex h-16 w-16 rounded-3xl bg-slate-50 items-center justify-center mb-4">
+                      <div className="inline-flex h-16 w-16 rounded-3xl bg-slate-50 dark:bg-slate-800/50 items-center justify-center mb-4">
                         <ShoppingCart size={28} className="text-slate-300" />
                       </div>
                       <h3 className="text-base font-black text-slate-300 uppercase tracking-widest mb-1">Orden Vacía</h3>
@@ -668,26 +685,26 @@ const PosMayorContent = () => {
                     </td>
                   </tr>
                 ) : items.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50/50 group transition-colors">
+                  <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50/50 group transition-colors">
                     <td className="px-5 py-3.5">
-                      <p className="text-sm font-black text-slate-800 leading-none">{item.nombre}</p>
+                      <p className="text-sm font-black text-slate-800 dark:text-slate-200 leading-none">{item.nombre}</p>
                       <p className="text-[10px] font-mono text-slate-400 mt-0.5">{item.codigo}</p>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-center gap-2">
                         <button onClick={() => updateQty(item.id, item.qty - 1)}
-                          className="h-7 w-7 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center">
+                          className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200 flex items-center justify-center">
                           <Minus size={12} strokeWidth={3} />
                         </button>
-                        <span className="w-8 text-center text-sm font-black text-slate-900">{item.qty}</span>
+                        <span className="w-8 text-center text-sm font-black text-slate-900 dark:text-white">{item.qty}</span>
                         <button onClick={() => updateQty(item.id, item.qty + 1)}
-                          className="h-7 w-7 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center">
+                          className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200 flex items-center justify-center">
                           <Plus size={12} strokeWidth={3} />
                         </button>
                       </div>
                     </td>
                     <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500">${item.priceUsd.toFixed(2)}</td>
-                    <td className="px-5 py-3.5 text-right text-base font-black text-slate-900">${(item.qty * item.priceUsd).toFixed(2)}</td>
+                    <td className="px-5 py-3.5 text-right text-base font-black text-slate-900 dark:text-white">${(item.qty * item.priceUsd).toFixed(2)}</td>
                     <td className="px-5 py-3.5 text-center">
                       <button onClick={() => removeItem(item.id)}
                         className="h-7 w-7 rounded-lg bg-rose-50 text-rose-400 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -701,7 +718,7 @@ const PosMayorContent = () => {
           </div>
 
           {/* ── CHECKOUT PANEL ──────────────────────────────────────────────── */}
-          <div className="border-t border-slate-100 bg-slate-50/60 p-5 flex gap-5">
+          <div className="border-t border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-slate-800/50/60 p-5 flex gap-5">
             <div className="flex-1 space-y-3 min-w-0">
               {/* Client */}
               <div className="flex items-center justify-between">
@@ -723,15 +740,15 @@ const PosMayorContent = () => {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-3.5 w-3.5" />
                   <input value={clientQuery} onChange={e => setClientQuery(e.target.value)}
                     placeholder="Buscar cliente (nombre, RIF)..."
-                    className="w-full pl-9 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-violet-700 outline-none shadow-sm transition-all"
+                    className="w-full pl-9 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold focus:ring-2 focus:ring-violet-700 outline-none shadow-sm transition-all"
                   />
                   {filteredClients.length > 0 && (
-                    <div className="absolute bottom-full left-0 right-0 mb-2 max-h-40 overflow-y-auto bg-white rounded-xl shadow-xl border border-slate-100 z-50 p-1">
+                    <div className="absolute bottom-full left-0 right-0 mb-2 max-h-40 overflow-y-auto bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-white/[0.07] z-50 p-1">
                       {filteredClients.map(c => (
                         <button key={c.id} onClick={() => { setCustomer(c); setClientQuery(''); }}
                           className="w-full text-left px-4 py-2.5 hover:bg-violet-50 rounded-lg flex justify-between items-center group">
                           <div>
-                            <p className="text-xs font-black text-slate-800">{c.nombre}</p>
+                            <p className="text-xs font-black text-slate-800 dark:text-slate-200">{c.nombre}</p>
                             <p className="text-[10px] font-bold text-slate-400">{c.rif}</p>
                           </div>
                           <CheckCircle2 size={13} className="text-violet-500 opacity-0 group-hover:opacity-100" />
@@ -741,12 +758,12 @@ const PosMayorContent = () => {
                   )}
                 </div>
               ) : (
-                <div className="bg-white border border-violet-100 rounded-xl p-3.5 flex items-center gap-3 shadow-sm ring-1 ring-violet-200/50">
+                <div className="bg-white dark:bg-slate-900 border border-violet-100 rounded-xl p-3.5 flex items-center gap-3 shadow-sm ring-1 ring-violet-200/50">
                   <div className="h-9 w-9 rounded-full bg-violet-700 text-white flex items-center justify-center font-black text-sm shrink-0">
                     {customer.nombre.charAt(0)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-black text-slate-900 truncate">{customer.nombre}</p>
+                    <p className="text-sm font-black text-slate-900 dark:text-white truncate">{customer.nombre}</p>
                     <p className="text-[10px] font-bold text-slate-400 uppercase">{customer.rif}</p>
                   </div>
                 </div>
@@ -754,15 +771,15 @@ const PosMayorContent = () => {
 
               {/* Stats */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-white/[0.07] shadow-sm">
                   <p className="text-[9px] font-black uppercase text-slate-300 mb-1">Items</p>
-                  <p className="text-xl font-black text-slate-800">{items.reduce((a, i) => a + i.qty, 0)}</p>
+                  <p className="text-xl font-black text-slate-800 dark:text-slate-200">{items.reduce((a, i) => a + i.qty, 0)}</p>
                 </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-white/[0.07] shadow-sm">
                   <p className="text-[9px] font-black uppercase text-slate-300 mb-1">
                     {rateMode === 'divisas' ? 'Total USD' : 'Total BS'}
                   </p>
-                  <p className="text-xl font-black text-slate-800 truncate">
+                  <p className="text-xl font-black text-slate-800 dark:text-slate-200 truncate">
                     {rateMode === 'divisas'
                       ? `$${cartTotals.totalUsd.toFixed(2)}`
                       : cartTotals.totalBs.toLocaleString('es-VE', { maximumFractionDigits: 0 })
@@ -774,7 +791,7 @@ const PosMayorContent = () => {
 
             {/* Total + pay */}
             <div className="w-[38%] bg-violet-900 rounded-[1.8rem] p-6 flex flex-col justify-between shadow-2xl shadow-violet-200 text-white relative overflow-hidden shrink-0">
-              <div className="absolute -right-8 -top-8 h-36 w-36 bg-white/5 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute -right-8 -top-8 h-36 w-36 bg-white dark:bg-slate-900/5 rounded-full blur-2xl pointer-events-none" />
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-400">Total Pedido</p>
 
@@ -784,11 +801,11 @@ const PosMayorContent = () => {
                   <select
                     value={discountType}
                     onChange={e => setDiscount(e.target.value as DiscountType, discountValue)}
-                    className="flex-1 bg-white/10 text-white text-[9px] font-black rounded-lg px-2 py-1 border border-white/10 appearance-none cursor-pointer"
+                    className="flex-1 bg-white dark:bg-slate-900/10 text-white text-[9px] font-black rounded-lg px-2 py-1 border border-white/10 appearance-none cursor-pointer"
                   >
-                    <option value="none" className="text-slate-900">Sin descuento</option>
-                    <option value="percent" className="text-slate-900">Descuento %</option>
-                    <option value="fixed" className="text-slate-900">Descuento $</option>
+                    <option value="none" className="text-slate-900 dark:text-white">Sin descuento</option>
+                    <option value="percent" className="text-slate-900 dark:text-white">Descuento %</option>
+                    <option value="fixed" className="text-slate-900 dark:text-white">Descuento $</option>
                   </select>
                   {discountType !== 'none' && (
                     <input
@@ -796,7 +813,7 @@ const PosMayorContent = () => {
                       value={discountValue || ''}
                       onChange={e => setDiscount(discountType, parseFloat(e.target.value) || 0)}
                       placeholder={discountType === 'percent' ? '%' : '$'}
-                      className="w-16 bg-white/10 text-white text-[10px] font-black rounded-lg px-2 py-1 border border-white/10 text-center"
+                      className="w-16 bg-white dark:bg-slate-900/10 text-white text-[10px] font-black rounded-lg px-2 py-1 border border-white/10 text-center"
                     />
                   )}
                 </div>
@@ -821,7 +838,7 @@ const PosMayorContent = () => {
               <button
                 disabled={!customer || items.length === 0}
                 onClick={() => setShowPaymentModal(true)}
-                className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${customer && items.length > 0 ? 'bg-white text-violet-900 hover:bg-violet-400 hover:text-white shadow-xl hover:scale-[1.02]' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
+                className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${customer && items.length > 0 ? 'bg-white dark:bg-slate-900 text-violet-900 hover:bg-violet-400 hover:text-white shadow-xl hover:scale-[1.02]' : 'bg-white dark:bg-slate-900/10 text-white/30 cursor-not-allowed'}`}>
                 <Receipt size={15} />Procesar Pedido
               </button>
             </div>
@@ -866,13 +883,13 @@ const PosMayorContent = () => {
       {/* ── NEW CLIENT MODAL ────────────────────────────────────────────────── */}
       {showClientModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+          <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 p-8 shadow-2xl animate-in zoom-in-95 duration-300">
             <div className="flex justify-between items-start mb-6">
               <div>
                 <p className="text-[10px] font-black uppercase text-violet-600 mb-1 tracking-widest">Nuevo Mayorista</p>
-                <h3 className="text-xl font-black text-slate-900">Registro Rápido</h3>
+                <h3 className="text-xl font-black text-slate-900 dark:text-white">Registro Rápido</h3>
               </div>
-              <button onClick={() => setShowClientModal(false)} className="h-9 w-9 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400">
+              <button onClick={() => setShowClientModal(false)} className="h-9 w-9 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 dark:bg-white/[0.07] flex items-center justify-center text-slate-400">
                 <X size={18} />
               </button>
             </div>
@@ -883,14 +900,14 @@ const PosMayorContent = () => {
                   <input
                     value={clientForm[field]}
                     onChange={e => setClientForm({ ...clientForm, [field]: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-violet-700 transition-all"
+                    className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-violet-700 transition-all"
                   />
                 </div>
               ))}
             </div>
             <div className="mt-7 flex gap-3">
               <button onClick={() => setShowClientModal(false)}
-                className="flex-1 py-3.5 text-xs font-black uppercase tracking-widest text-slate-400 hover:bg-slate-50 rounded-xl transition-all">
+                className="flex-1 py-3.5 text-xs font-black uppercase tracking-widest text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 rounded-xl transition-all">
                 Cancelar
               </button>
               <button onClick={saveClient}

@@ -155,12 +155,12 @@ const HelpCenter: React.FC = () => {
 
   return (
     <section className="app-panel p-6 md:p-8">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-6 md:p-8 shadow-sm">
         <div className="flex flex-col items-center text-center">
           <div className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400">
             Academia de usuario
           </div>
-          <h1 className="mt-3 text-3xl md:text-4xl font-black text-slate-900">
+          <h1 className="mt-3 text-3xl md:text-4xl font-black text-slate-900 dark:text-white">
             Como podemos ayudarte?
           </h1>
           <p className="mt-2 text-sm md:text-base text-slate-500 max-w-2xl">
@@ -174,7 +174,7 @@ const HelpCenter: React.FC = () => {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Busca factura, auditoria, chat o semaforo"
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-10 py-3 text-sm font-semibold text-slate-700"
+                className="w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 px-10 py-3 text-sm font-semibold text-slate-700 dark:text-slate-300"
               />
             </div>
           </div>
@@ -188,7 +188,7 @@ const HelpCenter: React.FC = () => {
                   <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase border ${category.accent}`}>
                     Mision
                   </div>
-                  <div className="mt-2 text-xl font-black text-slate-800">
+                  <div className="mt-2 text-xl font-black text-slate-800 dark:text-slate-200">
                     {category.title}
                   </div>
                   <div className="text-sm text-slate-500">{category.subtitle}</div>
@@ -204,13 +204,13 @@ const HelpCenter: React.FC = () => {
                     className={`text-left rounded-2xl border px-5 py-4 transition-all ${
                       topic.id === activeTopicId
                         ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                        : 'border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:border-white/15'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <div
                         className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                          topic.id === activeTopicId ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-600'
+                          topic.id === activeTopicId ? 'bg-white dark:bg-slate-900/10 text-white' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-slate-400'
                         }`}
                       >
                         <i className={topic.icon}></i>
@@ -233,7 +233,7 @@ const HelpCenter: React.FC = () => {
                       <div className="mt-4 space-y-2 text-[12px] text-slate-100">
                         {topic.steps.map((step, index) => (
                           <div key={step} className="flex items-start gap-2">
-                            <span className="w-5 h-5 rounded-full bg-white/20 text-[10px] font-black flex items-center justify-center">
+                            <span className="w-5 h-5 rounded-full bg-white dark:bg-slate-900/20 text-[10px] font-black flex items-center justify-center">
                               {index + 1}
                             </span>
                             <span>{step}</span>

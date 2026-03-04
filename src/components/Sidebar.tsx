@@ -56,46 +56,46 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Dashboard',
     items: [
-      { id: 'resumen',      label: 'Dashboard',         Icon: LayoutDashboard, path: 'dashboard',    color: 'text-indigo-400',  bg: 'bg-indigo-500/15' },
+      { id: 'resumen',      label: 'Dashboard',         Icon: LayoutDashboard, path: 'dashboard',    color: 'text-indigo-300',  bg: 'bg-indigo-500/25' },
     ],
   },
   {
     label: 'Gestión',
     items: [
-      { id: 'inventario',   label: 'Inventario',        Icon: Package,         path: 'inventario',   color: 'text-sky-400',     bg: 'bg-sky-500/15' },
-      { id: 'cajas',        label: 'Ventas / Cajas',    Icon: ShoppingCart,    path: 'cajas',        color: 'text-sky-400',     bg: 'bg-sky-500/15' },
-      { id: 'rrhh',         label: 'RRHH / Nómina',    Icon: Users,           path: 'rrhh',         color: 'text-sky-400',     bg: 'bg-sky-500/15' },
+      { id: 'inventario',   label: 'Inventario',        Icon: Package,         path: 'inventario',   color: 'text-sky-300',     bg: 'bg-sky-500/25' },
+      { id: 'cajas',        label: 'Ventas / Cajas',    Icon: ShoppingCart,    path: 'cajas',        color: 'text-sky-300',     bg: 'bg-sky-500/25' },
+      { id: 'rrhh',         label: 'RRHH / Nómina',    Icon: Users,           path: 'rrhh',         color: 'text-sky-300',     bg: 'bg-sky-500/25' },
     ],
   },
   {
     label: 'Administración',
     items: [
-      { id: 'clientes',     label: 'Deudores / CxC',   Icon: Wallet,          path: 'cobranzas',    color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-      { id: 'proveedores',  label: 'Gastos / CxP',     Icon: Receipt,         path: 'cxp',          color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-      { id: 'contabilidad', label: 'Contabilidad',      Icon: BookOpen,        path: 'contabilidad', color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-      { id: 'tasas',        label: 'Tasas de Cambio',   Icon: TrendingUp,      path: 'tasas',        color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-      { id: 'conciliacion', label: 'Conciliación',      Icon: Landmark,        path: 'conciliacion', color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+      { id: 'clientes',     label: 'Deudores / CxC',   Icon: Wallet,          path: 'cobranzas',    color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
+      { id: 'proveedores',  label: 'Gastos / CxP',     Icon: Receipt,         path: 'cxp',          color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
+      { id: 'contabilidad', label: 'Contabilidad',      Icon: BookOpen,        path: 'contabilidad', color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
+      { id: 'tasas',        label: 'Tasas de Cambio',   Icon: TrendingUp,      path: 'tasas',        color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
+      { id: 'conciliacion', label: 'Conciliación',      Icon: Landmark,        path: 'conciliacion', color: 'text-emerald-300', bg: 'bg-emerald-500/25' },
     ],
   },
   {
     label: 'Reportes',
     items: [
-      { id: 'reportes',     label: 'Estadísticas',      Icon: BarChart3,       path: 'reportes',     color: 'text-violet-400',  bg: 'bg-violet-500/15' },
-      { id: 'vision',       label: 'Auditoría IA',      Icon: ClipboardList,   path: 'vision',       color: 'text-violet-400',  bg: 'bg-violet-500/15' },
-      { id: 'comparar',     label: 'Comparar Libros',   Icon: ArrowLeftRight,  path: 'comparar',     color: 'text-violet-400',  bg: 'bg-violet-500/15' },
+      { id: 'reportes',     label: 'Estadísticas',      Icon: BarChart3,       path: 'reportes',     color: 'text-violet-300',  bg: 'bg-violet-500/25' },
+      { id: 'vision',       label: 'Auditoría IA',      Icon: ClipboardList,   path: 'vision',       color: 'text-violet-300',  bg: 'bg-violet-500/25' },
+      { id: 'comparar',     label: 'Comparar Libros',   Icon: ArrowLeftRight,  path: 'comparar',     color: 'text-violet-300',  bg: 'bg-violet-500/25' },
     ],
   },
   {
     label: 'Herramientas',
     items: [
-      { id: 'widgets',      label: 'Herramientas',      Icon: LayoutGrid,      path: 'widgets',      color: 'text-amber-400',   bg: 'bg-amber-500/15' },
+      { id: 'widgets',      label: 'Herramientas',      Icon: LayoutGrid,      path: 'widgets',      color: 'text-amber-300',   bg: 'bg-amber-500/25' },
     ],
   },
   {
     label: 'Sistema',
     items: [
-      { id: 'config',       label: 'Configuración',     Icon: Settings2,       path: 'configuracion', color: 'text-slate-400',   bg: 'bg-slate-500/15' },
-      { id: 'help',         label: 'Ayuda',             Icon: HelpCircle,      path: 'help',          color: 'text-slate-400',   bg: 'bg-slate-500/15' },
+      { id: 'config',       label: 'Configuración',     Icon: Settings2,       path: 'configuracion', color: 'text-slate-300',   bg: 'bg-slate-500/25' },
+      { id: 'help',         label: 'Ayuda',             Icon: HelpCircle,      path: 'help',          color: 'text-slate-300',   bg: 'bg-slate-500/25' },
     ],
   },
 ];

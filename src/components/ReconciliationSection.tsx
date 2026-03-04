@@ -191,14 +191,14 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-black text-slate-900 text-2xl leading-tight">Conciliación Bancaria</h1>
+          <h1 className="font-black text-slate-900 dark:text-white text-2xl leading-tight">Conciliación Bancaria</h1>
           <p className="text-slate-400 text-sm mt-0.5 font-medium">Auditoría y cuadre de saldos</p>
         </div>
         <div className="flex items-center gap-2">
           <input type="file" ref={fileRef} accept=".csv,.txt" className="hidden" onChange={handleFileUpload} />
           <button
             onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all"
+            className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 transition-all"
           >
             <Upload size={13} />
             Importar Extracto
@@ -229,18 +229,18 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
               className={`rounded-3xl border p-5 text-left transition-all ${
                 isActive
                   ? 'bg-[#4f6ef7] border-blue-500 text-white shadow-lg shadow-blue-200'
-                  : 'bg-white border-slate-100 hover:border-blue-200 hover:shadow-sm'
+                  : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-white/[0.07] hover:border-blue-200 hover:shadow-sm'
               }`}
             >
               <div className="flex items-center justify-between mb-3">
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${isActive ? 'bg-white/20' : 'bg-blue-50'}`}>
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${isActive ? 'bg-white dark:bg-slate-900/20' : 'bg-blue-50'}`}>
                   <Landmark size={15} className={isActive ? 'text-white' : 'text-[#4f6ef7]'} />
                 </div>
                 {lastDiff !== null && (
                   <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg ${
                     Math.abs(lastDiff) < 0.01
-                      ? isActive ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
-                      : isActive ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'
+                      ? isActive ? 'bg-white dark:bg-slate-900/20 text-white' : 'bg-emerald-100 text-emerald-700'
+                      : isActive ? 'bg-white dark:bg-slate-900/20 text-white' : 'bg-rose-100 text-rose-700'
                   }`}>
                     {Math.abs(lastDiff) < 0.01 ? 'OK' : `Dif. ${formatCurrency(lastDiff)}`}
                   </span>
@@ -249,7 +249,7 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
               <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>
                 {acc.shortLabel}
               </p>
-              <p className={`text-lg font-black leading-tight ${isActive ? 'text-white' : 'text-slate-900'}`}>
+              <p className={`text-lg font-black leading-tight ${isActive ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
                 {formatCurrency(bal)}
               </p>
               {last && (
@@ -264,11 +264,11 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
 
       {/* Bank import panel */}
       {showBankImport && bankLines.length > 0 && (
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-white/[0.07] shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.07] flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileText size={15} className="text-[#4f6ef7]" />
-              <span className="font-black text-slate-800 text-[14px]">Extracto Importado</span>
+              <span className="font-black text-slate-800 dark:text-slate-200 text-[14px]">Extracto Importado</span>
               <span className="ml-1 bg-emerald-100 text-emerald-700 text-[10px] font-black px-2 py-0.5 rounded-lg">{matchedCount} coinciden</span>
               {bankLines.length - matchedCount > 0 && (
                 <span className="bg-amber-100 text-amber-700 text-[10px] font-black px-2 py-0.5 rounded-lg">
@@ -277,14 +277,14 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
               )}
             </div>
             <button onClick={() => { setBankLines([]); setShowBankImport(false); }}
-              className="text-[11px] font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest">
+              className="text-[11px] font-black text-slate-400 hover:text-slate-600 dark:text-slate-400 uppercase tracking-widest">
               Cerrar
             </button>
           </div>
           <div className="overflow-x-auto max-h-56 custom-scroll">
             <table className="w-full text-[12px]">
               <thead>
-                <tr className="border-b border-slate-100 sticky top-0 bg-white">
+                <tr className="border-b border-slate-100 dark:border-white/[0.07] sticky top-0 bg-white dark:bg-slate-900">
                   {['Fecha', 'Descripción', 'Monto', 'Estado'].map(h => (
                     <th key={h} className="px-5 py-3 text-left font-black text-slate-400 uppercase tracking-widest text-[10px]">{h}</th>
                   ))}
@@ -294,8 +294,8 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
                 {bankLines.map((line, i) => (
                   <tr key={i} className="border-b border-slate-50">
                     <td className="px-5 py-2.5 text-slate-500">{line.date}</td>
-                    <td className="px-5 py-2.5 text-slate-700 max-w-[200px] truncate">{line.description}</td>
-                    <td className="px-5 py-2.5 font-black text-slate-800">{formatCurrency(line.amount)}</td>
+                    <td className="px-5 py-2.5 text-slate-700 dark:text-slate-300 max-w-[200px] truncate">{line.description}</td>
+                    <td className="px-5 py-2.5 font-black text-slate-800 dark:text-slate-200">{formatCurrency(line.amount)}</td>
                     <td className="px-5 py-2.5">
                       {line.matched
                         ? <span className="flex items-center gap-1 text-emerald-600 text-[11px] font-black"><CheckCircle2 size={12} />Coincide</span>
@@ -313,18 +313,18 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Verification form */}
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-5">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-white/[0.07] shadow-sm p-6 space-y-5">
           <div className="flex items-center justify-between">
-            <h3 className="font-black text-slate-800 text-[15px]">Verificación de Saldo</h3>
+            <h3 className="font-black text-slate-800 dark:text-slate-200 text-[15px]">Verificación de Saldo</h3>
             <span className="text-[11px] font-black uppercase tracking-widest px-3 py-1 bg-blue-50 text-[#4f6ef7] rounded-xl">
               {ACCOUNTS.find(a => a.key === selectedAccount)?.label}
             </span>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-2xl bg-slate-50 p-4">
+            <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-4">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Saldo en Sistema</p>
-              <p className="text-xl font-black text-slate-900">{formatCurrency(systemBalance)}</p>
+              <p className="text-xl font-black text-slate-900 dark:text-white">{formatCurrency(systemBalance)}</p>
               <p className="text-[10px] text-slate-400 mt-1">Calculado de movimientos</p>
             </div>
             <div className="rounded-2xl bg-blue-50 p-4">
@@ -338,7 +338,7 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
                   decimalSeparator=","
                   decimalScale={2}
                   allowNegative={false}
-                  className="w-full pl-5 bg-transparent border-none outline-none text-lg font-black text-slate-800 placeholder:text-slate-300"
+                  className="w-full pl-5 bg-transparent border-none outline-none text-lg font-black text-slate-800 dark:text-slate-200 placeholder:text-slate-300"
                   placeholder="0,00"
                 />
               </div>
@@ -370,23 +370,23 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
         </div>
 
         {/* History */}
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-100">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-white/[0.07] shadow-sm overflow-hidden flex flex-col">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.07]">
             <div className="flex items-center gap-2 mb-3">
               <BarChart3 size={15} className="text-slate-400" />
-              <span className="font-black text-slate-800 text-[14px]">Historial de Cierres</span>
+              <span className="font-black text-slate-800 dark:text-slate-200 text-[14px]">Historial de Cierres</span>
               <span className="ml-auto text-[11px] font-black text-slate-400">{filteredHistory.length} registros</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <select value={filterAccount} onChange={e => setFilterAccount(e.target.value as any)}
-                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-bold text-slate-700">
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-[11px] font-bold text-slate-700 dark:text-slate-300">
                 <option value="ALL">Todas</option>
                 {ACCOUNTS.map(a => <option key={a.key} value={a.key}>{a.shortLabel}</option>)}
               </select>
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700" />
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-[11px] font-bold text-slate-700 dark:text-slate-300" />
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700" />
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-[11px] font-bold text-slate-700 dark:text-slate-300" />
             </div>
           </div>
 
@@ -400,10 +400,10 @@ const ReconciliationSection: React.FC<ReconciliationSectionProps> = ({
               </div>
             ) : (
               filteredHistory.map(h => (
-                <div key={h.id} className="px-6 py-4 border-b border-slate-50 flex items-center justify-between hover:bg-slate-50/60 transition-all">
+                <div key={h.id} className="px-6 py-4 border-b border-slate-50 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50/60 transition-all">
                   <div>
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-[11px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">{h.account}</span>
+                      <span className="text-[11px] font-black text-slate-500 bg-slate-100 dark:bg-white/[0.07] px-2 py-0.5 rounded-lg">{h.account}</span>
                       <span className="text-[11px] text-slate-400">{new Date(h.createdAt).toLocaleDateString('es-VE')}</span>
                     </div>
                     <p className="text-[10px] text-slate-400">{h.userName}</p>

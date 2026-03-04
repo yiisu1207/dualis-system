@@ -121,7 +121,7 @@ const SmartDatePicker: React.FC<{
       <input
         type="text"
         tabIndex={tabIndex}
-        className={inputClassName || 'w-full px-3 py-3 pr-8 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all'}
+        className={inputClassName || 'w-full px-3 py-3 pr-8 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-sm font-bold text-slate-700 dark:text-slate-300 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all'}
         value={textVal}
         placeholder="DD/MM/AAAA"
         onChange={(e) => setTextVal(e.target.value)}
@@ -138,7 +138,7 @@ const SmartDatePicker: React.FC<{
         <i className="fa-solid fa-calendar-days text-xs" />
       </button>
       {open && (
-        <div className="absolute z-50 top-full mt-1.5 rounded-2xl border border-slate-100 bg-white shadow-xl p-3">
+        <div className="absolute z-50 top-full mt-1.5 rounded-2xl border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-slate-900 shadow-xl p-3">
           <DayPicker
             mode="single"
             selected={selected}
@@ -272,10 +272,10 @@ const ActionCard: React.FC<{
   return (
     <form
       onSubmit={handleSubmit}
-      className="bg-white rounded-[2rem] p-6 w-full animate-in zoom-in border-t-8 border-indigo-500 shadow-2xl h-full"
+      className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 w-full animate-in zoom-in border-t-8 border-indigo-500 shadow-2xl h-full"
     >
       <div className="flex justify-between items-center mb-6">
-        <h3 className="text-xl font-black text-slate-800 uppercase italic">
+        <h3 className="text-xl font-black text-slate-800 dark:text-slate-200 uppercase italic">
           Nuevo Movimiento
         </h3>
         <div className="flex items-center gap-2">
@@ -316,7 +316,7 @@ const ActionCard: React.FC<{
           <button
             type="button"
             onClick={() => ocrInputRef.current?.click()}
-            className="px-3 py-2 text-[10px] font-black uppercase bg-slate-100 hover:bg-indigo-600 hover:text-slate-900 rounded-full transition-colors"
+            className="px-3 py-2 text-[10px] font-black uppercase bg-slate-100 dark:bg-white/[0.07] hover:bg-indigo-600 hover:text-slate-900 dark:text-white rounded-full transition-colors"
           >
             {ocrLoading ? 'OCR...' : 'OCR'}
           </button>
@@ -328,7 +328,7 @@ const ActionCard: React.FC<{
               setReference('');
               setOpDate(new Date().toISOString().split('T')[0]);
             }}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-500 hover:text-slate-900 transition-colors flex items-center justify-center"
+            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/[0.07] hover:bg-rose-500 hover:text-slate-900 dark:text-white transition-colors flex items-center justify-center"
           >
             <i className="fa-solid fa-xmark"></i>
           </button>
@@ -336,13 +336,13 @@ const ActionCard: React.FC<{
       </div>
 
       <div className="space-y-5">
-        <div className="bg-slate-100 p-1 rounded-xl flex">
+        <div className="bg-slate-100 dark:bg-white/[0.07] p-1 rounded-xl flex">
           <button
             type="button"
             onClick={() => setType(MovementType.FACTURA)}
             className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
               type === MovementType.FACTURA
-                ? 'bg-white shadow text-indigo-600'
+                ? 'bg-white dark:bg-slate-900 shadow text-indigo-600'
                 : 'text-slate-400'
             }`}
           >
@@ -353,7 +353,7 @@ const ActionCard: React.FC<{
             onClick={() => setType(MovementType.ABONO)}
             className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
               type === MovementType.ABONO
-                ? 'bg-emerald-500 shadow text-slate-900'
+                ? 'bg-emerald-500 shadow text-slate-900 dark:text-white'
                 : 'text-slate-400'
             }`}
           >
@@ -381,10 +381,10 @@ const ActionCard: React.FC<{
         </div>
 
         {creatingInline && (
-          <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+          <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-white/[0.07]">
             <div className="space-y-2">
               <input
-                className="w-full p-3 bg-white border-none rounded text-sm font-bold"
+                className="w-full p-3 bg-white dark:bg-slate-900 border-none rounded text-sm font-bold"
                 value={newEntity.id}
                 onChange={(e) => setNewEntity({ ...newEntity, id: e.target.value })}
               />
@@ -471,7 +471,7 @@ const ActionCard: React.FC<{
             Cuenta / Moneda
           </label>
           <select
-            className="w-full p-4 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none"
+            className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-slate-700 dark:text-slate-300 outline-none"
             value={accountType}
             onChange={() => null}
             disabled
@@ -497,14 +497,14 @@ const ActionCard: React.FC<{
             decimalSeparator=","
             decimalScale={2}
             allowNegative={false}
-            className="w-full p-4 bg-slate-50 border-none rounded-xl font-black text-2xl text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-black text-2xl text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500"
             placeholder="0,00"
             required
           />
           <div className="mt-3">
             <input
               type="text"
-              className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-sm text-slate-700 outline-none"
+              className="w-full p-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-sm text-slate-700 dark:text-slate-300 outline-none"
               placeholder="Referencia (opcional)"
               value={reference}
               onChange={(e) => setReference(e.target.value)}
@@ -518,7 +518,7 @@ const ActionCard: React.FC<{
               value={opDate}
               onChange={handleOpDateChange}
               rateDates={rateDates}
-              inputClassName="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-sm text-slate-700 outline-none"
+              inputClassName="w-full p-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-sm text-slate-700 dark:text-slate-300 outline-none"
             />
             {rateHint && (
               <div className="mt-2 text-[10px] font-semibold text-emerald-600">
@@ -538,7 +538,7 @@ const ActionCard: React.FC<{
                 className={`py-2 px-3 rounded-xl text-[11px] font-black uppercase ${
                   quickPaymentOption === 'USD'
                     ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 text-slate-700'
+                    : 'bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300'
                 }`}
               >
                 USD / Efectivo
@@ -552,7 +552,7 @@ const ActionCard: React.FC<{
                 className={`py-2 px-3 rounded-xl text-[11px] font-black uppercase ${
                   quickPaymentOption === 'BS'
                     ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-100 text-slate-700'
+                    : 'bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300'
                 }`}
               >
                 Bs / Transferencia
@@ -561,7 +561,7 @@ const ActionCard: React.FC<{
             <div className="mt-2">
               <span
                 style={{ backgroundColor: 'var(--odoo-primary)' }}
-                className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full text-slate-900"
+                className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full text-slate-900 dark:text-white"
               >
                 {quickPaymentOption === 'BS' ? 'Transferencia' : 'Efectivo'}
               </span>
@@ -575,7 +575,7 @@ const ActionCard: React.FC<{
           </label>
           <input
             type="text"
-            className="w-full p-4 bg-slate-50 border-none rounded-xl font-bold text-sm text-slate-700 outline-none"
+            className="w-full p-4 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-sm text-slate-700 dark:text-slate-300 outline-none"
             placeholder="Opcional: Detalle de venta..."
             value={concept}
             onChange={(e) => setConcept(e.target.value)}
@@ -586,7 +586,7 @@ const ActionCard: React.FC<{
       <div className="mt-8">
         <button
           type="submit"
-          className={`w-full py-4 rounded-xl font-black text-slate-900 text-xs uppercase tracking-widest shadow-xl transition-transform active:scale-95 ${
+          className={`w-full py-4 rounded-xl font-black text-slate-900 dark:text-white text-xs uppercase tracking-widest shadow-xl transition-transform active:scale-95 ${
             type === MovementType.FACTURA
               ? 'bg-indigo-600 hover:bg-indigo-700'
               : 'bg-emerald-600 hover:bg-emerald-700'
@@ -2049,7 +2049,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               const grupoUsd = grupo;
               return (
                 <div className="hidden md:flex items-center gap-3 mr-2">
-                  <div className="bg-white p-3 rounded-lg border border-slate-100 text-right flex flex-col justify-center items-end min-w-[140px]">
+                  <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-white/[0.07] text-right flex flex-col justify-center items-end min-w-[140px]">
                     <div className="text-[10px] text-slate-400 font-bold">BCV</div>
                     <div
                       className={`font-mono font-black text-2xl truncate ${
@@ -2059,7 +2059,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       {formatCurrency(Math.abs(bcvUsd), '$')}
                     </div>
                   </div>
-                  <div className="bg-white p-3 rounded-lg border border-slate-100 text-right flex flex-col justify-center items-end min-w-[140px]">
+                  <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-white/[0.07] text-right flex flex-col justify-center items-end min-w-[140px]">
                     <div className="text-[10px] text-slate-400 font-bold">Grupo</div>
                     <div
                       className={`font-mono font-black text-2xl truncate ${
@@ -2069,7 +2069,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       {formatCurrency(Math.abs(grupoUsd), '$')}
                     </div>
                   </div>
-                  <div className="bg-white p-3 rounded-lg border border-slate-100 text-right flex flex-col justify-center items-end min-w-[120px]">
+                  <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-white/[0.07] text-right flex flex-col justify-center items-end min-w-[120px]">
                     <div className="text-[10px] text-slate-400 font-bold">Divisa</div>
                     <div
                       className={`font-mono font-black text-2xl truncate ${
@@ -2096,7 +2096,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               <button
                 onClick={() => setViewMode('LIST')}
                 className={`px-4 py-2 rounded-lg text-xs font-black uppercase ${
-                  viewMode === 'LIST' ? 'bg-white shadow text-[var(--ui-accent)]' : 'text-slate-400'
+                  viewMode === 'LIST' ? 'bg-white dark:bg-slate-900 shadow text-[var(--ui-accent)]' : 'text-slate-400'
                 }`}
               >
                 Lista
@@ -2104,7 +2104,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               <button
                 onClick={() => setViewMode('AGING')}
                 className={`px-4 py-2 rounded-lg text-xs font-black uppercase ${
-                  viewMode === 'AGING' ? 'bg-white shadow text-rose-600' : 'text-slate-400'
+                  viewMode === 'AGING' ? 'bg-white dark:bg-slate-900 shadow text-rose-600' : 'text-slate-400'
                 }`}
               >
                 Semáforo
@@ -2138,7 +2138,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
             <form
               onSubmit={handleQuickOpSubmit}
               onKeyDown={handleFormKeyDown}
-              className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col gap-3"
+              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-sm p-4 flex flex-col gap-3"
             >
               {/* ── Fila 1: Cliente + Cuenta + Tipo + Saldo ── */}
               <div className="flex flex-wrap items-center gap-2">
@@ -2157,7 +2157,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   />
                 </div>
 
-                <div className="flex gap-1 p-1 bg-slate-100 rounded-xl shrink-0">
+                <div className="flex gap-1 p-1 bg-slate-100 dark:bg-white/[0.07] rounded-xl shrink-0">
                   {([
                     { at: AccountType.BCV, label: 'BCV', kbd: 'B', active: 'text-blue-600' },
                     { at: AccountType.GRUPO, label: 'Grupo', kbd: 'G', active: 'text-violet-600' },
@@ -2165,23 +2165,23 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   ] as const).map(({ at, label, kbd, active }) => (
                     <button key={at} type="button"
                       onClick={() => handleAccountTypeChange(at)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${quickForm.accountType === at ? `bg-white shadow ${active}` : 'text-slate-400 hover:text-slate-600'}`}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${quickForm.accountType === at ? `bg-white dark:bg-slate-900 shadow ${active}` : 'text-slate-400 hover:text-slate-600 dark:text-slate-400'}`}
                     >
                       {label} <kbd className="text-[9px] opacity-40 font-sans ml-0.5">⌥{kbd}</kbd>
                     </button>
                   ))}
                 </div>
 
-                <div className="flex gap-1 p-1 bg-slate-100 rounded-xl shrink-0">
+                <div className="flex gap-1 p-1 bg-slate-100 dark:bg-white/[0.07] rounded-xl shrink-0">
                   <button type="button"
                     onClick={() => setQuickForm(p => ({ ...p, type: MovementType.FACTURA }))}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${quickForm.type === MovementType.FACTURA ? 'bg-rose-500 text-white shadow' : 'text-slate-400 hover:text-slate-600'}`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${quickForm.type === MovementType.FACTURA ? 'bg-rose-500 text-white shadow' : 'text-slate-400 hover:text-slate-600 dark:text-slate-400'}`}
                   >
                     Deuda <kbd className="text-[9px] opacity-40 font-sans ml-0.5">⌥F</kbd>
                   </button>
                   <button type="button"
                     onClick={() => setQuickForm(p => ({ ...p, type: MovementType.ABONO }))}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${quickForm.type === MovementType.ABONO ? 'bg-emerald-500 text-white shadow' : 'text-slate-400 hover:text-slate-600'}`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${quickForm.type === MovementType.ABONO ? 'bg-emerald-500 text-white shadow' : 'text-slate-400 hover:text-slate-600 dark:text-slate-400'}`}
                   >
                     Abono <kbd className="text-[9px] opacity-40 font-sans ml-0.5">⌥A</kbd>
                   </button>
@@ -2218,7 +2218,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     decimalSeparator=","
                     decimalScale={2}
                     allowNegative={false}
-                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-black text-slate-800 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-sm font-black text-slate-800 dark:text-slate-200 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
                     placeholder="0,00"
                     required
                     onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); conceptoRef.current?.focus(); } }}
@@ -2232,7 +2232,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       type="number"
                       tabIndex={2}
                       step="0.01"
-                      className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                      className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-sm font-bold text-slate-700 dark:text-slate-300 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
                       value={quickForm.rate}
                       onChange={(e) => setQuickForm({ ...quickForm, rate: e.target.value })}
                       placeholder="0.00"
@@ -2248,7 +2248,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     onChange={handleQuickDateSelect}
                     rateDates={rateDates}
                     className="mt-1"
-                    inputClassName="w-full px-3 py-2.5 pr-7 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                    inputClassName="w-full px-3 py-2.5 pr-7 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-sm font-bold text-slate-700 dark:text-slate-300 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
                   />
                 </div>
 
@@ -2258,7 +2258,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     ref={conceptoRef}
                     type="text"
                     tabIndex={4}
-                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-sm font-bold text-slate-700 dark:text-slate-300 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
                     placeholder={quickForm.type === MovementType.FACTURA ? 'Factura / Venta / Servicio...' : 'Pago / Abono / Depósito...'}
                     value={quickForm.concept}
                     onChange={(e) => setQuickForm({ ...quickForm, concept: e.target.value })}
@@ -2272,7 +2272,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   <input
                     type="text"
                     tabIndex={5}
-                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-medium text-slate-600 placeholder:text-slate-300 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
+                    className="w-full mt-1 px-3 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-sm font-medium text-slate-600 dark:text-slate-400 placeholder:text-slate-300 outline-none focus:border-[var(--ui-accent)] focus:ring-2 focus:ring-[var(--ui-soft)] transition-all"
                     placeholder="Nro. control..."
                     value={quickForm.reference}
                     onChange={(e) => setQuickForm({ ...quickForm, reference: e.target.value })}
@@ -2311,12 +2311,12 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
             </div>
           </div>
 
-          <div className="px-6 py-3 border-t border-slate-100 bg-white flex items-center gap-2">
+          <div className="px-6 py-3 border-t border-slate-100 dark:border-white/[0.07] bg-white dark:bg-slate-900 flex items-center gap-2">
             <i className="fa-solid fa-magnifying-glass text-slate-300 text-xs" />
             <input
               type="text"
               placeholder="Filtrar clientes por nombre, cédula..."
-              className="flex-1 bg-transparent border-none outline-none text-sm font-semibold text-slate-600 placeholder:text-slate-300"
+              className="flex-1 bg-transparent border-none outline-none text-sm font-semibold text-slate-600 dark:text-slate-400 placeholder:text-slate-300"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -2339,7 +2339,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               </div>
             ) : (
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black tracking-widest sticky top-0 z-10">
+                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-400 text-[10px] uppercase font-black tracking-widest sticky top-0 z-10">
                   <tr>
                     <th className="px-6 py-4">Nombre / Razón Social</th>
                     <th className="px-6 py-4">RIF / C.I.</th>
@@ -2348,13 +2348,13 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     <th className="px-6 py-4 text-center">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
                   {directoryData.map((c) => (
                     <tr
                       key={c.id}
-                      className="hover:bg-slate-50/70 transition-colors group"
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50/70 transition-colors group"
                     >
-                      <td className="px-6 py-4 font-bold text-slate-700">
+                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-300">
                         <div className="flex flex-col gap-2">
                           <span>{c.id}</span>
                           <ClientStatusBadge
@@ -2426,7 +2426,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                           onClick={() =>
                             onOpenLedger ? onOpenLedger(c.id) : openCustomerDetail(c.id)
                           }
-                          className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-slate-900 flex items-center justify-center transition-colors"
+                          className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-slate-900 dark:text-white flex items-center justify-center transition-colors"
                           title="Ver Libro Mayor"
                         >
                           <i className="fa-solid fa-folder-open"></i>
@@ -2442,7 +2442,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
       )}
 
       {viewMode === 'AGING' && (
-        <div className="flex-1 bg-white rounded-[1.5rem] shadow-sm border border-slate-200 overflow-hidden flex flex-col p-6 gap-6">
+        <div className="flex-1 bg-white dark:bg-slate-900 rounded-[1.5rem] shadow-sm border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col p-6 gap-6">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
               <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">
@@ -2457,12 +2457,12 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                 <input
                   type="text"
                   placeholder="Buscar cliente o cédula..."
-                  className="w-full sm:w-[260px] px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700"
+                  className="w-full sm:w-[260px] px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 text-sm font-semibold text-slate-700 dark:text-slate-300"
                   value={agingSearch}
                   onChange={(e) => setAgingSearch(e.target.value)}
                 />
                 <select
-                  className="w-full sm:w-[220px] px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700"
+                  className="w-full sm:w-[220px] px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 text-sm font-semibold text-slate-700 dark:text-slate-300"
                   value={agingSort}
                   onChange={(e) =>
                     setAgingSort(
@@ -2476,7 +2476,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   <option value="age-asc">Ordenar: Antigüedad (Menor a mayor)</option>
                 </select>
               </div>
-              <div className="w-full lg:w-[320px] bg-slate-50 border border-slate-200 rounded-xl p-3 text-[10px] text-slate-600">
+              <div className="w-full lg:w-[320px] bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-xl p-3 text-[10px] text-slate-600 dark:text-slate-400">
                 <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
                   Info Semáforo
                 </div>
@@ -2518,7 +2518,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       ref={(node) => {
                         semaforoCardRefs.current[item.customer] = node;
                       }}
-                      className="group bg-white p-4 rounded-2xl shadow-sm border border-emerald-100 border-l-4 border-l-emerald-400 hover:shadow-md transition-all cursor-pointer"
+                      className="group bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-emerald-100 border-l-4 border-l-emerald-400 hover:shadow-md transition-all cursor-pointer"
                       onClick={() => {
                         setAgingModalItem(item);
                         setShowAgingModal(true);
@@ -2530,7 +2530,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             {getInitials(item.customer)}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-800 text-sm leading-tight">
+                            <p className="font-bold text-slate-800 dark:text-slate-200 text-sm leading-tight">
                               {item.customer}
                             </p>
                             <p className="text-[10px] text-slate-500 font-semibold">
@@ -2543,7 +2543,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                         </span>
                       </div>
                       <div className="mt-3">
-                        <p className="text-2xl font-black text-slate-900">
+                        <p className="text-2xl font-black text-slate-900 dark:text-white">
                           {formatCurrency(item.amount, '$')}
                         </p>
                         <p className="text-[10px] text-slate-400 font-bold">
@@ -2578,7 +2578,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                           ))}
                         </div>
                       )}
-                      <div className="mt-3 border-t border-slate-100 pt-3 flex flex-wrap gap-2 opacity-0 group-hover:opacity-100 transition-opacity sm:opacity-100">
+                      <div className="mt-3 border-t border-slate-100 dark:border-white/[0.07] pt-3 flex flex-wrap gap-2 opacity-0 group-hover:opacity-100 transition-opacity sm:opacity-100">
                         <div
                           className="relative flex-1 min-w-[150px]"
                           ref={item.customer === shareMenuClientId ? shareMenuCardRef : null}
@@ -2596,13 +2596,13 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             Enviar Estado
                           </button>
                           {shareMenuClientId === item.customer && (
-                            <div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-20">
+                            <div className="absolute left-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-2 z-20">
                               <div className="px-3 pt-1 pb-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                                   Cuenta a exportar
                                 </label>
                                 <select
-                                  className="mt-2 w-full px-2 py-1 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700"
+                                  className="mt-2 w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-[11px] font-bold text-slate-700 dark:text-slate-300"
                                   value={shareMenuAccount}
                                   onChange={(event) =>
                                     setShareMenuAccount(event.target.value as ReportAccount)
@@ -2623,7 +2623,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                     buildWhatsAppContext(item.customer, shareMenuAccount, item.date)
                                   );
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 WhatsApp (plantilla)
                               </button>
@@ -2634,7 +2634,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                   setShareMenuClientId(null);
                                   void handleCardPdfSummary(item.customer, shareMenuAccount);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 PDF Resumido
                               </button>
@@ -2645,7 +2645,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                   setShareMenuClientId(null);
                                   void handleCardPdfDetailed(item.customer, shareMenuAccount);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 PDF Detallado
                               </button>
@@ -2658,7 +2658,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                     void handleCardImageSummary(item.customer, shareMenuAccount);
                                   }, 60);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 Imagen Resumida
                               </button>
@@ -2671,7 +2671,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                     void handleCardImageDetailed(item.customer, shareMenuAccount);
                                   }, 60);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 Imagen Detallada
                               </button>
@@ -2684,7 +2684,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             event.stopPropagation();
                             handleQuickAbono(item);
                           }}
-                          className="flex-1 min-w-[110px] bg-slate-100 text-slate-700 py-2 rounded-lg text-[11px] font-black uppercase hover:bg-slate-200"
+                          className="flex-1 min-w-[110px] bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300 py-2 rounded-lg text-[11px] font-black uppercase hover:bg-slate-200"
                         >
                           Registrar Abono
                         </button>
@@ -2739,7 +2739,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       ref={(node) => {
                         semaforoCardRefs.current[item.customer] = node;
                       }}
-                      className="group bg-white p-4 rounded-2xl shadow-sm border border-amber-100 border-l-4 border-l-amber-400 hover:shadow-md transition-all cursor-pointer"
+                      className="group bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-amber-100 border-l-4 border-l-amber-400 hover:shadow-md transition-all cursor-pointer"
                       onClick={() => {
                         setAgingModalItem(item);
                         setShowAgingModal(true);
@@ -2751,7 +2751,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             {getInitials(item.customer)}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-800 text-sm leading-tight">
+                            <p className="font-bold text-slate-800 dark:text-slate-200 text-sm leading-tight">
                               {item.customer}
                             </p>
                             <p className="text-[10px] text-slate-500 font-semibold">
@@ -2764,7 +2764,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                         </span>
                       </div>
                       <div className="mt-3">
-                        <p className="text-2xl font-black text-slate-900">
+                        <p className="text-2xl font-black text-slate-900 dark:text-white">
                           {formatCurrency(item.amount, '$')}
                         </p>
                         <p className="text-[10px] text-slate-400 font-bold">
@@ -2799,7 +2799,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                           ))}
                         </div>
                       )}
-                      <div className="mt-3 border-t border-slate-100 pt-3 flex flex-wrap gap-2 opacity-0 group-hover:opacity-100 transition-opacity sm:opacity-100">
+                      <div className="mt-3 border-t border-slate-100 dark:border-white/[0.07] pt-3 flex flex-wrap gap-2 opacity-0 group-hover:opacity-100 transition-opacity sm:opacity-100">
                         <div
                           className="relative flex-1 min-w-[150px]"
                           ref={item.customer === shareMenuClientId ? shareMenuCardRef : null}
@@ -2817,13 +2817,13 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             Enviar Estado
                           </button>
                           {shareMenuClientId === item.customer && (
-                            <div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-20">
+                            <div className="absolute left-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-2 z-20">
                               <div className="px-3 pt-1 pb-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                                   Cuenta a exportar
                                 </label>
                                 <select
-                                  className="mt-2 w-full px-2 py-1 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700"
+                                  className="mt-2 w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-[11px] font-bold text-slate-700 dark:text-slate-300"
                                   value={shareMenuAccount}
                                   onChange={(event) =>
                                     setShareMenuAccount(event.target.value as ReportAccount)
@@ -2844,7 +2844,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                     buildWhatsAppContext(item.customer, shareMenuAccount, item.date)
                                   );
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 WhatsApp (plantilla)
                               </button>
@@ -2855,7 +2855,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                   setShareMenuClientId(null);
                                   void handleCardPdfSummary(item.customer, shareMenuAccount);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 PDF Resumido
                               </button>
@@ -2866,7 +2866,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                   setShareMenuClientId(null);
                                   void handleCardPdfDetailed(item.customer, shareMenuAccount);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 PDF Detallado
                               </button>
@@ -2879,7 +2879,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                     void handleCardImageSummary(item.customer, shareMenuAccount);
                                   }, 60);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 Imagen Resumida
                               </button>
@@ -2892,7 +2892,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                     void handleCardImageDetailed(item.customer, shareMenuAccount);
                                   }, 60);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 Imagen Detallada
                               </button>
@@ -2905,7 +2905,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             event.stopPropagation();
                             handleQuickAbono(item);
                           }}
-                          className="flex-1 min-w-[110px] bg-slate-100 text-slate-700 py-2 rounded-lg text-[11px] font-black uppercase hover:bg-slate-200"
+                          className="flex-1 min-w-[110px] bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300 py-2 rounded-lg text-[11px] font-black uppercase hover:bg-slate-200"
                         >
                           Registrar Abono
                         </button>
@@ -2960,7 +2960,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       ref={(node) => {
                         semaforoCardRefs.current[item.customer] = node;
                       }}
-                      className="group bg-white p-4 rounded-2xl shadow-sm border border-rose-100 border-l-4 border-l-rose-400 hover:shadow-md transition-all cursor-pointer"
+                      className="group bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-rose-100 border-l-4 border-l-rose-400 hover:shadow-md transition-all cursor-pointer"
                       onClick={() => {
                         setAgingModalItem(item);
                         setShowAgingModal(true);
@@ -2972,7 +2972,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             {getInitials(item.customer)}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-800 text-sm leading-tight">
+                            <p className="font-bold text-slate-800 dark:text-slate-200 text-sm leading-tight">
                               {item.customer}
                             </p>
                             <p className="text-[10px] text-slate-500 font-semibold">
@@ -2985,7 +2985,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                         </span>
                       </div>
                       <div className="mt-3">
-                        <p className="text-2xl font-black text-slate-900">
+                        <p className="text-2xl font-black text-slate-900 dark:text-white">
                           {formatCurrency(item.amount, '$')}
                         </p>
                         <p className="text-[10px] text-slate-400 font-bold">
@@ -3020,7 +3020,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                           ))}
                         </div>
                       )}
-                      <div className="mt-3 border-t border-slate-100 pt-3 flex flex-wrap gap-2 opacity-0 group-hover:opacity-100 transition-opacity sm:opacity-100">
+                      <div className="mt-3 border-t border-slate-100 dark:border-white/[0.07] pt-3 flex flex-wrap gap-2 opacity-0 group-hover:opacity-100 transition-opacity sm:opacity-100">
                         <div
                           className="relative flex-1 min-w-[150px]"
                           ref={item.customer === shareMenuClientId ? shareMenuCardRef : null}
@@ -3038,13 +3038,13 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             Enviar Estado
                           </button>
                           {shareMenuClientId === item.customer && (
-                            <div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-20">
+                            <div className="absolute left-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-2 z-20">
                               <div className="px-3 pt-1 pb-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                                   Cuenta a exportar
                                 </label>
                                 <select
-                                  className="mt-2 w-full px-2 py-1 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700"
+                                  className="mt-2 w-full px-2 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-[11px] font-bold text-slate-700 dark:text-slate-300"
                                   value={shareMenuAccount}
                                   onChange={(event) =>
                                     setShareMenuAccount(event.target.value as ReportAccount)
@@ -3065,7 +3065,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                     buildWhatsAppContext(item.customer, shareMenuAccount, item.date)
                                   );
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 WhatsApp (plantilla)
                               </button>
@@ -3076,7 +3076,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                   setShareMenuClientId(null);
                                   void handleCardPdfSummary(item.customer, shareMenuAccount);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 PDF Resumido
                               </button>
@@ -3087,7 +3087,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                   setShareMenuClientId(null);
                                   void handleCardPdfDetailed(item.customer, shareMenuAccount);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 PDF Detallado
                               </button>
@@ -3100,7 +3100,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                     void handleCardImageSummary(item.customer, shareMenuAccount);
                                   }, 60);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 Imagen Resumida
                               </button>
@@ -3113,7 +3113,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                                     void handleCardImageDetailed(item.customer, shareMenuAccount);
                                   }, 60);
                                 }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-semibold text-slate-700"
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 text-xs font-semibold text-slate-700 dark:text-slate-300"
                               >
                                 Imagen Detallada
                               </button>
@@ -3126,7 +3126,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             event.stopPropagation();
                             handleQuickAbono(item);
                           }}
-                          className="flex-1 min-w-[110px] bg-slate-100 text-slate-700 py-2 rounded-lg text-[11px] font-black uppercase hover:bg-slate-200"
+                          className="flex-1 min-w-[110px] bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300 py-2 rounded-lg text-[11px] font-black uppercase hover:bg-slate-200"
                         >
                           Registrar Abono
                         </button>
@@ -3205,13 +3205,13 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                 onCreateCustomer={onRegisterCustomer}
               />
             </div>
-            <div className="bg-white rounded-xl p-6 border border-slate-200 flex flex-col justify-center items-center text-center">
+            <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-white/10 flex flex-col justify-center items-center text-center">
               <div
                 className={`w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center text-2xl mb-2 ${selectedStatusStyles.ring}`}
               >
                 👤
               </div>
-              <h2 className="font-black text-slate-800 leading-none mb-1">
+              <h2 className="font-black text-slate-800 dark:text-slate-200 leading-none mb-1">
                 {selectedCustomer.id}
               </h2>
               <ClientStatusBadge
@@ -3220,15 +3220,15 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               />
               <div className="text-xs text-slate-500 mb-3 space-y-1">
                 <div>
-                  <span className="font-semibold text-slate-600">CI/RIF:</span>{' '}
+                  <span className="font-semibold text-slate-600 dark:text-slate-400">CI/RIF:</span>{' '}
                   {selectedCustomer.cedula || 'N/A'}
                 </div>
                 <div>
-                  <span className="font-semibold text-slate-600">Telefono:</span>{' '}
+                  <span className="font-semibold text-slate-600 dark:text-slate-400">Telefono:</span>{' '}
                   {selectedCustomer.telefono ? (
                     <a
                       href={`tel:${selectedCustomer.telefono.replace(/\s+/g, '')}`}
-                      className="text-slate-700 hover:text-[var(--ui-accent)]"
+                      className="text-slate-700 dark:text-slate-300 hover:text-[var(--ui-accent)]"
                     >
                       {formatPhone(selectedCustomer.telefono)}
                     </a>
@@ -3237,7 +3237,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   )}
                 </div>
                 <div>
-                  <span className="font-semibold text-slate-600">Direccion:</span>{' '}
+                  <span className="font-semibold text-slate-600 dark:text-slate-400">Direccion:</span>{' '}
                   {selectedCustomer.direccion || 'N/A'}
                 </div>
               </div>
@@ -3348,18 +3348,18 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               );
             })()}
 
-            <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+            <div className="rounded-2xl border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-slate-900 p-4 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                     Notas internas
                   </div>
-                  <div className="text-sm font-black text-slate-800">Apuntes rapidos</div>
+                  <div className="text-sm font-black text-slate-800 dark:text-slate-200">Apuntes rapidos</div>
                 </div>
                 <span className="text-[10px] font-bold uppercase text-slate-400">Privado</span>
               </div>
               <textarea
-                className="mt-3 w-full min-h-[110px] rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                className="mt-3 w-full min-h-[110px] rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 p-3 text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"
                 placeholder="Ej: Solo entrega al titular, cobra por Zelle, llamar el viernes..."
                 value={customerNote}
                 onChange={(e) => setCustomerNote(e.target.value)}
@@ -3370,8 +3370,8 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
             </div>
           </div>
 
-          <div className="flex-1 bg-white rounded-[1.5rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-slate-100 bg-white">
+          <div className="flex-1 bg-white dark:bg-slate-900 rounded-[1.5rem] shadow-sm border border-slate-100 dark:border-white/[0.07] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.07] bg-white dark:bg-slate-900">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
@@ -3379,7 +3379,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       Cuenta
                     </label>
                     <select
-                      className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700"
+                      className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300"
                       value={detailAccountFilter}
                       onChange={(e) =>
                         setDetailAccountFilter(e.target.value as 'ALL' | AccountType)
@@ -3396,7 +3396,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       Periodo / Rango
                     </label>
                     <select
-                      className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700"
+                      className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300"
                       value={detailRangeFilter}
                       onChange={(e) =>
                         setDetailRangeFilter(
@@ -3425,7 +3425,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                           value={detailFromDate}
                           onChange={setDetailFromDate}
                           rateDates={rateDates}
-                          inputClassName="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700"
+                          inputClassName="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300"
                         />
                       </div>
                       <div className="flex items-center gap-2">
@@ -3436,7 +3436,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                           value={detailToDate}
                           onChange={setDetailToDate}
                           rateDates={rateDates}
-                          inputClassName="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700"
+                          inputClassName="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300"
                         />
                       </div>
                     </>
@@ -3449,7 +3449,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       setDetailFromDate('');
                       setDetailToDate('');
                     }}
-                    className="px-3 py-2 text-[10px] font-black uppercase text-slate-500 hover:text-slate-700"
+                    className="px-3 py-2 text-[10px] font-black uppercase text-slate-500 hover:text-slate-700 dark:text-slate-300"
                   >
                     Limpiar
                   </button>
@@ -3493,13 +3493,13 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       Enviar Estado
                     </button>
                     {showShareMenu && (
-                      <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-lg p-3 z-20">
+                      <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-3 z-20">
                       <div className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
                         Cuenta a exportar
                       </div>
                       <div className="px-3 pb-2">
                         <select
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300"
                           value={shareMenuDetailAccount}
                           onChange={(e) =>
                             setShareMenuDetailAccount(e.target.value as ReportAccount)
@@ -3528,12 +3528,12 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             )
                           );
                         }}
-                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50:bg-white"
+                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50:bg-white dark:bg-slate-900"
                       >
                         <div className="flex items-start gap-3">
                           <div className="text-xl">💬</div>
                           <div>
-                            <div className="text-sm font-bold text-slate-800">
+                            <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
                               WhatsApp (plantilla)
                             </div>
                             <div className="text-[11px] text-slate-500">
@@ -3561,12 +3561,12 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             rangeTo,
                           });
                         }}
-                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50:bg-white"
+                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50:bg-white dark:bg-slate-900"
                       >
                         <div className="flex items-start gap-3">
                           <div className="text-xl">📄</div>
                           <div>
-                            <div className="text-sm font-bold text-slate-800">PDF Resumido</div>
+                            <div className="text-sm font-bold text-slate-800 dark:text-slate-200">PDF Resumido</div>
                             <div className="text-[11px] text-slate-500">Resumen profesional para clientes.</div>
                           </div>
                         </div>
@@ -3585,12 +3585,12 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             rangeTo,
                           });
                         }}
-                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50:bg-white"
+                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50:bg-white dark:bg-slate-900"
                       >
                         <div className="flex items-start gap-3">
                           <div className="text-xl">🖼️</div>
                           <div>
-                            <div className="text-sm font-bold text-slate-800">Imagen Resumida</div>
+                            <div className="text-sm font-bold text-slate-800 dark:text-slate-200">Imagen Resumida</div>
                             <div className="text-[11px] text-slate-500">Tarjeta limpia para compartir.</div>
                           </div>
                         </div>
@@ -3614,12 +3614,12 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             rangeTo,
                           });
                         }}
-                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50:bg-white"
+                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50:bg-white dark:bg-slate-900"
                       >
                         <div className="flex items-start gap-3">
                           <div className="text-xl">📄</div>
                           <div>
-                            <div className="text-sm font-bold text-slate-800">PDF Detallado</div>
+                            <div className="text-sm font-bold text-slate-800 dark:text-slate-200">PDF Detallado</div>
                             <div className="text-[11px] text-slate-500">Incluye referencias y saldo acumulado.</div>
                           </div>
                         </div>
@@ -3638,12 +3638,12 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                             rangeTo,
                           });
                         }}
-                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50:bg-white"
+                        className="w-full text-left p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50:bg-white dark:bg-slate-900"
                       >
                         <div className="flex items-start gap-3">
                           <div className="text-xl">🖼️</div>
                           <div>
-                            <div className="text-sm font-bold text-slate-800">Imagen Detallada</div>
+                            <div className="text-sm font-bold text-slate-800 dark:text-slate-200">Imagen Detallada</div>
                             <div className="text-[11px] text-slate-500">Captura completa de la tabla.</div>
                           </div>
                         </div>
@@ -3657,7 +3657,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
             {/* AQUÍ ESTÁ EL CAMBIO IMPORTANTE: pb-20 y un espaciador al final */}
             <div ref={detailTableRef} className="overflow-y-auto custom-scroll flex-1 relative p-1 pb-24">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black sticky top-0">
+                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-400 text-[10px] uppercase font-black sticky top-0">
                   <tr>
                     <th className="px-6 py-3">Fecha</th>
                     <th className="px-6 py-3">Concepto</th>
@@ -3668,9 +3668,9 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     <th className="px-6 py-3 text-center">Acción</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
                   {detailMovementsDisplay.map((m: any) => (
-                    <tr key={m.id} className="hover:bg-slate-50:bg-slate-700/50">
+                    <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50:bg-slate-700/50">
                       {(() => {
                         const amountUsd = getMovementUsdAmount(m, rates);
                         return (
@@ -3688,7 +3688,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                           </button>
                         </div>
                       </td>
-                      <td className="px-6 py-3 text-slate-700 font-medium">
+                      <td className="px-6 py-3 text-slate-700 dark:text-slate-300 font-medium">
                         {m.concept}
                       </td>
                       <td className="px-6 py-3 text-center text-slate-400 text-xs">
@@ -3704,7 +3704,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                           ? formatCurrency(amountUsd)
                           : '-'}
                       </td>
-                      <td className="px-6 py-3 text-right font-mono font-bold text-slate-700">
+                      <td className="px-6 py-3 text-right font-mono font-bold text-slate-700 dark:text-slate-300">
                         {formatCurrency(Math.abs(m.balance || 0))}
                       </td>
                       <td className="px-6 py-3 text-center">
@@ -3737,18 +3737,18 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
 
       {showAgingModal && agingModalItem && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl animate-in zoom-in border-t-8 border-indigo-500">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-2xl shadow-2xl animate-in zoom-in border-t-8 border-indigo-500">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div
-                  className={`w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center font-black text-sm ${
+                  className={`w-12 h-12 rounded-full bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center font-black text-sm ${
                     getStatusStyles(agingModalItem.category).badge
                   }`}
                 >
                   {getInitials(agingModalItem.customer)}
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-slate-800">
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-200">
                     {agingModalItem.customer}
                   </h3>
                   <p className="text-xs text-slate-500 font-semibold">
@@ -3759,18 +3759,18 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               <button
                 type="button"
                 onClick={() => setShowAgingModal(false)}
-                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center"
+                className="w-9 h-9 rounded-full bg-slate-100 dark:bg-white/[0.07] hover:bg-slate-200 text-slate-500 flex items-center justify-center"
               >
                 <i className="fa-solid fa-xmark"></i>
               </button>
             </div>
 
             <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="bg-slate-50 rounded-2xl p-4">
+              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Resumen de deuda
                 </p>
-                <p className="text-3xl font-black text-slate-900 mt-2">
+                <p className="text-3xl font-black text-slate-900 dark:text-white mt-2">
                   {formatCurrency(agingModalItem.amount, '$')}
                 </p>
                 <p className="text-xs text-slate-500 font-semibold mt-1">
@@ -3788,7 +3788,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10 p-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">
                   Últimas 3 facturas vencidas
                 </p>
@@ -3798,10 +3798,10 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     return (
                       <div
                         key={`${inv.customer}-${inv.date}-${idx}`}
-                        className="flex items-center justify-between gap-3 border border-slate-100 rounded-xl p-3"
+                        className="flex items-center justify-between gap-3 border border-slate-100 dark:border-white/[0.07] rounded-xl p-3"
                       >
                         <div>
-                          <p className="text-xs font-bold text-slate-700">
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
                             {inv.reference || 'Sin referencia'}
                           </p>
                           <p className="text-[10px] text-slate-400 font-semibold">
@@ -3809,7 +3809,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-black text-slate-800">
+                          <p className="text-sm font-black text-slate-800 dark:text-slate-200">
                             {formatCurrency(inv.amount, '$')}
                           </p>
                           <p className="text-[10px] text-slate-400 font-semibold">
@@ -3853,8 +3853,8 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
 
       {editingDateMovement && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in">
-            <h3 className="text-lg font-black text-slate-800 mb-4 uppercase italic">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in">
+            <h3 className="text-lg font-black text-slate-800 dark:text-slate-200 mb-4 uppercase italic">
               Corregir Fecha
             </h3>
             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
@@ -3862,7 +3862,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
             </label>
             <input
               type="datetime-local"
-              className="w-full p-3 mt-2 bg-slate-50 border-none rounded-xl font-bold text-sm text-slate-700 outline-none"
+              className="w-full p-3 mt-2 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-sm text-slate-700 dark:text-slate-300 outline-none"
               value={editingDateValue}
               onChange={(e) => setEditingDateValue(e.target.value)}
             />
@@ -3894,16 +3894,16 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <form
             onSubmit={handleSaveCustomer}
-            className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in zoom-in"
+            className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in zoom-in"
           >
-            <h3 className="text-xl font-black text-slate-800 mb-6 uppercase italic">
+            <h3 className="text-xl font-black text-slate-800 dark:text-slate-200 mb-6 uppercase italic">
               {editCustomer ? 'Editar Cliente' : 'Nuevo Cliente'}
             </h3>
             <div className="space-y-4">
               <div className="relative">
                 <i className="fa-solid fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm" />
                 <input
-                  className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none"
+                  className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-slate-700 dark:text-slate-300 outline-none"
                   placeholder="Nombre / Razón Social"
                   value={editCustomer ? editCustomer.id : newCustomer.id || ''}
                   onChange={(e) => {
@@ -3924,7 +3924,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     <div className="relative">
                       <i className="fa-solid fa-id-card absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs" />
                       <select
-                        className="pl-8 pr-6 py-3 bg-slate-50 border-none rounded-xl font-black text-slate-700 outline-none"
+                        className="pl-8 pr-6 py-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-black text-slate-700 dark:text-slate-300 outline-none"
                         value={docType}
                         onChange={(e) => setDocType(e.target.value as 'V' | 'J' | 'E' | 'G')}
                       >
@@ -3935,7 +3935,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                       </select>
                     </div>
                     <input
-                      className="flex-1 px-3 py-3 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none"
+                      className="flex-1 px-3 py-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-slate-700 dark:text-slate-300 outline-none"
                       placeholder="12345678"
                       value={docNumber}
                       onChange={(e) => setDocNumber(e.target.value.replace(/\D/g, ''))}
@@ -3948,14 +3948,14 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     Teléfono WhatsApp
                   </label>
                   <div className="mt-2 flex items-center gap-2">
-                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-3 rounded-xl font-black text-slate-700">
+                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 px-3 py-3 rounded-xl font-black text-slate-700 dark:text-slate-300">
                       <span>🇻🇪</span>
                       <span>+58</span>
                     </div>
                     <div className="relative flex-1">
                       <i className="fa-solid fa-phone absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs" />
                       <input
-                        className="w-full pl-9 pr-3 py-3 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none"
+                        className="w-full pl-9 pr-3 py-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-slate-700 dark:text-slate-300 outline-none"
                         placeholder="412-123-4567"
                         value={formatPhoneDigits(phoneDigits)}
                         onChange={(e) =>
@@ -3971,7 +3971,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                 <div className="relative">
                   <i className="fa-solid fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm" />
                   <input
-                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none"
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-slate-700 dark:text-slate-300 outline-none"
                     placeholder="Email (opcional)"
                     value={editCustomer ? editCustomer.email || '' : newCustomer.email || ''}
                     onChange={(e) =>
@@ -3984,7 +3984,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                 <div className="relative">
                   <i className="fa-solid fa-location-dot absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm" />
                   <input
-                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none"
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-slate-700 dark:text-slate-300 outline-none"
                     placeholder="Dirección"
                     value={editCustomer ? editCustomer.direccion : newCustomer.direccion || ''}
                     onChange={(e) => {
@@ -4010,7 +4010,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-slate-900 font-black rounded-xl shadow-lg hover:from-indigo-700 hover:to-violet-700 uppercase text-xs"
+                className="px-8 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-slate-900 dark:text-white font-black rounded-xl shadow-lg hover:from-indigo-700 hover:to-violet-700 uppercase text-xs"
               >
                 Guardar Cliente
               </button>
@@ -4023,9 +4023,9 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <form
             onSubmit={handleQuickOpSubmit}
-            className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in border-t-8 border-amber-400"
+            className="bg-white dark:bg-slate-900 rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in border-t-8 border-amber-400"
           >
-            <h3 className="text-xl font-black text-slate-800 mb-6 uppercase italic">
+            <h3 className="text-xl font-black text-slate-800 dark:text-slate-200 mb-6 uppercase italic">
               <i className="fa-solid fa-bolt text-amber-500 mr-2"></i> Operación Rápida
             </h3>
 
@@ -4047,13 +4047,13 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   }}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+              <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-white/[0.07] p-1 rounded-xl">
                 <button
                   type="button"
                   onClick={() => setQuickForm({ ...quickForm, type: MovementType.FACTURA })}
                   className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
                     quickForm.type === MovementType.FACTURA
-                      ? 'bg-rose-500 shadow text-slate-900'
+                      ? 'bg-rose-500 shadow text-slate-900 dark:text-white'
                       : 'text-slate-400'
                   }`}
                 >
@@ -4064,7 +4064,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   onClick={() => setQuickForm({ ...quickForm, type: MovementType.ABONO })}
                   className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
                     quickForm.type === MovementType.ABONO
-                      ? 'bg-emerald-500 shadow text-slate-900'
+                      ? 'bg-emerald-500 shadow text-slate-900 dark:text-white'
                       : 'text-slate-400'
                   }`}
                 >
@@ -4077,7 +4077,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   Cuenta Destino
                 </label>
                 <select
-                  className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none"
+                  className="w-full p-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-slate-700 dark:text-slate-300 outline-none"
                   value={quickForm.accountType}
                   onChange={(e) =>
                     setQuickForm({
@@ -4092,7 +4092,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                 </select>
               </div>
 
-              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2">
                 <div>
                   <div className="text-[10px] font-black uppercase text-slate-500">
                     Convertir usando tasa
@@ -4121,7 +4121,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     }`}
                   ></span>
                   <span
-                    className={`absolute left-1 top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                    className={`absolute left-1 top-1 w-4 h-4 rounded-full bg-white dark:bg-slate-900 transition-transform ${
                       quickForm.useRate ? 'translate-x-5' : ''
                     }`}
                   ></span>
@@ -4134,7 +4134,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                     Monto
                   </label>
                   <NumericFormat
-                    className="w-full p-3 bg-slate-50 border-none rounded-xl font-black text-lg text-slate-800 outline-none"
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-black text-lg text-slate-800 dark:text-slate-200 outline-none"
                     placeholder="0,00"
                     value={quickForm.amount}
                     onValueChange={(values) =>
@@ -4155,7 +4155,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   <input
                     type="number"
                     step="0.01"
-                    className="w-full p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-600 outline-none"
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl font-bold text-slate-600 dark:text-slate-400 outline-none"
                     value={quickForm.rate}
                     onChange={(e) => setQuickForm({ ...quickForm, rate: e.target.value })}
                     disabled={quickForm.accountType === AccountType.DIVISA}
@@ -4166,7 +4166,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               <input
                 type="text"
                 placeholder="Concepto..."
-                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600 outline-none focus:bg-white focus:border-indigo-500"
+                className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded text-xs text-slate-600 dark:text-slate-400 outline-none focus:bg-white dark:bg-slate-800 focus:border-indigo-500"
                 value={quickForm.concept}
                 onChange={(e) => setQuickForm({ ...quickForm, concept: e.target.value })}
                 required
@@ -4174,7 +4174,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               <input
                 type="text"
                 placeholder="Referencia / N° Control (opcional)"
-                className="w-full mt-2 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600 outline-none"
+                className="w-full mt-2 px-2 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded text-xs text-slate-600 dark:text-slate-400 outline-none"
                 value={quickForm.reference}
                 onChange={(e) => setQuickForm({ ...quickForm, reference: e.target.value })}
               />
@@ -4186,7 +4186,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
                   value={quickForm.date}
                   onChange={handleQuickDateSelect}
                   rateDates={rateDates}
-                  inputClassName="w-full mt-2 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600 outline-none"
+                  inputClassName="w-full mt-2 px-2 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded text-xs text-slate-600 dark:text-slate-400 outline-none"
                 />
                 {rateHint && (
                   <div className="mt-2 text-[10px] font-semibold text-emerald-600">
@@ -4205,7 +4205,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-6 py-2 bg-amber-500 text-slate-900 font-black rounded-xl hover:bg-amber-600 uppercase text-xs"
+                className="px-6 py-2 bg-amber-500 text-slate-900 dark:text-white font-black rounded-xl hover:bg-amber-600 uppercase text-xs"
               >
                 Procesar
               </button>

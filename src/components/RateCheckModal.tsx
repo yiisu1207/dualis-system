@@ -144,7 +144,7 @@ const RateCheckModal: React.FC<RateCheckModalProps> = ({
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
               placeholder="Ej: Tasa de cierre 4 PM"
-              className="w-full mt-2 p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-slate-200"
+              className="w-full mt-2 p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-slate-200 dark:ring-white/10"
             />
           </div>
 

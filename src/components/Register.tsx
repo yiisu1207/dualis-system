@@ -38,7 +38,7 @@ function genId() {
 export default function Register() {
   const [mode,    setMode]    = useState<'create' | 'join'>('create');
   const [form,    setForm]    = useState({
-    businessName: '', workspaceCode: '',
+    workspaceCode: '',
     fullName: '', displayName: '',
     email: '', password: '',
     nationalId: '', country: '',
@@ -82,10 +82,10 @@ export default function Register() {
         }
         bid = gid;
         await setDoc(doc(db, 'businesses', bid), {
-          name: form.businessName, ownerId: uid,
+          name: form.fullName || 'Mi Negocio', ownerId: uid,
           createdAt: new Date().toISOString(), plan: 'free_tier',
         });
-        try { await logAudit(uid, 'create_workspace', { businessId: bid, name: form.businessName }); } catch {}
+        try { await logAudit(uid, 'create_workspace', { businessId: bid }); } catch {}
       } else {
         if (!(await getDoc(doc(db, 'businesses', bid))).exists())
           throw new Error('El código del espacio no es válido.');
@@ -254,21 +254,7 @@ export default function Register() {
             <form onSubmit={handleSubmit} className="space-y-4">
 
               {/* Mode-specific top field */}
-              {isCreate ? (
-                <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">
-                    Nombre de la Empresa
-                  </label>
-                  <div className="relative">
-                    <Building2 size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/20" />
-                    <input
-                      required type="text" placeholder="Mi Negocio Dualis C.A."
-                      className={`${inp} pl-10`}
-                      value={form.businessName} onChange={e => set('businessName', e.target.value)}
-                    />
-                  </div>
-                </div>
-              ) : (
+              {!isCreate && (
                 <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-5">
                   <p className="text-[9px] font-black uppercase tracking-[0.35em] text-amber-400 mb-3">
                     Código del Espacio de Trabajo

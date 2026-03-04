@@ -59,15 +59,15 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
       />
 
       {/* Panel */}
-      <div className="fixed top-0 right-0 h-screen w-[380px] z-[71] bg-white shadow-2xl border-l border-slate-100 flex flex-col animate-in slide-in-from-right-8 duration-200">
+      <div className="fixed top-0 right-0 h-screen w-[380px] z-[71] bg-white dark:bg-slate-900 shadow-2xl border-l border-slate-100 dark:border-white/[0.07] flex flex-col animate-in slide-in-from-right-8 duration-200">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+        <div className="px-6 py-5 border-b border-slate-100 dark:border-white/[0.07] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-2xl bg-blue-50 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-2xl bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center">
               <Bell size={16} className="text-[#4f6ef7]" />
             </div>
             <div>
-              <h2 className="font-black text-slate-900 text-[15px] leading-tight">Notificaciones</h2>
+              <h2 className="font-black text-slate-900 dark:text-white text-[15px] leading-tight">Notificaciones</h2>
               <p className="text-[11px] text-slate-400 font-medium">
                 {notifications.length === 0
                   ? 'Sin alertas activas'
@@ -80,14 +80,14 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
               <button
                 onClick={onDismissAll}
                 title="Marcar todas como leídas"
-                className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-blue-50 flex items-center justify-center text-slate-400 hover:text-blue-500 transition-all"
+                className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-white/[0.04] hover:bg-blue-50 dark:hover:bg-blue-500/10 flex items-center justify-center text-slate-400 hover:text-blue-500 transition-all"
               >
                 <CheckCheck size={14} />
               </button>
             )}
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-all"
+              className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-white/[0.07] hover:bg-slate-100 dark:hover:bg-white/[0.12] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-300 transition-all"
             >
               <X size={14} />
             </button>
@@ -101,7 +101,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
               <div className="w-16 h-16 rounded-3xl bg-emerald-50 flex items-center justify-center">
                 <Bell size={24} className="text-emerald-500" />
               </div>
-              <p className="font-black text-slate-700 text-[15px]">Todo en orden</p>
+              <p className="font-black text-slate-700 dark:text-slate-300 text-[15px]">Todo en orden</p>
               <p className="text-slate-400 text-[13px]">No hay alertas ni notificaciones pendientes.</p>
             </div>
           ) : (
@@ -178,7 +178,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100 shrink-0">
+        <div className="px-6 py-4 border-t border-slate-100 dark:border-white/[0.07] shrink-0">
           <p className="text-[11px] text-slate-400 text-center font-medium">
             Actualizado en tiempo real · Firebase Live
           </p>

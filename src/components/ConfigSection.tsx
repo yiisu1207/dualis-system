@@ -116,7 +116,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
     }
   };
 
-  const inputClass = 'app-input w-full bg-white border-slate-200 text-slate-900';
+  const inputClass = 'app-input w-full bg-white dark:bg-slate-900 border-slate-200 dark:border-white/10 text-slate-900 dark:text-white';
   const labelClass = 'text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-1 block';
   const templates = localConfig.messageTemplates || [];
 
@@ -181,16 +181,16 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
       case 'EDITAR': return 'bg-sky-100 text-sky-700';
       case 'ELIMINAR': return 'bg-rose-100 text-rose-700';
       case 'LOGIN': return 'bg-amber-100 text-amber-700';
-      default: return 'bg-slate-100 text-slate-600';
+      default: return 'bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-slate-400';
     }
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in h-full flex flex-col pb-20 bg-white text-slate-900">
+    <div className="space-y-6 animate-in fade-in h-full flex flex-col pb-20 bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
       {/* HEADER TIPO TARJETA */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-6 p-6 border border-slate-200 rounded-2xl bg-white shadow-sm">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-6 p-6 border border-slate-200 dark:border-white/10 rounded-2xl bg-white dark:bg-slate-900 shadow-sm">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">
+          <h1 className="text-2xl font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">
             Centro de Control
           </h1>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
@@ -199,7 +199,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
         </div>
 
         {/* TAB NAVIGATION */}
-        <div className="flex flex-wrap justify-center p-1 rounded-xl gap-1 bg-slate-100 border border-slate-200">
+        <div className="flex flex-wrap justify-center p-1 rounded-xl gap-1 bg-slate-100 dark:bg-white/[0.07] border border-slate-200 dark:border-white/10">
           {[
             { id: 'EMPRESA', icon: Building, label: 'Empresa' },
             { id: 'USUARIOS', icon: Users, label: 'Usuarios' },
@@ -215,8 +215,8 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                 style={{ color: activeTab === tab.id ? localConfig.theme.primaryColor : '' }}
                 className={`px-4 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 ${
                   activeTab === tab.id
-                    ? 'bg-white shadow-sm text-slate-900'
-                    : 'text-slate-400 hover:text-slate-600'
+                    ? 'bg-white dark:bg-slate-900 shadow-sm text-slate-900 dark:text-white'
+                    : 'text-slate-400 hover:text-slate-600 dark:text-slate-400'
                 }`}
               >
                 <tab.icon size={14} /> <span className="hidden md:inline">{tab.label}</span>
@@ -226,7 +226,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
         </div>
       </div>
 
-      <div className="px-6 py-4 text-[11px] text-slate-500 flex flex-wrap items-center gap-4 bg-slate-50 border border-slate-200 rounded-2xl">
+      <div className="px-6 py-4 text-[11px] text-slate-500 flex flex-wrap items-center gap-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 rounded-2xl">
         <span className="font-black uppercase tracking-widest text-slate-400">Atajos</span>
         <span>Alt + P: Perfil</span>
         <span>Alt + S: Configuracion</span>
@@ -235,12 +235,12 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
       </div>
 
       {/* CONTENEDOR PRINCIPAL */}
-      <div className="flex-1 p-8 overflow-y-auto custom-scroll relative border border-slate-200 rounded-2xl bg-white shadow-sm">
+      <div className="flex-1 p-8 overflow-y-auto custom-scroll relative border border-slate-200 dark:border-white/10 rounded-2xl bg-white dark:bg-slate-900 shadow-sm">
         {/* --- TAB: EMPRESA --- */}
         {activeTab === 'EMPRESA' && (
           <div className="max-w-2xl mx-auto space-y-8 animate-in zoom-in-95 duration-300">
             <div className="text-center">
-              <div className="w-32 h-32 bg-slate-50 rounded-full mx-auto mb-4 flex items-center justify-center border-4 border-slate-100 overflow-hidden relative group shadow-inner">
+              <div className="w-32 h-32 bg-slate-50 dark:bg-slate-800/50 rounded-full mx-auto mb-4 flex items-center justify-center border-4 border-slate-100 dark:border-white/[0.07] overflow-hidden relative group shadow-inner">
                 {localConfig.companyLogo ? (
                   <img src={localConfig.companyLogo} className="w-full h-full object-cover" alt="Logo" />
                 ) : (
@@ -280,12 +280,12 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
         {/* --- TAB: USUARIOS --- */}
         {activeTab === 'USUARIOS' && (
           <div className="max-w-3xl mx-auto animate-in zoom-in-95 duration-300">
-            <div className="p-6 rounded-2xl border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-3 mb-3 text-slate-800">
+            <div className="p-6 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50">
+              <div className="flex items-center gap-3 mb-3 text-slate-800 dark:text-slate-200">
                 <Users size={20} />
                 <h3 className="font-black text-sm uppercase tracking-widest">Gestión de usuarios</h3>
               </div>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 La administración de usuarios se realiza en la página de Configuración, dentro de
                 Gestión de Usuarios. Aquí solo se mantienen opciones del sistema.
               </p>
@@ -299,8 +299,8 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
         {/* --- TAB: PERSONALIZACION --- */}
         {activeTab === 'PERSONALIZACION' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto animate-in zoom-in-95 duration-300">
-            <div className="p-6 border border-slate-200 rounded-[2rem] bg-white shadow-sm">
-              <h3 className="font-bold mb-4 text-slate-800 flex items-center gap-2">
+            <div className="p-6 border border-slate-200 dark:border-white/10 rounded-[2rem] bg-white dark:bg-slate-900 shadow-sm">
+              <h3 className="font-bold mb-4 text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <Palette size={20} /> Estilo de Interfaz
               </h3>
               <div className="grid grid-cols-1 gap-3">
@@ -317,21 +317,21 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                     }}
                     className={`w-full p-4 rounded-2xl border text-left transition-all ${
                       (userUiVersion || localConfig.theme.uiVersion || 'editorial') === style.id
-                        ? 'border-slate-300 bg-slate-50 shadow-sm'
-                        : 'border-slate-100 bg-white hover:border-slate-200'
+                        ? 'border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-slate-800/50 shadow-sm'
+                        : 'border-slate-100 dark:border-white/[0.07] bg-white dark:bg-slate-900 hover:border-slate-200 dark:border-white/10'
                     }`}
                   >
-                    <p className="text-sm font-black text-slate-800">{style.label}</p>
+                    <p className="text-sm font-black text-slate-800 dark:text-slate-200">{style.label}</p>
                     <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{style.desc}</p>
                   </button>
                 ))}
               </div>
             </div>
-            <div className="p-6 border border-slate-200 rounded-[2rem] bg-white shadow-sm">
-              <h3 className="font-bold mb-4 text-slate-800 flex items-center gap-2">
+            <div className="p-6 border border-slate-200 dark:border-white/10 rounded-[2rem] bg-white dark:bg-slate-900 shadow-sm">
+              <h3 className="font-bold mb-4 text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <Sun size={20} /> Modo de Visualización
               </h3>
-              <div className="w-full p-5 rounded-2xl border border-slate-200 bg-slate-50 text-slate-800 flex justify-between items-center">
+              <div className="w-full p-5 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-200 flex justify-between items-center">
                 <span className="text-xs font-black uppercase tracking-widest">Modo Claro</span>
                 <span className="text-xl flex items-center gap-2 font-black">
                   ON <Sun className="text-amber-500" />
@@ -339,8 +339,8 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
               </div>
               <p className="mt-3 text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center">Modo oscuro deshabilitado para mejor contraste.</p>
             </div>
-            <div className="p-6 border border-slate-200 rounded-[2rem] bg-white shadow-sm">
-              <h3 className="font-bold mb-4 text-slate-800 flex items-center gap-2">
+            <div className="p-6 border border-slate-200 dark:border-white/10 rounded-[2rem] bg-white dark:bg-slate-900 shadow-sm">
+              <h3 className="font-bold mb-4 text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <Palette size={20} /> Color Principal
               </h3>
               <div className="flex gap-4 justify-center">
@@ -351,14 +351,14 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                       setLocalConfig({ ...localConfig, theme: { ...localConfig.theme, primaryColor: color } });
                       document.documentElement.style.setProperty('--odoo-primary', color);
                     }}
-                    className={`w-10 h-10 rounded-full border-4 transition-transform ${localConfig.theme.primaryColor === color ? 'border-slate-200 scale-110 shadow-md' : 'border-transparent'}`}
+                    className={`w-10 h-10 rounded-full border-4 transition-transform ${localConfig.theme.primaryColor === color ? 'border-slate-200 dark:border-white/10 scale-110 shadow-md' : 'border-transparent'}`}
                     style={{ backgroundColor: color }}
                   />
                 ))}
               </div>
             </div>
-            <div className="p-6 border border-slate-200 rounded-[2rem] bg-white shadow-sm">
-              <h3 className="font-bold mb-4 text-slate-800 flex items-center gap-2">
+            <div className="p-6 border border-slate-200 dark:border-white/10 rounded-[2rem] bg-white dark:bg-slate-900 shadow-sm">
+              <h3 className="font-bold mb-4 text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 Dispositivo
               </h3>
               <div className="flex gap-3 justify-center">
@@ -369,7 +369,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                       setLocalConfig({ ...localConfig, theme: { ...localConfig.theme, deviceMode: mode as any } });
                       document.documentElement.setAttribute('data-device', mode);
                     }}
-                    className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest border transition-all ${localConfig.theme.deviceMode === mode ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-500'}`}
+                    className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest border transition-all ${localConfig.theme.deviceMode === mode ? 'bg-slate-900 text-white' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-500'}`}
                   >
                     {mode === 'pc' ? 'PC' : mode === 'tablet' ? 'Tablet' : 'Móvil'}
                   </button>
@@ -402,8 +402,8 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
               </div>
             </div>
 
-            <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200 text-center">
-              <button onClick={() => { if (confirm('¿Seguro? Se perderán todos los datos locales.')) onResetData(); }} className="text-[10px] font-black text-rose-600 bg-white border border-rose-200 px-8 py-4 rounded-xl uppercase hover:bg-rose-600 hover:text-white transition-all shadow-sm">
+            <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border border-slate-200 dark:border-white/10 text-center">
+              <button onClick={() => { if (confirm('¿Seguro? Se perderán todos los datos locales.')) onResetData(); }} className="text-[10px] font-black text-rose-600 bg-white dark:bg-slate-900 border border-rose-200 px-8 py-4 rounded-xl uppercase hover:bg-rose-600 hover:text-white transition-all shadow-sm">
                 ⚠️ Factory Reset (Borrar Todo)
               </button>
             </div>
@@ -427,7 +427,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                   onClick={() => setLocalConfig({ ...localConfig, fiscal: { ...localConfig.fiscal, igtfEnabled: !(localConfig.fiscal?.igtfEnabled ?? true), igtfRate: localConfig.fiscal?.igtfRate ?? 3, ivaEnabled: localConfig.fiscal?.ivaEnabled ?? true, scannerEnabled: localConfig.fiscal?.scannerEnabled ?? true } })}
                   className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${(localConfig.fiscal?.igtfEnabled ?? true) ? 'bg-amber-500' : 'bg-slate-200'}`}
                 >
-                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(localConfig.fiscal?.igtfEnabled ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white dark:bg-slate-900 shadow transition-transform ${(localConfig.fiscal?.igtfEnabled ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
               {(localConfig.fiscal?.igtfEnabled ?? true) && (
@@ -437,7 +437,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                     type="number" min="0" max="100" step="0.5"
                     value={localConfig.fiscal?.igtfRate ?? 3}
                     onChange={(e) => setLocalConfig({ ...localConfig, fiscal: { igtfEnabled: localConfig.fiscal?.igtfEnabled ?? true, igtfRate: parseFloat(e.target.value) || 3, ivaEnabled: localConfig.fiscal?.ivaEnabled ?? true, scannerEnabled: localConfig.fiscal?.scannerEnabled ?? true } })}
-                    className="w-24 px-3 py-2 bg-white border border-amber-200 rounded-xl text-sm font-black text-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-400 text-center"
+                    className="w-24 px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 rounded-xl text-sm font-black text-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-400 text-center"
                   />
                   <span className="text-xs font-bold text-amber-600">
                     Actual: {localConfig.fiscal?.igtfRate ?? 3}%
@@ -457,18 +457,18 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                   onClick={() => setLocalConfig({ ...localConfig, fiscal: { igtfEnabled: localConfig.fiscal?.igtfEnabled ?? true, igtfRate: localConfig.fiscal?.igtfRate ?? 3, ivaEnabled: !(localConfig.fiscal?.ivaEnabled ?? true), scannerEnabled: localConfig.fiscal?.scannerEnabled ?? true } })}
                   className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${(localConfig.fiscal?.ivaEnabled ?? true) ? 'bg-sky-500' : 'bg-slate-200'}`}
                 >
-                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(localConfig.fiscal?.ivaEnabled ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white dark:bg-slate-900 shadow transition-transform ${(localConfig.fiscal?.ivaEnabled ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
             </div>
 
             {/* ESCANER DE CÁMARA */}
-            <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200">
+            <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border border-slate-200 dark:border-white/10">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <Camera size={20} className="text-slate-500 shrink-0" />
                   <div>
-                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Escáner de Cámara</h3>
+                    <h3 className="font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest">Escáner de Cámara</h3>
                     <p className="text-xs text-slate-500 mt-0.5">Botón de escaneo QR / código de barras en los POS</p>
                   </div>
                 </div>
@@ -476,7 +476,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                   onClick={() => setLocalConfig({ ...localConfig, fiscal: { igtfEnabled: localConfig.fiscal?.igtfEnabled ?? true, igtfRate: localConfig.fiscal?.igtfRate ?? 3, ivaEnabled: localConfig.fiscal?.ivaEnabled ?? true, scannerEnabled: !(localConfig.fiscal?.scannerEnabled ?? true) } })}
                   className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${(localConfig.fiscal?.scannerEnabled ?? true) ? 'bg-slate-900' : 'bg-slate-200'}`}
                 >
-                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(localConfig.fiscal?.scannerEnabled ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white dark:bg-slate-900 shadow transition-transform ${(localConfig.fiscal?.scannerEnabled ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
             </div>
@@ -490,20 +490,20 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
         {/* --- TAB: MENSAJES --- */}
         {activeTab === 'MENSAJES' && (
           <div className="max-w-3xl mx-auto space-y-6 animate-in zoom-in-95 duration-300">
-            <div className="p-6 rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+            <div className="p-6 rounded-[2rem] border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm">
               <div className="flex items-center justify-between gap-4">
-                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Plantillas de Mensajes</h3>
+                <h3 className="font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest">Plantillas de Mensajes</h3>
                 <button type="button" onClick={handleAddTemplate} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-widest">+ Agregar</button>
               </div>
 
               <div className="mt-6 space-y-4">
                 {templates.map((template) => (
-                  <div key={template.id} className="border border-slate-200 rounded-2xl p-4 bg-slate-50">
+                  <div key={template.id} className="border border-slate-200 dark:border-white/10 rounded-2xl p-4 bg-slate-50 dark:bg-slate-800/50">
                     <div className="flex items-center justify-between gap-3">
                       <input className="app-input w-full max-w-[260px]" value={template.name} onChange={(e) => handleUpdateTemplate(template.id, { name: e.target.value })} placeholder="Nombre de plantilla" />
                       <button type="button" onClick={() => handleDeleteTemplate(template.id)} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-black uppercase">Eliminar</button>
                     </div>
-                    <textarea className="mt-3 w-full min-h-[90px] rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700" value={template.body} onChange={(e) => handleUpdateTemplate(template.id, { body: e.target.value })} placeholder="Escribe el mensaje..." />
+                    <textarea className="mt-3 w-full min-h-[90px] rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 p-3 text-xs font-semibold text-slate-700 dark:text-slate-300" value={template.body} onChange={(e) => handleUpdateTemplate(template.id, { body: e.target.value })} placeholder="Escribe el mensaje..." />
                   </div>
                 ))}
               </div>
@@ -513,13 +513,13 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
 
         {/* --- TAB: AUDITORIA --- */}
         {activeTab === 'AUDITORIA' && (
-          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50">
               <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Auditoria del sistema</h3>
-              <p className="text-sm font-bold text-slate-700">{filteredAuditLogs.length} eventos</p>
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{filteredAuditLogs.length} eventos</p>
             </div>
 
-            <div className="px-6 py-4 border-b border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-white/10 grid grid-cols-1 md:grid-cols-4 gap-3">
               <input value={auditQuery} onChange={(e) => setAuditQuery(e.target.value)} placeholder="Buscar..." className="app-input text-xs" />
               <select value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)} className="app-input text-xs">
                 <option value="ALL">Todas las acciones</option>
@@ -529,7 +529,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
 
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
-                <thead className="bg-slate-100 text-slate-500 font-bold uppercase sticky top-0">
+                <thead className="bg-slate-100 dark:bg-white/[0.07] text-slate-500 font-bold uppercase sticky top-0">
                   <tr>
                     <th className="px-6 py-4">Fecha</th>
                     <th className="px-6 py-4">Usuario</th>
@@ -537,13 +537,13 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                     <th className="px-6 py-4">Detalle</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
                   {filteredAuditLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 transition-colors">
                       <td className="px-6 py-3 text-slate-500 whitespace-nowrap">{new Date(log.date).toLocaleString()}</td>
-                      <td className="px-6 py-3 font-bold text-slate-800">{log.user}</td>
+                      <td className="px-6 py-3 font-bold text-slate-800 dark:text-slate-200">{log.user}</td>
                       <td className="px-6 py-3"><span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${getAuditActionBadge(log.action)}`}>{log.action}</span></td>
-                      <td className="px-6 py-3 text-slate-600 max-w-[300px] truncate">{log.detail}</td>
+                      <td className="px-6 py-3 text-slate-600 dark:text-slate-400 max-w-[300px] truncate">{log.detail}</td>
                     </tr>
                   ))}
                 </tbody>

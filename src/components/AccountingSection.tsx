@@ -125,7 +125,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     // 1. Get all unique Entity IDs (movements + base directory)
     const uniqueIds: string[] = Array.from(
       new Set([
-        ...movements.map((m) => m.entityId),
+        ...movements.map((m) => m.entityId).filter(id => id !== 'CONSUMIDOR_FINAL'),
         ...customers.map((c) => c.id),
         ...suppliers.map((s) => s.id),
       ])
@@ -135,7 +135,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     const summaries = uniqueIds.map((id) => {
       // Determine Type & Color Logic (Matching Screenshot Description)
       let type: EntityTypeFilter | 'OTRO' = 'OTRO';
-      let typeColor = 'bg-slate-100 text-slate-500 border-slate-200'; // Default
+      let typeColor = 'bg-slate-100 dark:bg-white/[0.07] text-slate-500 border-slate-200 dark:border-white/10'; // Default
 
       if (suppliers.some((s) => s.id === id)) {
         type = 'PROVEEDOR';
@@ -385,7 +385,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       case AccountType.DIVISA:
         return { border: 'border-emerald-700', bg: 'bg-emerald-50', text: 'text-emerald-800' };
       default:
-        return { border: 'border-slate-800', bg: 'bg-slate-50', text: 'text-slate-800' };
+        return { border: 'border-slate-800', bg: 'bg-slate-50 dark:bg-white/[0.03]', text: 'text-slate-800 dark:text-slate-200' };
     }
   };
   const contextColors = getContextColors(activeTab);
@@ -1232,7 +1232,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           <div className="app-panel p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div
-                className="bg-white rounded-2xl border border-slate-200 px-5 py-4 shadow-sm flex items-center gap-4 cursor-pointer hover:border-slate-300"
+                className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4 cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20"
                 onClick={() => {
                   if (onNavigateToCustomers) {
                     onNavigateToCustomers();
@@ -1243,50 +1243,50 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                   setReceivableAccountFilter('ALL');
                 }}
               >
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 flex items-center justify-center text-lg">
                   📉
                 </div>
                 <div className="flex-1">
-                  <div className="text-[10px] font-black uppercase text-slate-400">Cuentas por Cobrar</div>
+                  <div className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Cuentas por Cobrar</div>
                   <div className="text-2xl font-black text-emerald-600">
                     {formatCurrency(summaryTotals.receivable, '$')}
                   </div>
-                  <div className="text-[10px] text-slate-500 font-semibold">
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
                     {formatCurrency(summaryTotals.receivable * (rates.bcv || 1), 'Bs')}
                   </div>
                 </div>
               </div>
               <div
-                className="bg-white rounded-2xl border border-slate-200 px-5 py-4 shadow-sm flex items-center gap-4 cursor-pointer hover:border-slate-300"
+                className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4 cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20"
                 onClick={() => {
                   if (onNavigateToSuppliers) {
                     onNavigateToSuppliers();
                   }
                 }}
               >
-                <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-lg">
+                <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 flex items-center justify-center text-lg">
                   📈
                 </div>
                 <div>
-                  <div className="text-[10px] font-black uppercase text-slate-400">Cuentas por Pagar</div>
+                  <div className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Cuentas por Pagar</div>
                   <div className="text-2xl font-black text-rose-600">
                     {formatCurrency(summaryTotals.payable, '$')}
                   </div>
-                  <div className="text-[10px] text-slate-500 font-semibold">
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
                     {formatCurrency(summaryTotals.payable * (rates.bcv || 1), 'Bs')}
                   </div>
                 </div>
               </div>
-              <div className="bg-white rounded-2xl border border-slate-200 px-5 py-4 shadow-sm flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg">
+              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 flex items-center justify-center text-lg">
                   ⚖️
                 </div>
                 <div>
-                  <div className="text-[10px] font-black uppercase text-slate-400">Balance General</div>
+                  <div className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Balance General</div>
                   <div className={`text-2xl font-black ${summaryTotals.net >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
                     {formatCurrency(summaryTotals.net, '$')}
                   </div>
-                  <div className="text-[10px] text-slate-500 font-semibold">
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
                     {formatCurrency(summaryTotals.net * (rates.bcv || 1), 'Bs')}
                   </div>
                 </div>
@@ -1316,8 +1316,8 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     onClick={() => setEntityFilter(f.id)}
                     className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
                       entityFilter === f.id
-                        ? 'bg-white text-[var(--ui-accent)] shadow-sm'
-                        : 'text-slate-400 hover:text-slate-600'
+                        ? 'bg-white dark:bg-slate-900 text-[var(--ui-accent)] shadow-sm'
+                        : 'text-slate-400 hover:text-slate-600 dark:text-slate-400'
                     }`}
                   >
                     {f.label}
@@ -1328,7 +1328,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               <div className="flex flex-wrap items-center gap-2">
                 {(
                   [
-                    { id: 'ALL', label: 'Todos', color: 'bg-slate-100 text-slate-600' },
+                    { id: 'ALL', label: 'Todos', color: 'bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-slate-400' },
                     { id: AccountType.BCV, label: 'BCV', color: 'bg-blue-50 text-blue-700' },
                     { id: AccountType.GRUPO, label: 'Grupo', color: 'bg-orange-50 text-orange-700' },
                     { id: AccountType.DIVISA, label: 'Divisa', color: 'bg-emerald-50 text-emerald-700' },
@@ -1377,7 +1377,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               <select
                 value={sortByBalance}
                 onChange={(e) => setSortByBalance(e.target.value as 'none' | 'debt-desc')}
-                className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600"
+                className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-[10px] font-black uppercase text-slate-600 dark:text-slate-300"
               >
                 <option value="none">Orden: Default</option>
                 <option value="debt-desc">Mayor Deuda</option>
@@ -1388,7 +1388,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           <div className="app-panel overflow-hidden flex-1">
             <div className="overflow-y-auto custom-scroll h-full">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-black tracking-widest sticky top-0 z-10 border-b border-slate-200">
+                <thead className="bg-slate-50 dark:bg-white/[0.03] text-slate-400 dark:text-slate-500 text-[10px] uppercase font-black tracking-widest sticky top-0 z-10 border-b border-slate-200 dark:border-white/10">
                   <tr>
                     <th className="px-8 py-4">Tipo</th>
                     <th className="px-8 py-4">Entidad / Nombre</th>
@@ -1396,7 +1396,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     <th className="px-8 py-4 text-center">Acción</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
                   {directoryData.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="py-20 text-center text-slate-400 italic">
@@ -1425,7 +1425,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                       return (
                         <tr
                           key={entity.id}
-                          className="hover:bg-slate-50:bg-slate-700/50 transition-colors group cursor-pointer"
+                          className="hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors group cursor-pointer"
                           onClick={() => {
                             setSelectedEntityId(entity.id);
                             setViewMode('DETAIL');
@@ -1440,12 +1440,12 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                           </td>
                           <td className="px-8 py-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-xs">
+                              <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-black flex items-center justify-center text-xs">
                                 {getInitials(entity.id)}
                               </div>
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <p className="font-bold text-slate-700 text-base">
+                                  <p className="font-bold text-slate-700 dark:text-slate-200 text-base">
                                     {entity.id}
                                   </p>
                                   {entity.type === 'CLIENTE' && (
@@ -1455,7 +1455,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                     />
                                   )}
                                 </div>
-                                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold">
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-500 font-semibold">
                                   <span className={`w-2 h-2 rounded-full ${isInactive ? 'bg-slate-300' : 'bg-emerald-400'}`}></span>
                                   <span>
                                     {entity.lastMov
@@ -1472,7 +1472,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                 className={`flex items-center gap-2 ${resolveBalanceColor(bcv)}`}
                               >
                                 <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
-                                <span className="uppercase text-[10px] font-black text-slate-500">BCV</span>
+                                <span className="uppercase text-[10px] font-black text-slate-500 dark:text-slate-400">BCV</span>
                                 <span className="font-mono">
                                   {formatCurrency(Math.abs(bcv))}
                                 </span>
@@ -1481,7 +1481,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                 className={`flex items-center gap-2 ${resolveBalanceColor(grupo)}`}
                               >
                                 <span className="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>
-                                <span className="uppercase text-[10px] font-black text-slate-500">GRUPO</span>
+                                <span className="uppercase text-[10px] font-black text-slate-500 dark:text-slate-400">GRUPO</span>
                                 <span className="font-mono">
                                   {formatCurrency(Math.abs(grupo))}
                                 </span>
@@ -1490,7 +1490,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                 className={`flex items-center gap-2 ${resolveBalanceColor(divisa)}`}
                               >
                                 <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                                <span className="uppercase text-[10px] font-black text-slate-500">DIVISA</span>
+                                <span className="uppercase text-[10px] font-black text-slate-500 dark:text-slate-400">DIVISA</span>
                                 <span className="font-mono">
                                   {formatCurrency(Math.abs(divisa))}
                                 </span>
@@ -1511,7 +1511,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                     buildWhatsAppContext(entity.id, entity.globalBalance, entity.lastMov)
                                   );
                                 }}
-                                className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-slate-900 transition-all shadow-sm"
+                                className="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 hover:bg-emerald-600 hover:text-slate-900 dark:text-white transition-all shadow-sm dark:shadow-black/20"
                                 title="WhatsApp"
                               >
                                 <i className="fa-brands fa-whatsapp"></i>
@@ -1522,7 +1522,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                   setSelectedEntityId(entity.id);
                                   setViewMode('DETAIL');
                                 }}
-                                className="w-9 h-9 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-slate-900 transition-all shadow-sm"
+                                className="w-9 h-9 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 hover:bg-indigo-600 hover:text-slate-900 dark:text-white transition-all shadow-sm dark:shadow-black/20"
                                 title="Registrar Movimiento"
                               >
                                 <i className="fa-solid fa-plus"></i>
@@ -1533,7 +1533,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                   setSelectedEntityId(entity.id);
                                   setViewMode('DETAIL');
                                 }}
-                                className="w-9 h-9 rounded-full bg-slate-50 text-slate-500 hover:bg-slate-600 hover:text-slate-900 transition-all shadow-sm"
+                                className="w-9 h-9 rounded-full bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-600 hover:text-slate-900 dark:text-white transition-all shadow-sm dark:shadow-black/20"
                                 title="Ver Expediente"
                               >
                                 <i className="fa-solid fa-chevron-right"></i>
@@ -1572,7 +1572,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                   </button>
                   <div>
                     <div className="flex items-center gap-3 mb-1">
-                      <h2 className="text-3xl font-black text-slate-800 tracking-tight">
+                      <h2 className="text-3xl font-black text-slate-800 dark:text-slate-200 tracking-tight">
                         {currentEntityInfo.id}
                       </h2>
                       <span
@@ -1589,15 +1589,15 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     {currentEntityInfo.type === 'CLIENTE' && currentCustomer && (
                       <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-500">
                         <div>
-                          <span className="font-semibold text-slate-600">CI/RIF:</span>{' '}
+                          <span className="font-semibold text-slate-600 dark:text-slate-400">CI/RIF:</span>{' '}
                           {getEntityField(currentCustomer.cedula)}
                         </div>
                         <div>
-                          <span className="font-semibold text-slate-600">Telefono:</span>{' '}
+                          <span className="font-semibold text-slate-600 dark:text-slate-400">Telefono:</span>{' '}
                           {currentCustomer.telefono ? (
                             <a
                               href={`tel:${currentCustomer.telefono.replace(/\s+/g, '')}`}
-                              className="text-slate-700 hover:text-[var(--ui-accent)]"
+                              className="text-slate-700 dark:text-slate-300 hover:text-[var(--ui-accent)]"
                             >
                               {formatPhone(currentCustomer.telefono)}
                             </a>
@@ -1606,7 +1606,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                           )}
                         </div>
                         <div>
-                          <span className="font-semibold text-slate-600">Direccion:</span>{' '}
+                          <span className="font-semibold text-slate-600 dark:text-slate-400">Direccion:</span>{' '}
                           {getEntityField(currentCustomer.direccion)}
                         </div>
                       </div>
@@ -1630,7 +1630,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                       Periodo / Rango
                     </label>
                     <select
-                      className="px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600"
+                      className="px-3 py-2.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-[10px] font-black uppercase text-slate-600 dark:text-slate-400"
                       value={detailRangeFilter}
                       onChange={(e) =>
                         setDetailRangeFilter(
@@ -1648,13 +1648,13 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     <div className="flex items-center gap-2">
                       <input
                         type="date"
-                        className="px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600"
+                        className="px-3 py-2.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-[10px] font-black uppercase text-slate-600 dark:text-slate-400"
                         value={detailRangeFrom}
                         onChange={(e) => setDetailRangeFrom(e.target.value)}
                       />
                       <input
                         type="date"
-                        className="px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600"
+                        className="px-3 py-2.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-[10px] font-black uppercase text-slate-600 dark:text-slate-400"
                         value={detailRangeTo}
                         onChange={(e) => setDetailRangeTo(e.target.value)}
                       />
@@ -1671,40 +1671,40 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                       <span className="text-[10px] font-bold uppercase text-slate-400">KPIs</span>
                     </div>
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                      <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2.5">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold uppercase text-slate-400">
                             Total Historico
                           </p>
                           <BarChart3 className="h-4 w-4 text-slate-400" />
                         </div>
-                        <p className="text-lg font-black text-slate-800">
+                        <p className="text-lg font-black text-slate-800 dark:text-slate-200">
                           {formatCurrency(analyticsKpis.totalHistorical)}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                      <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2.5">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold uppercase text-slate-400">
                             Ticket Promedio
                           </p>
                           <Receipt className="h-4 w-4 text-slate-400" />
                         </div>
-                        <p className="text-lg font-black text-slate-800">
+                        <p className="text-lg font-black text-slate-800 dark:text-slate-200">
                           {formatCurrency(analyticsKpis.ticketAverage)}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                      <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2.5">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold uppercase text-slate-400">
                             Dias Prom. de Pago
                           </p>
                           <Clock className="h-4 w-4 text-slate-400" />
                         </div>
-                        <p className="text-lg font-black text-slate-800">
+                        <p className="text-lg font-black text-slate-800 dark:text-slate-200">
                           {analyticsKpis.avgPaymentDays} dias
                         </p>
                       </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                      <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2.5">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold uppercase text-slate-400">
                             Saldo Pendiente Total
@@ -1748,17 +1748,17 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                         </ResponsiveContainer>
                         {trendIsSparse && (
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="text-[11px] font-bold text-slate-400 bg-white/80 px-3 py-1.5 rounded-full border border-slate-200">
+                            <div className="text-[11px] font-bold text-slate-400 bg-white dark:bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/10">
                               Generando tendencia...
                             </div>
                           </div>
                         )}
                       </div>
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                      <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2.5">
                         <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                           Distribucion de Deuda
                         </div>
-                        <div className="mt-2 space-y-2 text-[11px] font-semibold text-slate-600">
+                        <div className="mt-2 space-y-2 text-[11px] font-semibold text-slate-600 dark:text-slate-400">
                           <div className="flex items-center justify-between">
                             <span>🇺🇸 Divisa</span>
                             <span>{formatCurrency(Math.abs(scopedBalances.divisa), '$')}</span>
@@ -1799,19 +1799,19 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                       if (activeTab === tab) {
                         switch (tab) {
                           case 'ALL':
-                            activeClasses = 'bg-white text-slate-900 shadow-lg';
+                            activeClasses = 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-lg';
                             break;
                           case AccountType.BCV:
                             activeClasses =
-                              'bg-blue-800 text-slate-900 shadow-lg shadow-blue-200';
+                              'bg-blue-800 text-slate-900 dark:text-white shadow-lg shadow-blue-200';
                             break;
                           case AccountType.GRUPO:
                             activeClasses =
-                              'bg-orange-600 text-slate-900 shadow-lg shadow-orange-200';
+                              'bg-orange-600 text-slate-900 dark:text-white shadow-lg shadow-orange-200';
                             break;
                           case AccountType.DIVISA:
                             activeClasses =
-                              'bg-emerald-700 text-slate-900 shadow-lg shadow-emerald-200';
+                              'bg-emerald-700 text-slate-900 dark:text-white shadow-lg shadow-emerald-200';
                             break;
                         }
                       }
@@ -1838,13 +1838,13 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/90 p-5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                       Exportar / Compartir
                     </p>
-                    <h3 className="text-lg font-black text-slate-800">Resguardos del estado</h3>
+                    <h3 className="text-lg font-black text-slate-800 dark:text-slate-200">Resguardos del estado</h3>
                   </div>
                   <span className="text-[10px] font-bold uppercase text-slate-400">Accion rapida</span>
                 </div>
@@ -1855,7 +1855,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                   </label>
                   <div className="mt-2">
                     <select
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300"
                       value={shareMenuDetailAccount}
                       onChange={(e) => setShareMenuDetailAccount(e.target.value as TabFilter)}
                     >
@@ -1874,12 +1874,12 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                   <button
                     type="button"
                     onClick={copyShareText}
-                    className="w-full flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                    className="w-full flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 hover:border-slate-300 dark:border-white/15 hover:bg-slate-50 dark:hover:bg-white/[0.04]"
                   >
                     <div className="flex items-center gap-3">
                       <Copy className="h-4 w-4 text-slate-500" />
                       <div>
-                        <div className="text-sm font-bold text-slate-800">
+                        <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
                           Copiar Estado de Cuenta
                         </div>
                         <div className="text-[11px] text-slate-500">
@@ -1898,12 +1898,12 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     <button
                       type="button"
                       onClick={() => handleExportPdfSummary(shareMenuDetailAccount)}
-                      className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:border-white/15 hover:bg-slate-50 dark:hover:bg-white/[0.04]"
                     >
                       <div className="flex items-start gap-3">
                         <div className="text-xl">📄</div>
                         <div>
-                          <div className="text-sm font-bold text-slate-800">PDF Resumido</div>
+                          <div className="text-sm font-bold text-slate-800 dark:text-slate-200">PDF Resumido</div>
                           <div className="text-[11px] text-slate-500">
                             Solo saldos totales por cuenta.
                           </div>
@@ -1913,12 +1913,12 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     <button
                       type="button"
                       onClick={() => handleExportSummaryImage(shareMenuDetailAccount)}
-                      className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:border-white/15 hover:bg-slate-50 dark:hover:bg-white/[0.04]"
                     >
                       <div className="flex items-start gap-3">
                         <div className="text-xl">🖼️</div>
                         <div>
-                          <div className="text-sm font-bold text-slate-800">Imagen Resumida</div>
+                          <div className="text-sm font-bold text-slate-800 dark:text-slate-200">Imagen Resumida</div>
                           <div className="text-[11px] text-slate-500">Tarjeta limpia para compartir.</div>
                         </div>
                       </div>
@@ -1934,12 +1934,12 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     <button
                       type="button"
                       onClick={() => handleExportPdfDetailed(shareMenuDetailAccount)}
-                      className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:border-white/15 hover:bg-slate-50 dark:hover:bg-white/[0.04]"
                     >
                       <div className="flex items-start gap-3">
                         <div className="text-xl">📄</div>
                         <div>
-                          <div className="text-sm font-bold text-slate-800">PDF Detallado</div>
+                          <div className="text-sm font-bold text-slate-800 dark:text-slate-200">PDF Detallado</div>
                           <div className="text-[11px] text-slate-500">
                             Incluye todos los movimientos y detalles.
                           </div>
@@ -1949,12 +1949,12 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     <button
                       type="button"
                       onClick={() => handleExportImage(shareMenuDetailAccount)}
-                      className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:border-white/15 hover:bg-slate-50 dark:hover:bg-white/[0.04]"
                     >
                       <div className="flex items-start gap-3">
                         <div className="text-xl">🖼️</div>
                         <div>
-                          <div className="text-sm font-bold text-slate-800">Imagen Detallada</div>
+                          <div className="text-sm font-bold text-slate-800 dark:text-slate-200">Imagen Detallada</div>
                           <div className="text-[11px] text-slate-500">Captura completa del reporte.</div>
                         </div>
                       </div>
@@ -1971,7 +1971,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           >
             {/* Table Header */}
             <div
-              className={`px-8 py-4 ${contextColors.bg} border-b border-slate-200 grid grid-cols-10 text-[10px] font-black uppercase tracking-widest ${contextColors.text}`}
+              className={`px-8 py-4 ${contextColors.bg} border-b border-slate-200 dark:border-white/10 grid grid-cols-10 text-[10px] font-black uppercase tracking-widest ${contextColors.text}`}
             >
               <div className="col-span-2">Fecha / Hora</div>
               <div className="col-span-2">Concepto</div>
@@ -1999,13 +1999,13 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                 detailData.map((mov) => (
                   <div
                     key={mov.id}
-                    className="px-8 py-4 border-b border-slate-100 grid grid-cols-10 items-center hover:bg-slate-50 transition-colors text-xs group"
+                    className="px-8 py-4 border-b border-slate-100 dark:border-white/[0.07] grid grid-cols-10 items-center hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors text-xs group"
                   >
                     <div className="col-span-2 font-bold text-slate-500">
                       {formatDateTime((mov as any).displayDate || mov.date)}
                     </div>
                     <div
-                      className="col-span-2 font-medium text-slate-700 truncate pr-4"
+                      className="col-span-2 font-medium text-slate-700 dark:text-slate-300 truncate pr-4"
                       title={mov.concept}
                     >
                       {mov.concept}
@@ -2030,14 +2030,14 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     <div className="col-span-1 text-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleEditClick(mov)}
-                        className="w-8 h-8 rounded-full bg-slate-100 hover:bg-[var(--ui-accent)] hover:text-slate-900 text-slate-500 transition-all flex items-center justify-center"
+                        className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/[0.07] hover:bg-[var(--ui-accent)] hover:text-slate-900 dark:text-white text-slate-500 transition-all flex items-center justify-center"
                       >
                         <i className="fa-solid fa-pencil text-[10px]"></i>
                       </button>
                     </div>
 
                     {/* Row Footer with Running Balance */}
-                    <div className="col-span-10 mt-2 pt-2 border-t border-dashed border-slate-100 flex flex-wrap justify-between items-center gap-2 opacity-60">
+                    <div className="col-span-10 mt-2 pt-2 border-t border-dashed border-slate-100 dark:border-white/[0.07] flex flex-wrap justify-between items-center gap-2 opacity-60">
                       <div className="text-[9px] uppercase font-bold text-slate-400 flex flex-wrap gap-3">
                         <span>Cuenta: {mov.accountType}</span>
                         <span>Moneda: {mov.currency}</span>
@@ -2085,24 +2085,24 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
 
       {/* --- EDIT MODAL --- */}
       {editingMovement && editForm && (
-        <div className="fixed inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+        <div className="fixed inset-0 bg-white dark:bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
           <form
             onSubmit={handleSaveEdit}
             className="app-panel w-full max-w-2xl p-0 overflow-hidden animate-in zoom-in duration-300"
           >
-            <div className="bg-slate-50 border-b border-slate-200 px-8 py-6 flex items-center justify-between">
+            <div className="bg-slate-50 dark:bg-white/[0.03] border-b border-slate-200 dark:border-white/10 px-8 py-6 flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Detalles de la Operacion
                 </p>
-                <h3 className="font-black text-slate-800 uppercase tracking-tight text-xl">
+                <h3 className="font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight text-xl">
                   Editar Movimiento
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingMovement(null)}
-                className="w-9 h-9 rounded-full bg-white text-slate-500 hover:bg-rose-500 hover:text-slate-900 transition-all flex items-center justify-center shadow"
+                className="w-9 h-9 rounded-full bg-white dark:bg-slate-900 text-slate-500 hover:bg-rose-500 hover:text-slate-900 dark:text-white transition-all flex items-center justify-center shadow"
               >
                 <i className="fa-solid fa-xmark"></i>
               </button>

@@ -29,10 +29,8 @@ const getInitialMode = (): ThemeMode => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'dark' || stored === 'light') return stored;
-    // Respetar preferencia del sistema operativo
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
   } catch { /* SSR safety */ }
-  return 'light';
+  return 'dark'; // Dualis default: dark mode
 };
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
