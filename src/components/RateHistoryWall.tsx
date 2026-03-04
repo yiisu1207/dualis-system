@@ -226,10 +226,10 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       );
 
       // 3. Pre-llenar formulario manual
-      setManualBcv(String(bcvPreview.rate));
+      setManualBcv(bcvPreview.rate.toFixed(4));
       setManualDate(today);
       setBcvPreview(null);
-      success(`Tasa BCV ${bcvPreview.rate} Bs/$ aplicada en todos los dispositivos.`);
+      success(`Tasa BCV ${bcvPreview.rate.toFixed(4)} Bs/$ aplicada en todos los dispositivos.`);
     } catch {
       error('No se pudo aplicar la tasa. Revisa la conexión.');
     } finally {
@@ -717,7 +717,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                     Tasa Encontrada · BCV Oficial
                   </p>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-black text-white tracking-tight">{bcvPreview.rate.toFixed(2)}</span>
+                    <span className="text-3xl font-black text-white tracking-tight">{bcvPreview.rate.toFixed(4)}</span>
                     <span className="text-sm font-black text-white/40">Bs / $</span>
                   </div>
                   <p className="text-[10px] font-bold text-white/30 mt-0.5">
@@ -748,7 +748,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                 {isPublishing
                   ? <Loader2 size={13} className="animate-spin" />
                   : <CheckCircle2 size={13} />}
-                {isPublishing ? 'Aplicando...' : `Aplicar ${bcvPreview.rate.toFixed(2)} Bs`}
+                {isPublishing ? 'Aplicando...' : `Aplicar ${bcvPreview.rate.toFixed(4)} Bs`}
               </button>
               <button
                 type="button"
