@@ -20,6 +20,8 @@ import {
   Receipt,
   Wallet,
   ClipboardList,
+  MapPin,
+  Scale,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -60,6 +62,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'inventario',   label: 'Inventario',      Icon: Package,         path: 'inventario'    },
       { id: 'cajas',        label: 'Ventas / Cajas',  Icon: ShoppingCart,    path: 'cajas'         },
       { id: 'rrhh',         label: 'RRHH / Nómina',  Icon: Users,           path: 'rrhh'          },
+      { id: 'sucursales',   label: 'Sucursales',      Icon: MapPin,          path: 'sucursales'    },
     ],
   },
   {
@@ -68,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'clientes',     label: 'Deudores / CxC',  Icon: Wallet,          path: 'cobranzas'     },
       { id: 'proveedores',  label: 'Gastos / CxP',    Icon: Receipt,         path: 'cxp'           },
       { id: 'contabilidad', label: 'Contabilidad',    Icon: BookOpen,        path: 'contabilidad'  },
+      { id: 'fiscal',       label: 'Gestión Fiscal',  Icon: Scale,           path: 'fiscal'        },
       { id: 'tasas',        label: 'Tasas de Cambio', Icon: TrendingUp,      path: 'tasas'         },
       { id: 'conciliacion', label: 'Conciliación',    Icon: Landmark,        path: 'conciliacion'  },
     ],

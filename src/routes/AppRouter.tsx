@@ -18,6 +18,10 @@ import MainSystem from '../MainSystem';
 import { useTenant } from '../context/TenantContext';
 import Terms from '../pages/Terms';
 import Privacy from '../pages/Privacy';
+import SuperAdminPanel from '../pages/SuperAdminPanel';
+import BillingPage from '../pages/BillingPage';
+import SubscriptionWall from '../pages/SubscriptionWall';
+import { useSubscription } from '../hooks/useSubscription';
 
 function resolveTenantId(profile: { empresa_id?: string; businessId?: string } | null) {
   if (!profile) return '';
@@ -110,6 +114,27 @@ function TenantGuard({ children }: { children: React.ReactNode }) {
   return <TenantProvider tenantId={empresa_id}>{children}</TenantProvider>;
 }
 
+function SubscriptionGuard({ children }: { children: React.ReactNode }) {
+  const { userProfile, loading: authLoading } = useAuth();
+  const { empresa_id } = useParams();
+  const navigate = React.useNavigate();
+  const businessId = userProfile?.businessId || empresa_id || '';
+  const { subscription, loading: subLoading } = useSubscription(businessId);
+
+  React.useEffect(() => {
+    if (authLoading || subLoading) return;
+    if (!subscription) {
+      navigate(`/${empresa_id}/subscribe`, { replace: true });
+    }
+  }, [authLoading, subLoading, subscription, empresa_id]);
+
+  if (authLoading || subLoading) {
+    return <div className="h-screen flex items-center justify-center bg-[#070b14]"><div className="w-6 h-6 border-2 border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" /></div>;
+  }
+  if (!subscription) return null;
+  return <>{children}</>;
+}
+
 function AdminCoreWrapper() {
   const { tenantId } = useTenant();
   const params = useParams();
@@ -150,6 +175,12 @@ export default function AppRouter() {
       <Route path="/register" element={<AuthEntry><Register /></AuthEntry>} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
+      {/* Internal ops panel — PIN-protected, path from env */}
+      <Route path={`/${import.meta.env.VITE_SUPER_ADMIN_PATH ?? 'ctrl-9x7b'}`} element={<SuperAdminPanel />} />
+      {/* Billing — protected, accessible even on expired plan */}
+      <Route path="/:empresa_id/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
+      {/* Subscription wall — shown before first access */}
+      <Route path="/:empresa_id/subscribe" element={<ProtectedRoute><SubscriptionWall /></ProtectedRoute>} />
       <Route path="/onboarding" element={<OnboardingGate />} />
       <Route path="/unauthorized" element={<NotAuthorized />} />
 
@@ -176,7 +207,9 @@ export default function AppRouter() {
         path="/:empresa_id/admin/cajas"
         element={
           <TenantGuard>
-            <AdminPosManager />
+            <SubscriptionGuard>
+              <AdminPosManager />
+            </SubscriptionGuard>
           </TenantGuard>
         }
       />
@@ -184,7 +217,9 @@ export default function AppRouter() {
         path="/:empresa_id/admin/*"
         element={
           <TenantGuard>
-            <AdminCoreWrapper />
+            <SubscriptionGuard>
+              <AdminCoreWrapper />
+            </SubscriptionGuard>
           </TenantGuard>
         }
       />

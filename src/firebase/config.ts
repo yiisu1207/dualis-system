@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: 'AIzaSyDhogwFlgTEePSm0Mgda10lSDt-ljzauT4',
   authDomain: 'erp-web-f99dc.firebaseapp.com',
   projectId: 'erp-web-f99dc',

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 
 import { useToast } from '../context/ToastContext';
+import ArqueoModal from '../components/ArqueoModal';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 interface Terminal {
@@ -119,7 +120,10 @@ export default function AdminPosManager() {
   const [cashierName, setCashierName] = useState('');
   const [isOpeningShift, setIsOpeningShift] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
+
+  // Arqueo modal
+  const [arqueoTerminal, setArqueoTerminal] = useState<Terminal | null>(null);
+  const [arqueoMovements, setArqueoMovements] = useState<any[]>([]);
 
   // Audit panel
   const [selectedAudit, setSelectedAudit] = useState<Terminal | null>(null);
@@ -237,20 +241,38 @@ export default function AdminPosManager() {
     if (!newTab) warning('El navegador bloqueó la pestaña. Permite popups para este sitio.');
   };
 
-  const handleCloseShift = async (terminal: Terminal) => {
+  const handleInitiateCloseShift = async (terminal: Terminal) => {
+    if (!businessId) return;
+    // Load movements for this terminal's current shift
     try {
-      const ref = doc(db, `businesses/${businessId}/terminals`, terminal.id);
-      await updateDoc(ref, {
-        estado: 'cerrada',
-        cajeroNombre: 'Sin asignar',
-        apertura: null,
-        cierreAt: new Date().toISOString(),
-      });
+      const { getDocs: _getDocs, query: _query, collection: _col, where: _where } = await import('firebase/firestore');
+      const q = _query(
+        _col(db, 'movements'),
+        _where('businessId', '==', businessId),
+        _where('cajaId', '==', terminal.id)
+      );
+      const snap = await _getDocs(q);
+      const movs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Filter to current shift if apertura is set
+      const shiftMovs = terminal.apertura
+        ? movs.filter((m: any) => {
+            const ts = m.createdAt || m.date;
+            return ts && ts >= terminal.apertura!;
+          })
+        : movs;
+      setArqueoMovements(shiftMovs);
+      setArqueoTerminal(terminal);
       setCloseConfirmId(null);
     } catch (err: any) {
-      console.error('[AdminPosManager] Error cerrando turno:', err);
-      error(`Error al cerrar turno: ${err?.message || String(err)}`);
+      console.error('[AdminPosManager] Error cargando movimientos para arqueo:', err);
+      error('No se pudo cargar los movimientos del turno');
     }
+  };
+
+  const handleArqueoDone = async () => {
+    setArqueoTerminal(null);
+    setArqueoMovements([]);
+    success('Turno cerrado correctamente');
   };
 
   const handleCopyUrl = (terminal: Terminal) => {
@@ -466,23 +488,10 @@ export default function AdminPosManager() {
                   </button>
 
                   {isOpen && isAdmin && (
-                    closeConfirmId === t.id ? (
-                      <div className="flex-1 flex items-center gap-1">
-                        <button onClick={() => handleCloseShift(t)}
-                          className="flex-1 h-11 rounded-xl bg-rose-600 text-white font-black text-[9px] uppercase tracking-widest hover:bg-rose-700 transition-all">
-                          Confirmar
-                        </button>
-                        <button onClick={() => setCloseConfirmId(null)}
-                          className="h-11 px-3 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 font-black text-[9px] uppercase tracking-widest transition-all">
-                          Cancelar
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setCloseConfirmId(t.id)}
-                        className="flex-1 h-11 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 dark:text-rose-400 font-black text-[9px] uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all border border-rose-100 dark:border-rose-500/20">
-                        Cerrar Turno
-                      </button>
-                    )
+                    <button onClick={() => handleInitiateCloseShift(t)}
+                      className="flex-1 h-11 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 dark:text-rose-400 font-black text-[9px] uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all border border-rose-100 dark:border-rose-500/20">
+                      Cerrar Turno
+                    </button>
                   )}
 
                   {!isOpen ? (
@@ -621,6 +630,18 @@ export default function AdminPosManager() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ══ ARQUEO MODAL ═══════════════════════════════════════════════════════ */}
+      {arqueoTerminal && businessId && (
+        <ArqueoModal
+          terminal={arqueoTerminal}
+          movements={arqueoMovements}
+          businessId={businessId}
+          currentUser={userProfile?.fullName || userProfile?.uid || 'Admin'}
+          onClose={() => { setArqueoTerminal(null); setArqueoMovements([]); }}
+          onDone={handleArqueoDone}
+        />
       )}
 
       {/* ══ AUDIT PANEL ════════════════════════════════════════════════════════ */}

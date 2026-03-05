@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, db } from '../firebase/config';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import i18n from '../i18n';
 
 // Definimos la "Ficha Técnica" del usuario
@@ -64,7 +64,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
+    // Tracks the real-time profile listener so we can clean it up on logout/switch
+    let profileUnsub: (() => void) | null = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Always clean up previous profile listener first
+      if (profileUnsub) { profileUnsub(); profileUnsub = null; }
       // 1. Si no hay usuario, limpiamos todo de golpe
       if (!firebaseUser) {
         setAuthState({
@@ -182,6 +187,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           userProfile: finalProfile,
           loading: false,
         });
+
+        // 4. Escucha cambios en tiempo real al perfil (rol, suspensión, etc.)
+        profileUnsub = onSnapshot(doc(db, 'users', firebaseUser.uid), snap => {
+          if (!snap.exists()) return;
+          const data = snap.data() as UserProfile;
+          const updated: UserProfile = {
+            ...data,
+            businessId: data.businessId || data.empresa_id || '',
+            displayName: data.displayName || data.fullName || data.email || 'Usuario',
+            role: data.role || 'owner',
+            status: data.status || 'ACTIVE',
+          };
+          // Si el admin suspendió al usuario, cerramos sesión inmediatamente
+          if (updated.status === 'DISABLED') {
+            auth.signOut();
+            return;
+          }
+          setAuthState(prev => prev.user ? { ...prev, userProfile: updated } : prev);
+        }, () => { /* ignorar errores del listener */ });
+
       } catch (error) {
         console.error('Error buscando perfil:', error);
         setAuthState({
@@ -192,7 +217,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (profileUnsub) profileUnsub();
+    };
   }, []);
 
   const resolveLanguageFromProfile = (profile?: UserProfile | null) => {

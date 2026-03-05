@@ -16,6 +16,7 @@ import {
   Tag, MessageCircle, Printer, WifiOff,
 } from 'lucide-react';
 import ReceiptModal from '../../components/ReceiptModal';
+import { getNextNroControl } from '../../utils/facturaUtils';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import SaleHistoryPanel from '../../components/SaleHistoryPanel';
 import { auth } from '../../firebase/config';
@@ -505,8 +506,11 @@ const PosContent = () => {
       const changeUsd = method === 'efectivo_usd' ? Math.max(0, cashGiven - grandTotal)   : 0;
       const changeBs  = method === 'efectivo_bs'  ? Math.max(0, cashGiven - totals.totalBs) : 0;
 
+      const { formatted: nroControl } = await getNextNroControl(empresa_id);
+
       const movementPayload: any = {
         businessId: empresa_id,
+        nroControl,
         entityId,
         concept: `Venta POS Detal — ${entityLabel}`,
         amount: grandTotal,

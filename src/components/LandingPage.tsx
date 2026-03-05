@@ -7,7 +7,7 @@ import {
   ChevronRight, BadgeDollarSign, Building2,
   Activity, PieChart, Play, X, WifiOff,
   History, ShieldCheck, Wifi, FileSpreadsheet,
-  ScanLine, ArrowUpRight,
+  ScanLine, ArrowUpRight, Check, Minus, Crown, MapPin,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Logo from './ui/Logo';
@@ -54,6 +54,27 @@ export default function LandingPage() {
   const navigate  = useNavigate();
   const [scrolled, setScrolled]   = useState(false);
   const [demoOpen, setDemoOpen]   = useState(false);
+  const [bcvRate, setBcvRate]     = useState<string | null>(null);
+  const [pricingBillingAnnual, setPricingBillingAnnual] = useState(false);
+
+  // Custom plan builder state
+  const [customBase, setCustomBase]                   = useState<'starter'|'negocio'|'enterprise'>('negocio');
+  const [customExtraUsers, setCustomExtraUsers]       = useState(0);
+  const [customExtraProducts, setCustomExtraProducts] = useState(0); // in blocks of 1000
+  const [customExtraSucursales, setCustomExtraSucursales] = useState(0);
+  const [customVision, setCustomVision]               = useState(false);
+  const [customConciliacion, setCustomConciliacion]   = useState(false);
+  const [customRRHH, setCustomRRHH]                   = useState(false);
+
+  const BASE_PRICES = { starter: 24, negocio: 49, enterprise: 89 } as const;
+  const customTotal = (() => {
+    const base  = pricingBillingAnnual ? Math.round(BASE_PRICES[customBase] * 0.8) : BASE_PRICES[customBase];
+    const extra = customExtraUsers * 3 + customExtraProducts * 5 + customExtraSucursales * 9
+                + (customVision && customBase !== 'enterprise' ? 24 : 0)
+                + (customConciliacion && customBase !== 'enterprise' ? 12 : 0)
+                + (customRRHH && customBase !== 'enterprise' ? 15 : 0);
+    return base + extra;
+  })();
 
   const heroRef     = useRef<HTMLElement>(null);
   const featuresRef = useRef<HTMLElement>(null);
@@ -61,6 +82,7 @@ export default function LandingPage() {
   const securityRef = useRef<HTMLElement>(null);
   const stepsRef    = useRef<HTMLElement>(null);
   const demoRef     = useRef<HTMLElement>(null);
+  const pricingRef  = useRef<HTMLElement>(null);
 
   const scrollTo = (ref: React.RefObject<HTMLElement>) =>
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -74,6 +96,22 @@ export default function LandingPage() {
     );
     document.querySelectorAll('[data-reveal]').forEach(el => io.observe(el));
     return () => { window.removeEventListener('scroll', onScroll); io.disconnect(); };
+  }, []);
+
+  useEffect(() => {
+    fetch('https://ve.dolarapi.com/v1/dolares')
+      .then(r => r.json())
+      .then((data: any) => {
+        const list = Array.isArray(data) ? data : [data];
+        const entry = list.find((d: any) =>
+          d?.fuente === 'oficial' || d?.fuente === 'bcv' ||
+          String(d?.fuente ?? '').toLowerCase().includes('oficial') ||
+          String(d?.nombre ?? '').toLowerCase().includes('bcv')
+        ) ?? list[0];
+        const rate = Number(entry?.venta ?? entry?.promedio ?? entry?.precio ?? entry?.compra);
+        if (rate && !isNaN(rate)) setBcvRate(rate.toFixed(4));
+      })
+      .catch(() => {/* silently use fallback */});
   }, []);
 
   return (
@@ -122,8 +160,8 @@ export default function LandingPage() {
               { label:'Demo',           ref: demoRef },
               { label:'Funcionalidades', ref: featuresRef },
               { label:'Módulos',         ref: modulesRef },
+              { label:'Precios',         ref: pricingRef },
               { label:'Seguridad',       ref: securityRef },
-              { label:'Inicio rápido',   ref: stepsRef },
             ].map(item => (
               <button
                 key={item.label}
@@ -167,7 +205,7 @@ export default function LandingPage() {
         <div className="float-card hidden xl:block absolute left-[6%] top-[38%]" style={{'--r':'-6deg'} as React.CSSProperties}>
           <div className="px-5 py-4 rounded-2xl bg-[#0d1424]/90 backdrop-blur-xl border border-white/[0.1] shadow-2xl shadow-black/50">
             <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/30 mb-1.5">Tasa BCV</p>
-            <p className="text-2xl font-black text-amber-400 tracking-tight">36.50 <span className="text-sm text-white/30">Bs/$</span></p>
+            <p className="text-2xl font-black text-amber-400 tracking-tight">{bcvRate ?? '...'} <span className="text-sm text-white/30">Bs/$</span></p>
             <div className="flex items-center gap-1.5 mt-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-[8px] font-bold text-white/25 uppercase tracking-widest">En vivo</span>
@@ -368,7 +406,7 @@ export default function LandingPage() {
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
                         <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                        <span className="hidden sm:block text-[8px] font-black text-amber-400 uppercase tracking-wider">36.50 Bs/$</span>
+                        <span className="hidden sm:block text-[8px] font-black text-amber-400 uppercase tracking-wider">{bcvRate ?? '...'} Bs/$</span>
                       </div>
                       <div className="w-8 h-8 rounded-xl bg-white/[0.05] border border-white/[0.08]" />
                       <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-500/25" />
@@ -710,7 +748,7 @@ export default function LandingPage() {
               </div>
               <div className="w-full md:w-60 space-y-3 shrink-0">
                 {[
-                  { label:'BCV Oficial', value:'36.50 Bs/$', c:'text-amber-400',   bg:'bg-amber-500/10',   b:'border-amber-500/20' },
+                  { label:'BCV Oficial', value:`${bcvRate ?? '...'} Bs/$`, c:'text-amber-400',   bg:'bg-amber-500/10',   b:'border-amber-500/20' },
                   { label:'Grupo',       value:'38.00 Bs/$', c:'text-orange-400',  bg:'bg-orange-500/10',  b:'border-orange-500/20' },
                   { label:'Fuente',      value:'BCV.ORG.VE', c:'text-emerald-400', bg:'bg-emerald-500/10', b:'border-emerald-500/20' },
                   { label:'Update',      value:'Hoy 08:00',  c:'text-white/25',    bg:'bg-white/[0.04]',   b:'border-white/[0.08]' },
@@ -752,6 +790,387 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── PRICING ──────────────────────────────────────────────────────────── */}
+      <section ref={pricingRef} className="py-32 relative overflow-hidden bg-[#020509]">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_50%_0%,rgba(99,102,241,0.09),transparent)]" />
+        <div className="max-w-7xl mx-auto px-6 relative z-10">
+
+          {/* Header */}
+          <div className="text-center mb-6" data-reveal>
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/25 mb-6">
+              <Crown size={11} className="text-indigo-400" />
+              <span className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-400">Planes y Precios</span>
+            </div>
+            <h2 className="text-5xl md:text-7xl font-black tracking-[-0.04em] text-white leading-tight mb-5">
+              Simple.<br /><span className="text-white/20">Sin sorpresas.</span>
+            </h2>
+            <p className="text-white/30 text-lg max-w-lg mx-auto leading-relaxed mb-10">
+              Elige el plan que se adapte a tu negocio. Cancela cuando quieras.
+            </p>
+
+            {/* Billing toggle */}
+            <div className="inline-flex items-center gap-4 p-1.5 rounded-2xl bg-white/[0.04] border border-white/[0.07]">
+              <button
+                onClick={() => setPricingBillingAnnual(false)}
+                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${!pricingBillingAnnual ? 'bg-white/[0.1] text-white' : 'text-white/25 hover:text-white/50'}`}
+              >
+                Mensual
+              </button>
+              <button
+                onClick={() => setPricingBillingAnnual(true)}
+                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${pricingBillingAnnual ? 'bg-white/[0.1] text-white' : 'text-white/25 hover:text-white/50'}`}
+              >
+                Anual
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[8px] border border-emerald-500/30">−20%</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Plans grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-14">
+            {[
+              {
+                name: 'Starter',
+                desc: 'Para iniciar tu negocio digital.',
+                priceMonthly: 24,
+                fakeMonthly: 59,
+                color: 'text-sky-400',
+                border: 'border-sky-500/20',
+                bg: 'bg-sky-500/[0.04]',
+                glow: '',
+                badge: null,
+                features: [
+                  { label:'POS Detal (hasta 3 terminales)', ok:true },
+                  { label:'Inventario (500 productos)', ok:true },
+                  { label:'Tasas BCV Live + Historial', ok:true },
+                  { label:'Clientes & CxC básico', ok:true },
+                  { label:'Reportes básicos (PDF/Excel)', ok:true },
+                  { label:'Exportar tickets digitales', ok:true },
+                  { label:'2 usuarios', ok:true },
+                  { label:'POS Mayor (crédito)', ok:false },
+                  { label:'RRHH & Nómina', ok:false },
+                  { label:'VisionLab IA (Gemini)', ok:false },
+                  { label:'Sucursales', ok:false },
+                ],
+                cta: 'Empezar Gratis',
+                ctaStyle: { background:'rgba(14,165,233,0.15)', border:'1px solid rgba(14,165,233,0.3)', color:'#38bdf8' },
+              },
+              {
+                name: 'Negocio',
+                desc: 'El núcleo completo para PYMEs.',
+                priceMonthly: 49,
+                fakeMonthly: 99,
+                color: 'text-indigo-400',
+                border: 'border-indigo-500/40',
+                bg: 'bg-indigo-500/[0.06]',
+                glow: '0 0 80px -20px rgba(99,102,241,.3)',
+                badge: 'Más Popular',
+                features: [
+                  { label:'Todo lo del Starter', ok:true },
+                  { label:'POS Mayor (crédito 15/30/45 días)', ok:true },
+                  { label:'Inventario Pro ilimitado', ok:true },
+                  { label:'CxC & CxP completo', ok:true },
+                  { label:'RRHH & Nómina básica', ok:true },
+                  { label:'Reportes avanzados + comisiones', ok:true },
+                  { label:'1 Sucursal adicional', ok:true },
+                  { label:'5 usuarios', ok:true },
+                  { label:'Soporte estándar', ok:true },
+                  { label:'VisionLab IA (Gemini)', ok:false },
+                  { label:'Contabilidad + Conciliación', ok:false },
+                ],
+                cta: 'Activar Negocio',
+                ctaStyle: { background:'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow:'0 10px 40px -10px rgba(99,102,241,.5)' },
+              },
+              {
+                name: 'Enterprise',
+                desc: 'Poder total para operaciones exigentes.',
+                priceMonthly: 89,
+                fakeMonthly: 179,
+                color: 'text-violet-400',
+                border: 'border-violet-500/20',
+                bg: 'bg-violet-500/[0.04]',
+                glow: '',
+                badge: null,
+                features: [
+                  { label:'Todo lo del Negocio', ok:true },
+                  { label:'VisionLab IA (Gemini)', ok:true },
+                  { label:'Contabilidad 360°', ok:true },
+                  { label:'Conciliación bancaria', ok:true },
+                  { label:'Audit Logs inmutables', ok:true },
+                  { label:'3 Sucursales incluidas', ok:true },
+                  { label:'Transferencias entre sucursales', ok:true },
+                  { label:'Usuarios ilimitados', ok:true },
+                  { label:'Dashboard consolidado multi-sucursal', ok:true },
+                  { label:'Soporte prioritario 24/7', ok:true },
+                  { label:'API acceso (próximamente)', ok:true },
+                ],
+                cta: 'Activar Enterprise',
+                ctaStyle: { background:'rgba(139,92,246,0.15)', border:'1px solid rgba(139,92,246,0.3)', color:'#a78bfa' },
+              },
+            ].map(plan => {
+              const price = pricingBillingAnnual
+                ? Math.round(plan.priceMonthly * 0.8)
+                : plan.priceMonthly;
+              const fake  = pricingBillingAnnual
+                ? Math.round(plan.fakeMonthly * 0.8)
+                : plan.fakeMonthly;
+              return (
+                <div
+                  key={plan.name}
+                  data-reveal
+                  className={`relative rounded-[2.5rem] border ${plan.border} ${plan.bg} p-8 flex flex-col gradient-border`}
+                  style={plan.glow ? { boxShadow: plan.glow } : undefined}
+                >
+                  {plan.badge && (
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                      <div className="px-5 py-2 rounded-full text-[9px] font-black uppercase tracking-widest text-white"
+                        style={{ background:'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow:'0 0 30px -5px rgba(99,102,241,.6)' }}>
+                        {plan.badge}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Plan header */}
+                  <div className="mb-8">
+                    <h3 className={`text-[10px] font-black uppercase tracking-[0.25em] ${plan.color} mb-3`}>{plan.name}</h3>
+                    <p className="text-[12px] text-white/30 font-medium mb-6 leading-relaxed">{plan.desc}</p>
+                    <div className="flex items-end gap-2">
+                      <span className={`text-5xl font-black text-white tracking-tight`}>${price}</span>
+                      <div className="mb-1.5">
+                        <span className="text-white/20 text-sm font-bold line-through block">${fake}</span>
+                        <span className="text-white/25 text-[10px] font-bold">/mes</span>
+                      </div>
+                    </div>
+                    {pricingBillingAnnual && (
+                      <p className="text-[10px] text-emerald-400 font-black mt-2">Ahorras ${(plan.fakeMonthly - price) * 12}/año</p>
+                    )}
+                  </div>
+
+                  {/* CTA */}
+                  <button
+                    onClick={() => navigate('/register')}
+                    className="w-full py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all hover:-translate-y-0.5 active:scale-95 mb-8"
+                    style={plan.ctaStyle as React.CSSProperties}
+                  >
+                    {plan.cta}
+                  </button>
+
+                  {/* Features */}
+                  <div className="flex flex-col gap-3 flex-1">
+                    {plan.features.map(f => (
+                      <div key={f.label} className="flex items-start gap-3">
+                        {f.ok
+                          ? <Check size={13} className="text-emerald-400 mt-0.5 shrink-0" />
+                          : <Minus size={13} className="text-white/15 mt-0.5 shrink-0" />}
+                        <span className={`text-[11px] font-semibold leading-tight ${f.ok ? 'text-white/55' : 'text-white/20'}`}>{f.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Custom Plan Builder ───────────────────────────────────────── */}
+          <div className="mt-20" data-reveal>
+            <div className="text-center mb-10">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-500/10 border border-violet-500/25 mb-4">
+                <Sparkles size={11} className="text-violet-400" />
+                <span className="text-[9px] font-black uppercase tracking-[0.22em] text-violet-400">Arma tu plan personalizado</span>
+              </div>
+              <h3 className="text-3xl md:text-4xl font-black text-white tracking-tight">¿Necesitas algo diferente?</h3>
+              <p className="text-white/25 text-sm mt-3 max-w-md mx-auto">Elige tu base y agrega exactamente lo que necesitas. Precio calculado en tiempo real.</p>
+            </div>
+
+            <div className="gradient-border rounded-[2rem] border border-white/[0.08] bg-white/[0.02] p-8 md:p-10">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+
+                {/* Left: configurator */}
+                <div className="space-y-7">
+
+                  {/* Base plan selector */}
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 mb-3">Plan base</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { id: 'starter',    label: 'Starter',    price: pricingBillingAnnual ? 19 : 24 },
+                        { id: 'negocio',    label: 'Negocio',    price: pricingBillingAnnual ? 39 : 49 },
+                        { id: 'enterprise', label: 'Enterprise', price: pricingBillingAnnual ? 71 : 89 },
+                      ] as const).map(b => (
+                        <button
+                          key={b.id}
+                          onClick={() => setCustomBase(b.id)}
+                          className={`py-3 px-2 rounded-xl border text-center transition-all ${
+                            customBase === b.id
+                              ? 'border-indigo-500/60 bg-indigo-500/15'
+                              : 'border-white/[0.07] bg-white/[0.02] hover:border-white/[0.15]'
+                          }`}
+                        >
+                          <p className={`text-[10px] font-black uppercase tracking-widest ${customBase === b.id ? 'text-indigo-400' : 'text-white/30'}`}>{b.label}</p>
+                          <p className={`text-base font-black mt-0.5 ${customBase === b.id ? 'text-white' : 'text-white/20'}`}>${b.price}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sliders */}
+                  {([
+                    { key: 'users',      label: 'Usuarios extra',                unit: 'usuario',  max: 20,  step: 1,  price: 3,  val: customExtraUsers,      set: setCustomExtraUsers,      base: { starter: 2, negocio: 5, enterprise: -1 }[customBase] },
+                    { key: 'products',   label: 'Productos extra (bloques 1k)',  unit: 'x1000',    max: 10,  step: 1,  price: 5,  val: customExtraProducts,   set: setCustomExtraProducts,   base: { starter: '500', negocio: '2,000', enterprise: '∞' }[customBase] },
+                    { key: 'sucursales', label: 'Sucursales extra',              unit: 'sucursal', max: 10,  step: 1,  price: 9,  val: customExtraSucursales, set: setCustomExtraSucursales, base: { starter: 0, negocio: 1, enterprise: 3 }[customBase] },
+                  ] as const).map(s => (
+                    <div key={s.key}>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">{s.label}</p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] text-white/20 font-medium">Base: {typeof s.base === 'number' ? (s.base === -1 ? '∞' : s.base) : s.base}</span>
+                          {s.val > 0 && <span className="text-[9px] font-black text-indigo-400">+{s.val} {s.unit} (+${s.val * s.price}/mes)</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => (s.set as any)(Math.max(0, s.val - s.step))} className="w-7 h-7 rounded-lg bg-white/[0.06] border border-white/[0.08] text-white/40 hover:bg-white/[0.12] flex items-center justify-center font-black text-sm transition-all">−</button>
+                        <div className="flex-1 relative h-1.5 rounded-full bg-white/[0.08]">
+                          <div className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all" style={{ width: `${(s.val / s.max) * 100}%` }} />
+                          <input
+                            type="range" min={0} max={s.max} step={s.step} value={s.val}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => (s.set as any)(Number(e.target.value))}
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                          />
+                        </div>
+                        <button onClick={() => (s.set as any)(Math.min(s.max, s.val + s.step))} className="w-7 h-7 rounded-lg bg-white/[0.06] border border-white/[0.08] text-white/40 hover:bg-white/[0.12] flex items-center justify-center font-black text-sm transition-all">+</button>
+                        <span className="w-8 text-center text-sm font-black text-white">{s.val}</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Module toggles (skip if enterprise — already included) */}
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 mb-3">Módulos adicionales</p>
+                    <div className="space-y-2">
+                      {([
+                        { key: 'vision',       icon: Sparkles,        label: 'VisionLab IA (Gemini)',    price: 24, val: customVision,       set: setCustomVision,       includedIn: 'enterprise' },
+                        { key: 'conciliacion', icon: Landmark,        label: 'Conciliación Bancaria',    price: 12, val: customConciliacion, set: setCustomConciliacion, includedIn: 'enterprise' },
+                        { key: 'rrhh',         icon: Users,           label: 'RRHH Pro (Nómina + IVSS)', price: 15, val: customRRHH,         set: setCustomRRHH,         includedIn: 'enterprise' },
+                        { key: 'sucExtra',     icon: MapPin,          label: 'Sucursal extra (+$9 c/u)', price: 0,  val: false,              set: () => {},              includedIn: '' },
+                      ] as const).map(m => {
+                        const included = customBase === m.includedIn;
+                        if (m.key === 'sucExtra') return null; // handled by slider
+                        return (
+                          <button
+                            key={m.key}
+                            onClick={() => !included && (m.set as any)(!m.val)}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
+                              included
+                                ? 'border-emerald-500/25 bg-emerald-500/[0.07] cursor-default'
+                                : m.val
+                                  ? 'border-indigo-500/40 bg-indigo-500/10 cursor-pointer'
+                                  : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] cursor-pointer'
+                            }`}
+                          >
+                            <m.icon size={14} className={included ? 'text-emerald-400' : m.val ? 'text-indigo-400' : 'text-white/20'} />
+                            <span className={`flex-1 text-left text-[11px] font-bold ${included || m.val ? 'text-white/70' : 'text-white/25'}`}>{m.label}</span>
+                            {included
+                              ? <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Incluido</span>
+                              : <span className={`text-[9px] font-black uppercase tracking-widest ${m.val ? 'text-indigo-400' : 'text-white/20'}`}>{m.val ? 'Activado' : `+$${m.price}/mes`}</span>
+                            }
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: summary */}
+                <div className="flex flex-col">
+                  <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-7 flex flex-col gap-5 sticky top-24">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/25">Resumen de tu plan</p>
+
+                    {/* Line items */}
+                    <div className="space-y-2.5 flex-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-white/40 font-bold capitalize">Plan {customBase}</span>
+                        <span className="text-xs font-black text-white">${pricingBillingAnnual ? Math.round(BASE_PRICES[customBase] * 0.8) : BASE_PRICES[customBase]}/mes</span>
+                      </div>
+                      {customExtraUsers > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-white/30">+{customExtraUsers} usuarios</span>
+                          <span className="text-xs font-black text-indigo-400">+${customExtraUsers * 3}/mes</span>
+                        </div>
+                      )}
+                      {customExtraProducts > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-white/30">+{customExtraProducts * 1000} productos</span>
+                          <span className="text-xs font-black text-indigo-400">+${customExtraProducts * 5}/mes</span>
+                        </div>
+                      )}
+                      {customExtraSucursales > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-white/30">+{customExtraSucursales} sucursales</span>
+                          <span className="text-xs font-black text-indigo-400">+${customExtraSucursales * 9}/mes</span>
+                        </div>
+                      )}
+                      {customVision && customBase !== 'enterprise' && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-white/30">VisionLab IA</span>
+                          <span className="text-xs font-black text-indigo-400">+$24/mes</span>
+                        </div>
+                      )}
+                      {customConciliacion && customBase !== 'enterprise' && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-white/30">Conciliación</span>
+                          <span className="text-xs font-black text-indigo-400">+$12/mes</span>
+                        </div>
+                      )}
+                      {customRRHH && customBase !== 'enterprise' && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-white/30">RRHH Pro</span>
+                          <span className="text-xs font-black text-indigo-400">+$15/mes</span>
+                        </div>
+                      )}
+                      {pricingBillingAnnual && (
+                        <div className="flex justify-between items-center text-emerald-400">
+                          <span className="text-xs font-bold">Descuento anual (−20%)</span>
+                          <span className="text-xs font-black">−${Math.round(BASE_PRICES[customBase] * 0.2)}/mes</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-4 border-t border-white/[0.06]">
+                      <div className="flex items-end justify-between mb-5">
+                        <div>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-white/20 mb-1">Total mensual</p>
+                          <p className="text-4xl font-black text-white tracking-tight">${customTotal}</p>
+                          {pricingBillingAnnual && <p className="text-[10px] text-emerald-400 font-black mt-1">${customTotal * 12}/año</p>}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[9px] text-white/20 font-medium">Usuarios</p>
+                          <p className="text-sm font-black text-white">{customBase === 'enterprise' ? '∞' : ({ starter: 2, negocio: 5 }[customBase] + customExtraUsers)}</p>
+                          <p className="text-[9px] text-white/20 font-medium mt-1.5">Productos</p>
+                          <p className="text-sm font-black text-white">{customBase === 'enterprise' ? '∞' : `${{ starter: 500, negocio: 2000 }[customBase as 'starter'|'negocio'] + customExtraProducts * 1000}`}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => navigate('/register')}
+                        className="w-full py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5 active:scale-95"
+                        style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow: '0 8px 30px -8px rgba(99,102,241,.5)' }}
+                      >
+                        Empezar con este plan
+                      </button>
+                      <p className="text-center text-[9px] text-white/15 font-medium mt-3">14 días gratis · Sin tarjeta</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Fine print */}
+          <p className="text-center text-[9px] text-white/15 font-medium mt-10" data-reveal>
+            Todos los planes incluyen 14 días de prueba gratuita · Sin tarjeta de crédito · Cancela cuando quieras
+          </p>
         </div>
       </section>
 
@@ -937,6 +1356,7 @@ export default function LandingPage() {
                 title: 'Sistema',
                 links: [
                   { label:'Demo',              action:() => scrollTo(demoRef) },
+                  { label:'Precios',           action:() => scrollTo(pricingRef) },
                   { label:'Novedades v2.1',    action:() => scrollTo(featuresRef) },
                   { label:'Seguridad',         action:() => scrollTo(securityRef) },
                   { label:'Todos los módulos', action:() => scrollTo(modulesRef) },

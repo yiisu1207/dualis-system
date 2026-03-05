@@ -33,9 +33,12 @@ import SmartCalculatorWidget from './components/SmartCalculatorWidget';
 import HelpCenter from './components/HelpCenter';
 import WidgetLaunchpad from './components/WidgetLaunchpad';
 import AdminPosManager from './pages/AdminPosManager';
+import SucursalesManager from './pages/SucursalesManager';
+import TrialBanner from './components/TrialBanner';
 import NotificationCenter from './components/NotificationCenter';
 import ReportesSection from './components/ReportesSection';
 import ReconciliationSection from './components/ReconciliationSection';
+import FiscalSection from './pages/FiscalSection';
 
 // WIDGETS
 import StickyNotesWidget from './components/StickyNotesWidget';
@@ -55,10 +58,11 @@ import {
   deleteDoc,
   updateDoc,
 } from 'firebase/firestore';
-import { Bell, HelpCircle } from 'lucide-react';
+import { Bell, HelpCircle, Lock, ArrowRight, Zap } from 'lucide-react';
 import { logAudit } from './utils/auditLogger';
 import ModeToggle from './components/ModeToggle';
 import HelpPanel from './components/HelpPanel';
+import { useSubscription } from './hooks/useSubscription';
 
 // ── Topbar ─────────────────────────────────────────────────────────────────────
 const Topbar: React.FC<{
@@ -152,6 +156,61 @@ const ConfirmDialog: React.FC<{ state: ConfirmState; onClose: () => void }> = ({
   </div>
 );
 
+// ── LockedModule ───────────────────────────────────────────────────────────────
+const PLAN_LABELS: Record<string, { name: string; color: string }> = {
+  starter:    { name: 'Starter',    color: 'from-sky-500 to-blue-600' },
+  negocio:    { name: 'Negocio',    color: 'from-indigo-500 to-violet-600' },
+  enterprise: { name: 'Enterprise', color: 'from-violet-500 to-purple-600' },
+};
+
+const LockedModule: React.FC<{ moduleName: string; requiredPlan?: string; isAddon?: boolean }> = ({
+  moduleName, requiredPlan = 'negocio', isAddon = false,
+}) => {
+  const navigate = useNavigate();
+  const { empresa_id } = useParams<{ empresa_id: string }>();
+  const { name, color } = PLAN_LABELS[requiredPlan] ?? PLAN_LABELS.negocio;
+  return (
+    <div className="h-full flex items-center justify-center p-12">
+      <div className="max-w-md w-full text-center">
+        {/* Icon */}
+        <div className={`w-20 h-20 mx-auto mb-6 rounded-3xl bg-gradient-to-br ${color} flex items-center justify-center shadow-2xl shadow-indigo-500/20`}>
+          <Lock size={32} className="text-white" />
+        </div>
+
+        {/* Title */}
+        <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2">
+          {moduleName}
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+          {isAddon
+            ? `Este módulo es un add-on premium. Actívalo desde tu panel de suscripción.`
+            : `Este módulo está disponible desde el plan `}
+          {!isAddon && (
+            <span className={`font-black bg-gradient-to-r ${color} bg-clip-text text-transparent`}>{name}</span>
+          )}
+          {!isAddon && '.'}
+        </p>
+
+        {/* Plan badge */}
+        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r ${color} text-white text-xs font-black uppercase tracking-widest mb-8 shadow-lg`}>
+          <Zap size={12} className="fill-white" />
+          {isAddon ? 'Add-on disponible' : `Plan ${name}`}
+        </div>
+
+        {/* CTA */}
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <button
+            onClick={() => navigate(`/${empresa_id}/billing`)}
+            className={`flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r ${color} text-white text-sm font-black shadow-lg hover:-translate-y-0.5 transition-all`}
+          >
+            Ver planes <ArrowRight size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── MainSystem ─────────────────────────────────────────────────────────────────
 const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const { user: firebaseUser, userProfile, updateUserProfile } = useAuth();
@@ -190,6 +249,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const businessId = userProfile?.businessId || '';
   const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
+  const { canAccess } = useSubscription(businessId);
+
   // ── Data via hook (replaces 6 individual listeners) ──────────────────────────
   const { customers, suppliers, movements, employees, advances, payrollHistory, inventoryItems } = useBusinessData(businessId);
 
@@ -208,6 +269,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     tasas:         `${adminBase}/tasas`,
     conciliacion:  `${adminBase}/conciliacion`,
     cajas:         `${adminBase}/cajas`,
+    sucursales:    `${adminBase}/sucursales`,
+    fiscal:        `${adminBase}/fiscal`,
     config:        `${adminBase}/configuracion`,
     help:          `${adminBase}/help`,
   }), [adminBase]);
@@ -402,7 +465,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     proveedores: 'Proveedores', rrhh: 'RRHH', inventario: 'Inventario',
     reportes: 'Reportes', vision: 'VisionLab', widgets: 'Herramientas',
     comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
-    cajas: 'Cajas', config: 'Configuración', help: 'Ayuda',
+    cajas: 'Cajas', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal',
+    config: 'Configuración', help: 'Ayuda',
   };
 
   return (
@@ -420,6 +484,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+        <TrialBanner businessId={businessId} />
         <Topbar
           topbarTitle={tabTitles[activeTab] || activeTab}
           notifCount={visibleNotifications.length}
@@ -432,67 +497,104 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
         <main className="flex-1 overflow-y-auto p-8 relative custom-scroll">
           <div className="max-w-[1440px] mx-auto h-full">
-            {activeTab === 'resumen'      && <AdminDashboard onTabChange={goTab} />}
-            {activeTab === 'widgets'      && <WidgetLaunchpad />}
-            {activeTab === 'inventario'   && <Inventario />}
-            {activeTab === 'config'       && <Configuracion />}
-            {activeTab === 'cajas'        && <AdminPosManager />}
-            {activeTab === 'rrhh'         && <RecursosHumanos />}
-            {activeTab === 'help'         && <HelpCenter />}
-            {activeTab === 'reportes'     && <ReportesSection movements={movements} customers={customers} />}
-            {activeTab === 'conciliacion' && <ReconciliationSection movements={movements} businessId={businessId} ownerId={userProfile?.uid || ''} rates={legacyRates as any} />}
-            {activeTab === 'vision'       && <VisionLab movements={movements} inventory={inventoryItems as any} rates={legacyRates as any} customers={customers} />}
-            {activeTab === 'tasas'        && <RateHistoryWall rates={legacyRates as any} />}
-            {activeTab === 'comparar'     && <BooksComparePanel movements={movements} customers={customers} rates={legacyRates as any} />}
+            {activeTab === 'resumen'    && <AdminDashboard onTabChange={goTab} />}
+            {activeTab === 'widgets'    && <WidgetLaunchpad />}
+            {activeTab === 'inventario' && <Inventario />}
+            {activeTab === 'config'     && <Configuracion />}
+            {activeTab === 'help'       && <HelpCenter />}
+            {activeTab === 'tasas'      && <RateHistoryWall rates={legacyRates as any} />}
+
+            {activeTab === 'cajas' && (
+              canAccess('cajas')
+                ? <AdminPosManager />
+                : <LockedModule moduleName="Cajas / Terminales POS" requiredPlan="starter" />
+            )}
+            {activeTab === 'rrhh' && (
+              canAccess('rrhh')
+                ? <RecursosHumanos />
+                : <LockedModule moduleName="Recursos Humanos" requiredPlan="negocio" />
+            )}
+            {activeTab === 'sucursales' && (
+              canAccess('sucursales')
+                ? <SucursalesManager />
+                : <LockedModule moduleName="Sucursales" requiredPlan="negocio" />
+            )}
+            {activeTab === 'reportes' && (
+              canAccess('reportes')
+                ? <ReportesSection movements={movements} customers={customers} />
+                : <LockedModule moduleName="Reportes" requiredPlan="starter" />
+            )}
+            {activeTab === 'conciliacion' && (
+              canAccess('conciliacion')
+                ? <ReconciliationSection movements={movements} businessId={businessId} ownerId={userProfile?.uid || ''} rates={legacyRates as any} />
+                : <LockedModule moduleName="Conciliación Bancaria" requiredPlan="negocio" isAddon />
+            )}
+            {activeTab === 'fiscal' && <FiscalSection />}
+            {activeTab === 'vision' && (
+              canAccess('vision')
+                ? <VisionLab movements={movements} inventory={inventoryItems as any} rates={legacyRates as any} customers={customers} />
+                : <LockedModule moduleName="VisionLab IA" requiredPlan="enterprise" isAddon />
+            )}
+            {activeTab === 'comparar' && (
+              canAccess('comparar')
+                ? <BooksComparePanel movements={movements} customers={customers} rates={legacyRates as any} />
+                : <LockedModule moduleName="Comparar Libros" requiredPlan="negocio" />
+            )}
 
             {activeTab === 'clientes' && (
-              <CustomerViewer
-                customers={customers}
-                movements={movements}
-                rates={legacyRates as any}
-                config={{} as any}
-                onAddMovement={handleRegisterMovement}
-                onUpdateMovement={updateMovement}
-                onDeleteMovement={deleteMovement}
-                onRegisterCustomer={handleRegisterCustomer}
-                onUpdateCustomer={handleUpdateCustomer}
-                onDeleteCustomer={handleDeleteCustomer}
-                getSmartRate={async () => rates.tasaBCV}
-              />
+              canAccess('clientes') ? (
+                <CustomerViewer
+                  customers={customers}
+                  movements={movements}
+                  rates={legacyRates as any}
+                  config={{} as any}
+                  onAddMovement={handleRegisterMovement}
+                  onUpdateMovement={updateMovement}
+                  onDeleteMovement={deleteMovement}
+                  onRegisterCustomer={handleRegisterCustomer}
+                  onUpdateCustomer={handleUpdateCustomer}
+                  onDeleteCustomer={handleDeleteCustomer}
+                  getSmartRate={async () => rates.tasaBCV}
+                />
+              ) : <LockedModule moduleName="Clientes / CxC" requiredPlan="starter" />
             )}
 
             {activeTab === 'contabilidad' && (
-              <AccountingSection
-                movements={movements}
-                customers={customers}
-                suppliers={suppliers}
-                employees={employees}
-                rates={legacyRates as any}
-                config={{} as any}
-                onUpdateMovement={updateMovement}
-                onDeleteMovement={deleteMovement}
-              />
+              canAccess('contabilidad') ? (
+                <AccountingSection
+                  movements={movements}
+                  customers={customers}
+                  suppliers={suppliers}
+                  employees={employees}
+                  rates={legacyRates as any}
+                  config={{} as any}
+                  onUpdateMovement={updateMovement}
+                  onDeleteMovement={deleteMovement}
+                />
+              ) : <LockedModule moduleName="Contabilidad" requiredPlan="starter" />
             )}
 
             {activeTab === 'proveedores' && (
-              <SupplierSection
-                suppliers={suppliers}
-                movements={movements}
-                rates={legacyRates as any}
-                onRegisterMovement={handleRegisterMovement}
-                onUpdateMovement={updateMovement}
-                onDeleteMovement={deleteMovement}
-                onRegisterSupplier={handleRegisterSupplier}
-                onUpdateSupplier={handleUpdateSupplier}
-                onDeleteSupplier={handleDeleteSupplier}
-                getSmartRate={async () => rates.tasaBCV}
-                canCreateSupplier={isAdmin}
-                canEditSupplier={isAdmin}
-                canDeleteSupplier={isAdmin}
-                canCreateMovement={true}
-                canEditMovement={isAdmin}
-                canDeleteMovement={isAdmin}
-              />
+              canAccess('proveedores') ? (
+                <SupplierSection
+                  suppliers={suppliers}
+                  movements={movements}
+                  rates={legacyRates as any}
+                  onRegisterMovement={handleRegisterMovement}
+                  onUpdateMovement={updateMovement}
+                  onDeleteMovement={deleteMovement}
+                  onRegisterSupplier={handleRegisterSupplier}
+                  onUpdateSupplier={handleUpdateSupplier}
+                  onDeleteSupplier={handleDeleteSupplier}
+                  getSmartRate={async () => rates.tasaBCV}
+                  canCreateSupplier={isAdmin}
+                  canEditSupplier={isAdmin}
+                  canDeleteSupplier={isAdmin}
+                  canCreateMovement={true}
+                  canEditMovement={isAdmin}
+                  canDeleteMovement={isAdmin}
+                />
+              ) : <LockedModule moduleName="Proveedores / CxP" requiredPlan="negocio" />
             )}
 
             <Outlet />

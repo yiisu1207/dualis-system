@@ -37,6 +37,7 @@ function printTicket(movement: any, companyName: string) {
   <h1>${companyName}</h1>
   <div class="c">Ticket de Venta</div>
   <div class="c">${movement.date || new Date().toLocaleDateString('es-VE')}</div>
+  ${movement.nroControl ? `<div class="c" style="font-size:8px;margin-top:2px">N° Control: ${movement.nroControl}</div>` : ''}
   <div class="sep"></div>
   <div class="row"><span>Cliente:</span><span>${movement.entityId === 'CONSUMIDOR_FINAL' ? 'Consumidor Final' : (movement.entityId || '-')}</span></div>
   <div class="row"><span>Pago:</span><span>${movement.metodoPago || '-'}</span></div>
@@ -101,6 +102,12 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
           </div>
 
           <div className="space-y-4 mb-8">
+            {(movement as any).nroControl && (
+              <div className="flex justify-between border-b dark:border-white/[0.07] pb-2">
+                <span className="text-[9px] font-black text-slate-400 uppercase">N° Control</span>
+                <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 font-mono">{(movement as any).nroControl}</span>
+              </div>
+            )}
             <div className="flex justify-between border-b dark:border-white/[0.07] pb-2">
               <span className="text-[9px] font-black text-slate-400 uppercase">Fecha</span>
               <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{movement.date}</span>
