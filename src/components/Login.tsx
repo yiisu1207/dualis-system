@@ -87,8 +87,13 @@ export default function Login() {
       setCaptcha(null);
 
       const eff = bid || code.trim();
-      if ((ud.status || 'ACTIVE') === 'ACTIVE' && eff) nav(`/${eff}/admin/dashboard`, { replace: true });
-      else nav('/onboarding', { replace: true });
+      if (ud.status === 'PENDING_APPROVAL' && eff) {
+        nav(`/${eff}/pending`, { replace: true });
+      } else if ((ud.status || 'ACTIVE') === 'ACTIVE' && eff) {
+        nav(`/${eff}/admin/dashboard`, { replace: true });
+      } else {
+        nav('/onboarding', { replace: true });
+      }
       setLoading(false);
     } catch (err: any) {
       const nw    = rl && now - rl.firstAttempt <= WIN_MS ? rl : { count: 0, firstAttempt: now };

@@ -270,6 +270,9 @@ export default function SuperAdminPanel() {
   const [actRrhh, setActRrhh]               = useState(false);
   const [saving, setSaving]                 = useState(false);
 
+  // Pending approval users
+  const [pendingUsers, setPendingUsers]     = useState<Array<{uid:string; email:string; fullName:string; businessId:string; createdAt:string; activating:boolean}>>([]);
+
   // Promo form
   const [promoPreset, setPromoPreset]       = useState<string | null>(null);
   const [promoCode, setPromoCode]           = useState('');
@@ -277,6 +280,40 @@ export default function SuperAdminPanel() {
   const [promoMonths, setPromoMonths]       = useState(3);
   const [promoDesc, setPromoDesc]           = useState('');
   const [promoSaving, setPromoSaving]       = useState(false);
+
+  // Load pending approval users
+  useEffect(() => {
+    if (!pinAuth || !emailAuth) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'users'), where('status', '==', 'PENDING_APPROVAL')),
+      snap => {
+        const users = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            uid: d.id,
+            email: data.email ?? '',
+            fullName: data.fullName ?? data.displayName ?? '',
+            businessId: data.businessId ?? data.empresa_id ?? '',
+            createdAt: typeof data.createdAt === 'string' ? data.createdAt : (data.createdAt?.toDate?.()?.toISOString() ?? ''),
+            activating: false,
+          };
+        });
+        users.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setPendingUsers(users);
+      }
+    );
+    return unsub;
+  }, [pinAuth, emailAuth]);
+
+  const handleActivateUser = async (uid: string) => {
+    setPendingUsers(prev => prev.map(u => u.uid === uid ? { ...u, activating: true } : u));
+    try {
+      await updateDoc(doc(db, 'users', uid), { status: 'ACTIVE' });
+    } catch (e) {
+      console.error('Error activando usuario:', e);
+      setPendingUsers(prev => prev.map(u => u.uid === uid ? { ...u, activating: false } : u));
+    }
+  };
 
   // Load all businesses
   useEffect(() => {
@@ -643,6 +680,57 @@ export default function SuperAdminPanel() {
       <div className="flex flex-1 overflow-hidden">
         {/* ── Main content ──────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 min-w-0">
+
+          {/* Pending approval section */}
+          {pendingUsers.length > 0 && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-5 space-y-3">
+              <div className="flex items-center gap-2.5">
+                <Clock size={15} className="text-amber-400 shrink-0" />
+                <p className="text-xs font-black uppercase tracking-widest text-amber-400">
+                  Cuentas pendientes de activación
+                  <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[9px]">
+                    {pendingUsers.length}
+                  </span>
+                </p>
+              </div>
+              <div className="space-y-2">
+                {pendingUsers.map(u => (
+                  <div key={u.uid} className="flex items-center gap-3 bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3">
+                    <div className="h-9 w-9 rounded-full bg-amber-500/15 border border-amber-500/20 flex items-center justify-center shrink-0">
+                      <span className="text-amber-400 font-black text-sm">
+                        {(u.fullName || u.email || '?')[0].toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{u.fullName || '—'}</p>
+                      <p className="text-xs text-white/35 truncate">{u.email}</p>
+                      {u.businessId && (
+                        <p className="text-[9px] font-mono text-white/20 truncate mt-0.5">{u.businessId}</p>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      {u.createdAt && (
+                        <p className="text-[9px] text-white/20 mb-1.5">
+                          {new Date(u.createdAt).toLocaleDateString('es-VE')}
+                        </p>
+                      )}
+                      <button
+                        onClick={() => handleActivateUser(u.uid)}
+                        disabled={u.activating}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-emerald-400 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                      >
+                        {u.activating
+                          ? <Loader2 size={11} className="animate-spin" />
+                          : <Check size={11} />
+                        }
+                        Activar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* KPI cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

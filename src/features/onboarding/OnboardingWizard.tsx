@@ -188,21 +188,20 @@ export default function OnboardingWizard() {
         const userRef = doc(db, 'users', user.uid);
         await setDoc(userRef, {
           pin:        formData.pin,
-          status:     'ACTIVE',
+          status:     'PENDING_APPROVAL',
           businessId: currentTenantId,
         }, { merge: true });
 
         updateUserProfile({
           pin:        formData.pin,
-          status:     'ACTIVE',
+          status:     'PENDING_APPROVAL',
           businessId: currentTenantId,
         });
       }
 
-      // Force full reload so the auth context re-reads the fresh status from Firestore
-      // before entering the admin system (avoids redirect loops from stale React state).
+      // Redirect to pending approval wall — account must be activated by SuperAdmin.
       setTimeout(() => {
-        window.location.replace(`/${currentTenantId}/admin/dashboard`);
+        window.location.replace(`/${currentTenantId}/pending`);
       }, 600);
     } catch (err: any) {
       console.error(err);

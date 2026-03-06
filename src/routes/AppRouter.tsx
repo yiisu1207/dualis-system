@@ -21,6 +21,7 @@ import Privacy from '../pages/Privacy';
 import SuperAdminPanel from '../pages/SuperAdminPanel';
 import BillingPage from '../pages/BillingPage';
 import SubscriptionWall from '../pages/SubscriptionWall';
+import PendingApprovalWall from '../pages/PendingApprovalWall';
 import { useSubscription } from '../hooks/useSubscription';
 
 function resolveTenantId(profile: { empresa_id?: string; businessId?: string } | null) {
@@ -111,6 +112,10 @@ function TenantGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/unauthorized" replace />;
   }
 
+  if (userProfile?.status === 'PENDING_APPROVAL') {
+    return <Navigate to={`/${empresa_id}/pending`} replace />;
+  }
+
   return <TenantProvider tenantId={empresa_id}>{children}</TenantProvider>;
 }
 
@@ -177,6 +182,8 @@ export default function AppRouter() {
       <Route path="/privacy" element={<Privacy />} />
       {/* Internal ops panel — PIN-protected, path from env */}
       <Route path={`/${import.meta.env.VITE_SUPER_ADMIN_PATH ?? 'ctrl-9x7b'}`} element={<SuperAdminPanel />} />
+      {/* Pending approval wall */}
+      <Route path="/:empresa_id/pending" element={<ProtectedRoute><PendingApprovalWall /></ProtectedRoute>} />
       {/* Billing — protected, accessible even on expired plan */}
       <Route path="/:empresa_id/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
       {/* Subscription wall — shown before first access */}
