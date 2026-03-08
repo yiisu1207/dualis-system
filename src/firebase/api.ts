@@ -211,16 +211,16 @@ export async function getReceivedRequests(workspaceId: string) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-export async function acceptRequest(requestId: string) {
+export async function acceptRequest(requestId: string, role: string = 'ventas') {
   const reqRef = doc(db, 'workspaceRequests', requestId);
   const reqSnap = await getDoc(reqRef);
   if (!reqSnap.exists()) throw new Error('Solicitud no encontrada');
   const data: any = reqSnap.data();
 
   // 1) marcar como accepted
-  await updateDoc(reqRef, { status: 'accepted', respondedAt: new Date().toISOString() });
+  await updateDoc(reqRef, { status: 'accepted', respondedAt: new Date().toISOString(), assignedRole: role });
 
-  // 2) añadir usuario a la colección users (si no existe)
+  // 2) activar al usuario con el rol asignado
   if (data.senderId) {
     const userRef = doc(db, 'users', data.senderId);
     await setDoc(
@@ -230,7 +230,7 @@ export async function acceptRequest(requestId: string) {
         email: data.senderEmail,
         fullName: data.senderName || '',
         businessId: data.workspaceId,
-        role: 'ventas',
+        role,
         status: 'ACTIVE',
       },
       { merge: true }
@@ -244,7 +244,7 @@ export async function acceptRequest(requestId: string) {
           uid: data.senderId,
           email: data.senderEmail,
           fullName: data.senderName || '',
-          role: 'ventas',
+          role,
           status: 'ACTIVE',
           joinedAt: new Date().toISOString(),
         },

@@ -3,11 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Check, Zap, Crown, Building2, ArrowLeft, Copy, CheckCheck,
   AlertTriangle, Clock, Loader2, Send, ChevronRight, Shield,
+  ImagePlus, X,
 } from 'lucide-react';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useSubscription, PLAN_BASE_PRICE } from '../hooks/useSubscription';
 import { useAuth } from '../context/AuthContext';
+import { uploadToCloudinary } from '../utils/cloudinary';
 
 // ─── Payment details ─────────────────────────────────────────────────────────
 const PAYMENT_INFO = {
@@ -102,6 +104,9 @@ export default function BillingPage() {
   const [submitting, setSubmitting]       = useState(false);
   const [submitted, setSubmitted]         = useState(false);
   const [error, setError]                 = useState('');
+  const [proofFile, setProofFile]         = useState<File | null>(null);
+  const [proofPreview, setProofPreview]   = useState<string | null>(null);
+  const [uploadingProof, setUploadingProof] = useState(false);
 
   const plan = PLANS.find(p => p.id === selectedPlan);
   const effectiveMonths = annual ? 12 : months;
@@ -115,6 +120,19 @@ export default function BillingPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  const handleProofChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setProofFile(file);
+    setProofPreview(URL.createObjectURL(file));
+  };
+
+  const clearProof = () => {
+    setProofFile(null);
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    setProofPreview(null);
+  };
+
   const handleSubmit = async () => {
     if (!selectedPlan || !reference.trim()) {
       setError('Selecciona un plan e ingresa la referencia de pago.');
@@ -123,6 +141,14 @@ export default function BillingPage() {
     setError('');
     setSubmitting(true);
     try {
+      let proofUrl: string | undefined;
+      if (proofFile) {
+        setUploadingProof(true);
+        const result = await uploadToCloudinary(proofFile, 'dualis_payments');
+        proofUrl = result.secure_url;
+        setUploadingProof(false);
+      }
+
       await updateDoc(doc(db, 'businesses', businessId), {
         'subscription.pendingPayment': {
           plan:        selectedPlan,
@@ -131,12 +157,14 @@ export default function BillingPage() {
           payMethod,
           reference:   reference.trim(),
           note:        note.trim(),
+          proofUrl:    proofUrl ?? null,
           submittedAt: serverTimestamp(),
           submittedBy: userProfile?.email || '',
         },
       });
       setSubmitted(true);
     } catch {
+      setUploadingProof(false);
       setError('Error al enviar. Intenta de nuevo o contáctanos directamente.');
     } finally {
       setSubmitting(false);
@@ -397,6 +425,45 @@ export default function BillingPage() {
                     className="w-full bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all resize-none"
                   />
                 </div>
+
+                {/* Comprobante de pago */}
+                <div>
+                  <label className="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+                    Comprobante de pago (opcional)
+                  </label>
+                  {proofPreview ? (
+                    <div className="relative inline-block">
+                      <img
+                        src={proofPreview}
+                        alt="Comprobante"
+                        className="h-40 rounded-xl object-cover border border-slate-200 dark:border-white/[0.1] shadow-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={clearProof}
+                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-md hover:bg-rose-600 transition-colors"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center gap-3 w-full cursor-pointer bg-slate-50 dark:bg-white/[0.04] border-2 border-dashed border-slate-200 dark:border-white/[0.12] rounded-xl px-4 py-5 hover:border-indigo-400 dark:hover:border-indigo-500/50 transition-all group">
+                      <ImagePlus size={20} className="text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0" />
+                      <div>
+                        <p className="text-sm font-bold text-slate-600 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                          Adjuntar captura o foto
+                        </p>
+                        <p className="text-[11px] text-slate-400">JPG, PNG o WEBP · máx 5 MB</p>
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleProofChange}
+                      />
+                    </label>
+                  )}
+                </div>
               </div>
 
               {error && (
@@ -416,7 +483,7 @@ export default function BillingPage() {
                 }`}
               >
                 {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={15} />}
-                {submitting ? 'Enviando...' : 'Enviar solicitud de activación'}
+                {uploadingProof ? 'Subiendo comprobante...' : submitting ? 'Enviando...' : 'Enviar solicitud de activación'}
                 {!submitting && <ChevronRight size={14} />}
               </button>
 

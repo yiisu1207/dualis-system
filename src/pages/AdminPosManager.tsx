@@ -262,7 +262,6 @@ export default function AdminPosManager() {
         : movs;
       setArqueoMovements(shiftMovs);
       setArqueoTerminal(terminal);
-      setCloseConfirmId(null);
     } catch (err: any) {
       console.error('[AdminPosManager] Error cargando movimientos para arqueo:', err);
       error('No se pudo cargar los movimientos del turno');

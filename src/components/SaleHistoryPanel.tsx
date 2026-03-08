@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { X, RotateCcw, Clock, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
+import HelpTooltip from './HelpTooltip';
 
 interface SaleItem {
   id: string;
@@ -190,16 +191,23 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
                   <div className="text-right shrink-0">
                     <p className="text-sm font-black text-slate-900 dark:text-white">${sale.amountInUSD?.toFixed(2)}</p>
                     {!sale.anulada && (
-                      <button
-                        disabled={anulando === sale.id}
-                        onClick={() => handleAnular(sale)}
-                        className="mt-1.5 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-[9px] font-black uppercase transition-all disabled:opacity-50"
-                      >
-                        {anulando === sale.id
-                          ? <Loader2 size={10} className="animate-spin" />
-                          : <RotateCcw size={10} />}
-                        Anular
-                      </button>
+                      <span className="mt-1.5 inline-flex items-center gap-1">
+                        <button
+                          disabled={anulando === sale.id}
+                          onClick={() => handleAnular(sale)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-[9px] font-black uppercase transition-all disabled:opacity-50"
+                        >
+                          {anulando === sale.id
+                            ? <Loader2 size={10} className="animate-spin" />
+                            : <RotateCcw size={10} />}
+                          Anular
+                        </button>
+                        <HelpTooltip
+                          title="Anular Venta"
+                          text="Cancela esta venta y crea un abono de reverso en el sistema. También restaura el stock de los productos vendidos. Esta acción no puede deshacerse."
+                          side="left"
+                        />
+                      </span>
                     )}
                   </div>
                 </div>

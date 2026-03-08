@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation, useParams } from 'react-router-dom';
 import { User, AppConfig } from '../../types';
+import { type RolePermissions, type ModuleId } from '../hooks/useRolePermissions';
+import { useVendor } from '../context/VendorContext';
 import {
   LayoutDashboard,
   BookOpen,
@@ -31,6 +33,7 @@ interface SidebarProps {
   user: User;
   config: AppConfig;
   canCompare?: boolean;
+  rolePermissions?: RolePermissions;
   onLogout: () => void;
   onOpenProfile: () => void;
 }
@@ -135,11 +138,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   user,
   config,
   canCompare = false,
+  rolePermissions,
   onLogout,
   onOpenProfile,
 }) => {
   const location  = useLocation();
   const { empresa_id } = useParams();
+  const { moduleHidden, moduleForced } = useVendor();
 
   // Persist collapsed state across sessions
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -158,11 +163,25 @@ const Sidebar: React.FC<SidebarProps> = ({
   const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
 
   const isVisible = (item: NavItem) => {
+    // Vendor-level hard hide (super-admin decision, overrides everything)
+    if (moduleHidden(item.id)) return false;
+    if (item.id === 'help') return true;
+
     const modKey = moduleMap[item.id];
-    if (modKey && (config as any).modules?.[modKey] === false) return false;
-    if (item.id === 'comparar' && !canCompare) return false;
-    if (!isOwnerOrAdmin && item.id !== 'cajas' && item.id !== 'help') return false;
-    return true;
+    if (modKey && (config as any).modules?.[modKey] === false && !moduleForced(item.id)) return false;
+    if (item.id === 'comparar' && !canCompare && !moduleForced(item.id)) return false;
+
+    if (isOwnerOrAdmin) return true;
+
+    // Vendor forced-on overrides role permissions
+    if (moduleForced(item.id)) return true;
+
+    // Non-admin: check rolePermissions
+    const role = user.role as keyof RolePermissions;
+    if (rolePermissions && role in rolePermissions) {
+      return rolePermissions[role][item.id as ModuleId] === true;
+    }
+    return item.id === 'cajas';
   };
 
   const roleLabel: Record<string, string> = {

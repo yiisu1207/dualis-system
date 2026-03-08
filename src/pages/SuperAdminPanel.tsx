@@ -6,8 +6,12 @@ import {
   Eye, EyeOff, History, Tag, Plus, Minus,
   DollarSign, BadgeCheck, ChevronDown,
   UserPlus, UserX, KeyRound, UserCog, ShieldCheck,
-  ShieldOff,
+  ShieldOff, Sliders, Save, Trash2, FileText,
 } from 'lucide-react';
+import {
+  VENDOR_TEMPLATES, VENDOR_DEFAULTS, HIDEABLE_ELEMENTS,
+  type VendorOverride,
+} from '../context/VendorContext';
 import {
   collection, onSnapshot, doc, updateDoc, serverTimestamp,
   query, where, setDoc, deleteDoc, getDocs,
@@ -239,7 +243,14 @@ export default function SuperAdminPanel() {
   const [search, setSearch] = useState('');
   const [filterTab, setFilterTab] = useState<'all'|'trial'|'active'|'expired'>('all');
   const [selected, setSelected] = useState<BizRecord | null>(null);
-  const [drawerTab, setDrawerTab] = useState<'plan'|'promo'|'history'|'users'>('plan');
+  const [drawerTab, setDrawerTab] = useState<'plan'|'promo'|'history'|'users'|'custom'>('plan');
+
+  // Vendor overrides per business
+  const [vendorOverride, setVendorOverride] = useState<VendorOverride>(VENDOR_DEFAULTS);
+  const [loadingVendor, setLoadingVendor]   = useState(false);
+  const [savingVendor, setSavingVendor]     = useState(false);
+  const [newHideId, setNewHideId]           = useState('');
+  const [newHideModule, setNewHideModule]   = useState('');
 
   // User management
   const [bizUsers, setBizUsers]         = useState<BizUser[]>([]);
@@ -380,6 +391,82 @@ export default function SuperAdminPanel() {
     }, () => setLoadingUsers(false));
     return unsub;
   }, [selected?.id, drawerTab]);
+
+  // Load vendor override when a business is selected
+  useEffect(() => {
+    if (!selected) { setVendorOverride(VENDOR_DEFAULTS); return; }
+    setLoadingVendor(true);
+    import('firebase/firestore').then(({ getDoc }) =>
+      getDoc(doc(db, 'vendorOverrides', selected.id))
+    ).then(snap => {
+      setVendorOverride(snap.exists() ? { ...VENDOR_DEFAULTS, ...snap.data() } as VendorOverride : { ...VENDOR_DEFAULTS });
+      setLoadingVendor(false);
+    }).catch(() => { setVendorOverride({ ...VENDOR_DEFAULTS }); setLoadingVendor(false); });
+  }, [selected?.id]);
+
+  const handleSaveVendor = async () => {
+    if (!selected) return;
+    setSavingVendor(true);
+    try {
+      await setDoc(doc(db, 'vendorOverrides', selected.id), {
+        ...vendorOverride,
+        updatedAt: new Date().toISOString(),
+        updatedBy: user?.email ?? 'admin',
+      }, { merge: false });
+    } catch (e) { console.error(e); }
+    finally { setSavingVendor(false); }
+  };
+
+  const applyVendorTemplate = (templateId: string) => {
+    const tpl = VENDOR_TEMPLATES[templateId];
+    if (!tpl) return;
+    setVendorOverride(prev => ({
+      ...prev,
+      template:         templateId,
+      forcedModules:    tpl.forcedModules    ?? prev.forcedModules,
+      hiddenModules:    tpl.hiddenModules    ?? prev.hiddenModules,
+      hiddenElements:   tpl.hiddenElements   ?? prev.hiddenElements,
+      featureOverrides: tpl.featureOverrides ?? prev.featureOverrides,
+    }));
+  };
+
+  const addHideElement = () => {
+    const id = newHideId.trim();
+    if (!id || vendorOverride.hiddenElements.includes(id)) { setNewHideId(''); return; }
+    setVendorOverride(prev => ({ ...prev, hiddenElements: [...prev.hiddenElements, id] }));
+    setNewHideId('');
+  };
+
+  const removeHideElement = (id: string) =>
+    setVendorOverride(prev => ({ ...prev, hiddenElements: prev.hiddenElements.filter(e => e !== id) }));
+
+  const addHideModule = () => {
+    const id = newHideModule.trim();
+    if (!id || vendorOverride.hiddenModules.includes(id)) { setNewHideModule(''); return; }
+    setVendorOverride(prev => ({ ...prev, hiddenModules: [...prev.hiddenModules, id] }));
+    setNewHideModule('');
+  };
+
+  const removeHideModule = (id: string) =>
+    setVendorOverride(prev => ({ ...prev, hiddenModules: prev.hiddenModules.filter(m => m !== id) }));
+
+  const toggleForcedModule = (id: string) =>
+    setVendorOverride(prev => ({
+      ...prev,
+      forcedModules: prev.forcedModules.includes(id)
+        ? prev.forcedModules.filter(m => m !== id)
+        : [...prev.forcedModules, id],
+    }));
+
+  const toggleFeatureOverride = (key: string, value: boolean) =>
+    setVendorOverride(prev => ({ ...prev, featureOverrides: { ...prev.featureOverrides, [key]: value } }));
+
+  const clearFeatureOverride = (key: string) =>
+    setVendorOverride(prev => {
+      const next = { ...prev.featureOverrides };
+      delete next[key];
+      return { ...prev, featureOverrides: next };
+    });
 
   // ── User handlers ──────────────────────────────────────────────────────────
 
@@ -888,6 +975,7 @@ export default function SuperAdminPanel() {
                   { id:'plan',    icon: CreditCard, label:'Suscripción' },
                   { id:'promo',   icon: Gift,       label:'Promo' },
                   { id:'users',   icon: Users,      label:'Usuarios' },
+                  { id:'custom',  icon: Sliders,    label:'Config' },
                   { id:'history', icon: History,    label:'Historial' },
                 ] as const).map(t => (
                   <button
@@ -1373,6 +1461,231 @@ export default function SuperAdminPanel() {
                       </div>
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Tab: Personalización ──────────────────────────────────── */}
+            {drawerTab === 'custom' && (
+              <div className="p-5 space-y-5 overflow-y-auto">
+                {loadingVendor ? (
+                  <div className="flex items-center justify-center py-16"><Loader2 size={22} className="animate-spin text-indigo-400" /></div>
+                ) : (
+                  <>
+                    {/* Template presets */}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Plantilla base</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Object.entries(VENDOR_TEMPLATES).map(([id, tpl]) => (
+                          <button
+                            key={id}
+                            onClick={() => applyVendorTemplate(id)}
+                            className={`p-3 rounded-xl border text-left transition-all ${
+                              vendorOverride.template === id
+                                ? 'border-indigo-500/40 bg-indigo-500/10'
+                                : 'border-white/[0.07] bg-white/[0.02] hover:border-white/20'
+                            }`}
+                          >
+                            <p className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${vendorOverride.template === id ? 'text-indigo-400' : 'text-white/50'}`}>{tpl.label}</p>
+                            <p className="text-[9px] text-white/20 leading-tight">{tpl.description}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Feature overrides */}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Funciones — Override</p>
+                      <p className="text-[9px] text-white/20 mb-3">Fuerza ON/OFF independiente de lo que configure el cliente. Deja en "Auto" para respetar su config.</p>
+                      <div className="space-y-2">
+                        {['teamChat','bookComparison','aiVision','multiCurrency','whatsappNotifs','personalBooks','peerComparison','perUserBilling'].map(key => {
+                          const val = vendorOverride.featureOverrides[key];
+                          return (
+                            <div key={key} className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                              <span className="text-[11px] text-white/50 font-medium capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                              <div className="flex gap-1">
+                                {(['on','off','auto'] as const).map(opt => {
+                                  const isActive = opt === 'auto' ? val === undefined : opt === 'on' ? val === true : val === false;
+                                  return (
+                                    <button
+                                      key={opt}
+                                      onClick={() => opt === 'auto' ? clearFeatureOverride(key) : toggleFeatureOverride(key, opt === 'on')}
+                                      className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                                        isActive
+                                          ? opt === 'on'   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                          : opt === 'off'  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                          : 'bg-white/10 text-white border border-white/20'
+                                          : 'text-white/20 hover:text-white/40 border border-transparent'
+                                      }`}
+                                    >{opt}</button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Modules forced ON */}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Módulos forzados activos</p>
+                      <p className="text-[9px] text-white/20 mb-3">Accesibles independiente del plan de suscripción.</p>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {['resumen','inventario','cajas','rrhh','sucursales','clientes','proveedores','contabilidad','fiscal','tasas','conciliacion','reportes','vision','comparar','widgets','config'].map(mod => {
+                          const active = vendorOverride.forcedModules.includes(mod);
+                          return (
+                            <button key={mod} onClick={() => toggleForcedModule(mod)}
+                              className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${
+                                active ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'text-white/20 border-white/[0.06] hover:border-white/20'
+                              }`}
+                            >{mod}</button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Hidden modules */}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Módulos ocultos</p>
+                      <p className="text-[9px] text-white/20 mb-2">Completamente invisibles para esta empresa.</p>
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          value={newHideModule}
+                          onChange={e => setNewHideModule(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && addHideModule()}
+                          placeholder="ej: rrhh, conciliacion, comparar…"
+                          className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+                        />
+                        <button onClick={addHideModule} className="px-3 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 hover:bg-indigo-500/25 transition-all">
+                          <Plus size={14} />
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {vendorOverride.hiddenModules.map(id => (
+                          <span key={id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-400 text-[9px] font-black uppercase">
+                            {id}
+                            <button onClick={() => removeHideModule(id)}><X size={10} /></button>
+                          </span>
+                        ))}
+                        {vendorOverride.hiddenModules.length === 0 && <p className="text-[9px] text-white/15">Ninguno oculto</p>}
+                      </div>
+                    </div>
+
+                    {/* Hidden UI elements */}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Elementos UI ocultos</p>
+                      {/* Quick-pick from registry */}
+                      <div className="space-y-1.5 mb-3 max-h-40 overflow-y-auto pr-1">
+                        {HIDEABLE_ELEMENTS.map(el => {
+                          const active = vendorOverride.hiddenElements.includes(el.id);
+                          return (
+                            <button
+                              key={el.id}
+                              onClick={() => active ? removeHideElement(el.id) : setVendorOverride(p => ({ ...p, hiddenElements: [...p.hiddenElements, el.id] }))}
+                              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-left ${
+                                active ? 'bg-rose-500/10 border-rose-500/25' : 'bg-white/[0.02] border-white/[0.06] hover:border-white/15'
+                              }`}
+                            >
+                              <div>
+                                <p className={`text-[10px] font-bold ${active ? 'text-rose-400' : 'text-white/40'}`}>{el.label}</p>
+                                <p className="text-[8px] text-white/15">{el.location} · {el.id}</p>
+                              </div>
+                              {active ? <EyeOff size={12} className="text-rose-400 shrink-0" /> : <Eye size={12} className="text-white/15 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {/* Custom element ID */}
+                      <div className="flex gap-2">
+                        <input
+                          value={newHideId}
+                          onChange={e => setNewHideId(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && addHideElement()}
+                          placeholder="ID personalizado…"
+                          className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+                        />
+                        <button onClick={addHideElement} className="px-3 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 hover:bg-indigo-500/25 transition-all">
+                          <Plus size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Webhook */}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-1">Webhook URL</p>
+                      <p className="text-[9px] text-white/20 mb-2">Recibe eventos en tiempo real: ventas, clientes, turnos. Compatible con n8n, Zapier, Make o tu backend.</p>
+                      <input
+                        value={vendorOverride.webhookUrl}
+                        onChange={e => setVendorOverride(p => ({ ...p, webhookUrl: e.target.value }))}
+                        placeholder="https://tu-servidor.com/webhook/empresa"
+                        className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/70 text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 font-mono"
+                      />
+                      <p className="text-[8px] text-white/15 mt-1">Eventos: sale.created · sale.cancelled · customer.created · payment.received · shift.opened · shift.closed</p>
+                    </div>
+
+                    {/* Custom CSS */}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-1">CSS personalizado</p>
+                      <p className="text-[9px] text-white/20 mb-2">Se inyecta en el navegador del cliente. Útil para ajustes de branding, ocultar elementos por selector, etc.</p>
+                      <textarea
+                        rows={4}
+                        value={vendorOverride.customCss}
+                        onChange={e => setVendorOverride(p => ({ ...p, customCss: e.target.value }))}
+                        placeholder={`.sidebar { background: #1a0a2e; }\n.logo-text { display: none; }`}
+                        className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/70 text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 resize-none font-mono"
+                      />
+                    </div>
+
+                    {/* UI Config (JSON) */}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-1">Configuración UI (JSON)</p>
+                      <p className="text-[9px] text-white/20 mb-2">Ajustes declarativos sin código. Ej: defaultTab, alertText, loginRedirect.</p>
+                      <textarea
+                        rows={3}
+                        value={JSON.stringify(vendorOverride.uiConfig ?? {}, null, 2)}
+                        onChange={e => {
+                          try { setVendorOverride(p => ({ ...p, uiConfig: JSON.parse(e.target.value) })); } catch { /* ignore invalid JSON while typing */ }
+                        }}
+                        placeholder={'{\n  "defaultTab": "cajas",\n  "alertText": "Recuerda registrar tu turno"\n}'}
+                        className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/70 text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 resize-none font-mono"
+                      />
+                    </div>
+
+                    {/* Developer notes */}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Notas internas</p>
+                      <textarea
+                        rows={3}
+                        value={vendorOverride.notes}
+                        onChange={e => setVendorOverride(p => ({ ...p, notes: e.target.value }))}
+                        placeholder="Notas sobre este cliente, acuerdos especiales, customizaciones pendientes…"
+                        className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/70 text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 resize-none"
+                      />
+                    </div>
+
+                    {/* Save */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSaveVendor}
+                        disabled={savingVendor}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black uppercase tracking-widest text-white transition-all hover:opacity-90 disabled:opacity-40"
+                        style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
+                      >
+                        {savingVendor ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Guardar Config
+                      </button>
+                      <button
+                        onClick={() => setVendorOverride({ ...VENDOR_DEFAULTS })}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest text-rose-400 border border-rose-500/25 bg-rose-500/10 hover:bg-rose-500/15 transition-all"
+                      >
+                        <Trash2 size={13} /> Reset
+                      </button>
+                    </div>
+                    {vendorOverride.updatedAt && (
+                      <p className="text-[9px] text-white/15">Última actualización: {new Date(vendorOverride.updatedAt).toLocaleString('es-VE')} · por {vendorOverride.updatedBy}</p>
+                    )}
+                  </>
                 )}
               </div>
             )}

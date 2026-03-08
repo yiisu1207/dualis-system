@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
+import {
+  ALL_MODULES, MODULE_LABELS, PRESETS, DEFAULT_ROLE_PERMISSIONS,
+  type RolePermissions, type ModuleId, type RoleKey,
+} from '../hooks/useRolePermissions';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { AppConfig } from '../../types';
@@ -38,12 +44,17 @@ import {
   Type,
   Zap,
   Palette,
+  UserCheck,
+  UserX,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
 import AuditLogViewer from '../components/AuditLogViewer';
+import { acceptRequest, rejectRequest } from '../firebase/api';
 
-type SectionType = 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia';
+type SectionType = 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones';
 
 interface ConfigData {
   companyName: string;
@@ -115,14 +126,36 @@ const Configuracion: React.FC = () => {
   const navigate = useNavigate();
   const { userProfile, updateUserProfile } = useAuth();
   const toast = useToast();
+  const { t } = useTranslation();
 
   const [activeSection, setActiveSection] = useState<SectionType>('identidad');
   const [users, setUsers] = useState<any[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [requestRoles, setRequestRoles] = useState<Record<string, string>>({});
+  const [processingReq, setProcessingReq] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copyToast, setCopyToast] = useState(false);
   const [uiPrefs, setUiPrefs] = useState<UiPrefs>(DEFAULT_UI_PREFS);
   const [savingPrefs, setSavingPrefs] = useState(false);
+
+  // Feature toggles (guardados en businessConfigs/{bid})
+  const [features, setFeatures] = useState({
+    teamChat:         true,
+    bookComparison:   true,
+    personalBooks:    false, // Phase 2
+    peerComparison:   false, // Phase 2
+    perUserBilling:   false, // Phase 2
+    aiVision:         true,
+    multiCurrency:    true,
+    whatsappNotifs:   false,
+  });
+  const [savingFeatures, setSavingFeatures] = useState(false);
+
+  // Role permissions (editable matrix)
+  const [rolePerms, setRolePerms] = useState<RolePermissions>(DEFAULT_ROLE_PERMISSIONS);
+  const [activeRoleTab, setActiveRoleTab] = useState<RoleKey>('ventas');
+  const [savingPerms, setSavingPerms] = useState(false);
 
   // PIN Modal state
   const [pinModal, setPinModal] = useState(false);
@@ -153,9 +186,10 @@ const Configuracion: React.FC = () => {
       if (!businessId) return;
       setLoading(true);
       try {
-        const [configSnap, usersSnap] = await Promise.all([
+        const [configSnap, usersSnap, featuresSnap] = await Promise.all([
           getBusinessConfig(businessId),
           listUsers(businessId),
+          getDoc(doc(db, 'businessConfigs', businessId)).then(d => d.exists() ? d.data() : null),
         ]);
         if (configSnap) {
           setConfigData(prev => ({
@@ -165,6 +199,12 @@ const Configuracion: React.FC = () => {
           }));
         }
         setUsers(usersSnap);
+        if (featuresSnap?.features) {
+          setFeatures(prev => ({ ...prev, ...featuresSnap.features }));
+        }
+        if (featuresSnap?.rolePermissions) {
+          setRolePerms(prev => ({ ...prev, ...featuresSnap.rolePermissions }));
+        }
       } catch (e) {
         console.error('Error cargando configuración:', e);
         toast.error('No se pudo cargar la configuración');
@@ -174,6 +214,52 @@ const Configuracion: React.FC = () => {
     };
     loadData();
   }, [businessId]);
+
+  // Listener en tiempo real de solicitudes pendientes de unirse al equipo
+  useEffect(() => {
+    if (!businessId || !isAdmin) return;
+    const q = query(
+      collection(db, 'workspaceRequests'),
+      where('workspaceId', '==', businessId),
+      where('status', '==', 'pending')
+    );
+    const unsub = onSnapshot(q, snap => {
+      const reqs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setPendingRequests(reqs);
+      setRequestRoles(prev => {
+        const next = { ...prev };
+        reqs.forEach((r: any) => { if (!next[r.id]) next[r.id] = 'ventas'; });
+        return next;
+      });
+    });
+    return unsub;
+  }, [businessId, isAdmin]);
+
+  const handleApprove = async (req: any) => {
+    setProcessingReq(req.id);
+    try {
+      await acceptRequest(req.id, requestRoles[req.id] || 'ventas');
+      // Refresca lista de usuarios
+      setUsers(prev => [...prev, { uid: req.senderId, email: req.senderEmail, fullName: req.senderName, role: requestRoles[req.id] || 'ventas', status: 'ACTIVE' }]);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setProcessingReq(null);
+    }
+  };
+
+  const handleReject = async (req: any) => {
+    setProcessingReq(req.id);
+    try {
+      await rejectRequest(req.id);
+      // Marcar usuario como REJECTED
+      await updateDoc(doc(db, 'users', req.senderId), { status: 'REJECTED' });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setProcessingReq(null);
+    }
+  };
 
   useEffect(() => {
     if (!userProfile?.uid) return;
@@ -238,6 +324,48 @@ const Configuracion: React.FC = () => {
     setTimeout(() => setCopyToast(false), 2000);
   };
 
+  const handleSaveRolePermissions = async () => {
+    if (!businessId) return;
+    setSavingPerms(true);
+    try {
+      await setDoc(doc(db, 'businessConfigs', businessId), { rolePermissions: rolePerms }, { merge: true });
+      toast.success('Permisos de roles actualizados');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar permisos');
+    } finally {
+      setSavingPerms(false);
+    }
+  };
+
+  const applyPreset = (presetName: string) => {
+    const preset = PRESETS[presetName];
+    if (!preset) return;
+    const full = Object.fromEntries(ALL_MODULES.map(m => [m, preset[m] ?? false])) as Record<ModuleId, boolean>;
+    setRolePerms(prev => ({ ...prev, [activeRoleTab]: full }));
+  };
+
+  const togglePerm = (moduleId: ModuleId) => {
+    setRolePerms(prev => ({
+      ...prev,
+      [activeRoleTab]: { ...prev[activeRoleTab], [moduleId]: !prev[activeRoleTab][moduleId] },
+    }));
+  };
+
+  const handleSaveFeatures = async () => {
+    if (!businessId) return;
+    setSavingFeatures(true);
+    try {
+      await setDoc(doc(db, 'businessConfigs', businessId), { features }, { merge: true });
+      toast.success('Funciones del sistema actualizadas');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar funciones');
+    } finally {
+      setSavingFeatures(false);
+    }
+  };
+
   const handleSaveUiPrefs = async () => {
     if (!userProfile?.uid) return;
     setSavingPrefs(true);
@@ -262,12 +390,13 @@ const Configuracion: React.FC = () => {
   }
 
   const menuItems = [
-    { id: 'identidad', label: 'Identidad del Negocio', icon: Building2 },
-    { id: 'facturacion', label: 'Facturación y POS', icon: Receipt },
-    { id: 'equipo', label: 'Equipo y Permisos', icon: Users2 },
-    { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
-    { id: 'suscripcion', label: 'Suscripción', icon: CreditCard },
-    { id: 'apariencia', label: 'Apariencia', icon: Palette },
+    { id: 'identidad',  label: 'Identidad del Negocio', icon: Building2 },
+    { id: 'facturacion',label: 'Facturación y POS',     icon: Receipt },
+    { id: 'equipo',     label: 'Equipo y Permisos',     icon: Users2 },
+    { id: 'funciones',  label: 'Funciones del Sistema', icon: Sliders },
+    { id: 'seguridad',  label: 'Seguridad',              icon: ShieldCheck },
+    { id: 'suscripcion',label: 'Suscripción',            icon: CreditCard },
+    { id: 'apariencia', label: 'Apariencia',             icon: Palette },
   ];
 
   const inputClasses =
@@ -421,15 +550,89 @@ const Configuracion: React.FC = () => {
 
             {/* EQUIPO */}
             {activeSection === 'equipo' && (
+              <div className="space-y-5">
+
+                {/* ── SOLICITUDES PENDIENTES ── */}
+                {pendingRequests.length > 0 && (
+                  <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-amber-500/30 shadow-lg shadow-black/10 overflow-hidden">
+                    <div className="px-5 py-4 border-b border-amber-500/20 bg-amber-500/[0.04] flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center">
+                        <Clock size={15} className="text-amber-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">
+                          Solicitudes de Acceso
+                        </h3>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-500/70 mt-0.5">
+                          {pendingRequests.length} persona{pendingRequests.length > 1 ? 's' : ''} esperando aprobación
+                        </p>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-50 dark:divide-white/[0.04]">
+                      {pendingRequests.map(req => (
+                        <div key={req.id} className="px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                          {/* Avatar + info */}
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-black text-amber-400 text-base shrink-0">
+                              {(req.senderName || req.senderEmail || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-black text-slate-900 dark:text-white truncate">{req.senderName || 'Sin nombre'}</p>
+                              <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 truncate">{req.senderEmail}</p>
+                              <p className="text-[9px] text-white/20 mt-0.5">
+                                {req.createdAt ? new Date(req.createdAt).toLocaleDateString('es-VE', { day:'2-digit', month:'short', year:'numeric' }) : ''}
+                              </p>
+                            </div>
+                          </div>
+                          {/* Role selector */}
+                          <select
+                            value={requestRoles[req.id] || 'ventas'}
+                            onChange={e => setRequestRoles(prev => ({ ...prev, [req.id]: e.target.value }))}
+                            disabled={processingReq === req.id}
+                            className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-sm font-bold text-slate-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                          >
+                            <option value="admin">Admin</option>
+                            <option value="ventas">Ventas</option>
+                            <option value="auditor">Auditor</option>
+                            <option value="staff">Staff</option>
+                          </select>
+                          {/* Actions */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => handleApprove(req)}
+                              disabled={processingReq === req.id}
+                              className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-40"
+                            >
+                              {processingReq === req.id
+                                ? <Loader2 size={13} className="animate-spin" />
+                                : <UserCheck size={13} />
+                              }
+                              Aprobar
+                            </button>
+                            <button
+                              onClick={() => handleReject(req)}
+                              disabled={processingReq === req.id}
+                              className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-40"
+                            >
+                              <UserX size={13} /> Rechazar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* ── MIEMBROS ACTIVOS ── */}
               <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden pb-4">
                 <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/50 dark:bg-white/[0.02]">
                   <div>
                     <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Gestión de Equipo</h3>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mt-0.5">Control de Roles y Autorizaciones</p>
                   </div>
-                  <button className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md shadow-indigo-500/25 hover:from-indigo-500 hover:to-violet-500 transition-all active:scale-95">
-                    <Plus size={14} /> Invitar Miembro
-                  </button>
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] rounded-xl text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest">
+                    <Plus size={14} /> Para invitar: comparte el código de espacio
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
@@ -442,41 +645,284 @@ const Configuracion: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                      {users.map(u => (
-                        <tr key={u.uid} className="group transition-all hover:bg-slate-50 dark:hover:bg-white/[0.03]">
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-3">
-                              <div className="h-9 w-9 rounded-xl bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center font-black text-slate-400 text-base group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:to-violet-600 group-hover:text-white transition-all">
-                                {u.fullName?.charAt(0) || u.email?.charAt(0)}
+                      {users.filter(u => u.status === 'ACTIVE').map(u => {
+                        const isOwner = u.role === 'owner';
+                        const isSelf  = u.uid === userProfile?.uid;
+                        return (
+                          <tr key={u.uid} className="group transition-all hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+                            <td className="px-5 py-3.5">
+                              <div className="flex items-center gap-3">
+                                <div className="h-9 w-9 rounded-xl bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center font-black text-slate-400 text-base group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:to-violet-600 group-hover:text-white transition-all">
+                                  {u.fullName?.charAt(0) || u.email?.charAt(0)}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-black text-slate-900 dark:text-white">
+                                    {u.fullName || 'Sin nombre'}
+                                    {isSelf && <span className="ml-2 text-[9px] text-indigo-400 font-black uppercase tracking-widest">(tú)</span>}
+                                  </p>
+                                  <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 tracking-tight mt-0.5">{u.email}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="text-sm font-black text-slate-900 dark:text-white">{u.fullName || 'Sin nombre'}</p>
-                                <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 tracking-tight mt-0.5">{u.email}</p>
+                            </td>
+                            <td className="px-5 py-3.5 text-center">
+                              {isAdmin && !isOwner && !isSelf ? (
+                                <select
+                                  defaultValue={u.role}
+                                  onChange={async e => {
+                                    const newRole = e.target.value;
+                                    try {
+                                      await updateDoc(doc(db, 'users', u.uid), { role: newRole });
+                                      setUsers(prev => prev.map(m => m.uid === u.uid ? { ...m, role: newRole } : m));
+                                    } catch { toast.error('No se pudo actualizar el rol'); }
+                                  }}
+                                  className="px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-[10px] font-black text-slate-700 dark:text-white uppercase tracking-widest focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                >
+                                  <option value="admin">Admin</option>
+                                  <option value="ventas">Ventas</option>
+                                  <option value="auditor">Auditor</option>
+                                  <option value="staff">Staff</option>
+                                </select>
+                              ) : (
+                                <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
+                                  isOwner
+                                    ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/30'
+                                    : 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/30'
+                                }`}>{u.role}</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3.5 text-center">
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30">
+                                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Activo
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-5 py-3.5 text-center">
-                            <span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 rounded-lg text-[9px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-500/30">{u.role}</span>
-                          </td>
-                          <td className="px-5 py-3.5 text-center">
-                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${u.status === 'ACTIVE' ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30' : 'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/30'}`}>
-                              <div className={`h-1.5 w-1.5 rounded-full ${u.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
-                              {u.status}
-                            </div>
-                          </td>
-                          <td className="px-5 py-3.5 text-right">
-                            <button className="p-2 rounded-xl text-slate-300 dark:text-white/20 hover:bg-white dark:hover:bg-white/[0.08] hover:text-slate-900 dark:hover:text-white transition-all opacity-0 group-hover:opacity-100">
-                              <ChevronRight size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-5 py-3.5 text-right">
+                              {isAdmin && !isOwner && !isSelf && (
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm(`¿Eliminar a ${u.fullName || u.email} del equipo?`)) return;
+                                    try {
+                                      await updateDoc(doc(db, 'users', u.uid), { status: 'REMOVED', businessId: null });
+                                      setUsers(prev => prev.filter(m => m.uid !== u.uid));
+                                    } catch { toast.error('No se pudo eliminar al miembro'); }
+                                  }}
+                                  className="p-2 rounded-xl text-slate-300 dark:text-white/20 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
+                                >
+                                  <UserX size={15} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                  {users.length === 0 && (
-                    <div className="px-5 py-12 text-center text-slate-400 dark:text-white/30 text-sm font-semibold">Sin miembros registrados aún</div>
+                  {users.filter(u => u.status === 'ACTIVE').length === 0 && (
+                    <div className="px-5 py-12 text-center text-slate-400 dark:text-white/30 text-sm font-semibold">Sin miembros activos aún</div>
                   )}
                 </div>
+
+                {/* ── PERMISOS POR ROL (editable) ── */}
+                {isAdmin && (
+                  <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden mx-5 mb-5 mt-2">
+                    {/* Header */}
+                    <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Permisos por Rol</h3>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mt-0.5">Define qué secciones puede ver cada rol. Owner y Admin siempre tienen acceso total.</p>
+                    </div>
+
+                    {/* Role tabs */}
+                    <div className="px-5 pt-4 flex gap-2 flex-wrap">
+                      {(['ventas','auditor','staff','member'] as RoleKey[]).map(role => (
+                        <button
+                          key={role}
+                          onClick={() => setActiveRoleTab(role)}
+                          className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                            activeRoleTab === role
+                              ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white border-transparent shadow-md shadow-indigo-500/25'
+                              : 'bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-white/40 border-slate-200 dark:border-white/[0.06] hover:border-indigo-400/40'
+                          }`}
+                        >
+                          {role === 'ventas' ? 'Ventas' : role === 'auditor' ? 'Auditor' : role === 'staff' ? 'Staff' : 'Miembro'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Presets */}
+                    <div className="px-5 pt-3 pb-4 border-b border-slate-50 dark:border-white/[0.05]">
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/25 mb-2">Presets rápidos</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {Object.keys(PRESETS).map(preset => (
+                          <button
+                            key={preset}
+                            onClick={() => applyPreset(preset)}
+                            className="px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:border-indigo-300 dark:hover:border-indigo-500/30 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all"
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Toggle grid */}
+                    <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {ALL_MODULES.map(moduleId => {
+                        const enabled = rolePerms[activeRoleTab]?.[moduleId] ?? false;
+                        return (
+                          <button
+                            key={moduleId}
+                            onClick={() => togglePerm(moduleId)}
+                            className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left ${
+                              enabled
+                                ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/25'
+                                : 'bg-slate-50 dark:bg-white/[0.03] border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/[0.1]'
+                            }`}
+                          >
+                            <span className={`text-[11px] font-semibold ${enabled ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-white/40'}`}>
+                              {MODULE_LABELS[moduleId]}
+                            </span>
+                            <div className={`relative w-9 h-5 rounded-full transition-all shrink-0 ${enabled ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.1]'}`}>
+                              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${enabled ? 'left-4' : 'left-0.5'}`} />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Save */}
+                    <div className="px-5 pb-5">
+                      <button
+                        onClick={handleSaveRolePermissions}
+                        disabled={savingPerms}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-md shadow-indigo-500/25 hover:opacity-90 transition-all disabled:opacity-50"
+                      >
+                        {savingPerms ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Guardar Permisos
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              </div>
+            )}
+
+            {/* FUNCIONES */}
+            {activeSection === 'funciones' && (
+              <div className="space-y-5 pb-10">
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Funciones del Sistema</h3>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mt-0.5">Activa o desactiva módulos para tu equipo</p>
+                  </div>
+                  <div className="p-5 space-y-3">
+                    {[
+                      {
+                        key: 'teamChat',
+                        icon: MessageSquare,
+                        title: 'Chat de Equipo',
+                        desc: 'Canal de mensajes internos entre todos los miembros. Mensajes directos y canales.',
+                        phase: null,
+                        color: 'text-indigo-400',
+                      },
+                      {
+                        key: 'bookComparison',
+                        icon: FileText,
+                        title: 'Comparación de Libros',
+                        desc: 'El dueño puede comparar los registros de CxC/CxP entre vendedores y detectar diferencias.',
+                        phase: null,
+                        color: 'text-emerald-400',
+                      },
+                      {
+                        key: 'aiVision',
+                        icon: Sparkles,
+                        title: 'VisionLab IA (Gemini)',
+                        desc: 'Análisis inteligente de P&L, flujo de caja, alertas y predicciones con Google Gemini.',
+                        phase: null,
+                        color: 'text-violet-400',
+                      },
+                      {
+                        key: 'multiCurrency',
+                        icon: Coins,
+                        title: 'Multi-moneda USD/BS',
+                        desc: 'Operaciones simultáneas en dólares y bolívares con tasas BCV en tiempo real.',
+                        phase: null,
+                        color: 'text-amber-400',
+                      },
+                      {
+                        key: 'personalBooks',
+                        icon: Globe,
+                        title: 'Libros Personales por Vendedor',
+                        desc: 'Cada vendedor tiene su propio registro de CxC/CxP. El dueño ve todo y compara por usuario.',
+                        phase: 'Fase 2 · Próximamente',
+                        color: 'text-sky-400',
+                      },
+                      {
+                        key: 'peerComparison',
+                        icon: Users2,
+                        title: 'Comparación entre Compañeros',
+                        desc: 'Los vendedores pueden comparar sus cuentas entre ellos y resolver discrepancias con comentarios.',
+                        phase: 'Fase 2 · Próximamente',
+                        color: 'text-rose-400',
+                      },
+                      {
+                        key: 'perUserBilling',
+                        icon: CreditCard,
+                        title: 'Facturación por Asiento (per-seat)',
+                        desc: 'Cada usuario adicional tiene un costo mensual. Controla quién accede y cuánto pagas.',
+                        phase: 'Fase 2 · Próximamente',
+                        color: 'text-orange-400',
+                      },
+                      {
+                        key: 'whatsappNotifs',
+                        icon: Phone,
+                        title: 'Notificaciones WhatsApp',
+                        desc: 'Alertas automáticas de facturas, deudas y vencimientos por WhatsApp al dueño.',
+                        phase: 'Add-on · $6/mes',
+                        color: 'text-emerald-400',
+                      },
+                    ].map(feat => {
+                      const isPhase2 = feat.phase !== null;
+                      const val = features[feat.key as keyof typeof features];
+                      return (
+                        <div key={feat.key} className={`flex items-center justify-between p-4 rounded-xl border transition-all ${isPhase2 ? 'border-slate-100 dark:border-white/[0.04] opacity-60' : 'border-slate-100 dark:border-white/[0.07] hover:border-slate-200 dark:hover:border-white/[0.12]'}`}>
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${val && !isPhase2 ? `bg-${feat.color.replace('text-','')}/10` : 'bg-slate-100 dark:bg-white/[0.05]'}`}>
+                              <feat.icon size={16} className={val && !isPhase2 ? feat.color : 'text-slate-400 dark:text-white/25'} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-sm font-black text-slate-900 dark:text-white">{feat.title}</h4>
+                                {feat.phase && (
+                                  <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.06] text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25">{feat.phase}</span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5 leading-relaxed">{feat.desc}</p>
+                            </div>
+                          </div>
+                          <div
+                            onClick={() => {
+                              if (isPhase2 || !isAdmin) return;
+                              setFeatures(prev => ({ ...prev, [feat.key]: !prev[feat.key as keyof typeof prev] }));
+                            }}
+                            className={`h-7 w-12 rounded-full relative transition-colors shrink-0 ml-4 ${isPhase2 || !isAdmin ? 'cursor-not-allowed' : 'cursor-pointer'} ${val && !isPhase2 ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/10'}`}
+                          >
+                            <div className={`absolute top-1 h-5 w-5 bg-white rounded-full transition-all shadow-sm ${val && !isPhase2 ? 'right-1' : 'left-1'}`} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {isAdmin && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleSaveFeatures}
+                      disabled={savingFeatures}
+                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:from-indigo-500 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/25 active:scale-95 disabled:opacity-50"
+                    >
+                      {savingFeatures ? <Loader2 className="animate-spin" size={15} /> : <><Save size={15} /> Guardar Funciones</>}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -802,6 +1248,40 @@ const Configuracion: React.FC = () => {
                         </button>
                       ))}
                     </div>
+                  </div>
+                </div>
+
+                {/* Idioma del sistema */}
+                <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 mb-1">
+                    {t('language.label', 'Idioma del Sistema')}
+                  </h4>
+                  <p className="text-[10px] text-slate-400 dark:text-white/20 mb-4">
+                    Español · English · عربي (RTL automático)
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    {([
+                      { code: 'es', flag: '🇻🇪', label: 'Español',  sub: 'Latin America' },
+                      { code: 'en', flag: '🇺🇸', label: 'English',  sub: 'United States' },
+                      { code: 'ar', flag: '🇸🇦', label: 'عربي',     sub: 'RTL — Arabic'  },
+                    ] as const).map(lang => (
+                      <button
+                        key={lang.code}
+                        onClick={() => { i18n.changeLanguage(lang.code); }}
+                        className={`flex flex-col items-center gap-2 py-4 px-3 rounded-2xl border-2 transition-all ${
+                          i18n.language === lang.code
+                            ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10'
+                            : 'border-slate-100 dark:border-white/[0.06] hover:border-slate-200 dark:hover:border-white/[0.12]'
+                        }`}
+                      >
+                        <span className="text-2xl">{lang.flag}</span>
+                        <div className="text-center">
+                          <p className={`text-xs font-black ${i18n.language === lang.code ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-white/60'}`}>{lang.label}</p>
+                          <p className="text-[9px] text-slate-400 dark:text-white/25">{lang.sub}</p>
+                        </div>
+                        {i18n.language === lang.code && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
+                      </button>
+                    ))}
                   </div>
                 </div>
 

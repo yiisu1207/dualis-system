@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import SaleHistoryPanel from '../../components/SaleHistoryPanel';
+import HelpTooltip from '../../components/HelpTooltip';
 import { auth } from '../../firebase/config';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -590,7 +591,14 @@ const PosMayorContent = () => {
           </select>
         </div>
         <div>
-          <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 mb-1 block">Condición</label>
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-300 mb-1 flex items-center gap-1">
+            Condición
+            <HelpTooltip
+              title="Condición de Pago"
+              text="Contado = el cliente paga ahora. Crédito = la venta queda pendiente de cobro en Cuentas por Cobrar. Elige 15, 30 o 45 días según el plazo acordado."
+              side="top"
+            />
+          </label>
           <select value={paymentCondition} onChange={e => setPaymentCondition(e.target.value)}
             className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-violet-700">
             <option value="contado">Contado</option>

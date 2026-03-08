@@ -19,6 +19,7 @@ import ReceiptModal from '../../components/ReceiptModal';
 import { getNextNroControl } from '../../utils/facturaUtils';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import SaleHistoryPanel from '../../components/SaleHistoryPanel';
+import HelpTooltip from '../../components/HelpTooltip';
 import { auth } from '../../firebase/config';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -632,21 +633,23 @@ const PosContent = () => {
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
           </div>
           {fiscalConfig.scannerEnabled && (
+            <HelpTooltip title="Escanear código de barras" text="Abre la cámara para leer el código de barras de un producto y añadirlo automáticamente al carrito." side="bottom">
+              <button
+                onClick={() => setShowCameraScanner(true)}
+                className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-900 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200 dark:border-white/10"
+              >
+                <Camera size={16} />
+              </button>
+            </HelpTooltip>
+          )}
+          <HelpTooltip title="Historial de Ventas" text="Muestra las últimas 30 ventas del día. Desde aquí puedes ver el detalle de cada venta y anularla si fue un error." side="bottom">
             <button
-              onClick={() => setShowCameraScanner(true)}
-              title="Escanear con cámara"
+              onClick={() => setShowHistory(true)}
               className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-900 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200 dark:border-white/10"
             >
-              <Camera size={16} />
+              <History size={16} />
             </button>
-          )}
-          <button
-            onClick={() => setShowHistory(true)}
-            title="Historial de ventas"
-            className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-900 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200 dark:border-white/10"
-          >
-            <History size={16} />
-          </button>
+          </HelpTooltip>
         </div>
 
         {/* Right: date/time, rate, logout */}
@@ -904,6 +907,11 @@ const PosContent = () => {
                 {/* ── Descuento ── */}
                 <div className="mt-2 flex items-center gap-1.5">
                   <Tag size={11} className="text-slate-500 shrink-0" />
+                  <HelpTooltip
+                    title="Descuento"
+                    text="Aplica un descuento a toda la venta. Elige % para porcentaje o $ para monto fijo en dólares. El descuento se resta del total antes de cobrar."
+                    side="right"
+                  />
                   <select
                     value={discountType}
                     onChange={e => setDiscount(e.target.value as DiscountType, discountValue)}

@@ -23,6 +23,7 @@ import BillingPage from '../pages/BillingPage';
 import SubscriptionWall from '../pages/SubscriptionWall';
 import PendingApprovalWall from '../pages/PendingApprovalWall';
 import { useSubscription } from '../hooks/useSubscription';
+import { VendorProvider } from '../context/VendorContext';
 
 function resolveTenantId(profile: { empresa_id?: string; businessId?: string } | null) {
   if (!profile) return '';
@@ -50,6 +51,10 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
     const isInsideSystem = window.location.pathname.includes('/admin') || window.location.pathname.includes('/pos');
     if (isInsideSystem) return <>{children}</>;
     return <Navigate to="/onboarding" replace />;
+  }
+
+  if (userProfile?.status === 'PENDING_APPROVAL') {
+    return <Navigate to={`/${tenantId}/pending`} replace />;
   }
 
   const path = window.location.pathname;
@@ -81,6 +86,10 @@ function OnboardingGate() {
 
   const tenantId = resolveTenantId(userProfile);
   const isSetupComplete = tenantId && userProfile?.status === 'ACTIVE';
+
+  if (tenantId && userProfile?.status === 'PENDING_APPROVAL') {
+    return <Navigate to={`/${tenantId}/pending`} replace />;
+  }
 
   // Solo redirigimos al admin si el setup está COMPLETO (status ACTIVE).
   // Si status es PENDING_SETUP, mostramos el wizard aunque haya tenantId.
@@ -145,9 +154,11 @@ function AdminCoreWrapper() {
   const params = useParams();
   const empresaId = params.empresa_id || tenantId;
   return (
-    <WidgetProvider>
-      <MainSystem key={empresaId} initialTab={undefined} />
-    </WidgetProvider>
+    <VendorProvider businessId={empresaId || ''}>
+      <WidgetProvider>
+        <MainSystem key={empresaId} initialTab={undefined} />
+      </WidgetProvider>
+    </VendorProvider>
   );
 }
 

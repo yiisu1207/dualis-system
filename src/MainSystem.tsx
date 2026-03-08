@@ -11,6 +11,10 @@ import { useAuth } from './context/AuthContext';
 import { useRates } from './context/RatesContext';
 import { useToast } from './context/ToastContext';
 import { useBusinessData } from './hooks/useBusinessData';
+import { useRolePermissions } from './hooks/useRolePermissions';
+import { useVendor } from './context/VendorContext';
+import { getCustomization } from './customizations/index';
+import { fireWebhook } from './utils/webhookTrigger';
 import { useTranslation } from 'react-i18next';
 import { useWidgetManager } from './context/WidgetContext';
 
@@ -57,12 +61,16 @@ import {
   addDoc,
   deleteDoc,
   updateDoc,
+  query,
+  where,
+  onSnapshot,
 } from 'firebase/firestore';
 import { Bell, HelpCircle, Lock, ArrowRight, Zap } from 'lucide-react';
 import { logAudit } from './utils/auditLogger';
 import ModeToggle from './components/ModeToggle';
 import HelpPanel from './components/HelpPanel';
 import { useSubscription } from './hooks/useSubscription';
+import LegalDisclaimerModal from './components/LegalDisclaimerModal';
 
 // ── Topbar ─────────────────────────────────────────────────────────────────────
 const Topbar: React.FC<{
@@ -156,6 +164,19 @@ const ConfirmDialog: React.FC<{ state: ConfirmState; onClose: () => void }> = ({
   </div>
 );
 
+// ── NoAccess ───────────────────────────────────────────────────────────────────
+const NoAccess: React.FC = () => (
+  <div className="h-full flex items-center justify-center p-12">
+    <div className="max-w-sm w-full text-center">
+      <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] flex items-center justify-center">
+        <Lock size={24} className="text-slate-400 dark:text-white/30" />
+      </div>
+      <h2 className="text-lg font-black text-slate-700 dark:text-white/70 mb-2">Acceso Restringido</h2>
+      <p className="text-sm text-slate-400 dark:text-white/30">No tienes permisos para ver esta sección. Contacta al administrador de tu espacio de trabajo.</p>
+    </div>
+  </div>
+);
+
 // ── LockedModule ───────────────────────────────────────────────────────────────
 const PLAN_LABELS: Record<string, { name: string; color: string }> = {
   starter:    { name: 'Starter',    color: 'from-sky-500 to-blue-600' },
@@ -230,6 +251,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
+  const [pendingJoinCount, setPendingJoinCount] = useState(0);
   const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('dualis_dismissed_notifs');
@@ -250,6 +272,18 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
   const { canAccess } = useSubscription(businessId);
+  const { permissions: rolePermissions, canView: canViewRole } = useRolePermissions(businessId, user?.role || 'member');
+  const { moduleHidden, moduleForced, featureOverride, webhookUrl } = useVendor();
+
+  // Per-business code customization (registry-based, zero impact on other businesses)
+  const customization = useMemo(() => getCustomization(businessId), [businessId]);
+
+  // canView = role permission AND not vendor-hidden (vendor-forced overrides both)
+  const canView = (moduleId: Parameters<typeof canViewRole>[0]) => {
+    if (moduleHidden(moduleId)) return false;
+    if (moduleForced(moduleId)) return true;
+    return canViewRole(moduleId);
+  };
 
   // ── Data via hook (replaces 6 individual listeners) ──────────────────────────
   const { customers, suppliers, movements, employees, advances, payrollHistory, inventoryItems } = useBusinessData(businessId);
@@ -290,6 +324,19 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     if (tabRoutes[tab]) navigate(tabRoutes[tab]);
   }, [navigate, tabRoutes]);
 
+  // ── Listener: solicitudes pendientes de unirse al equipo ─────────────────────
+  useEffect(() => {
+    const role = userProfile?.role;
+    if (!businessId || (role !== 'owner' && role !== 'admin')) return;
+    const q = query(
+      collection(db, 'workspaceRequests'),
+      where('workspaceId', '==', businessId),
+      where('status', '==', 'pending')
+    );
+    const unsub = onSnapshot(q, snap => setPendingJoinCount(snap.size));
+    return unsub;
+  }, [businessId, userProfile?.role]);
+
   // ── Confirm helper ───────────────────────────────────────────────────────────
   const withConfirm = useCallback((message: string, action: () => Promise<void>) => {
     setConfirmState({ message, onConfirm: action });
@@ -314,6 +361,12 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     if (!businessId) return '';
     const docRef = await addDoc(collection(db, 'movements'), { ...data, businessId, createdAt: new Date().toISOString() });
     logAudit(businessId, uid, 'CREAR', 'MOVIMIENTO', `${data.movementType || 'MOV'} — ${data.description || docRef.id}`);
+    // Custom hooks & webhook — fire-and-forget, never block the sale
+    const saleRecord = { ...data, id: docRef.id, businessId };
+    customization.afterSaleHook?.(saleRecord);
+    if (data.movementType === 'FACTURA' || data.movementType === 'ABONO') {
+      fireWebhook(businessId, webhookUrl, 'sale.created', saleRecord);
+    }
     return docRef.id;
   };
 
@@ -331,8 +384,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   };
 
   const handleRegisterCustomer = async (c: Customer) => {
-    await addDoc(collection(db, 'customers'), { ...c, businessId });
+    const docRef = await addDoc(collection(db, 'customers'), { ...c, businessId });
     logAudit(businessId, uid, 'CREAR', 'CLIENTE', c.cedula || c.email || '');
+    const record = { ...c, id: docRef.id, businessId };
+    customization.afterCustomerHook?.(record);
+    fireWebhook(businessId, webhookUrl, 'customer.created', record);
   };
 
   const handleUpdateCustomer = async (id: string, c: Customer) => {
@@ -421,6 +477,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       items.push({ id: 'overdue-cxc', title: `${overdueCount} cliente${overdueCount > 1 ? 's' : ''} con CxC vencida`, subtitle: 'Facturas sin cobrar > 30 días', type: 'warning' });
     }
 
+    // 0. Solicitudes de acceso al equipo pendientes
+    if (pendingJoinCount > 0) {
+      items.push({ id: 'pending-join', title: `${pendingJoinCount} solicitud${pendingJoinCount > 1 ? 'es' : ''} de acceso al equipo`, subtitle: 'Ver en Configuración → Equipo', type: 'warning' });
+    }
+
     // 4. CxP pendiente con proveedores
     const supplierBalance: Record<string, number> = {};
     movements.filter(m => m.isSupplierMovement).forEach(m => {
@@ -434,7 +495,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     }
 
     return items;
-  }, [inventoryItems, movements]);
+  }, [inventoryItems, movements, pendingJoinCount]);
 
   const visibleNotifications = useMemo(
     () => notifications.filter(n => !dismissedNotifIds.has(n.id)),
@@ -478,6 +539,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           setIsOpen={setIsSidebarOpen}
           user={user}
           config={{ companyName: userProfile?.businessId } as any}
+          rolePermissions={rolePermissions}
           onLogout={() => auth.signOut()}
           onOpenProfile={() => setIsProfileOpen(true)}
         />
@@ -497,45 +559,67 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
         <main className="flex-1 overflow-y-auto p-8 relative custom-scroll">
           <div className="max-w-[1440px] mx-auto h-full">
-            {activeTab === 'resumen'    && <AdminDashboard onTabChange={goTab} />}
-            {activeTab === 'widgets'    && <WidgetLaunchpad />}
-            {activeTab === 'inventario' && <Inventario />}
-            {activeTab === 'config'     && <Configuracion />}
+            {/* Custom extra tabs from registry — rendered before standard tabs */}
+            {customization.extraTabs?.map(tab =>
+              activeTab === tab.id ? (
+                <div key={tab.id}>{tab.component}</div>
+              ) : null
+            )}
+
+            {activeTab === 'resumen' && (canView('resumen') ? (
+              <>
+                {/* Custom dashboard cards injected at top for this business */}
+                {customization.dashboardCards && customization.dashboardCards.length > 0 && (
+                  <div className="mb-6 space-y-4">{customization.dashboardCards}</div>
+                )}
+                <AdminDashboard onTabChange={goTab} />
+              </>
+            ) : <NoAccess />)}
+            {activeTab === 'widgets'    && (canView('widgets')    ? <WidgetLaunchpad /> : <NoAccess />)}
+            {activeTab === 'inventario' && (canView('inventario') ? <Inventario /> : <NoAccess />)}
+            {activeTab === 'config'     && (canView('config')     ? <Configuracion /> : <NoAccess />)}
             {activeTab === 'help'       && <HelpCenter />}
-            {activeTab === 'tasas'      && <RateHistoryWall rates={legacyRates as any} />}
+            {activeTab === 'tasas'      && (canView('tasas') ? <RateHistoryWall rates={legacyRates as any} /> : <NoAccess />)}
 
             {activeTab === 'cajas' && (
+              !canView('cajas') ? <NoAccess /> :
               canAccess('cajas')
                 ? <AdminPosManager />
                 : <LockedModule moduleName="Cajas / Terminales POS" requiredPlan="starter" />
             )}
             {activeTab === 'rrhh' && (
+              !canView('rrhh') ? <NoAccess /> :
               canAccess('rrhh')
                 ? <RecursosHumanos />
                 : <LockedModule moduleName="Recursos Humanos" requiredPlan="negocio" />
             )}
             {activeTab === 'sucursales' && (
+              !canView('sucursales') ? <NoAccess /> :
               canAccess('sucursales')
                 ? <SucursalesManager />
                 : <LockedModule moduleName="Sucursales" requiredPlan="negocio" />
             )}
             {activeTab === 'reportes' && (
+              !canView('reportes') ? <NoAccess /> :
               canAccess('reportes')
                 ? <ReportesSection movements={movements} customers={customers} />
                 : <LockedModule moduleName="Reportes" requiredPlan="starter" />
             )}
             {activeTab === 'conciliacion' && (
+              !canView('conciliacion') ? <NoAccess /> :
               canAccess('conciliacion')
                 ? <ReconciliationSection movements={movements} businessId={businessId} ownerId={userProfile?.uid || ''} rates={legacyRates as any} />
                 : <LockedModule moduleName="Conciliación Bancaria" requiredPlan="negocio" isAddon />
             )}
-            {activeTab === 'fiscal' && <FiscalSection />}
+            {activeTab === 'fiscal'  && (canView('fiscal')  ? <FiscalSection /> : <NoAccess />)}
             {activeTab === 'vision' && (
+              !canView('vision') ? <NoAccess /> :
               canAccess('vision')
                 ? <VisionLab movements={movements} inventory={inventoryItems as any} rates={legacyRates as any} customers={customers} />
                 : <LockedModule moduleName="VisionLab IA" requiredPlan="enterprise" isAddon />
             )}
             {activeTab === 'comparar' && (
+              !canView('comparar') ? <NoAccess /> :
               canAccess('comparar')
                 ? <BooksComparePanel movements={movements} customers={customers} rates={legacyRates as any} />
                 : <LockedModule moduleName="Comparar Libros" requiredPlan="negocio" />
@@ -602,14 +686,19 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         </main>
 
         {/* STATUS BAR */}
-        <footer className="h-10 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-white/[0.06] px-7 flex items-center justify-between font-mono text-[10px] text-slate-400 dark:text-slate-600 shrink-0">
-          <div className="flex items-center gap-5">
-            <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>Firebase Live</span></div>
-            <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>{user?.role || 'pending'}</span></div>
-            <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-500" /><span>{userProfile?.businessId?.slice(0, 12) || 'N/A'}</span></div>
+        <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-white/[0.06] px-7 flex flex-col shrink-0">
+          <div className="h-10 flex items-center justify-between font-mono text-[10px] text-slate-400 dark:text-slate-600">
+            <div className="flex items-center gap-5">
+              <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>Firebase Live</span></div>
+              <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>{user?.role || 'pending'}</span></div>
+              <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-500" /><span>{userProfile?.businessId?.slice(0, 12) || 'N/A'}</span></div>
+            </div>
+            <span>Dualis ERP v3.0.0-beta · <span className="text-amber-500/70">No homologado SENIAT</span> · Solo uso administrativo</span>
           </div>
-          <span>Dualis System v3.0.0 · React 19 · Firebase</span>
         </footer>
+
+        {/* LEGAL DISCLAIMER — shown once on first login */}
+        <LegalDisclaimerModal />
       </div>
 
       {/* NOTIFICATION CENTER */}

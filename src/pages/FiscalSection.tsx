@@ -9,8 +9,34 @@ import {
   ChevronDown, CheckCircle2, AlertTriangle, RefreshCw, Hash,
   Building2, MapPin, Phone, User, BadgeCheck, Receipt,
   ClipboardList, Scissors, Utensils, Shirt, Tv, Flower2, ShoppingBag,
-  ChevronRight,
+  ChevronRight, Construction,
 } from 'lucide-react';
+
+// ─── Próximamente / En Homologación ───────────────────────────────────────────
+const ProximamenteFiscal: React.FC<{ title: string; description: string }> = ({ title, description }) => (
+  <div className="flex flex-col items-center justify-center py-20 px-6 text-center max-w-lg mx-auto">
+    {/* Icon */}
+    <div className="w-20 h-20 mb-6 rounded-3xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 flex items-center justify-center shadow-lg shadow-amber-500/10">
+      <Construction size={32} className="text-amber-500 dark:text-amber-400" />
+    </div>
+
+    {/* Badge */}
+    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-400 text-[9px] font-black uppercase tracking-[0.2em] mb-4">
+      En homologación SENIAT
+    </span>
+
+    <h3 className="text-xl font-black text-slate-800 dark:text-white mb-3">{title}</h3>
+    <p className="text-sm text-slate-500 dark:text-white/40 leading-relaxed mb-6">{description}</p>
+
+    {/* Notice */}
+    <div className="w-full p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/[0.07] border border-amber-200 dark:border-amber-500/20 text-left">
+      <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400 mb-1">Aviso legal</p>
+      <p className="text-[11px] text-amber-700 dark:text-amber-400/70 leading-relaxed">
+        Este módulo está en desarrollo y pendiente de homologación oficial por el SENIAT. No tiene validez fiscal hasta su certificación. No lo uses como documento oficial.
+      </p>
+    </div>
+  </div>
+);
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface Movement {
@@ -1566,11 +1592,11 @@ export default function FiscalSection() {
 
         {/* Content */}
         <div>
-          {tab === 'ventas'      && <LibroVentas movements={movements} loading={loading} />}
-          {tab === 'compras'     && <LibroCompras movements={movements} loading={loading} />}
-          {tab === 'declaracion' && <DeclaracionIva movements={movements} loading={loading} />}
-          {tab === 'notasDC'     && businessId && <NotasDC movements={movements} loading={loading} businessId={businessId} />}
-          {tab === 'retenciones' && businessId && <RetencionesIva businessId={businessId} />}
+          {tab === 'ventas'      && <ProximamenteFiscal title="Libro de Ventas IVA" description="Registro mensual de facturas emitidas en formato SENIAT. Pendiente de homologación oficial antes de su activación." />}
+          {tab === 'compras'     && <ProximamenteFiscal title="Libro de Compras IVA" description="Registro mensual de facturas recibidas y crédito fiscal. Pendiente de homologación oficial antes de su activación." />}
+          {tab === 'declaracion' && <ProximamenteFiscal title="Declaración IVA" description="Formulario de declaración y pago del IVA período a período. Pendiente de integración con el portal SENIAT." />}
+          {tab === 'notasDC'     && <ProximamenteFiscal title="Notas de Débito y Crédito" description="Gestión de ajustes fiscales mediante notas de débito y crédito. Pendiente de homologación SENIAT." />}
+          {tab === 'retenciones' && <ProximamenteFiscal title="Retenciones IVA" description="Comprobantes de retención IVA y ISLR. Pendiente de certificación SENIAT." />}
           {tab === 'arqueos'     && businessId && <ArqueosHistory businessId={businessId} />}
           {tab === 'config'      && businessId && <ConfigFiscal businessId={businessId} />}
         </div>

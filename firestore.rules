@@ -7,6 +7,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Super admin — acceso global de operaciones (email del panel ctrl-9x7b)
+    function isSuperAdmin() {
+      return request.auth != null && request.auth.token.email == 'yisus_xd77@hotmail.com';
+    }
+
     function getUser() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
@@ -44,6 +49,8 @@ service cloud.firestore {
 
     // PERFILES DE USUARIO
     match /users/{uid} {
+      // Super admin puede leer/escribir cualquier perfil (para activar cuentas pendientes)
+      allow read, write: if isSuperAdmin();
       allow read, write: if isSignedIn() && request.auth.uid == uid;
       allow read: if isSignedIn() && belongsToMe(resource.data);
       allow update, delete: if isSignedIn() && belongsToMe(resource.data) && (myRole() == 'admin' || myRole() == 'owner');
@@ -51,7 +58,10 @@ service cloud.firestore {
 
     // RAMA DE NEGOCIO (Contenedor central)
     match /businesses/{bid} {
+      allow read, write: if isSuperAdmin();
       allow read: if isMember(bid);
+      // Permite crear el negocio si el usuario autenticado es el ownerId del documento (registro inicial)
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       allow write: if isAdmin(bid);
 
       // Productos: ventas puede actualizar (para descontar stock en POS)
@@ -68,6 +78,24 @@ service cloud.firestore {
         allow update: if isMember(bid);
       }
 
+      // Chat: todos los miembros pueden crear canales y enviar mensajes
+      match /conversations/{convId} {
+        allow read:   if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isMember(bid);
+        match /messages/{msgId} {
+          allow read:          if isMember(bid);
+          allow create:        if isMember(bid);
+          allow update, delete: if isMember(bid) && request.auth.uid == resource.data.senderId;
+        }
+        match /typing/{userId} {
+          allow read, write: if isMember(bid);
+        }
+        match /reads/{userId} {
+          allow read, write: if isMember(bid);
+        }
+      }
+
       match /{allSubcollections=**} {
         allow read: if isMember(bid);
         allow write: if isAdmin(bid);
@@ -78,11 +106,30 @@ service cloud.firestore {
     match /businessConfigs/{bid} {
       allow read: if isMember(bid);
       allow write: if isAdmin(bid);
-      
+
       match /{allSubcollections=**} {
         allow read: if isMember(bid);
         allow write: if isAdmin(bid);
       }
+    }
+
+    // PERSONALIZACIONES POR EMPRESA (super-admin panel)
+    // Solo el super-admin escribe. El admin/owner de la empresa puede leer su propia config.
+    match /vendorOverrides/{bid} {
+      allow read: if isSuperAdmin() || isAdmin(bid);
+      allow write: if isSuperAdmin();
+    }
+
+    // EVENTOS EXTERNOS (recibidos por Cloud Functions — solo lectura para super-admin)
+    match /externalEvents/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // solo Cloud Functions via Admin SDK
+    }
+
+    // SUBSCRIPCIONES
+    match /subscriptions/{docId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && belongsToMe(resource.data));
+      allow write: if isSuperAdmin();
     }
 
     // COLECCIONES OPERATIVAS EN RAÍZ
