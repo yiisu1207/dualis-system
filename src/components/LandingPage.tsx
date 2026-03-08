@@ -107,6 +107,7 @@ export default function LandingPage() {
   const [showCompare, setShowCompare]     = useState(false);
   const [activeCat, setActiveCat]         = useState('Todos');
   const [betaCount, setBetaCount]         = useState<number | null>(null);
+  const [previewTab, setPreviewTab]       = useState<'dashboard' | 'pos' | 'inventario'>('dashboard');
 
   // Typewriter
   const [wordIdx, setWordIdx]   = useState(0);
@@ -809,6 +810,475 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ══ SYSTEM PREVIEW ════════════════════════════════════════════════════ */}
+      <section className="py-32 bg-[#020508]">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center mb-12" data-reveal>
+            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-pink-400 block mb-4">Vista Previa</span>
+            <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] text-white mb-4">
+              Mira el sistema por dentro.<br /><span className="text-white/20">Sin registrarte.</span>
+            </h2>
+          </div>
+
+          {/* Tab selector */}
+          <div className="flex items-center justify-center gap-2 mb-8" data-reveal>
+            {([
+              { id: 'dashboard' as const, label: 'Dashboard', icon: BarChart3 },
+              { id: 'pos' as const, label: 'POS Detal', icon: ShoppingCart },
+              { id: 'inventario' as const, label: 'Inventario', icon: Package },
+            ]).map(t => (
+              <button key={t.id} onClick={() => setPreviewTab(t.id)}
+                className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  previewTab === t.id ? 'text-white shadow-lg' : 'text-white/30 hover:text-white/60 hover:bg-white/[0.04]'
+                }`}
+                style={previewTab === t.id ? { background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow: '0 8px 25px -8px rgba(99,102,241,.5)' } : undefined}>
+                <t.icon size={14} /> {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Preview mockup */}
+          <div data-reveal className="rounded-3xl border border-white/[0.08] bg-[#0a0e1a] overflow-hidden shadow-2xl shadow-black/50">
+            {/* Top bar */}
+            <div className="flex items-center gap-2 px-5 py-3 border-b border-white/[0.06] bg-white/[0.02]">
+              <div className="flex gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500/60" />
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500/60" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
+              </div>
+              <div className="flex-1 mx-4 px-3 py-1 rounded-lg bg-white/[0.04] text-center">
+                <span className="text-[9px] text-white/20 font-mono">dualis-system.vercel.app/{previewTab === 'dashboard' ? 'admin/dashboard' : previewTab === 'pos' ? 'pos/detal' : 'admin/inventario'}</span>
+              </div>
+            </div>
+
+            {/* Content area */}
+            <div className="p-6 min-h-[380px]">
+              {previewTab === 'dashboard' && (
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div><p className="text-lg font-black text-white">Dashboard</p><p className="text-[10px] text-white/25">Resumen general de tu negocio</p></div>
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot" /><span className="text-[9px] font-black text-emerald-400">Tiempo real</span></div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Ventas del mes', val: '$0.00', sub: 'Empieza vendiendo', c: 'text-emerald-400' },
+                      { label: 'CxC pendiente', val: '$0.00', sub: '0 clientes', c: 'text-amber-400' },
+                      { label: 'Productos', val: '0', sub: 'Importa tu catalogo', c: 'text-sky-400' },
+                      { label: 'Tasa BCV', val: bcvRate || '---', sub: 'Bs/$ hoy', c: 'text-amber-400' },
+                    ].map(k => (
+                      <div key={k.label} className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
+                        <p className="text-[8px] font-black text-white/20 uppercase tracking-widest mb-2">{k.label}</p>
+                        <p className={`text-xl font-black ${k.c}`}>{k.val}</p>
+                        <p className="text-[9px] text-white/20 mt-1">{k.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-xl bg-white/[0.02] border border-white/[0.06] p-4">
+                    <p className="text-[8px] font-black text-white/20 uppercase tracking-widest mb-3">Ventas ultimos 7 dias</p>
+                    <div className="flex items-end gap-2 h-24">
+                      {[15, 35, 25, 55, 40, 70, 50].map((h, i) => (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                          <div className="w-full rounded-t" style={{ height: `${h}%`, background: i === 6 ? 'linear-gradient(to top, #4f46e5, #7c3aed)' : 'rgba(255,255,255,0.06)' }} />
+                          <span className="text-[7px] text-white/15">{['L','M','X','J','V','S','D'][i]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {previewTab === 'pos' && (
+                <div className="grid md:grid-cols-[1fr,280px] gap-5">
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-lg font-black text-white">POS Detal</p>
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/15">
+                        <span className="text-[9px] font-black text-amber-400">BCV {bcvRate || '---'} Bs/$</span>
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3 mb-3">
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                        <ScanLine size={14} className="text-white/20" />
+                        <span className="text-[11px] text-white/20">Buscar producto o escanear codigo...</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {DEMO_PRODUCTS.slice(0, 6).map(p => (
+                        <div key={p.id} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 text-center">
+                          <div className="text-xl mb-1">{p.emoji}</div>
+                          <p className="text-[10px] font-bold text-white/60">{p.name}</p>
+                          <p className="text-[9px] font-black text-emerald-400">${p.price.toFixed(2)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/[0.07] bg-[#060a16] p-4">
+                    <p className="text-[9px] font-black text-white/25 uppercase tracking-widest mb-3">Carrito</p>
+                    <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                      <ShoppingCart size={24} className="text-white/10" />
+                      <p className="text-[10px] text-white/20">Agrega productos</p>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-white/[0.06]">
+                      <div className="flex justify-between text-[10px] mb-1"><span className="text-white/25">Subtotal</span><span className="text-white/40">$0.00</span></div>
+                      <div className="flex justify-between text-[10px] mb-1"><span className="text-white/25">IVA 16%</span><span className="text-white/40">$0.00</span></div>
+                      <div className="flex justify-between text-sm font-black pt-2 border-t border-white/[0.06]"><span className="text-white/50">Total</span><span className="text-white">$0.00</span></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {previewTab === 'inventario' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-lg font-black text-white">Inventario</p>
+                    <div className="flex gap-2">
+                      <span className="px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-[9px] font-black text-indigo-400">+ Agregar producto</span>
+                      <span className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-[9px] font-black text-white/30">Importar CSV</span>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+                    <div className="grid grid-cols-[2fr,1fr,1fr,1fr,1fr] gap-0 bg-white/[0.02] border-b border-white/[0.06]">
+                      {['Producto', 'Stock', 'P. Detal', 'P. Mayor', 'Estado'].map(h => (
+                        <div key={h} className="px-4 py-3 text-[8px] font-black text-white/20 uppercase tracking-widest">{h}</div>
+                      ))}
+                    </div>
+                    {[
+                      { name: 'Aceite Mazeite 1L', stock: 48, pd: 6.50, pm: 5.80, status: 'ok' },
+                      { name: 'Pasta Sindoni 500g', stock: 120, pd: 3.00, pm: 2.50, status: 'ok' },
+                      { name: 'Leche Completa 1L', stock: 3, pd: 4.25, pm: 3.80, status: 'low' },
+                      { name: 'Pollo Entero 1kg', stock: 0, pd: 7.80, pm: 7.00, status: 'out' },
+                      { name: 'Arroz Mary 1kg', stock: 85, pd: 2.50, pm: 2.10, status: 'ok' },
+                    ].map((p, i) => (
+                      <div key={i} className="grid grid-cols-[2fr,1fr,1fr,1fr,1fr] gap-0 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                        <div className="px-4 py-3 text-[11px] font-bold text-white/50">{p.name}</div>
+                        <div className="px-4 py-3 text-[11px] font-black text-white/40">{p.stock}</div>
+                        <div className="px-4 py-3 text-[11px] text-emerald-400 font-bold">${p.pd.toFixed(2)}</div>
+                        <div className="px-4 py-3 text-[11px] text-sky-400 font-bold">${p.pm.toFixed(2)}</div>
+                        <div className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${
+                            p.status === 'ok' ? 'bg-emerald-500/15 text-emerald-400' : p.status === 'low' ? 'bg-amber-500/15 text-amber-400' : 'bg-rose-500/15 text-rose-400'
+                          }`}>{p.status === 'ok' ? 'OK' : p.status === 'low' ? 'Bajo' : 'Agotado'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[9px] text-white/15 text-center">Datos de ejemplo &middot; Tu inventario real aparecera aqui</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <p className="text-[10px] text-white/20 text-center mt-6" data-reveal>
+            Vista previa con datos de ejemplo &middot; Al registrarte veras tus datos reales
+          </p>
+        </div>
+      </section>
+
+      {/* ══ BEFORE vs AFTER ════════════════════════════════════════════════════ */}
+      <section className="py-24">
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="text-center mb-14" data-reveal>
+            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-400 block mb-4">La diferencia</span>
+            <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] text-white">
+              Antes vs. con Dualis.
+            </h2>
+          </div>
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* ANTES */}
+            <div data-reveal className="rounded-3xl border border-rose-500/20 bg-rose-500/[0.03] p-8">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/20 flex items-center justify-center"><X size={16} className="text-rose-400" /></div>
+                <p className="text-sm font-black text-rose-400">Sin Dualis</p>
+              </div>
+              <ul className="space-y-4">
+                {[
+                  'Cuaderno o Excel para registrar ventas',
+                  'Calcular IVA e IGTF a mano',
+                  'Buscar la tasa del dia en Google',
+                  'No saber cuanto te deben en credito',
+                  'Inventario desactualizado o inexistente',
+                  'Nomina en hojas de calculo',
+                  'Cero control de quien hizo que',
+                  'Reportes? Ni hablar.',
+                ].map(t => (
+                  <li key={t} className="flex items-start gap-3">
+                    <Minus size={12} className="text-rose-400/50 shrink-0 mt-0.5" />
+                    <span className="text-[12px] text-white/35 leading-relaxed">{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* AHORA */}
+            <div data-reveal className="rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.03] p-8">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center"><Check size={16} className="text-emerald-400" /></div>
+                <p className="text-sm font-black text-emerald-400">Con Dualis</p>
+              </div>
+              <ul className="space-y-4">
+                {[
+                  'POS profesional con ticket digital y escaner',
+                  'IVA 16% + IGTF 3% calculados automaticamente',
+                  'Tasa BCV oficial actualizada en vivo',
+                  'CxC completo: quien debe, cuanto y desde cuando',
+                  'Inventario en tiempo real con alertas de stock',
+                  'Nomina con adelantos y recibos automaticos',
+                  'Audit log inmutable — cada accion registrada',
+                  'KPIs, P&L, comisiones y exportar en 1 clic',
+                ].map(t => (
+                  <li key={t} className="flex items-start gap-3">
+                    <CheckCircle2 size={12} className="text-emerald-400 shrink-0 mt-0.5" />
+                    <span className="text-[12px] text-white/50 leading-relaxed">{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ══ ROADMAP + CUMPLIMIENTO FISCAL ════════════════════════════════════ */}
+      <section className="py-32 bg-[#070b14] relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(99,102,241,0.04)_0%,transparent_70%)]" />
+        <div className="max-w-6xl mx-auto px-6 relative z-10">
+          <div className="text-center mb-16" data-reveal>
+            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-violet-400 block mb-4">Roadmap Publico</span>
+            <h2 className="text-5xl md:text-6xl font-black tracking-[-0.04em] text-white">
+              Transparencia total.<br /><span className="text-white/18">Lo que hay y lo que viene.</span>
+            </h2>
+            <p className="text-white/30 text-sm mt-4 max-w-xl mx-auto">Sin promesas vacias — cada feature se publica cuando esta listo. Asi sabes exactamente donde estamos.</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 mb-12">
+            {/* LISTO */}
+            <div data-reveal className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-8 w-8 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                  <CheckCircle2 size={16} className="text-emerald-400" />
+                </div>
+                <h3 className="text-lg font-black text-emerald-400">Listo y funcionando</h3>
+              </div>
+              <ul className="space-y-3">
+                {[
+                  'POS Detal — ventas al contado con ticket',
+                  'POS Mayor — credito 15/30/45 dias',
+                  'Inventario con Kardex y alertas',
+                  'CxC y CxP completo',
+                  'RRHH — empleados, nomina, adelantos',
+                  'Tasas BCV en vivo + historial',
+                  'VisionLab IA (Gemini)',
+                  'Reportes, KPIs y P&L',
+                  'Contabilidad — libro diario y balance',
+                  'Audit Logs inmutables',
+                  'Roles y permisos por usuario',
+                  'Config fiscal — IVA 16%, IGTF 3%',
+                  'Escaner de barras con camara',
+                  'Centro de Ayuda integrado',
+                ].map(t => (
+                  <li key={t} className="flex items-center gap-2.5">
+                    <Check size={13} className="text-emerald-400 shrink-0" />
+                    <span className="text-[12px] text-white/45">{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* EN DESARROLLO */}
+            <div data-reveal className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-8 w-8 rounded-lg bg-amber-500/15 border border-amber-500/25 flex items-center justify-center">
+                  <Rocket size={16} className="text-amber-400" />
+                </div>
+                <h3 className="text-lg font-black text-amber-400">En desarrollo</h3>
+              </div>
+              <ul className="space-y-3">
+                {[
+                  { label: 'Limite de credito por cliente', priority: 'ALTO' },
+                  { label: 'Historial completo por cliente', priority: 'ALTO' },
+                  { label: 'Conciliacion bancaria con CSV', priority: 'MEDIO' },
+                  { label: 'Webhooks y automatizaciones', priority: 'MEDIO' },
+                  { label: 'Notificaciones push / email', priority: 'MEDIO' },
+                  { label: 'Dashboard por sucursal', priority: 'MEDIO' },
+                  { label: 'App movil nativa', priority: 'FUTURO' },
+                  { label: 'Integracion con pasarelas de pago', priority: 'FUTURO' },
+                ].map(t => (
+                  <li key={t.label} className="flex items-center gap-2.5">
+                    <div className={`shrink-0 h-1.5 w-1.5 rounded-full ${
+                      t.priority === 'ALTO' ? 'bg-amber-400' :
+                      t.priority === 'MEDIO' ? 'bg-sky-400' : 'bg-white/20'
+                    }`} />
+                    <span className="text-[12px] text-white/45 flex-1">{t.label}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-wider ${
+                      t.priority === 'ALTO' ? 'text-amber-400/70' :
+                      t.priority === 'MEDIO' ? 'text-sky-400/70' : 'text-white/15'
+                    }`}>{t.priority}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-6 pt-4 border-t border-amber-500/10">
+                <div className="flex items-center gap-2">
+                  <Activity size={12} className="text-amber-400/50" />
+                  <span className="text-[10px] text-white/20">Las prioridades cambian segun feedback de los beta testers</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── PRÓXIMAMENTE: CUMPLIMIENTO FISCAL Y LEGAL ── */}
+          <div data-reveal className="rounded-3xl border border-rose-500/20 bg-gradient-to-br from-rose-500/[0.06] to-amber-500/[0.03] p-8 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-[radial-gradient(circle,rgba(244,63,94,0.08)_0%,transparent_70%)]" />
+            <div className="relative z-10">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center">
+                    <Landmark size={20} className="text-rose-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-white">Proximamente — Cumplimiento Fiscal y Legal</h3>
+                    <p className="text-[11px] text-white/30 mt-0.5">Modulos fiscales obligatorios para operar legalmente en Venezuela</p>
+                  </div>
+                </div>
+                <div className="sm:ml-auto flex items-center gap-2 bg-rose-500/10 border border-rose-500/20 rounded-full px-4 py-1.5">
+                  <div className="h-2 w-2 rounded-full bg-rose-400 animate-pulse" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-rose-400">En construccion</span>
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[
+                  {
+                    icon: Receipt,
+                    title: 'Factura Legal SENIAT',
+                    desc: 'Factura con numero de control, correlativo fiscal, RIF emisor/receptor, y formato segun Providencia Administrativa 0071.',
+                    tag: 'CRITICO',
+                  },
+                  {
+                    icon: BookOpen,
+                    title: 'Libro de Ventas',
+                    desc: 'Libro de ventas mensual con formato SENIAT para declaracion de IVA. Desglose por alicuota, exento, y base imponible.',
+                    tag: 'CRITICO',
+                  },
+                  {
+                    icon: FileText,
+                    title: 'Libro de Compras',
+                    desc: 'Registro de compras con retenciones de IVA aplicadas, numero de factura del proveedor y calculo automatico.',
+                    tag: 'CRITICO',
+                  },
+                  {
+                    icon: Calculator,
+                    title: 'Arqueo de Caja y Reporte Z',
+                    desc: 'Apertura y cierre de turno, conteo de billetes, cuadre de caja, y Reporte Z por cajero con totales fiscales.',
+                    tag: 'CRITICO',
+                  },
+                  {
+                    icon: ShieldCheck,
+                    title: 'Homologacion SENIAT',
+                    desc: 'Proceso de certificacion del software ante el SENIAT como sistema fiscal autorizado para emitir facturas legales.',
+                    tag: 'EN PROCESO',
+                  },
+                  {
+                    icon: Banknote,
+                    title: 'Retenciones IVA e ISLR',
+                    desc: 'Calculo y aplicacion automatica de retenciones de IVA (75%/100%) e ISLR segun la normativa vigente.',
+                    tag: 'PLANIFICADO',
+                  },
+                  {
+                    icon: ClipboardList,
+                    title: 'Notas de Credito y Debito',
+                    desc: 'Emision de notas de credito y debito fiscales con correlativo, vinculadas a la factura original.',
+                    tag: 'PLANIFICADO',
+                  },
+                  {
+                    icon: Fingerprint,
+                    title: 'Validacion de RIF',
+                    desc: 'Verificacion automatica del RIF de clientes y proveedores contra la base de datos del SENIAT.',
+                    tag: 'PLANIFICADO',
+                  },
+                  {
+                    icon: Server,
+                    title: 'Respaldo Fiscal Inmutable',
+                    desc: 'Almacenamiento inmutable de todas las facturas emitidas con hash de integridad para auditorias fiscales.',
+                    tag: 'PLANIFICADO',
+                  },
+                ].map(item => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.title} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 hover:bg-white/[0.04] transition-colors">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="h-9 w-9 rounded-xl bg-rose-500/10 border border-rose-500/15 flex items-center justify-center">
+                          <Icon size={17} className="text-rose-400/80" />
+                        </div>
+                        <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                          item.tag === 'CRITICO' ? 'bg-rose-500/15 text-rose-400 border border-rose-500/20' :
+                          item.tag === 'EN PROCESO' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' :
+                          'bg-white/[0.06] text-white/30 border border-white/[0.08]'
+                        }`}>{item.tag}</span>
+                      </div>
+                      <h4 className="text-sm font-black text-white mb-1.5">{item.title}</h4>
+                      <p className="text-[11px] text-white/28 leading-relaxed">{item.desc}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-rose-500/10 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="flex items-start gap-3 flex-1">
+                  <Shield size={16} className="text-rose-400/60 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-white/25 leading-relaxed">
+                    <strong className="text-white/40">Nota legal:</strong> Dualis ERP se encuentra actualmente en fase beta. Los modulos fiscales listados estan en desarrollo activo y <strong className="text-white/40">aun no cumplen con los requisitos de homologacion del SENIAT</strong>. Hasta que estos modulos esten completos y certificados, las facturas generadas por el sistema <strong className="text-white/40">no tienen validez fiscal</strong>. Recomendamos mantener tu metodo de facturacion actual mientras completamos el proceso de certificacion.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ══ MULTIPLATAFORMA ═════════════════════════════════════════════════════ */}
+      <section className="py-32 bg-[#020508] relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(99,102,241,0.05)_0%,transparent_60%)]" />
+        <div className="max-w-6xl mx-auto px-6 relative z-10">
+          <div className="text-center mb-16" data-reveal>
+            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400 block mb-4">Proximamente</span>
+            <h2 className="text-5xl md:text-6xl font-black tracking-[-0.04em] text-white">
+              En todas tus pantallas.<br /><span className="text-white/18">Un sistema, todas las plataformas.</span>
+            </h2>
+            <p className="text-white/30 text-sm mt-4 max-w-2xl mx-auto">Hoy Dualis funciona en cualquier navegador. Pronto tendras apps nativas para cada dispositivo — con la misma cuenta, los mismos datos, en tiempo real.</p>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {[
+              { platform: 'Windows', icon: '🪟', desc: 'App de escritorio nativa .exe con acceso directo y notificaciones del sistema.', status: 'EN DESARROLLO' },
+              { platform: 'macOS',   icon: '🍎', desc: 'App nativa para Mac con soporte Silicon (M1/M2/M3) y Touch Bar.',              status: 'PLANIFICADO' },
+              { platform: 'Linux',   icon: '🐧', desc: 'Paquete .deb/.AppImage para Ubuntu, Fedora y derivados.',                       status: 'PLANIFICADO' },
+              { platform: 'Android', icon: '📱', desc: 'App en Google Play Store con POS movil, notificaciones push y modo offline.',   status: 'EN DESARROLLO' },
+              { platform: 'iOS',     icon: '📲', desc: 'App en App Store para iPhone y iPad con interfaz adaptada.',                    status: 'PLANIFICADO' },
+            ].map(p => (
+              <div key={p.platform} data-reveal className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5 text-center hover:bg-white/[0.05] hover:border-indigo-500/20 transition-all group">
+                <div className="text-4xl mb-4">{p.icon}</div>
+                <h4 className="text-sm font-black text-white mb-1">{p.platform}</h4>
+                <p className="text-[10px] text-white/25 leading-relaxed mb-3">{p.desc}</p>
+                <span className={`text-[8px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full inline-block ${
+                  p.status === 'EN DESARROLLO'
+                    ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                    : 'bg-white/[0.06] text-white/30 border border-white/[0.08]'
+                }`}>{p.status}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-12 text-center" data-reveal>
+            <div className="inline-flex items-center gap-3 bg-indigo-500/[0.08] border border-indigo-500/20 rounded-2xl px-6 py-4">
+              <Globe size={18} className="text-indigo-400" />
+              <div className="text-left">
+                <p className="text-sm font-black text-white">Hoy: 100% Web</p>
+                <p className="text-[11px] text-white/30">Funciona en Chrome, Firefox, Safari, Edge — cualquier dispositivo con navegador. Sin instalar nada.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ══ ALL MODULES ═════════════════════════════════════════════════════════ */}
       <section ref={modulesRef} className="py-32 bg-[#020508]">
         <div className="max-w-7xl mx-auto px-6">
@@ -1086,24 +1556,106 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ══ FEEDBACK CALLOUT ════════════════════════════════════════════════════ */}
-      <section className="py-16 bg-[#020508]">
-        <div className="max-w-3xl mx-auto px-6">
-          <div data-reveal className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.04] p-10 text-center">
-            <h3 className="text-2xl font-black text-white mb-3">Algo no funciona?</h3>
-            <p className="text-white/30 text-sm leading-relaxed mb-6 max-w-xl mx-auto">
-              Dualis esta en desarrollo activo. Si encuentras un bug o tienes una idea para mejorar &mdash; me ayudas mucho reportandolo.
+      {/* ══ CUSTOM DEV SERVICES ═══════════════════════════════════════════════ */}
+      <section className="py-24 bg-[#020508]">
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="text-center mb-14" data-reveal>
+            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-400 block mb-4">Desarrollo a Medida</span>
+            <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] text-white mb-4">
+              Necesitas algo especifico?<br /><span className="text-white/20">Lo construimos para ti.</span>
+            </h2>
+            <p className="text-white/25 text-sm max-w-lg mx-auto">
+              Ademas del ERP, ofrecemos desarrollo de software personalizado. Modulos a medida, integraciones, apps, lo que necesites.
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button onClick={() => setShowFeedback(true)}
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-5 mb-10">
+            {[
+              { icon: Cpu, title: 'Modulos a medida', desc: 'Necesitas un modulo que no existe? Lo disenamos y desarrollamos integrado a tu Dualis.', color: 'cyan' },
+              { icon: Webhook, title: 'Integraciones', desc: 'Conectamos Dualis con tu sistema de facturacion, banco, delivery, WhatsApp Business, o lo que uses.', color: 'cyan' },
+              { icon: Globe, title: 'Apps & Webs', desc: 'Landing pages, apps moviles, sistemas web completos. Desarrollo full-stack a tu medida.', color: 'cyan' },
+            ].map((s, i) => (
+              <div key={i} data-reveal className="rounded-3xl border border-cyan-500/20 bg-cyan-500/[0.04] p-8 group hover:border-cyan-500/40 transition-all">
+                <div className="h-12 w-12 rounded-2xl bg-cyan-500/15 flex items-center justify-center mb-6 border border-cyan-500/20">
+                  <s.icon size={22} className="text-cyan-400" />
+                </div>
+                <h3 className="text-lg font-black text-white mb-2">{s.title}</h3>
+                <p className="text-sm text-white/30 leading-relaxed">{s.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div data-reveal className="rounded-3xl border border-cyan-500/25 bg-gradient-to-r from-cyan-950/30 to-[#020710] p-8 md:p-10 flex flex-col md:flex-row items-center gap-8">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/20 text-[9px] font-black text-cyan-400 uppercase tracking-widest">Tarifa</span>
+              </div>
+              <div className="flex items-end gap-2 mb-3">
+                <span className="text-4xl font-black text-white">$15</span>
+                <span className="text-white/25 text-sm font-bold mb-1">/hora</span>
+              </div>
+              <p className="text-white/30 text-sm leading-relaxed">
+                Presupuesto sin compromiso. Te digo cuanto toma, cuanto cuesta, y arrancamos cuando quieras. Pago por hora trabajada &mdash; sin sorpresas.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 shrink-0">
+              <a href={`https://wa.me/584125343141?text=${encodeURIComponent('Hola Jesus, necesito un desarrollo a medida. Me gustaria cotizar:')}`}
+                target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5"
-                style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow: '0 10px 30px -10px rgba(99,102,241,.5)' }}>
-                Reportar un bug
-              </button>
-              <button onClick={() => { setFeedbackType('idea'); setShowFeedback(true); }}
-                className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white/40 border border-white/[0.08] hover:text-white hover:border-white/20 transition-all">
-                Sugerir una funcion
-              </button>
+                style={{ background: 'linear-gradient(135deg,#06b6d4,#0891b2)', boxShadow: '0 10px 30px -10px rgba(6,182,212,.5)' }}>
+                <MessageSquare size={14} /> Cotizar por WhatsApp
+              </a>
+              <a href="mailto:yisus_xd77@hotmail.com?subject=Cotizacion%20desarrollo%20a%20medida"
+                className="flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white/40 border border-white/[0.08] hover:text-white hover:border-white/20 transition-all">
+                <Mail size={14} /> Enviar email
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ══ FEEDBACK CALLOUT + INCENTIVO ════════════════════════════════════════ */}
+      <section className="py-16">
+        <div className="max-w-4xl mx-auto px-6">
+          <div data-reveal className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.04] p-10 relative overflow-hidden">
+            {/* Badge incentivo */}
+            <div className="absolute top-0 right-0 px-5 py-2 rounded-bl-2xl text-[9px] font-black uppercase tracking-widest text-emerald-400"
+              style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.05))' }}>
+              +7 dias gratis por cada reporte
+            </div>
+
+            <div className="grid md:grid-cols-[1fr,auto] gap-8 items-center">
+              <div>
+                <h3 className="text-2xl font-black text-white mb-3">Ayudanos a mejorar Dualis</h3>
+                <p className="text-white/30 text-sm leading-relaxed mb-4">
+                  Dualis esta en desarrollo activo. Cada bug que reportes o idea que sugieras nos ayuda a construir un mejor sistema para todos.
+                </p>
+                <div className="flex flex-wrap gap-3 mb-6">
+                  {[
+                    { label: 'Reporta un bug', reward: '+7 dias gratis', color: 'rose' },
+                    { label: 'Sugiere una funcion', reward: '+3 dias gratis', color: 'violet' },
+                    { label: 'Feedback general', reward: '+1 dia gratis', color: 'indigo' },
+                  ].map(r => (
+                    <div key={r.label} className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-${r.color}-500/[0.08] border border-${r.color}-500/20`}>
+                      <span className={`text-[10px] font-black text-${r.color}-400`}>{r.label}</span>
+                      <span className="text-[9px] font-black text-emerald-400">{r.reward}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-white/20">Los dias se acumulan en tu cuenta automaticamente al verificar el reporte.</p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button onClick={() => setShowFeedback(true)}
+                  className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5"
+                  style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow: '0 10px 30px -10px rgba(99,102,241,.5)' }}>
+                  Reportar un bug
+                </button>
+                <button onClick={() => { setFeedbackType('idea'); setShowFeedback(true); }}
+                  className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest text-white/40 border border-white/[0.08] hover:text-white hover:border-white/20 transition-all">
+                  Sugerir una funcion
+                </button>
+              </div>
             </div>
           </div>
         </div>
