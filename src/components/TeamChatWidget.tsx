@@ -14,11 +14,12 @@ import {
   limitToLast,
 } from 'firebase/firestore';
 import FloatingWidgetShell from './FloatingWidgetShell';
-import { db, storage } from '../firebase/config';
+import { db } from '../firebase/config';
 import { Customer, ExchangeRates, Movement } from '../../types';
 import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
 import { useWidgetManager } from '../context/WidgetContext';
 import { useAuth } from '../context/AuthContext';
+import { uploadToCloudinary } from '../utils/cloudinary';
 
 type WidgetPosition = {
   x: number;
@@ -582,11 +583,7 @@ const TeamChatWidget: React.FC<TeamChatWidgetProps> = ({
   const handleProfilePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (!storage) {
-      alert('Storage deshabilitado temporalmente. No se pueden subir fotos.');
-      return;
-    }
-    setProfilePhotoFile(file);
+setProfilePhotoFile(file);
     const preview = URL.createObjectURL(file);
     setProfilePhotoPreview(preview);
   };
@@ -597,7 +594,8 @@ const TeamChatWidget: React.FC<TeamChatWidgetProps> = ({
     try {
       let photoURL = getAvatarUrl(currentUser);
       if (profilePhotoFile) {
-        alert('Storage deshabilitado temporalmente. No se puede guardar la foto.');
+        const result = await uploadToCloudinary(profilePhotoFile, 'dualis_avatars');
+        photoURL = result.secure_url;
       }
 
       const nextName = profileName.trim() || currentUserName || 'Usuario';
