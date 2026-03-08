@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { TenantProvider } from '../context/TenantContext';
 import PosLayout from '../layouts/PosLayout';
@@ -131,7 +131,7 @@ function TenantGuard({ children }: { children: React.ReactNode }) {
 function SubscriptionGuard({ children }: { children: React.ReactNode }) {
   const { userProfile, loading: authLoading } = useAuth();
   const { empresa_id } = useParams();
-  const navigate = React.useNavigate();
+  const navigate = useNavigate();
   const businessId = userProfile?.businessId || empresa_id || '';
   const { subscription, loading: subLoading } = useSubscription(businessId);
 
