@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   Shield, Search, ChevronRight, Check, X, Loader2, Users,
   AlertTriangle, Clock, Zap, CreditCard, Gift,
@@ -7,6 +7,9 @@ import {
   DollarSign, BadgeCheck, ChevronDown,
   UserPlus, UserX, KeyRound, UserCog, ShieldCheck,
   ShieldOff, Sliders, Save, Trash2, FileText,
+  Rocket, Bug, Lightbulb, MessageSquare, Image, Send,
+  ExternalLink, ChevronUp, Calendar, MapPin, CheckCircle2,
+  Smartphone, Monitor, Apple,
 } from 'lucide-react';
 import {
   VENDOR_TEMPLATES, VENDOR_DEFAULTS, HIDEABLE_ELEMENTS,
@@ -14,8 +17,9 @@ import {
 } from '../context/VendorContext';
 import {
   collection, onSnapshot, doc, updateDoc, serverTimestamp,
-  query, where, setDoc, deleteDoc, getDocs,
+  query, where, setDoc, deleteDoc, getDocs, addDoc, orderBy, limit as firestoreLimit,
 } from 'firebase/firestore';
+import { uploadToCloudinary } from '../utils/cloudinary';
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
 } from 'firebase/auth';
@@ -83,6 +87,120 @@ interface SubHistory { action:string; plan?:string; paymentMethod?:string; payme
 interface PendingPayment { plan:string; months:number; amountUsd:number; payMethod:string; reference:string; note?:string; submittedAt?:any; submittedBy?:string; }
 interface Subscription { plan:string; status:string; trialEndsAt?:any; currentPeriodEnd?:any; addOns?:SubAddOns; promo?:SubPromo; history?:SubHistory[]; paymentMethod?:string; paymentRef?:string; lastPaymentAt?:string; amountUsd?:number; pendingPayment?:PendingPayment; }
 interface BizRecord { id:string; companyName?:string; ownerEmail?:string; ownerId?:string; createdAt?:any; subscription?:Subscription; }
+
+// ─── Top-level panel sections ──────────────────────────────────────────────
+type TopTab = 'negocios' | 'roadmap' | 'feedback';
+
+// ─── Feedback types ─────────────────────────────────────────────────────────
+interface FeedbackItem {
+  id: string;
+  type: 'bug' | 'idea' | 'otro';
+  message: string;
+  email?: string;
+  name?: string;
+  imageUrls?: string[];
+  status: 'nuevo' | 'leido' | 'resuelto' | 'descartado';
+  createdAt: any;
+  businessId?: string;
+  userId?: string;
+  adminNote?: string;
+}
+
+// ─── Roadmap data ───────────────────────────────────────────────────────────
+interface RoadmapPhase {
+  id: string;
+  title: string;
+  subtitle: string;
+  color: string;
+  border: string;
+  bg: string;
+  iconColor: string;
+  dateRange: string;
+  items: { label: string; done: boolean; tag?: string }[];
+}
+
+const ROADMAP_PHASES: RoadmapPhase[] = [
+  {
+    id: 'fase1', title: 'Fase 1 — Beta Cerrada', subtitle: 'Estabilizar core + primeros testers',
+    color: 'text-sky-400', border: 'border-sky-500/20', bg: 'bg-sky-500/[0.04]', iconColor: 'bg-sky-500/15 border-sky-500/25 text-sky-400',
+    dateRange: 'Mar — Abr 2026',
+    items: [
+      { label: 'Landing page con contador beta en vivo', done: true },
+      { label: 'Registro + OTP por email', done: true },
+      { label: 'App Check (reCAPTCHA v3)', done: true },
+      { label: 'Feedback con incentivos', done: true },
+      { label: 'Roadmap publico en landing', done: true },
+      { label: 'Dominio definitivo', done: false },
+      { label: 'Redes sociales oficiales', done: false },
+      { label: 'Arqueo de Caja — apertura/cierre/conteo', done: false, tag: 'CRITICO' },
+      { label: 'Reporte Z por turno y cajero', done: false, tag: 'CRITICO' },
+      { label: 'Factura con numero de control + RIF', done: false, tag: 'CRITICO' },
+      { label: 'Formato Providencia 0071', done: false, tag: 'CRITICO' },
+      { label: 'Libro de Ventas formato SENIAT', done: false, tag: 'CRITICO' },
+      { label: 'Libro de Compras con retenciones', done: false, tag: 'CRITICO' },
+      { label: 'Notas de credito y debito fiscales', done: false },
+      { label: 'Limite de credito por cliente', done: false },
+      { label: 'Historial completo por cliente', done: false },
+    ],
+  },
+  {
+    id: 'fase2', title: 'Fase 2 — Beta Abierta', subtitle: 'Registro publico + 200 usuarios',
+    color: 'text-violet-400', border: 'border-violet-500/20', bg: 'bg-violet-500/[0.04]', iconColor: 'bg-violet-500/15 border-violet-500/25 text-violet-400',
+    dateRange: 'May — Jun 2026',
+    items: [
+      { label: 'Retenciones IVA (75%/100%)', done: false, tag: 'FISCAL' },
+      { label: 'Retenciones ISLR', done: false, tag: 'FISCAL' },
+      { label: 'Validacion de RIF contra SENIAT', done: false, tag: 'FISCAL' },
+      { label: 'Abrir registro publico', done: false },
+      { label: 'Campana de lanzamiento beta en redes', done: false },
+      { label: 'Conciliacion bancaria con CSV', done: false },
+      { label: 'Optimizacion rendimiento (lazy loading)', done: false },
+      { label: 'App Windows (Electron/Tauri)', done: false, tag: 'PLATAFORMA' },
+      { label: 'App Android en Play Store', done: false, tag: 'PLATAFORMA' },
+      { label: 'PWA mejorada para moviles', done: false },
+      { label: 'Dashboard por sucursal', done: false },
+      { label: 'Integracion impresoras termicas Bluetooth', done: false },
+    ],
+  },
+  {
+    id: 'fase3', title: 'Fase 3 — Pre-Lanzamiento', subtitle: 'Homologacion + apps nativas + pagos',
+    color: 'text-amber-400', border: 'border-amber-500/20', bg: 'bg-amber-500/[0.04]', iconColor: 'bg-amber-500/15 border-amber-500/25 text-amber-400',
+    dateRange: 'Jul — Ago 2026',
+    items: [
+      { label: 'Inicio proceso homologacion SENIAT', done: false, tag: 'LEGAL' },
+      { label: 'Respaldo fiscal inmutable (hash)', done: false, tag: 'LEGAL' },
+      { label: 'Pasarela de pagos para suscripciones', done: false, tag: 'CRITICO' },
+      { label: 'Sistema de planes y billing automatizado', done: false, tag: 'CRITICO' },
+      { label: 'App iOS en TestFlight', done: false, tag: 'PLATAFORMA' },
+      { label: 'App macOS nativa', done: false, tag: 'PLATAFORMA' },
+      { label: 'App Linux (.deb/.AppImage)', done: false, tag: 'PLATAFORMA' },
+      { label: 'Webhooks y automatizaciones', done: false },
+      { label: 'API publica v1', done: false },
+      { label: 'Pitch deck 10 slides', done: false },
+      { label: 'Contactar aceleradoras LATAM', done: false },
+      { label: 'Alianzas con contadores', done: false },
+    ],
+  },
+  {
+    id: 'fase4', title: 'Fase 4 — Lanzamiento Oficial', subtitle: 'Marketing + 500 clientes pagando',
+    color: 'text-emerald-400', border: 'border-emerald-500/20', bg: 'bg-emerald-500/[0.04]', iconColor: 'bg-emerald-500/15 border-emerald-500/25 text-emerald-400',
+    dateRange: 'Sep — Oct 2026',
+    items: [
+      { label: 'Product Hunt launch', done: false },
+      { label: 'Video demo profesional (2-3 min)', done: false },
+      { label: 'Press kit: logo, screenshots, one-pager', done: false },
+      { label: 'Lanzamiento oficial en redes', done: false },
+      { label: 'Webinar: Digitaliza tu negocio en Venezuela', done: false },
+      { label: 'Programa de referidos (1 mes gratis)', done: false },
+      { label: 'iOS en App Store (publico)', done: false, tag: 'PLATAFORMA' },
+      { label: 'Soporte multipais (Colombia, Ecuador, Peru)', done: false },
+      { label: 'WhatsApp Business API', done: false },
+      { label: 'Certificacion SENIAT completada', done: false, tag: 'LEGAL' },
+      { label: 'Primer reporte MRR, churn, NPS', done: false },
+      { label: 'Evaluar ronda seed ($50K-150K)', done: false },
+    ],
+  },
+];
 
 function daysLeft(ts: any): number | null {
   if (!ts) return null;
@@ -237,6 +355,9 @@ export default function SuperAdminPanel() {
   const [pinAuth, setPinAuth] = useState(() => sessionStorage.getItem('dualis_op_auth') === '1');
   const emailAuth = !!user?.email && SUPER_ADMIN_EMAILS.includes(user.email);
 
+  // Top-level tab
+  const [topTab, setTopTab] = useState<TopTab>('negocios');
+
   // Data
   const [businesses, setBusinesses] = useState<BizRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -244,6 +365,20 @@ export default function SuperAdminPanel() {
   const [filterTab, setFilterTab] = useState<'all'|'trial'|'active'|'expired'>('all');
   const [selected, setSelected] = useState<BizRecord | null>(null);
   const [drawerTab, setDrawerTab] = useState<'plan'|'promo'|'history'|'users'|'custom'>('plan');
+
+  // Roadmap state — persisted in Firestore doc 'system/roadmap'
+  const [roadmapData, setRoadmapData] = useState<Record<string, boolean>>({});
+  const [roadmapSaving, setRoadmapSaving] = useState(false);
+  const [roadmapExpanded, setRoadmapExpanded] = useState<string | null>('fase1');
+
+  // Feedback state
+  const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(true);
+  const [feedbackFilter, setFeedbackFilter] = useState<'todos' | 'bug' | 'idea' | 'otro'>('todos');
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState<'todos' | 'nuevo' | 'leido' | 'resuelto' | 'descartado'>('todos');
+  const [selectedFeedback, setSelectedFeedback] = useState<FeedbackItem | null>(null);
+  const [feedbackNote, setFeedbackNote] = useState('');
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
   // Vendor overrides per business
   const [vendorOverride, setVendorOverride] = useState<VendorOverride>(VENDOR_DEFAULTS);
@@ -291,6 +426,62 @@ export default function SuperAdminPanel() {
   const [promoMonths, setPromoMonths]       = useState(3);
   const [promoDesc, setPromoDesc]           = useState('');
   const [promoSaving, setPromoSaving]       = useState(false);
+
+  // Load roadmap progress from Firestore
+  useEffect(() => {
+    if (!pinAuth || !emailAuth) return;
+    const unsub = onSnapshot(doc(db, 'system', 'roadmap'), snap => {
+      if (snap.exists()) setRoadmapData(snap.data()?.items ?? {});
+    });
+    return unsub;
+  }, [pinAuth, emailAuth]);
+
+  // Load feedback from Firestore
+  useEffect(() => {
+    if (!pinAuth || !emailAuth) return;
+    setFeedbackLoading(true);
+    const q = query(collection(db, 'feedback'), orderBy('createdAt', 'desc'), firestoreLimit(200));
+    const unsub = onSnapshot(q, snap => {
+      setFeedbackItems(snap.docs.map(d => ({ id: d.id, ...d.data() } as FeedbackItem)));
+      setFeedbackLoading(false);
+    }, () => setFeedbackLoading(false));
+    return unsub;
+  }, [pinAuth, emailAuth]);
+
+  // Save roadmap toggle
+  const toggleRoadmapItem = async (key: string) => {
+    const next = !roadmapData[key];
+    setRoadmapData(prev => ({ ...prev, [key]: next }));
+    setRoadmapSaving(true);
+    try {
+      await setDoc(doc(db, 'system', 'roadmap'), { items: { ...roadmapData, [key]: next }, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (e) { console.error(e); }
+    setRoadmapSaving(false);
+  };
+
+  // Update feedback status
+  const updateFeedbackStatus = async (id: string, status: FeedbackItem['status'], note?: string) => {
+    const updates: any = { status, updatedAt: serverTimestamp(), updatedBy: user?.email ?? 'admin' };
+    if (note !== undefined) updates.adminNote = note;
+    await updateDoc(doc(db, 'feedback', id), updates);
+    setSelectedFeedback(prev => prev?.id === id ? { ...prev, status, adminNote: note ?? prev.adminNote } : prev);
+  };
+
+  // Send feedback to WhatsApp
+  const sendFeedbackToWhatsApp = (fb: FeedbackItem) => {
+    const typeLabel = fb.type === 'bug' ? '🐛 Bug' : fb.type === 'idea' ? '💡 Sugerencia' : '💬 Comentario';
+    const date = fb.createdAt?.toDate ? fb.createdAt.toDate().toLocaleDateString('es-VE') : 'N/A';
+    const text = encodeURIComponent(
+      `${typeLabel} — Dualis Feedback\n\n` +
+      `De: ${fb.name || fb.email || 'Anónimo'}\n` +
+      `Fecha: ${date}\n` +
+      `Estado: ${fb.status}\n\n` +
+      `Mensaje:\n${fb.message}\n\n` +
+      (fb.imageUrls?.length ? `Imágenes: ${fb.imageUrls.join('\n')}` : '') +
+      (fb.adminNote ? `\nNota admin: ${fb.adminNote}` : '')
+    );
+    window.open(`https://wa.me/584125343141?text=${text}`, '_blank');
+  };
 
   // Load pending approval users
   useEffect(() => {
@@ -743,29 +934,63 @@ export default function SuperAdminPanel() {
     <div className="min-h-screen bg-[#070b14] text-white flex flex-col">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-[#070b14]/90 backdrop-blur-xl border-b border-white/[0.07] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center">
-            <Shield size={17} className="text-indigo-400" />
+      <header className="sticky top-0 z-50 bg-[#070b14]/90 backdrop-blur-xl border-b border-white/[0.07]">
+        <div className="px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center">
+              <Shield size={17} className="text-indigo-400" />
+            </div>
+            <div>
+              <p className="font-black text-white text-sm tracking-tight">Dualis Operaciones</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-white/20">Panel Administrativo Interno</p>
+            </div>
           </div>
-          <div>
-            <p className="font-black text-white text-sm tracking-tight">Dualis Operaciones</p>
-            <p className="text-[9px] font-black uppercase tracking-widest text-white/20">Panel Administrativo Interno</p>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-white/25 font-medium">{user?.email}</span>
+            <button
+              onClick={() => { sessionStorage.removeItem('dualis_op_auth'); navigate('/'); }}
+              className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest text-white/40 border border-white/[0.07] hover:bg-white/[0.06] transition-all"
+            >
+              Salir
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-white/25 font-medium">{user?.email}</span>
-          <button
-            onClick={() => { sessionStorage.removeItem('dualis_op_auth'); navigate('/'); }}
-            className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest text-white/40 border border-white/[0.07] hover:bg-white/[0.06] transition-all"
-          >
-            Salir
-          </button>
+        {/* Top-level tabs */}
+        <div className="px-6 pb-0 flex gap-1">
+          {([
+            { id: 'negocios' as TopTab, icon: Building2, label: 'Negocios', count: businesses.length },
+            { id: 'roadmap' as TopTab,  icon: Rocket,    label: 'Roadmap / Cronograma' },
+            { id: 'feedback' as TopTab, icon: MessageSquare, label: 'Feedback & Bugs', count: feedbackItems.filter(f => f.status === 'nuevo').length || undefined },
+          ]).map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTopTab(t.id)}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-xs font-black uppercase tracking-widest transition-all border-b-2 ${
+                topTab === t.id
+                  ? 'bg-white/[0.06] text-white border-indigo-500'
+                  : 'text-white/25 hover:text-white/50 border-transparent hover:bg-white/[0.02]'
+              }`}
+            >
+              <t.icon size={13} />
+              {t.label}
+              {t.count !== undefined && t.count > 0 && (
+                <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[8px] font-black ${
+                  t.id === 'feedback' && topTab !== 'feedback'
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    : 'bg-white/[0.08] text-white/40'
+                }`}>{t.count}</span>
+              )}
+            </button>
+          ))}
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* ── Main content ──────────────────────────────────────────────── */}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB: NEGOCIOS
+            ═══════════════════════════════════════════════════════════════════ */}
+        {topTab === 'negocios' && (
         <div className="flex-1 overflow-y-auto p-6 space-y-6 min-w-0">
 
           {/* Pending approval section */}
@@ -1724,6 +1949,386 @@ export default function SuperAdminPanel() {
             )}
           </div>
         )}
+      </div>
+        )} {/* end topTab === 'negocios' */}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB: ROADMAP / CRONOGRAMA
+            ═══════════════════════════════════════════════════════════════════ */}
+        {topTab === 'roadmap' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 min-w-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-white tracking-tight">Roadmap del Proyecto</h2>
+                <p className="text-xs text-white/30 mt-1">Beta → Lanzamiento · Marzo — Octubre 2026 · Marca las tareas completadas</p>
+              </div>
+              <div className="flex items-center gap-3">
+                {roadmapSaving && <Loader2 size={14} className="animate-spin text-indigo-400" />}
+                <div className="text-right">
+                  <p className="text-2xl font-black text-white tracking-tight">
+                    {Object.values(roadmapData).filter(Boolean).length}
+                    <span className="text-white/15">/{ROADMAP_PHASES.reduce((a, p) => a + p.items.length, 0)}</span>
+                  </p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-white/20">Completadas</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="rounded-full h-2 bg-white/[0.06] overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${(Object.values(roadmapData).filter(Boolean).length / Math.max(1, ROADMAP_PHASES.reduce((a, p) => a + p.items.length, 0))) * 100}%`,
+                  background: 'linear-gradient(90deg, #4f46e5, #7c3aed, #06b6d4)',
+                }}
+              />
+            </div>
+
+            {/* Phases */}
+            <div className="space-y-4">
+              {ROADMAP_PHASES.map(phase => {
+                const done = phase.items.filter((_, i) => roadmapData[`${phase.id}_${i}`]).length;
+                const total = phase.items.length;
+                const pct = Math.round((done / total) * 100);
+                const isExpanded = roadmapExpanded === phase.id;
+
+                return (
+                  <div key={phase.id} className={`rounded-2xl border ${phase.border} ${phase.bg} overflow-hidden transition-all`}>
+                    {/* Phase header */}
+                    <button
+                      onClick={() => setRoadmapExpanded(isExpanded ? null : phase.id)}
+                      className="w-full flex items-center gap-4 p-5 text-left hover:bg-white/[0.02] transition-all"
+                    >
+                      <div className={`h-10 w-10 rounded-xl border flex items-center justify-center shrink-0 ${phase.iconColor}`}>
+                        {pct === 100 ? <CheckCircle2 size={18} /> : <Rocket size={18} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3">
+                          <h3 className={`text-sm font-black ${phase.color}`}>{phase.title}</h3>
+                          <span className="text-[9px] text-white/20 font-medium">{phase.dateRange}</span>
+                        </div>
+                        <p className="text-[11px] text-white/25 mt-0.5">{phase.subtitle}</p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <p className={`text-lg font-black ${phase.color}`}>{pct}%</p>
+                          <p className="text-[9px] text-white/20">{done}/{total}</p>
+                        </div>
+                        <ChevronDown size={16} className={`text-white/20 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </div>
+                    </button>
+
+                    {/* Phase items */}
+                    {isExpanded && (
+                      <div className="px-5 pb-5 space-y-1.5">
+                        <div className="rounded-full h-1 bg-white/[0.04] mb-3 overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #4f46e5, #7c3aed)' }} />
+                        </div>
+                        {phase.items.map((item, i) => {
+                          const key = `${phase.id}_${i}`;
+                          const checked = !!roadmapData[key];
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => toggleRoadmapItem(key)}
+                              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-left transition-all group ${
+                                checked ? 'bg-white/[0.03]' : 'hover:bg-white/[0.03]'
+                              }`}
+                            >
+                              <div className={`h-5 w-5 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all ${
+                                checked
+                                  ? 'bg-emerald-500/20 border-emerald-500/50'
+                                  : 'border-white/[0.12] group-hover:border-white/[0.2]'
+                              }`}>
+                                {checked && <Check size={11} className="text-emerald-400" />}
+                              </div>
+                              <span className={`text-xs flex-1 transition-all ${
+                                checked ? 'text-white/30 line-through' : 'text-white/60'
+                              }`}>{item.label}</span>
+                              {item.tag && (
+                                <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                  item.tag === 'CRITICO' ? 'bg-rose-500/15 text-rose-400 border border-rose-500/20' :
+                                  item.tag === 'FISCAL' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' :
+                                  item.tag === 'LEGAL' ? 'bg-rose-500/15 text-rose-300 border border-rose-500/15' :
+                                  item.tag === 'PLATAFORMA' ? 'bg-sky-500/15 text-sky-400 border border-sky-500/20' :
+                                  'bg-white/[0.06] text-white/30 border border-white/[0.08]'
+                                }`}>{item.tag}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Budget & metrics summary */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+              {[
+                { label: 'Duración total', val: '7 meses', icon: Calendar, color: 'text-indigo-400' },
+                { label: 'Costo mensual pre-revenue', val: '~$35-55', icon: DollarSign, color: 'text-emerald-400' },
+                { label: 'Meta usuarios lanzamiento', val: '500+', icon: Users, color: 'text-violet-400' },
+                { label: 'Meta MRR lanzamiento', val: '$5,000+', icon: Zap, color: 'text-amber-400' },
+              ].map(k => (
+                <div key={k.label} className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4">
+                  <k.icon size={14} className={k.color} />
+                  <p className={`text-xl font-black ${k.color} mt-2`}>{k.val}</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-white/20 mt-1">{k.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB: FEEDBACK & BUGS
+            ═══════════════════════════════════════════════════════════════════ */}
+        {topTab === 'feedback' && (
+          <div className="flex-1 overflow-y-auto min-w-0">
+            <div className="flex h-full">
+              {/* ── Left: Feedback list ──────────────────────────────── */}
+              <div className="w-full md:w-[420px] border-r border-white/[0.07] flex flex-col">
+                <div className="p-4 border-b border-white/[0.07] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-black text-white">Feedback</h2>
+                    <span className="text-[10px] text-white/20 font-bold">{feedbackItems.length} total</span>
+                  </div>
+                  {/* Type filter */}
+                  <div className="flex gap-1">
+                    {(['todos', 'bug', 'idea', 'otro'] as const).map(t => (
+                      <button
+                        key={t}
+                        onClick={() => setFeedbackFilter(t)}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                          feedbackFilter === t ? 'bg-white/[0.1] text-white' : 'text-white/25 hover:text-white/50'
+                        }`}
+                      >
+                        {t === 'bug' && <Bug size={10} />}
+                        {t === 'idea' && <Lightbulb size={10} />}
+                        {t === 'otro' && <MessageSquare size={10} />}
+                        {t === 'todos' ? 'Todos' : t === 'bug' ? 'Bugs' : t === 'idea' ? 'Ideas' : 'Otros'}
+                        <span className="text-[8px] text-white/15 ml-0.5">
+                          {t === 'todos'
+                            ? feedbackItems.length
+                            : feedbackItems.filter(f => f.type === t).length}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  {/* Status filter */}
+                  <div className="flex gap-1">
+                    {(['todos', 'nuevo', 'leido', 'resuelto', 'descartado'] as const).map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setFeedbackStatusFilter(s)}
+                        className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                          feedbackStatusFilter === s ? 'bg-white/[0.1] text-white' : 'text-white/20 hover:text-white/40'
+                        }`}
+                      >
+                        {s === 'todos' ? 'Todos' : s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* List */}
+                <div className="flex-1 overflow-y-auto">
+                  {feedbackLoading ? (
+                    <div className="flex justify-center py-20"><Loader2 size={20} className="animate-spin text-indigo-400" /></div>
+                  ) : feedbackItems
+                      .filter(f => feedbackFilter === 'todos' || f.type === feedbackFilter)
+                      .filter(f => feedbackStatusFilter === 'todos' || f.status === feedbackStatusFilter)
+                      .length === 0 ? (
+                    <div className="text-center py-20 text-white/15 text-sm">Sin feedback aún</div>
+                  ) : (
+                    feedbackItems
+                      .filter(f => feedbackFilter === 'todos' || f.type === feedbackFilter)
+                      .filter(f => feedbackStatusFilter === 'todos' || f.status === feedbackStatusFilter)
+                      .map(fb => (
+                        <button
+                          key={fb.id}
+                          onClick={() => { setSelectedFeedback(fb); setFeedbackNote(fb.adminNote ?? ''); }}
+                          className={`w-full text-left px-4 py-3.5 border-b border-white/[0.04] transition-all hover:bg-white/[0.03] ${
+                            selectedFeedback?.id === fb.id ? 'bg-white/[0.05]' : ''
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              fb.type === 'bug' ? 'bg-rose-500/15 border border-rose-500/25' :
+                              fb.type === 'idea' ? 'bg-amber-500/15 border border-amber-500/25' :
+                              'bg-sky-500/15 border border-sky-500/25'
+                            }`}>
+                              {fb.type === 'bug' ? <Bug size={13} className="text-rose-400" /> :
+                               fb.type === 'idea' ? <Lightbulb size={13} className="text-amber-400" /> :
+                               <MessageSquare size={13} className="text-sky-400" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs font-bold text-white truncate">{fb.name || fb.email || 'Anónimo'}</span>
+                                <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                  fb.status === 'nuevo' ? 'bg-indigo-500/20 text-indigo-400' :
+                                  fb.status === 'leido' ? 'bg-white/[0.06] text-white/30' :
+                                  fb.status === 'resuelto' ? 'bg-emerald-500/20 text-emerald-400' :
+                                  'bg-rose-500/15 text-rose-400/50'
+                                }`}>{fb.status}</span>
+                              </div>
+                              <p className="text-[11px] text-white/30 line-clamp-2 leading-relaxed">{fb.message}</p>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span className="text-[9px] text-white/15">
+                                  {fb.createdAt?.toDate ? fb.createdAt.toDate().toLocaleDateString('es-VE') : '—'}
+                                </span>
+                                {fb.imageUrls && fb.imageUrls.length > 0 && (
+                                  <span className="flex items-center gap-1 text-[9px] text-white/20">
+                                    <Image size={9} /> {fb.imageUrls.length}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      ))
+                  )}
+                </div>
+              </div>
+
+              {/* ── Right: Feedback detail ───────────────────────────── */}
+              <div className="hidden md:flex flex-1 flex-col">
+                {!selectedFeedback ? (
+                  <div className="flex-1 flex items-center justify-center text-white/10">
+                    <div className="text-center">
+                      <MessageSquare size={40} className="mx-auto mb-3 opacity-30" />
+                      <p className="text-sm font-medium">Selecciona un feedback para ver los detalles</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {/* Header */}
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${
+                          selectedFeedback.type === 'bug' ? 'bg-rose-500/15 border border-rose-500/25' :
+                          selectedFeedback.type === 'idea' ? 'bg-amber-500/15 border border-amber-500/25' :
+                          'bg-sky-500/15 border border-sky-500/25'
+                        }`}>
+                          {selectedFeedback.type === 'bug' ? <Bug size={20} className="text-rose-400" /> :
+                           selectedFeedback.type === 'idea' ? <Lightbulb size={20} className="text-amber-400" /> :
+                           <MessageSquare size={20} className="text-sky-400" />}
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-white">{selectedFeedback.name || 'Anónimo'}</p>
+                          <p className="text-[11px] text-white/30">{selectedFeedback.email || 'Sin email'}</p>
+                          <p className="text-[9px] text-white/15 mt-0.5">
+                            {selectedFeedback.createdAt?.toDate ? selectedFeedback.createdAt.toDate().toLocaleString('es-VE') : '—'}
+                            {selectedFeedback.businessId && ` · ${selectedFeedback.businessId}`}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => sendFeedbackToWhatsApp(selectedFeedback)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/25 transition-all"
+                      >
+                        <Send size={12} /> WhatsApp
+                      </button>
+                    </div>
+
+                    {/* Type & Status badges */}
+                    <div className="flex items-center gap-2">
+                      <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
+                        selectedFeedback.type === 'bug' ? 'bg-rose-500/15 text-rose-400 border-rose-500/25' :
+                        selectedFeedback.type === 'idea' ? 'bg-amber-500/15 text-amber-400 border-amber-500/25' :
+                        'bg-sky-500/15 text-sky-400 border-sky-500/25'
+                      }`}>
+                        {selectedFeedback.type === 'bug' ? '🐛 Bug Report' : selectedFeedback.type === 'idea' ? '💡 Sugerencia' : '💬 Comentario'}
+                      </span>
+                      <span className="text-white/10">→</span>
+                      {/* Status selector */}
+                      <div className="flex gap-1">
+                        {(['nuevo', 'leido', 'resuelto', 'descartado'] as const).map(s => (
+                          <button
+                            key={s}
+                            onClick={() => updateFeedbackStatus(selectedFeedback.id, s)}
+                            className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${
+                              selectedFeedback.status === s
+                                ? s === 'nuevo' ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'
+                                  : s === 'leido' ? 'bg-white/[0.1] text-white border-white/[0.15]'
+                                  : s === 'resuelto' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-rose-500/15 text-rose-400 border-rose-500/25'
+                                : 'text-white/15 border-white/[0.06] hover:border-white/[0.12] hover:text-white/30'
+                            }`}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Message */}
+                    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-white/20 mb-3">Mensaje</p>
+                      <p className="text-sm text-white/60 leading-relaxed whitespace-pre-wrap">{selectedFeedback.message}</p>
+                    </div>
+
+                    {/* Images */}
+                    {selectedFeedback.imageUrls && selectedFeedback.imageUrls.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-white/20 mb-3">
+                          Capturas adjuntas ({selectedFeedback.imageUrls.length})
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          {selectedFeedback.imageUrls.map((url, i) => (
+                            <button
+                              key={i}
+                              onClick={() => setLightboxImg(url)}
+                              className="rounded-xl border border-white/[0.07] overflow-hidden hover:border-indigo-500/30 transition-all group"
+                            >
+                              <img src={url} alt={`Captura ${i + 1}`} className="w-full h-40 object-cover group-hover:scale-105 transition-transform" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Admin note */}
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-white/20 mb-2">Nota interna del admin</p>
+                      <div className="flex gap-2">
+                        <input
+                          value={feedbackNote}
+                          onChange={e => setFeedbackNote(e.target.value)}
+                          placeholder="Escribe una nota sobre este feedback..."
+                          className="flex-1 px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+                        />
+                        <button
+                          onClick={() => updateFeedbackStatus(selectedFeedback.id, selectedFeedback.status, feedbackNote)}
+                          className="px-4 py-2.5 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500/30 transition-all"
+                        >
+                          <Save size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Lightbox */}
+            {lightboxImg && (
+              <div
+                className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-8"
+                onClick={() => setLightboxImg(null)}
+              >
+                <button className="absolute top-6 right-6 text-white/50 hover:text-white" onClick={() => setLightboxImg(null)}>
+                  <X size={24} />
+                </button>
+                <img src={lightboxImg} alt="Preview" className="max-w-full max-h-full rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} />
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   );

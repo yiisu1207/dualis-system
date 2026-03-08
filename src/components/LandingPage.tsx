@@ -13,8 +13,9 @@ import {
   Cpu, Fingerprint, MessageSquare, Play, Eye, Globe, Server,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { collection, getCountFromServer } from 'firebase/firestore';
+import { collection, getCountFromServer, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { uploadToCloudinary } from '../utils/cloudinary';
 import Logo from './ui/Logo';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -122,7 +123,12 @@ export default function LandingPage() {
   const [showFeedback, setShowFeedback]   = useState(false);
   const [feedbackType, setFeedbackType]   = useState<'bug' | 'idea' | 'otro'>('bug');
   const [feedbackText, setFeedbackText]   = useState('');
+  const [feedbackName, setFeedbackName]   = useState('');
+  const [feedbackEmail, setFeedbackEmail] = useState('');
+  const [feedbackImages, setFeedbackImages] = useState<File[]>([]);
+  const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackSent, setFeedbackSent]   = useState(false);
+  const feedbackFileRef = useRef<HTMLInputElement>(null);
 
   const heroRef     = useRef<HTMLElement>(null);
   const featuresRef = useRef<HTMLElement>(null);
@@ -208,12 +214,43 @@ export default function LandingPage() {
   });
   const resetDemo = () => { setDemoCart({}); setDemoPaid(false); };
 
-  const sendFeedback = () => {
+  const sendFeedback = async () => {
     if (!feedbackText.trim()) return;
-    const subject = feedbackType === 'bug' ? 'Bug en Dualis' : feedbackType === 'idea' ? 'Idea para Dualis' : 'Feedback Dualis';
-    window.open(`mailto:yisus_xd77@hotmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(feedbackText)}`, '_blank');
-    setFeedbackSent(true);
-    setTimeout(() => { setFeedbackSent(false); setFeedbackText(''); setShowFeedback(false); }, 3000);
+    setFeedbackSending(true);
+    try {
+      // Upload images to Cloudinary
+      const imageUrls: string[] = [];
+      for (const file of feedbackImages) {
+        const result = await uploadToCloudinary(file, 'dualis_avatars');
+        imageUrls.push(result.secure_url);
+      }
+      // Save to Firestore
+      await addDoc(collection(db, 'feedback'), {
+        type: feedbackType,
+        message: feedbackText.trim(),
+        name: feedbackName.trim() || undefined,
+        email: feedbackEmail.trim() || undefined,
+        imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+        status: 'nuevo',
+        createdAt: serverTimestamp(),
+        source: 'landing',
+      });
+      // Also send to WhatsApp
+      const typeLabel = feedbackType === 'bug' ? '🐛 Bug' : feedbackType === 'idea' ? '💡 Sugerencia' : '💬 Comentario';
+      const waText = encodeURIComponent(
+        `${typeLabel} — Dualis Feedback\n\n` +
+        (feedbackName.trim() ? `De: ${feedbackName.trim()}\n` : '') +
+        (feedbackEmail.trim() ? `Email: ${feedbackEmail.trim()}\n` : '') +
+        `\n${feedbackText.trim()}` +
+        (imageUrls.length > 0 ? `\n\nImagenes:\n${imageUrls.join('\n')}` : '')
+      );
+      window.open(`https://wa.me/584125343141?text=${waText}`, '_blank');
+      setFeedbackSent(true);
+      setTimeout(() => { setFeedbackSent(false); setFeedbackText(''); setFeedbackName(''); setFeedbackEmail(''); setFeedbackImages([]); setShowFeedback(false); }, 3000);
+    } catch (e) {
+      console.error('Error enviando feedback:', e);
+    }
+    setFeedbackSending(false);
   };
 
   const CellVal = ({ val }: { val: boolean | string }) => {
@@ -1803,29 +1840,71 @@ export default function LandingPage() {
             </div>
             {feedbackSent ? (
               <div className="text-center py-8">
-                <p className="font-black text-white mb-1">Gracias!</p>
-                <p className="text-[11px] text-white/30">Se abrira tu cliente de correo. Si no, escribeme al WhatsApp.</p>
+                <div className="text-4xl mb-3">{feedbackType === 'bug' ? '🐛' : feedbackType === 'idea' ? '💡' : '💬'}</div>
+                <p className="font-black text-white mb-1">Recibido!</p>
+                <p className="text-[11px] text-white/30">Tu feedback fue guardado y enviado por WhatsApp. Gracias por ayudar a mejorar Dualis.</p>
+                <p className="text-[10px] text-indigo-400/60 mt-2 font-bold">
+                  {feedbackType === 'bug' ? '+7 dias de prueba gratis' : feedbackType === 'idea' ? '+3 dias de prueba gratis' : '+1 dia de prueba gratis'}
+                </p>
               </div>
             ) : (
               <>
+                {/* Type selector */}
                 <div className="flex gap-2 mb-4">
-                  {([['bug', 'Bug'], ['idea', 'Idea'], ['otro', 'Otro']] as const).map(([t, label]) => (
+                  {([['bug', '🐛 Bug', '+7 dias'], ['idea', '💡 Idea', '+3 dias'], ['otro', '💬 Otro', '+1 dia']] as const).map(([t, label, bonus]) => (
                     <button key={t} onClick={() => setFeedbackType(t)}
                       className={`flex-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
                         feedbackType === t ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-400' : 'bg-white/[0.04] border border-white/[0.07] text-white/30 hover:text-white/50'
-                      }`}>{label}</button>
+                      }`}>
+                      {label}
+                      <span className="block text-[7px] text-emerald-400/60 mt-0.5 normal-case tracking-normal">{bonus}</span>
+                    </button>
                   ))}
                 </div>
+
+                {/* Name & Email */}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <input value={feedbackName} onChange={e => setFeedbackName(e.target.value)}
+                    placeholder="Tu nombre (opcional)"
+                    className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-xs text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-indigo-500/40" />
+                  <input value={feedbackEmail} onChange={e => setFeedbackEmail(e.target.value)}
+                    placeholder="Tu email (opcional)"
+                    className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-xs text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-indigo-500/40" />
+                </div>
+
+                {/* Message */}
                 <textarea value={feedbackText} onChange={e => setFeedbackText(e.target.value)}
-                  placeholder={feedbackType === 'bug' ? 'Que estabas haciendo cuando ocurrio el error...' : feedbackType === 'idea' ? 'Cuentame la funcion que te gustaria ver...' : 'Tu mensaje...'}
-                  rows={5} className="w-full bg-white/[0.04] border border-white/[0.08] rounded-2xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all resize-none mb-4" />
+                  placeholder={feedbackType === 'bug' ? 'Describe el error: que estabas haciendo, que esperabas y que paso...' : feedbackType === 'idea' ? 'Cuentame la funcion que te gustaria ver...' : 'Tu mensaje...'}
+                  rows={4} className="w-full bg-white/[0.04] border border-white/[0.08] rounded-2xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all resize-none mb-3" />
+
+                {/* Image upload */}
+                <div className="mb-4">
+                  <input ref={feedbackFileRef} type="file" accept="image/*" multiple className="hidden"
+                    onChange={e => { if (e.target.files) setFeedbackImages(prev => [...prev, ...Array.from(e.target.files!)]); }} />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button onClick={() => feedbackFileRef.current?.click()}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[9px] font-black uppercase tracking-widest text-white/30 hover:text-white/60 transition-all">
+                      <Image size={11} /> Adjuntar capturas
+                    </button>
+                    {feedbackImages.map((f, i) => (
+                      <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                        <span className="text-[9px] text-indigo-400 truncate max-w-[80px]">{f.name}</span>
+                        <button onClick={() => setFeedbackImages(prev => prev.filter((_, j) => j !== i))} className="text-white/30 hover:text-rose-400"><X size={10} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Actions */}
                 <div className="flex gap-3">
                   <button onClick={() => setShowFeedback(false)} className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white/30 hover:text-white transition-colors">Cancelar</button>
-                  <button onClick={sendFeedback} disabled={!feedbackText.trim()}
-                    className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5 disabled:opacity-40"
-                    style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}>Enviar</button>
+                  <button onClick={sendFeedback} disabled={!feedbackText.trim() || feedbackSending}
+                    className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5 disabled:opacity-40 flex items-center justify-center gap-2"
+                    style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}>
+                    {feedbackSending ? <><Loader2 size={12} className="animate-spin" /> Enviando...</> : 'Enviar feedback'}
+                  </button>
                 </div>
-                <p className="text-[9px] text-white/20 text-center mt-3">Se enviara a yisus_xd77@hotmail.com</p>
+                <p className="text-[9px] text-white/15 text-center mt-3">Se guarda en el sistema y se envia por WhatsApp automaticamente</p>
               </>
             )}
           </div>
