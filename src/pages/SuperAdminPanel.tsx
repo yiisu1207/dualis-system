@@ -9,7 +9,10 @@ import {
   ShieldOff, Sliders, Save, Trash2, FileText,
   Rocket, Bug, Lightbulb, MessageSquare, Image, Send,
   ExternalLink, ChevronUp, Calendar, MapPin, CheckCircle2,
-  Smartphone, Monitor, Apple,
+  Smartphone, Monitor as MonitorIcon, Apple,
+  BarChart3, TrendingUp, Activity, PieChart, Banknote,
+  ShoppingCart, Package, Brain, ArrowUpRight, ArrowDownRight,
+  Globe, Sparkles,
 } from 'lucide-react';
 import {
   VENDOR_TEMPLATES, VENDOR_DEFAULTS, HIDEABLE_ELEMENTS,
@@ -17,9 +20,11 @@ import {
 } from '../context/VendorContext';
 import {
   collection, onSnapshot, doc, updateDoc, serverTimestamp,
-  query, where, setDoc, deleteDoc, getDocs, addDoc, orderBy, limit as firestoreLimit,
+  query, where, setDoc, deleteDoc, getDocs, addDoc, orderBy,
+  limit as firestoreLimit, getCountFromServer, Timestamp,
 } from 'firebase/firestore';
 import { uploadToCloudinary } from '../utils/cloudinary';
+import { GoogleGenAI } from '@google/genai';
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
 } from 'firebase/auth';
@@ -89,7 +94,7 @@ interface Subscription { plan:string; status:string; trialEndsAt?:any; currentPe
 interface BizRecord { id:string; companyName?:string; ownerEmail?:string; ownerId?:string; createdAt?:any; subscription?:Subscription; }
 
 // ─── Top-level panel sections ──────────────────────────────────────────────
-type TopTab = 'negocios' | 'roadmap' | 'feedback';
+type TopTab = 'dashboard' | 'negocios' | 'roadmap' | 'feedback' | 'ia';
 
 // ─── Feedback types ─────────────────────────────────────────────────────────
 interface FeedbackItem {
@@ -356,7 +361,7 @@ export default function SuperAdminPanel() {
   const emailAuth = !!user?.email && SUPER_ADMIN_EMAILS.includes(user.email);
 
   // Top-level tab
-  const [topTab, setTopTab] = useState<TopTab>('negocios');
+  const [topTab, setTopTab] = useState<TopTab>('dashboard');
 
   // Data
   const [businesses, setBusinesses] = useState<BizRecord[]>([]);
@@ -379,6 +384,26 @@ export default function SuperAdminPanel() {
   const [selectedFeedback, setSelectedFeedback] = useState<FeedbackItem | null>(null);
   const [feedbackNote, setFeedbackNote] = useState('');
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+
+  // Dashboard analytics
+  const [dashStats, setDashStats] = useState<{
+    totalUsers: number; activeUsers: number; totalMovements: number;
+    totalRevenue: number; totalProducts: number;
+    recentMovements: Array<{ id: string; concept: string; amount: number; currency: string; date: any; entityId: string; movementType: string; businessId: string }>;
+    movementsByType: Record<string, number>;
+    revenueByDay: Array<{ date: string; total: number }>;
+  }>({
+    totalUsers: 0, activeUsers: 0, totalMovements: 0,
+    totalRevenue: 0, totalProducts: 0,
+    recentMovements: [], movementsByType: {}, revenueByDay: [],
+  });
+  const [dashLoading, setDashLoading] = useState(true);
+
+  // AI Chat
+  const [aiMessages, setAiMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [aiInput, setAiInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const aiChatRef = useRef<HTMLDivElement>(null);
 
   // Vendor overrides per business
   const [vendorOverride, setVendorOverride] = useState<VendorOverride>(VENDOR_DEFAULTS);
@@ -448,6 +473,142 @@ export default function SuperAdminPanel() {
     return unsub;
   }, [pinAuth, emailAuth]);
 
+  // Load dashboard analytics
+  useEffect(() => {
+    if (!pinAuth || !emailAuth || topTab !== 'dashboard') return;
+    setDashLoading(true);
+    const loadDash = async () => {
+      try {
+        // Users count
+        const usersSnap = await getCountFromServer(collection(db, 'users'));
+        const totalUsers = usersSnap.data().count;
+
+        // Active users (status === 'ACTIVE')
+        const activeSnap = await getCountFromServer(query(collection(db, 'users'), where('status', '==', 'ACTIVE')));
+        const activeUsers = activeSnap.data().count;
+
+        // Recent movements (last 50)
+        const movQ = query(collection(db, 'movements'), orderBy('createdAt', 'desc'), firestoreLimit(50));
+        const movSnap = await getDocs(movQ);
+        const recentMovements = movSnap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id, concept: data.concept ?? '', amount: data.amount ?? data.amountInUSD ?? 0,
+            currency: data.currency ?? 'USD', date: data.createdAt ?? data.date,
+            entityId: data.entityId ?? '', movementType: data.movementType ?? '',
+            businessId: data.businessId ?? '',
+          };
+        });
+
+        // All movements for stats
+        const allMovQ = query(collection(db, 'movements'));
+        const allMovSnap = await getDocs(allMovQ);
+        let totalRevenue = 0;
+        const movementsByType: Record<string, number> = {};
+        const dailyRevenue: Record<string, number> = {};
+
+        allMovSnap.docs.forEach(d => {
+          const data = d.data();
+          const amt = data.amountInUSD ?? data.amount ?? 0;
+          const type = data.movementType ?? 'OTRO';
+          const anulada = data.anulada === true;
+
+          if (!anulada && (type === 'FACTURA' || type === 'VENTA')) {
+            totalRevenue += amt;
+          }
+
+          movementsByType[type] = (movementsByType[type] ?? 0) + 1;
+
+          // Daily revenue (last 30 days)
+          const ts = data.createdAt?.toDate ? data.createdAt.toDate() : (data.date ? new Date(data.date) : null);
+          if (ts && !anulada && (type === 'FACTURA' || type === 'VENTA')) {
+            const dayKey = ts.toISOString().slice(0, 10);
+            dailyRevenue[dayKey] = (dailyRevenue[dayKey] ?? 0) + amt;
+          }
+        });
+
+        const revenueByDay = Object.entries(dailyRevenue)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .slice(-30)
+          .map(([date, total]) => ({ date, total }));
+
+        setDashStats({
+          totalUsers, activeUsers,
+          totalMovements: allMovSnap.size,
+          totalRevenue, totalProducts: 0,
+          recentMovements, movementsByType, revenueByDay,
+        });
+      } catch (e) { console.error('Dashboard load error:', e); }
+      setDashLoading(false);
+    };
+    loadDash();
+  }, [pinAuth, emailAuth, topTab]);
+
+  // AI chat handler
+  const sendAiMessage = async () => {
+    const msg = aiInput.trim();
+    if (!msg || aiLoading) return;
+    setAiInput('');
+    setAiMessages(prev => [...prev, { role: 'user', content: msg }]);
+    setAiLoading(true);
+
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        setAiMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se encontró VITE_GEMINI_API_KEY en las variables de entorno. Agrégala en .env.local y en Vercel.' }]);
+        setAiLoading(false);
+        return;
+      }
+
+      // Build system context with live data
+      const systemContext = `Eres un asistente IA interno del sistema Dualis ERP. Respondes en español.
+Tu rol es ayudar al superadmin (Jesus Salazar) a entender el estado del sistema y tomar decisiones.
+
+DATOS EN VIVO DEL SISTEMA:
+- Total negocios registrados: ${businesses.length}
+- Negocios activos (pagando): ${kpis.active}
+- En periodo de prueba: ${kpis.trial}
+- Expirados: ${kpis.expired}
+- MRR estimado: $${kpis.mrr.toFixed(2)}
+- Total usuarios registrados: ${dashStats.totalUsers}
+- Usuarios activos: ${dashStats.activeUsers}
+- Total movimientos (ventas, abonos, etc): ${dashStats.totalMovements}
+- Revenue total generado: $${dashStats.totalRevenue.toFixed(2)}
+- Movimientos por tipo: ${JSON.stringify(dashStats.movementsByType)}
+- Feedback pendiente (nuevos): ${feedbackItems.filter(f => f.status === 'nuevo').length}
+- Feedback total: ${feedbackItems.length}
+- Progreso roadmap: ${Object.values(roadmapData).filter(Boolean).length}/${ROADMAP_PHASES.reduce((a, p) => a + p.items.length, 0)} tareas completadas
+
+NEGOCIOS:
+${businesses.slice(0, 20).map(b => `- ${b.companyName ?? b.id} | Plan: ${b.subscription?.plan ?? 'N/A'} | Status: ${b.subscription?.status ?? 'N/A'} | Owner: ${b.ownerEmail ?? 'N/A'}`).join('\n')}
+
+ÚLTIMOS 10 MOVIMIENTOS:
+${dashStats.recentMovements.slice(0, 10).map(m => `- ${m.movementType} | $${m.amount} ${m.currency} | ${m.concept} | ${m.entityId}`).join('\n')}
+
+Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, dilo. Puedes dar recomendaciones de negocio basadas en los datos.`;
+
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: [
+          { role: 'user', parts: [{ text: systemContext }] },
+          ...aiMessages.map(m => ({
+            role: m.role === 'user' ? 'user' as const : 'model' as const,
+            parts: [{ text: m.content }],
+          })),
+          { role: 'user', parts: [{ text: msg }] },
+        ],
+      });
+
+      const reply = response.text ?? 'Sin respuesta';
+      setAiMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+    } catch (e: any) {
+      setAiMessages(prev => [...prev, { role: 'assistant', content: `❌ Error: ${e?.message ?? 'No se pudo conectar con Gemini'}` }]);
+    }
+    setAiLoading(false);
+    setTimeout(() => aiChatRef.current?.scrollTo({ top: aiChatRef.current.scrollHeight, behavior: 'smooth' }), 100);
+  };
+
   // Save roadmap toggle
   const toggleRoadmapItem = async (key: string) => {
     const next = !roadmapData[key];
@@ -481,6 +642,70 @@ export default function SuperAdminPanel() {
       (fb.adminNote ? `\nNota admin: ${fb.adminNote}` : '')
     );
     window.open(`https://wa.me/584125343141?text=${text}`, '_blank');
+  };
+
+  // Grant bonus days to a user's business trial
+  const grantBonusDays = async (fb: FeedbackItem, days: number) => {
+    if (!fb.userId && !fb.email) {
+      alert('Este feedback no tiene userId ni email asociado. No se puede otorgar dias.');
+      return;
+    }
+    try {
+      // Find the user by email or userId
+      let userId = fb.userId;
+      let businessId = fb.businessId;
+
+      if (!userId && fb.email) {
+        const userQ = query(collection(db, 'users'), where('email', '==', fb.email), firestoreLimit(1));
+        const userSnap = await getDocs(userQ);
+        if (!userSnap.empty) {
+          userId = userSnap.docs[0].id;
+          businessId = userSnap.docs[0].data().businessId ?? userSnap.docs[0].data().empresa_id;
+        }
+      }
+
+      if (!businessId && userId) {
+        const userDoc = await getDocs(query(collection(db, 'users'), where('__name__', '==', userId)));
+        if (!userDoc.empty) {
+          businessId = userDoc.docs[0].data().businessId ?? userDoc.docs[0].data().empresa_id;
+        }
+      }
+
+      if (!businessId) {
+        alert('No se encontro el negocio asociado a este usuario.');
+        return;
+      }
+
+      // Get current trial end date and extend it
+      const bizDoc = await getDocs(query(collection(db, 'businesses'), where('__name__', '==', businessId)));
+      if (bizDoc.empty) {
+        alert('Negocio no encontrado: ' + businessId);
+        return;
+      }
+
+      const bizData = bizDoc.docs[0].data();
+      const currentEnd = bizData.subscription?.trialEndsAt?.toDate?.() ?? bizData.subscription?.currentPeriodEnd?.toDate?.() ?? new Date();
+      const baseDate = currentEnd > new Date() ? currentEnd : new Date();
+      const newEnd = new Date(baseDate);
+      newEnd.setDate(newEnd.getDate() + days);
+
+      const field = bizData.subscription?.status === 'trial' ? 'subscription.trialEndsAt' : 'subscription.currentPeriodEnd';
+      await updateDoc(doc(db, 'businesses', businessId), { [field]: newEnd });
+
+      // Mark on feedback
+      await updateDoc(doc(db, 'feedback', fb.id), {
+        bonusDaysGranted: days,
+        bonusGrantedAt: serverTimestamp(),
+        bonusGrantedBy: user?.email ?? 'admin',
+        status: 'resuelto',
+      });
+
+      setSelectedFeedback(prev => prev?.id === fb.id ? { ...prev, status: 'resuelto' } as FeedbackItem : prev);
+      alert(`+${days} dias otorgados al negocio ${businessId}. Nueva fecha: ${newEnd.toLocaleDateString('es-VE')}`);
+    } catch (e: any) {
+      alert('Error: ' + (e?.message ?? 'No se pudo otorgar los dias'));
+      console.error(e);
+    }
   };
 
   // Load pending approval users
@@ -956,11 +1181,13 @@ export default function SuperAdminPanel() {
           </div>
         </div>
         {/* Top-level tabs */}
-        <div className="px-6 pb-0 flex gap-1">
+        <div className="px-6 pb-0 flex gap-1 overflow-x-auto">
           {([
-            { id: 'negocios' as TopTab, icon: Building2, label: 'Negocios', count: businesses.length },
-            { id: 'roadmap' as TopTab,  icon: Rocket,    label: 'Roadmap / Cronograma' },
-            { id: 'feedback' as TopTab, icon: MessageSquare, label: 'Feedback & Bugs', count: feedbackItems.filter(f => f.status === 'nuevo').length || undefined },
+            { id: 'dashboard' as TopTab, icon: BarChart3,      label: 'Dashboard' },
+            { id: 'negocios' as TopTab,  icon: Building2,      label: 'Negocios', count: businesses.length },
+            { id: 'roadmap' as TopTab,   icon: Rocket,         label: 'Roadmap' },
+            { id: 'feedback' as TopTab,  icon: MessageSquare,  label: 'Feedback', count: feedbackItems.filter(f => f.status === 'nuevo').length || undefined },
+            { id: 'ia' as TopTab,        icon: Brain,          label: 'IA Asistente' },
           ]).map(t => (
             <button
               key={t.id}
@@ -988,9 +1215,209 @@ export default function SuperAdminPanel() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ═══════════════════════════════════════════════════════════════════
+            TAB: DASHBOARD
+            ═══════════════════════════════════════════════════════════════════ */}
+        {topTab === 'dashboard' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 min-w-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-white tracking-tight">Dashboard del Sistema</h2>
+                <p className="text-xs text-white/30 mt-1">Vista general en tiempo real de todo Dualis ERP</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400/60">Live</span>
+              </div>
+            </div>
+
+            {dashLoading ? (
+              <div className="flex justify-center py-32"><Loader2 size={28} className="animate-spin text-indigo-400" /></div>
+            ) : (<>
+              {/* KPI row 1 */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                {[
+                  { label: 'Negocios', val: businesses.length, icon: Building2, color: 'text-indigo-400', bg: 'bg-indigo-500/[0.08]', border: 'border-indigo-500/20' },
+                  { label: 'Usuarios', val: dashStats.totalUsers, icon: Users, color: 'text-violet-400', bg: 'bg-violet-500/[0.08]', border: 'border-violet-500/20' },
+                  { label: 'Activos', val: dashStats.activeUsers, icon: Activity, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.08]', border: 'border-emerald-500/20' },
+                  { label: 'Movimientos', val: dashStats.totalMovements, icon: TrendingUp, color: 'text-sky-400', bg: 'bg-sky-500/[0.08]', border: 'border-sky-500/20' },
+                  { label: 'Revenue Total', val: `$${dashStats.totalRevenue.toFixed(0)}`, icon: DollarSign, color: 'text-amber-400', bg: 'bg-amber-500/[0.08]', border: 'border-amber-500/20' },
+                  { label: 'MRR', val: `$${kpis.mrr.toFixed(0)}`, icon: Banknote, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.08]', border: 'border-emerald-500/20' },
+                ].map(k => (
+                  <div key={k.label} className={`rounded-2xl border ${k.border} ${k.bg} p-4`}>
+                    <k.icon size={14} className={`${k.color} mb-2`} />
+                    <p className={`text-xl font-black ${k.color} tracking-tight`}>{k.val}</p>
+                    <p className="text-[8px] font-black uppercase tracking-widest text-white/20 mt-1">{k.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* KPI row 2 — subscription breakdown */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: 'Plan Activo', val: kpis.active, icon: BadgeCheck, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.06]', border: 'border-emerald-500/15' },
+                  { label: 'En Prueba', val: kpis.trial, icon: Clock, color: 'text-sky-400', bg: 'bg-sky-500/[0.06]', border: 'border-sky-500/15' },
+                  { label: 'Expirados', val: kpis.expired, icon: AlertTriangle, color: 'text-rose-400', bg: 'bg-rose-500/[0.06]', border: 'border-rose-500/15' },
+                  { label: 'Feedback Nuevo', val: feedbackItems.filter(f => f.status === 'nuevo').length, icon: MessageSquare, color: 'text-amber-400', bg: 'bg-amber-500/[0.06]', border: 'border-amber-500/15' },
+                ].map(k => (
+                  <div key={k.label} className={`rounded-2xl border ${k.border} ${k.bg} p-4 flex items-center gap-3`}>
+                    <div className={`h-10 w-10 rounded-xl ${k.bg} border ${k.border} flex items-center justify-center shrink-0`}>
+                      <k.icon size={16} className={k.color} />
+                    </div>
+                    <div>
+                      <p className={`text-2xl font-black ${k.color}`}>{k.val}</p>
+                      <p className="text-[8px] font-black uppercase tracking-widest text-white/20">{k.label}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-6">
+                {/* Revenue chart (text-based bar) */}
+                <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white/25">Revenue diario (ultimos 30 dias)</p>
+                    <TrendingUp size={14} className="text-emerald-400/40" />
+                  </div>
+                  {dashStats.revenueByDay.length === 0 ? (
+                    <p className="text-center py-8 text-white/15 text-sm">Sin datos de revenue aun</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                      {(() => {
+                        const maxVal = Math.max(...dashStats.revenueByDay.map(d => d.total), 1);
+                        return dashStats.revenueByDay.map(d => (
+                          <div key={d.date} className="flex items-center gap-3">
+                            <span className="text-[9px] text-white/20 w-16 shrink-0 font-mono">{d.date.slice(5)}</span>
+                            <div className="flex-1 h-5 bg-white/[0.03] rounded-lg overflow-hidden">
+                              <div
+                                className="h-full rounded-lg bg-gradient-to-r from-indigo-500/60 to-violet-500/60 transition-all"
+                                style={{ width: `${(d.total / maxVal) * 100}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-emerald-400 font-black w-16 text-right">${d.total.toFixed(0)}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                {/* Movements by type */}
+                <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white/25">Movimientos por tipo</p>
+                    <PieChart size={14} className="text-violet-400/40" />
+                  </div>
+                  {Object.keys(dashStats.movementsByType).length === 0 ? (
+                    <p className="text-center py-8 text-white/15 text-sm">Sin movimientos aun</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(() => {
+                        const vals = Object.values(dashStats.movementsByType) as number[];
+                        const total = vals.reduce((a: number, b: number) => a + b, 0);
+                        const colors: Record<string, string> = {
+                          FACTURA: 'from-emerald-500 to-emerald-600', VENTA: 'from-emerald-500 to-emerald-600',
+                          ABONO: 'from-sky-500 to-sky-600', DEVOLUCION: 'from-rose-500 to-rose-600',
+                          GASTO: 'from-amber-500 to-amber-600', COMPRA: 'from-violet-500 to-violet-600',
+                        };
+                        const entries = Object.entries(dashStats.movementsByType) as [string, number][];
+                        return entries
+                          .sort(([, a], [, b]) => b - a)
+                          .map(([type, count]) => (
+                            <div key={type} className="flex items-center gap-3">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-white/30 w-24 shrink-0">{type}</span>
+                              <div className="flex-1 h-5 bg-white/[0.03] rounded-lg overflow-hidden">
+                                <div
+                                  className={`h-full rounded-lg bg-gradient-to-r ${colors[type] ?? 'from-slate-500 to-slate-600'} transition-all`}
+                                  style={{ width: `${(count / total) * 100}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-white/40 font-black w-10 text-right">{count}</span>
+                              <span className="text-[9px] text-white/15 w-10 text-right">{((count / total) * 100).toFixed(0)}%</span>
+                            </div>
+                          ));
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Recent movements table */}
+              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-white/[0.05] flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/25">Ultimos movimientos del sistema</p>
+                  <span className="text-[9px] text-white/15">{dashStats.recentMovements.length} mas recientes</span>
+                </div>
+                <div className="max-h-[400px] overflow-y-auto">
+                  {dashStats.recentMovements.length === 0 ? (
+                    <p className="text-center py-12 text-white/15 text-sm">Sin movimientos registrados</p>
+                  ) : (
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-white/[0.04]">
+                          {['Tipo', 'Concepto', 'Monto', 'Cliente', 'Negocio', 'Fecha'].map(h => (
+                            <th key={h} className="px-4 py-2.5 text-left text-[8px] font-black uppercase tracking-widest text-white/20">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dashStats.recentMovements.map(m => (
+                          <tr key={m.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                            <td className="px-4 py-2.5">
+                              <span className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
+                                m.movementType === 'FACTURA' || m.movementType === 'VENTA' ? 'bg-emerald-500/15 text-emerald-400' :
+                                m.movementType === 'ABONO' ? 'bg-sky-500/15 text-sky-400' :
+                                m.movementType === 'DEVOLUCION' ? 'bg-rose-500/15 text-rose-400' :
+                                'bg-white/[0.06] text-white/30'
+                              }`}>{m.movementType}</span>
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-white/50 max-w-[150px] truncate">{m.concept || '—'}</td>
+                            <td className="px-4 py-2.5 text-xs font-black text-emerald-400">${m.amount.toFixed(2)}</td>
+                            <td className="px-4 py-2.5 text-[10px] text-white/30 truncate max-w-[120px]">{m.entityId || '—'}</td>
+                            <td className="px-4 py-2.5 text-[9px] text-white/20 font-mono truncate max-w-[100px]">{m.businessId.slice(0, 8)}</td>
+                            <td className="px-4 py-2.5 text-[9px] text-white/20">
+                              {m.date?.toDate ? m.date.toDate().toLocaleDateString('es-VE') : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+              {/* Roadmap progress quick view */}
+              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/25">Progreso del Roadmap</p>
+                  <button onClick={() => setTopTab('roadmap')} className="text-[9px] text-indigo-400 font-bold hover:underline">Ver completo →</button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {ROADMAP_PHASES.map(phase => {
+                    const done = phase.items.filter((_, i) => roadmapData[`${phase.id}_${i}`]).length;
+                    const pct = Math.round((done / phase.items.length) * 100);
+                    return (
+                      <div key={phase.id} className={`rounded-xl border ${phase.border} ${phase.bg} p-3`}>
+                        <p className={`text-[9px] font-black ${phase.color} mb-1`}>{phase.title.split('—')[0]}</p>
+                        <div className="flex items-end gap-2">
+                          <p className={`text-2xl font-black ${phase.color}`}>{pct}%</p>
+                          <p className="text-[9px] text-white/20 mb-1">{done}/{phase.items.length}</p>
+                        </div>
+                        <div className="mt-2 rounded-full h-1 bg-white/[0.06] overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#4f46e5,#7c3aed)' }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>)}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
             TAB: NEGOCIOS
             ═══════════════════════════════════════════════════════════════════ */}
-        {topTab === 'negocios' && (
+        {topTab === 'negocios' && (<>
         <div className="flex-1 overflow-y-auto p-6 space-y-6 min-w-0">
 
           {/* Pending approval section */}
@@ -1949,8 +2376,7 @@ export default function SuperAdminPanel() {
             )}
           </div>
         )}
-      </div>
-        )} {/* end topTab === 'negocios' */}
+        </>)} {/* end topTab === 'negocios' */}
 
         {/* ═══════════════════════════════════════════════════════════════════
             TAB: ROADMAP / CRONOGRAMA
@@ -2291,6 +2717,36 @@ export default function SuperAdminPanel() {
                       </div>
                     )}
 
+                    {/* Grant bonus days */}
+                    <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400/60 mb-3">Otorgar dias gratis de prueba</p>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { days: 1, label: '+1 dia', desc: 'Feedback general' },
+                          { days: 3, label: '+3 dias', desc: 'Sugerencia util' },
+                          { days: 7, label: '+7 dias', desc: 'Bug importante' },
+                          { days: 14, label: '+14 dias', desc: 'Bug critico' },
+                        ].map(opt => (
+                          <button
+                            key={opt.days}
+                            onClick={() => {
+                              if (confirm(`Otorgar ${opt.label} a ${selectedFeedback.name || selectedFeedback.email || 'este usuario'}?\n\nMotivo: ${opt.desc}`)) {
+                                grantBonusDays(selectedFeedback, opt.days);
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-black text-emerald-400 hover:bg-emerald-500/20 transition-all"
+                          >
+                            <Gift size={11} /> {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      {(selectedFeedback as any).bonusDaysGranted && (
+                        <p className="text-[9px] text-emerald-400/40 mt-2">
+                          Ya se otorgaron +{(selectedFeedback as any).bonusDaysGranted} dias · por {(selectedFeedback as any).bonusGrantedBy}
+                        </p>
+                      )}
+                    </div>
+
                     {/* Admin note */}
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-widest text-white/20 mb-2">Nota interna del admin</p>
@@ -2326,6 +2782,102 @@ export default function SuperAdminPanel() {
                 <img src={lightboxImg} alt="Preview" className="max-w-full max-h-full rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} />
               </div>
             )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            TAB: IA ASISTENTE
+            ═══════════════════════════════════════════════════════════════════ */}
+        {topTab === 'ia' && (
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Chat header */}
+            <div className="px-6 py-4 border-b border-white/[0.07] flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-indigo-500/25 flex items-center justify-center">
+                <Brain size={18} className="text-indigo-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-white">Asistente IA — Dualis</h2>
+                <p className="text-[10px] text-white/25">Gemini 2.0 Flash · Datos en vivo del sistema · Preguntame lo que quieras</p>
+              </div>
+              {aiMessages.length > 0 && (
+                <button onClick={() => setAiMessages([])} className="ml-auto text-[9px] font-black uppercase tracking-widest text-white/20 hover:text-white/50 px-3 py-1.5 rounded-lg border border-white/[0.06] hover:bg-white/[0.04] transition-all">
+                  Limpiar chat
+                </button>
+              )}
+            </div>
+
+            {/* Chat messages */}
+            <div ref={aiChatRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+              {aiMessages.length === 0 && (
+                <div className="flex-1 flex items-center justify-center min-h-[400px]">
+                  <div className="text-center max-w-md">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 border border-indigo-500/20 flex items-center justify-center mx-auto mb-4">
+                      <Sparkles size={28} className="text-indigo-400/60" />
+                    </div>
+                    <h3 className="text-lg font-black text-white mb-2">Hola Jesus</h3>
+                    <p className="text-sm text-white/30 mb-6">Soy tu asistente IA. Tengo acceso a todos los datos del sistema en tiempo real. Preguntame cualquier cosa.</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        'Como va el sistema hoy?',
+                        'Cuantos negocios estan activos?',
+                        'Dame un resumen del revenue',
+                        'Que deberia priorizar ahora?',
+                        'Analiza el feedback pendiente',
+                        'Como puedo conseguir mas clientes?',
+                      ].map(q => (
+                        <button key={q} onClick={() => { setAiInput(q); }}
+                          className="px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-[10px] text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-all text-left">
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {aiMessages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-5 py-3.5 ${
+                    msg.role === 'user'
+                      ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
+                      : 'bg-white/[0.04] border border-white/[0.07] text-white/70'
+                  }`}>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                </div>
+              ))}
+
+              {aiLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-white/[0.04] border border-white/[0.07] rounded-2xl px-5 py-3.5 flex items-center gap-2">
+                    <Loader2 size={14} className="animate-spin text-indigo-400" />
+                    <span className="text-sm text-white/30">Pensando...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Chat input */}
+            <div className="px-6 py-4 border-t border-white/[0.07] bg-[#080d1b]">
+              <div className="flex gap-3">
+                <input
+                  value={aiInput}
+                  onChange={e => setAiInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiMessage(); } }}
+                  placeholder="Pregunta sobre tu sistema, datos, estrategia..."
+                  className="flex-1 px-5 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                />
+                <button
+                  onClick={sendAiMessage}
+                  disabled={!aiInput.trim() || aiLoading}
+                  className="px-5 py-3 rounded-xl text-sm font-black text-white transition-all hover:-translate-y-0.5 disabled:opacity-40 flex items-center gap-2"
+                  style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
+                >
+                  <Send size={14} />
+                </button>
+              </div>
+              <p className="text-[9px] text-white/15 mt-2 text-center">Gemini 2.0 Flash · Los datos se cargan en vivo desde Firestore · Requiere VITE_GEMINI_API_KEY</p>
+            </div>
           </div>
         )}
 

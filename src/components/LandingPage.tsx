@@ -11,6 +11,7 @@ import {
   HelpCircle, Webhook, Sliders, Brain, DollarSign, Receipt,
   ChevronDown, Banknote, Calculator, ClipboardList, Bell, X,
   Cpu, Fingerprint, MessageSquare, Play, Eye, Globe, Server,
+  ImageIcon, Loader2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getCountFromServer, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -1658,20 +1659,20 @@ export default function LandingPage() {
             {/* Badge incentivo */}
             <div className="absolute top-0 right-0 px-5 py-2 rounded-bl-2xl text-[9px] font-black uppercase tracking-widest text-emerald-400"
               style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.05))' }}>
-              +7 dias gratis por cada reporte
+              Gana dias gratis
             </div>
 
             <div className="grid md:grid-cols-[1fr,auto] gap-8 items-center">
               <div>
                 <h3 className="text-2xl font-black text-white mb-3">Ayudanos a mejorar Dualis</h3>
                 <p className="text-white/30 text-sm leading-relaxed mb-4">
-                  Dualis esta en desarrollo activo. Cada bug que reportes o idea que sugieras nos ayuda a construir un mejor sistema para todos.
+                  Dualis esta en desarrollo activo. Cada bug que reportes o idea que sugieras nos ayuda a construir un mejor sistema para todos. Si tu reporte es util, te regalamos dias extra de prueba.
                 </p>
                 <div className="flex flex-wrap gap-3 mb-6">
                   {[
-                    { label: 'Reporta un bug', reward: '+7 dias gratis', color: 'rose' },
-                    { label: 'Sugiere una funcion', reward: '+3 dias gratis', color: 'violet' },
-                    { label: 'Feedback general', reward: '+1 dia gratis', color: 'indigo' },
+                    { label: 'Reporta un bug', reward: 'hasta +7 dias', color: 'rose' },
+                    { label: 'Sugiere una funcion', reward: 'hasta +3 dias', color: 'violet' },
+                    { label: 'Feedback general', reward: 'hasta +1 dia', color: 'indigo' },
                   ].map(r => (
                     <div key={r.label} className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-${r.color}-500/[0.08] border border-${r.color}-500/20`}>
                       <span className={`text-[10px] font-black text-${r.color}-400`}>{r.label}</span>
@@ -1679,7 +1680,7 @@ export default function LandingPage() {
                     </div>
                   ))}
                 </div>
-                <p className="text-[10px] text-white/20">Los dias se acumulan en tu cuenta automaticamente al verificar el reporte.</p>
+                <p className="text-[10px] text-white/20">Los dias se otorgan manualmente despues de verificar que el reporte es util.</p>
               </div>
 
               <div className="flex flex-col gap-3">
@@ -1842,16 +1843,16 @@ export default function LandingPage() {
               <div className="text-center py-8">
                 <div className="text-4xl mb-3">{feedbackType === 'bug' ? '🐛' : feedbackType === 'idea' ? '💡' : '💬'}</div>
                 <p className="font-black text-white mb-1">Recibido!</p>
-                <p className="text-[11px] text-white/30">Tu feedback fue guardado y enviado por WhatsApp. Gracias por ayudar a mejorar Dualis.</p>
+                <p className="text-[11px] text-white/30">Tu feedback fue guardado y enviado. Gracias por ayudar a mejorar Dualis.</p>
                 <p className="text-[10px] text-indigo-400/60 mt-2 font-bold">
-                  {feedbackType === 'bug' ? '+7 dias de prueba gratis' : feedbackType === 'idea' ? '+3 dias de prueba gratis' : '+1 dia de prueba gratis'}
+                  Si tu reporte es util, recibiras dias gratis como agradecimiento
                 </p>
               </div>
             ) : (
               <>
                 {/* Type selector */}
                 <div className="flex gap-2 mb-4">
-                  {([['bug', '🐛 Bug', '+7 dias'], ['idea', '💡 Idea', '+3 dias'], ['otro', '💬 Otro', '+1 dia']] as const).map(([t, label, bonus]) => (
+                  {([['bug', '🐛 Bug', 'hasta +7 dias'], ['idea', '💡 Idea', 'hasta +3 dias'], ['otro', '💬 Otro', 'hasta +1 dia']] as const).map(([t, label, bonus]) => (
                     <button key={t} onClick={() => setFeedbackType(t)}
                       className={`flex-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
                         feedbackType === t ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-400' : 'bg-white/[0.04] border border-white/[0.07] text-white/30 hover:text-white/50'
@@ -1884,7 +1885,7 @@ export default function LandingPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <button onClick={() => feedbackFileRef.current?.click()}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-[9px] font-black uppercase tracking-widest text-white/30 hover:text-white/60 transition-all">
-                      <Image size={11} /> Adjuntar capturas
+                      <ImageIcon size={11} /> Adjuntar capturas
                     </button>
                     {feedbackImages.map((f, i) => (
                       <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
