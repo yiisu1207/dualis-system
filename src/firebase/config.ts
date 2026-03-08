@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
 export const firebaseConfig = {
   apiKey: 'AIzaSyDhogwFlgTEePSm0Mgda10lSDt-ljzauT4',
@@ -16,6 +16,14 @@ export const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
+// App Check — protege Firestore/Storage de bots y scrapers
+if (typeof window !== 'undefined') {
+  initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider('6LfVXYMsAAAAAPq77qq07ZlGH41rtDuDjCpNCAg-'),
+    isTokenAutoRefreshEnabled: true,
+  });
+}
+
 // Persistence con API moderna (multi-tab compatible)
 export const db = typeof window !== 'undefined'
   ? initializeFirestore(app, {
@@ -23,5 +31,3 @@ export const db = typeof window !== 'undefined'
       cache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     } as any)
   : getFirestore(app);
-
-export const storage = getStorage(app);
