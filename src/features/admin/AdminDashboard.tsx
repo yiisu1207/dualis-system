@@ -117,16 +117,16 @@ const KpiCard: React.FC<KpiCardProps> = ({
 }) => (
   <div
     onClick={onClick}
-    className={`bg-white/90 dark:bg-white/[0.04] backdrop-blur-sm border border-slate-100/80 dark:border-white/[0.07] rounded-3xl p-5 flex flex-col gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-50/60 dark:hover:shadow-black/30 hover:border-indigo-100/60 dark:hover:border-white/[0.14] ${onClick ? 'cursor-pointer' : ''}`}
+    className={`bg-white/90 dark:bg-white/[0.04] backdrop-blur-sm border border-slate-100/80 dark:border-white/[0.07] rounded-2xl md:rounded-3xl p-3 md:p-5 flex flex-col gap-2 md:gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-50/60 dark:hover:shadow-black/30 hover:border-indigo-100/60 dark:hover:border-white/[0.14] ${onClick ? 'cursor-pointer' : ''}`}
   >
     <div className="flex items-start justify-between gap-2">
-      <div className={`w-10 h-10 rounded-2xl ${iconBg} flex items-center justify-center shrink-0`}>
+      <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl md:rounded-2xl ${iconBg} flex items-center justify-center shrink-0 [&>svg]:w-[14px] [&>svg]:h-[14px] md:[&>svg]:w-[18px] md:[&>svg]:h-[18px]`}>
         {icon}
       </div>
-      <div className="flex flex-col items-end gap-1.5 min-w-0">
+      <div className="flex flex-col items-end gap-1 md:gap-1.5 min-w-0">
         {badge}
         {trend !== undefined && (
-          <div className={`flex items-center gap-0.5 text-[9px] font-black px-2 py-0.5 rounded-xl shrink-0 ${
+          <div className={`flex items-center gap-0.5 text-[8px] md:text-[9px] font-black px-1.5 md:px-2 py-0.5 rounded-xl shrink-0 ${
             trend >= 0
               ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
               : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400'
@@ -138,9 +138,9 @@ const KpiCard: React.FC<KpiCardProps> = ({
       </div>
     </div>
     <div>
-      <div className="font-syne font-bold text-[22px] text-slate-900 dark:text-white leading-none">{value}</div>
-      <div className="text-[11px] text-slate-400 dark:text-slate-500 font-medium mt-1.5">{label}</div>
-      <div className="font-mono text-[10px] text-slate-300 dark:text-slate-600 mt-1 uppercase tracking-wide truncate">{sub}</div>
+      <div className="font-syne font-bold text-[16px] md:text-[22px] text-slate-900 dark:text-white leading-none">{value}</div>
+      <div className="text-[10px] md:text-[11px] text-slate-400 dark:text-slate-500 font-medium mt-1 md:mt-1.5">{label}</div>
+      <div className="font-mono text-[9px] md:text-[10px] text-slate-300 dark:text-slate-600 mt-0.5 md:mt-1 uppercase tracking-wide truncate">{sub}</div>
     </div>
   </div>
 );
@@ -437,7 +437,7 @@ export default function AdminDashboard({
       {/* ── HEADER ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-syne font-bold text-[24px] text-slate-900 dark:text-white leading-tight">
+          <h1 className="font-syne font-bold text-[20px] md:text-[24px] text-slate-900 dark:text-white leading-tight">
             {greeting}, {userProfile?.displayName || 'Admin'}
           </h1>
           <p className="text-slate-400 dark:text-slate-500 text-[13px] font-medium mt-0.5">
@@ -486,7 +486,7 @@ export default function AdminDashboard({
       </div>
 
       {/* ── KPI GRID (6 tarjetas) ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
         <KpiCard
           icon={<DollarSign size={18} className="text-[#4f6ef7]" />}
           iconBg="bg-blue-50 dark:bg-blue-500/10"
@@ -575,7 +575,7 @@ export default function AdminDashboard({
             </button>
           </div>
 
-          <div className="p-6 flex-1 min-h-[260px]">
+          <div className="p-3 md:p-6 flex-1 min-h-[200px] md:min-h-[260px]">
             {areaData.every(d => d.Facturado === 0 && d.Cobrado === 0) ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-600 gap-3">
                 <div className="text-5xl">📭</div>

@@ -65,7 +65,7 @@ import {
   where,
   onSnapshot,
 } from 'firebase/firestore';
-import { Bell, HelpCircle, Lock, ArrowRight, Zap } from 'lucide-react';
+import { Bell, HelpCircle, Lock, ArrowRight, Zap, Menu } from 'lucide-react';
 import { logAudit } from './utils/auditLogger';
 import ModeToggle from './components/ModeToggle';
 import HelpPanel from './components/HelpPanel';
@@ -80,34 +80,45 @@ const Topbar: React.FC<{
   onToggleNotifications: () => void;
   onOpenCalculator: () => void;
   onOpenHelp: () => void;
+  onToggleSidebar: () => void;
   bcvRate: number;
-}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, bcvRate }) => (
-  <header className="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.08] px-7 flex items-center justify-between sticky top-0 z-50 transition-colors">
-    <div>
-      <div className="font-syne font-bold text-[17px] text-slate-900 dark:text-white leading-tight capitalize">{topbarTitle}</div>
-      <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5">
-        <span>Dualis System</span>
-        <span className="text-slate-200 dark:text-white/10">/</span>
-        <span className="text-slate-500 dark:text-slate-400 capitalize">{topbarTitle.toLowerCase()}</span>
+}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, onToggleSidebar, bcvRate }) => (
+  <header className="h-14 md:h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.08] px-3 md:px-7 flex items-center justify-between sticky top-0 z-50 transition-colors">
+    <div className="flex items-center gap-2 md:gap-3 min-w-0">
+      {/* Hamburger menu — mobile only */}
+      <button
+        onClick={onToggleSidebar}
+        className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-white/[0.07] border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-300 lg:hidden shrink-0"
+      >
+        <Menu size={18} />
+      </button>
+
+      <div className="min-w-0">
+        <div className="font-syne font-bold text-[15px] md:text-[17px] text-slate-900 dark:text-white leading-tight capitalize truncate">{topbarTitle}</div>
+        <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5">
+          <span>Dualis System</span>
+          <span className="text-slate-200 dark:text-white/10">/</span>
+          <span className="text-slate-500 dark:text-slate-400 capitalize">{topbarTitle.toLowerCase()}</span>
+        </div>
       </div>
     </div>
 
-    <div className="flex items-center gap-3">
-      <div className="flex items-center gap-3 bg-slate-50 dark:bg-white/[0.05] border border-slate-200/60 dark:border-white/10 rounded-xl px-4 py-1.5">
-        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+    <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
+      <div className="flex items-center gap-2 md:gap-3 bg-slate-50 dark:bg-white/[0.05] border border-slate-200/60 dark:border-white/10 rounded-xl px-2.5 md:px-4 py-1.5">
+        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse hidden sm:block" />
         <div className="flex flex-col">
-          <span className="text-[10px] font-black uppercase tracking-tighter text-slate-400 dark:text-slate-500 leading-none">BCV</span>
-          <span className="text-[13px] font-mono font-bold text-amber-600 dark:text-amber-400">Bs. {bcvRate.toFixed(2)}</span>
+          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-tighter text-slate-400 dark:text-slate-500 leading-none">BCV</span>
+          <span className="text-[12px] md:text-[13px] font-mono font-bold text-amber-600 dark:text-amber-400">Bs. {bcvRate.toFixed(2)}</span>
         </div>
       </div>
 
-      <div className="w-px h-8 bg-slate-100 dark:bg-white/[0.08] mx-1" />
+      <div className="w-px h-8 bg-slate-100 dark:bg-white/[0.08] mx-0.5 md:mx-1 hidden sm:block" />
 
-      <ModeToggle />
+      <span className="hidden sm:block"><ModeToggle /></span>
 
       <button
         onClick={onToggleNotifications}
-        className={`relative w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${
+        className={`relative w-9 h-9 md:w-10 md:h-10 rounded-xl border flex items-center justify-center transition-all ${
           showNotifications
             ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30 text-[#4f6ef7]'
             : 'bg-slate-50 dark:bg-white/[0.05] border-slate-100 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-white/10 hover:border-blue-200 hover:text-blue-600'
@@ -123,7 +134,7 @@ const Topbar: React.FC<{
 
       <button
         onClick={onOpenCalculator}
-        className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-white/[0.05] border border-slate-100 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-white/10 hover:border-blue-200 hover:text-blue-600 transition-all font-mono text-sm font-bold"
+        className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-slate-50 dark:bg-white/[0.05] border border-slate-100 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-white/10 hover:border-blue-200 hover:text-blue-600 transition-all font-mono text-sm font-bold hidden sm:flex"
       >
         =
       </button>
@@ -131,7 +142,7 @@ const Topbar: React.FC<{
       <button
         onClick={onOpenHelp}
         title="Ayuda y tutoriales"
-        className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-white/[0.05] border border-slate-100 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-white/10 hover:border-violet-300 hover:text-violet-500 transition-all"
+        className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-slate-50 dark:bg-white/[0.05] border border-slate-100 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-white/10 hover:border-violet-300 hover:text-violet-500 transition-all hidden sm:flex"
       >
         <HelpCircle size={16} />
       </button>
@@ -560,10 +571,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           onToggleNotifications={() => setShowNotifications(p => !p)}
           onOpenCalculator={() => widgetManager.openWidget('calculator')}
           onOpenHelp={() => setHelpOpen(true)}
+          onToggleSidebar={() => setIsSidebarOpen(p => !p)}
           bcvRate={rates.tasaBCV}
         />
 
-        <main className="flex-1 overflow-y-auto p-8 relative custom-scroll">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-8 relative custom-scroll">
           <div className="max-w-[1440px] mx-auto h-full">
             {/* Custom extra tabs from registry — rendered before standard tabs */}
             {customization.extraTabs?.map(tab =>
@@ -691,15 +703,15 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           </div>
         </main>
 
-        {/* STATUS BAR */}
-        <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-white/[0.06] px-7 flex flex-col shrink-0">
+        {/* STATUS BAR — hidden on mobile to save space */}
+        <footer className="hidden md:block bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-white/[0.06] px-4 lg:px-7 shrink-0">
           <div className="h-10 flex items-center justify-between font-mono text-[10px] text-slate-400 dark:text-slate-600">
             <div className="flex items-center gap-5">
               <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>Firebase Live</span></div>
               <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span>{user?.role || 'pending'}</span></div>
               <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-500" /><span>{userProfile?.businessId?.slice(0, 12) || 'N/A'}</span></div>
             </div>
-            <span>Dualis ERP v3.0.0-beta · <span className="text-amber-500/70">No homologado SENIAT</span> · Solo uso administrativo</span>
+            <span className="hidden lg:inline">Dualis ERP v3.0.0-beta · <span className="text-amber-500/70">No homologado SENIAT</span> · Solo uso administrativo</span>
           </div>
         </footer>
 

@@ -885,13 +885,13 @@ export default function Inventario() {
                 <table className="w-full text-left">
                   <thead className="bg-slate-50/50 dark:bg-white/[0.02] text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 border-b border-slate-100 dark:border-white/[0.07]">
                     <tr>
-                      <th className="px-5 py-3.5">Producto / SKU</th>
-                      <th className="px-5 py-3.5">Categoría</th>
-                      <th className="px-5 py-3.5 text-right">Costo Base</th>
-                      <th className="px-5 py-3.5 text-right">Precio Detal</th>
-                      <th className="px-5 py-3.5 text-right">Precio Mayor</th>
-                      <th className="px-5 py-3.5 text-center">Stock Real</th>
-                      <th className="px-5 py-3.5 text-right">Control</th>
+                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5">Producto / SKU</th>
+                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 hidden sm:table-cell">Categoría</th>
+                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right hidden md:table-cell">Costo Base</th>
+                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right">Precio Detal</th>
+                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right hidden md:table-cell">Precio Mayor</th>
+                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-center">Stock Real</th>
+                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right">Control</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
@@ -1180,7 +1180,7 @@ export default function Inventario() {
             <form onSubmit={e => e.preventDefault()} className="p-5 space-y-4 max-h-[75vh] overflow-y-auto custom-scroll">
 
               {/* ── ROW 1: CÓDIGO + NOMBRE ── */}
-              <div className="grid grid-cols-[1fr_1.6fr] gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_1.6fr] gap-3">
                 <div>
                   <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Código / SKU</label>
                   <div className="relative">
@@ -1263,7 +1263,7 @@ export default function Inventario() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Costo ($)</label>
                     <input type="number" step="0.01" min="0" value={form.costoUSD || ''}
@@ -1391,7 +1391,7 @@ export default function Inventario() {
 
               {(!quickMode || editingId || showAdvanced) && (
                 <div className="space-y-3 border-t border-slate-100 dark:border-white/[0.07] pt-4">
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Marca</label>
                       <input value={form.marca} onChange={e => setForm(f => ({ ...f, marca: e.target.value }))} placeholder="Nike, Sony..."

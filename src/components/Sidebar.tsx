@@ -217,9 +217,9 @@ const Sidebar: React.FC<SidebarProps> = ({
       <aside
         className={`
           fixed lg:static top-0 left-0 h-full z-50 flex flex-col overflow-hidden
-          transition-[width] duration-300 ease-in-out
+          transition-all duration-300 ease-in-out
           lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-          ${collapsed ? 'w-[72px]' : 'w-[220px]'}
+          w-[260px] sm:w-[240px] ${collapsed ? 'lg:w-[72px]' : 'lg:w-[220px]'}
           bg-[#070b14] relative
         `}
       >
@@ -235,7 +235,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div
           className={`
             relative z-10 flex items-center border-b border-white/[0.06] shrink-0 h-[60px]
-            ${collapsed ? 'justify-center px-0' : 'px-4 justify-between'}
+            ${collapsed ? 'lg:justify-center lg:px-0 px-4 justify-between' : 'px-4 justify-between'}
           `}
         >
           <div className="flex items-center gap-3 min-w-0">
@@ -268,7 +268,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         <nav
           className={`
             relative z-10 flex-1 overflow-y-auto custom-scroll py-3
-            ${collapsed ? 'flex flex-col items-center px-2.5' : 'px-2'}
+            ${collapsed ? 'lg:flex lg:flex-col lg:items-center lg:px-2.5 px-2' : 'px-2'}
           `}
         >
           {NAV_GROUPS.map((group, gi) => {
@@ -302,7 +302,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       className={`
                         relative group flex items-center rounded-xl transition-all duration-200 shrink-0
                         ${collapsed
-                          ? 'w-11 h-11 justify-center my-0.5'
+                          ? 'lg:w-11 lg:h-11 lg:justify-center lg:my-0.5 gap-2.5 px-2.5 py-2 w-full mb-0.5'
                           : 'gap-2.5 px-2.5 py-2 w-full mb-0.5'
                         }
                         ${isActive
@@ -322,17 +322,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                         className="relative z-10 shrink-0"
                       />
 
-                      {/* Label (expanded) */}
-                      {!collapsed && (
-                        <span
-                          className={`text-[12px] font-medium tracking-tight truncate relative z-10 transition-colors ${isActive ? 'text-white' : ''}`}
-                        >
-                          {item.label}
-                        </span>
-                      )}
+                      {/* Label — always visible on mobile, hidden when collapsed on lg */}
+                      <span
+                        className={`text-[12px] font-medium tracking-tight truncate relative z-10 transition-colors ${collapsed ? 'lg:hidden' : ''} ${isActive ? 'text-white' : ''}`}
+                      >
+                        {item.label}
+                      </span>
 
-                      {/* Tooltip (collapsed) */}
-                      {collapsed && <Tip>{item.label}</Tip>}
+                      {/* Tooltip (collapsed on desktop only) */}
+                      {collapsed && <span className="hidden lg:block"><Tip>{item.label}</Tip></span>}
                     </NavLink>
                   );
                 })}

@@ -405,7 +405,7 @@ const Configuracion: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] flex flex-col font-inter">
       {/* HEADER */}
-      <header className="h-16 bg-white dark:bg-[#0d1424] border-b border-slate-200 dark:border-white/[0.07] px-6 flex items-center justify-between shrink-0 z-20 shadow-sm shadow-black/5">
+      <header className="h-16 bg-white dark:bg-[#0d1424] border-b border-slate-200 dark:border-white/[0.07] px-4 md:px-6 flex items-center justify-between shrink-0 z-20 shadow-sm shadow-black/5">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate(-1)}
@@ -430,9 +430,29 @@ const Configuracion: React.FC = () => {
         </button>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* ASIDE */}
-        <aside className="w-60 border-r border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] p-4 overflow-y-auto custom-scroll">
+      <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
+        {/* MOBILE HORIZONTAL TAB BAR */}
+        <div className="sm:hidden border-b border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] overflow-x-auto custom-scroll shrink-0">
+          <nav className="flex gap-1 p-2 min-w-max">
+            {menuItems.map(item => (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id as SectionType)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all whitespace-nowrap ${
+                  activeSection === item.id
+                    ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/20'
+                    : 'text-slate-400 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.06] hover:text-slate-600 dark:hover:text-white'
+                }`}
+              >
+                <item.icon size={14} className={activeSection === item.id ? 'text-indigo-200' : 'text-slate-300 dark:text-white/30'} />
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {/* DESKTOP ASIDE */}
+        <aside className="hidden sm:block w-60 border-r border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] p-4 overflow-y-auto custom-scroll">
           <nav className="space-y-1">
             {menuItems.map(item => (
               <button
@@ -461,7 +481,7 @@ const Configuracion: React.FC = () => {
         </aside>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 p-6 overflow-y-auto custom-scroll bg-slate-50 dark:bg-[#070b14]">
+        <main className="flex-1 p-4 md:p-6 overflow-y-auto custom-scroll bg-slate-50 dark:bg-[#070b14]">
           <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-right-6 duration-700">
 
             {/* IDENTIDAD */}

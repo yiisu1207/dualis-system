@@ -10,7 +10,7 @@ import {
   Monitor, Lock, Unlock, Plus, Store, Factory, Calculator, Receipt,
   Activity, X, ExternalLink, Loader2, Save, Download,
   Calendar, User, Eye, Copy, CheckCircle2, BarChart3,
-  AlertTriangle,
+  AlertTriangle, Share2, MessageCircle, Shield,
 } from 'lucide-react';
 
 import { useToast } from '../context/ToastContext';
@@ -27,6 +27,7 @@ interface Terminal {
   cajeroNombre: string;
   apertura?: string;
   cierreAt?: string;
+  sessionToken?: string;
 }
 
 // ─── DATE HELPERS ─────────────────────────────────────────────────────────────
@@ -221,6 +222,8 @@ export default function AdminPosManager() {
     if (!selectedForOpen || !cashierName.trim() || !businessId) return;
     setIsOpeningShift(true);
     try {
+      // Generar token de sesión único para modo kiosco
+      const token = crypto.randomUUID();
       const ref = doc(db, `businesses/${businessId}/terminals`, selectedForOpen.id);
       await updateDoc(ref, {
         estado: 'abierta',
@@ -229,6 +232,7 @@ export default function AdminPosManager() {
         totalFacturado: 0,
         movimientos: 0,
         cierreAt: null,
+        sessionToken: token,
       });
       // Save cashier name for autocomplete
       const name = cashierName.trim();
@@ -238,7 +242,8 @@ export default function AdminPosManager() {
         localStorage.setItem('dualis_cashiers', JSON.stringify(updated));
       }
       setOpenShiftModal(false);
-      const newTab = window.open(`/${businessId}/pos/${selectedForOpen.tipo}?cajaId=${selectedForOpen.id}`, '_blank');
+      const kioskUrl = `/${businessId}/pos/${selectedForOpen.tipo}?cajaId=${selectedForOpen.id}&token=${token}`;
+      const newTab = window.open(kioskUrl, '_blank');
       if (!newTab) {
         warning('El navegador bloqueó la pestaña. Permite popups para este sitio e intenta de nuevo.');
       }
@@ -249,7 +254,8 @@ export default function AdminPosManager() {
   };
 
   const handleEnterTerminal = (terminal: Terminal) => {
-    const newTab = window.open(`/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}`, '_blank');
+    const tokenParam = terminal.sessionToken ? `&token=${terminal.sessionToken}` : '';
+    const newTab = window.open(`/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}${tokenParam}`, '_blank');
     if (!newTab) warning('El navegador bloqueó la pestaña. Permite popups para este sitio.');
   };
 
@@ -286,12 +292,22 @@ export default function AdminPosManager() {
     success('Turno cerrado correctamente');
   };
 
+  const getKioskUrl = (terminal: Terminal) => {
+    const tokenParam = terminal.sessionToken ? `&token=${terminal.sessionToken}` : '';
+    return `${window.location.origin}/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}${tokenParam}`;
+  };
+
   const handleCopyUrl = (terminal: Terminal) => {
-    const url = `${window.location.origin}/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}`;
-    navigator.clipboard.writeText(url).then(() => {
+    navigator.clipboard.writeText(getKioskUrl(terminal)).then(() => {
       setCopied(terminal.id);
       setTimeout(() => setCopied(null), 2500);
     });
+  };
+
+  const handleShareWhatsApp = (terminal: Terminal) => {
+    const url = getKioskUrl(terminal);
+    const text = encodeURIComponent(`Enlace POS Kiosco - ${terminal.nombre}\n\nAbre este enlace en el dispositivo de la caja:\n${url}\n\nEste enlace es seguro y solo permite acceso al punto de venta.`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
   const handleExportExcel = async () => {
@@ -476,17 +492,31 @@ export default function AdminPosManager() {
                     </div>
                   </div>
 
-                  {/* URL copy */}
+                  {/* Kiosk link + share */}
                   {isOpen && (
-                    <button onClick={() => handleCopyUrl(t)}
-                      className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-white/[0.03] border border-dashed border-slate-200 dark:border-white/[0.08] rounded-xl text-[9px] font-bold text-slate-400 dark:text-slate-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-500/30 transition-all">
-                      <span className="font-mono text-[8px] truncate flex-1 mr-2 text-left">
-                        .../{t.tipo}?cajaId={t.id.slice(0, 10)}...
-                      </span>
-                      {copied === t.id
-                        ? <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />
-                        : <Copy size={12} className="shrink-0" />}
-                    </button>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-lg">
+                        <Shield size={10} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span className="text-[8px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Enlace kiosco seguro</span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => handleCopyUrl(t)}
+                          className="flex-1 flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-white/[0.03] border border-dashed border-slate-200 dark:border-white/[0.08] rounded-xl text-[9px] font-bold text-slate-400 dark:text-slate-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-500/30 transition-all">
+                          <span className="font-mono text-[8px] truncate flex-1 mr-2 text-left">
+                            Copiar enlace kiosco
+                          </span>
+                          {copied === t.id
+                            ? <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />
+                            : <Copy size={12} className="shrink-0" />}
+                        </button>
+                        <button onClick={() => handleShareWhatsApp(t)}
+                          className="h-[34px] w-[34px] rounded-xl flex items-center justify-center text-white shrink-0 hover:opacity-80 transition-all"
+                          style={{ background: '#25d366' }}
+                          title="Enviar enlace por WhatsApp">
+                          <MessageCircle size={14} />
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
 

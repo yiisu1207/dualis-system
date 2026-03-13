@@ -176,7 +176,7 @@ export default function ArqueoModal({ terminal, movements, businessId, currentUs
         createdAt:        serverTimestamp(),
       });
 
-      // Close the terminal
+      // Close the terminal — invalidate kiosk session token
       await updateDoc(doc(db, 'businesses', businessId, 'terminals', terminal.id), {
         estado:        'cerrada',
         cajeroNombre:  'Sin asignar',
@@ -184,6 +184,7 @@ export default function ArqueoModal({ terminal, movements, businessId, currentUs
         cierreAt:      cierre,
         totalFacturado: 0,
         movimientos:    0,
+        sessionToken:   null,
       });
 
       // Print Z report

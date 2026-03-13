@@ -216,7 +216,7 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
           )}
 
           {/* Net pay box */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/[0.08] border border-emerald-100 dark:border-emerald-500/20">
               <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1">Neto a Recibir USD</p>
               <p className="text-xl font-black text-emerald-700 dark:text-emerald-300">${fmtHR(Math.max(0,pSalUSD-pendingUSD))}</p>
@@ -231,7 +231,7 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
           </div>
 
           {/* Info chips */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {[
               { l:'Cédula', v: emp.cedula||'—' },
               { l:'Teléfono', v: emp.phone||'—' },
@@ -293,7 +293,7 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
           {/* Add voucher */}
           <form onSubmit={submitVoucher} className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-500/[0.07] border border-indigo-100 dark:border-indigo-500/20 space-y-2.5">
             <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Registrar Vale</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <select value={vForm.currency} onChange={e=>setVForm(f=>({...f,currency:e.target.value as any}))} className={inp}>
                 <option value="USD">USD ($)</option>
                 <option value="BS">Bs (BCV)</option>
@@ -318,7 +318,7 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
           </button>
           {showLoan && (
             <form onSubmit={submitLoan} className="p-4 rounded-xl bg-amber-50 dark:bg-amber-500/[0.07] border border-amber-100 dark:border-amber-500/20 space-y-2.5">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 ml-1 block mb-1">Moneda</label>
                   <select value={lForm.currency} onChange={e=>setLForm(f=>({...f,currency:e.target.value as any}))} className={inp}>
@@ -744,10 +744,10 @@ export default function RecursosHumanos() {
                   <table className="w-full text-left">
                     <thead>
                       <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
-                        <th className="px-5 py-3.5">Empleado</th><th className="px-5 py-3.5">Depto.</th>
-                        <th className="px-5 py-3.5 text-center">Estado</th><th className="px-5 py-3.5 text-center">Frecuencia</th>
-                        <th className="px-5 py-3.5 text-center">Salario</th><th className="px-5 py-3.5 text-center">Vales Pend.</th>
-                        <th className="px-5 py-3.5 text-right">Acción</th>
+                        <th className="px-2.5 py-2 sm:px-5 sm:py-3.5">Empleado</th><th className="px-2.5 py-2 sm:px-5 sm:py-3.5">Depto.</th>
+                        <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-center">Estado</th><th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-center">Frecuencia</th>
+                        <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-center">Salario</th><th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-center">Vales Pend.</th>
+                        <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right">Acción</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
@@ -810,7 +810,7 @@ export default function RecursosHumanos() {
                   {currentRate>0&&<span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase rounded-full border border-indigo-100 dark:border-indigo-500/25">Tasa: Bs {fmtHR(currentRate)}</span>}
                 </div>
                 {/* Quick form */}
-                <form onSubmit={handleQuickVoucher} className="grid grid-cols-1 md:grid-cols-5 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
+                <form onSubmit={handleQuickVoucher} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
                     <select required value={qv.empId} onChange={e=>setQv(f=>({...f,empId:e.target.value}))}

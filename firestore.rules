@@ -59,6 +59,12 @@ service cloud.firestore {
     // RAMA DE NEGOCIO (Contenedor central)
     match /businesses/{bid} {
       allow read, write: if isSuperAdmin();
+      // Permitir get (lectura por ID exacto) a cualquiera.
+      // El businessId es un secreto criptográfico de 32 chars (key_XXX),
+      // así que conocerlo equivale a haber sido invitado.
+      // Esto permite validar workspace code durante registro (join mode)
+      // antes de que el usuario esté autenticado.
+      allow get: if true;
       allow read: if isMember(bid);
       // Permite crear el negocio si el usuario autenticado es el ownerId del documento (registro inicial)
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
