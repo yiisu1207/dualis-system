@@ -37,11 +37,12 @@ interface SaleHistoryPanelProps {
   cajaId: string | null;
   vendedorId?: string;
   accentColor?: string;  // 'slate' | 'violet'
+  readOnly?: boolean;     // hides amounts & anulacion for employees
   onClose: () => void;
 }
 
 const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
-  tenantId, cajaId, vendedorId, accentColor = 'slate', onClose,
+  tenantId, cajaId, vendedorId, accentColor = 'slate', readOnly = false, onClose,
 }) => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -189,25 +190,31 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
                     )}
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-black text-slate-900 dark:text-white">${sale.amountInUSD?.toFixed(2)}</p>
-                    {!sale.anulada && (
-                      <span className="mt-1.5 inline-flex items-center gap-1">
-                        <button
-                          disabled={anulando === sale.id}
-                          onClick={() => handleAnular(sale)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-[9px] font-black uppercase transition-all disabled:opacity-50"
-                        >
-                          {anulando === sale.id
-                            ? <Loader2 size={10} className="animate-spin" />
-                            : <RotateCcw size={10} />}
-                          Anular
-                        </button>
-                        <HelpTooltip
-                          title="Anular Venta"
-                          text="Cancela esta venta y crea un abono de reverso en el sistema. También restaura el stock de los productos vendidos. Esta acción no puede deshacerse."
-                          side="left"
-                        />
-                      </span>
+                    {readOnly ? (
+                      <p className="text-sm font-black text-slate-400 dark:text-slate-500">***</p>
+                    ) : (
+                      <>
+                        <p className="text-sm font-black text-slate-900 dark:text-white">${sale.amountInUSD?.toFixed(2)}</p>
+                        {!sale.anulada && (
+                          <span className="mt-1.5 inline-flex items-center gap-1">
+                            <button
+                              disabled={anulando === sale.id}
+                              onClick={() => handleAnular(sale)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-[9px] font-black uppercase transition-all disabled:opacity-50"
+                            >
+                              {anulando === sale.id
+                                ? <Loader2 size={10} className="animate-spin" />
+                                : <RotateCcw size={10} />}
+                              Anular
+                            </button>
+                            <HelpTooltip
+                              title="Anular Venta"
+                              text="Cancela esta venta y crea un abono de reverso en el sistema. También restaura el stock de los productos vendidos. Esta acción no puede deshacerse."
+                              side="left"
+                            />
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

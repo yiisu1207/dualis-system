@@ -26,7 +26,7 @@ import {
 import { uploadToCloudinary } from '../utils/cloudinary';
 import { GoogleGenAI } from '@google/genai';
 import {
-  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  getAuth, createUserWithEmailAndPassword,
 } from 'firebase/auth';
 import { initializeApp, getApps } from 'firebase/app';
 import { db, firebaseConfig } from '../firebase/config';
@@ -34,9 +34,6 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
 // ─── Config — leído desde .env.local (nunca hardcodeado) ─────────────────────
-const SUPER_ADMIN_EMAILS: string[] = [
-  import.meta.env.VITE_SUPER_ADMIN_EMAIL ?? '',
-].filter(Boolean);
 const ADMIN_PIN: string = import.meta.env.VITE_SUPER_ADMIN_PIN ?? '';
 
 // ─── Preset promos ─────────────────────────────────────────────────────────────
@@ -272,93 +269,15 @@ function PinGate({ onAuth }: { onAuth: () => void }) {
   );
 }
 
-// ─── Admin Login Gate ─────────────────────────────────────────────────────────
-function AdminLoginGate() {
-  const [email, setEmail]   = useState(import.meta.env.VITE_SUPER_ADMIN_EMAIL ?? '');
-  const [pass, setPass]     = useState('');
-  const [show, setShow]     = useState(false);
-  const [err, setErr]       = useState('');
-  const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
 
-  const submit = async () => {
-    setErr('');
-    setLoading(true);
-    try {
-      await signInWithEmailAndPassword(getAuth(), email, pass);
-      // Auth state updates → emailAuth recalculates → panel opens
-    } catch (e: any) {
-      const code = e?.code ?? '';
-      if (code.includes('wrong-password') || code.includes('invalid-credential')) setErr('Contraseña incorrecta');
-      else if (code.includes('user-not-found')) setErr('Email no encontrado');
-      else if (code.includes('too-many-requests')) setErr('Demasiados intentos. Espera unos minutos.');
-      else setErr('Error al iniciar sesión');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-[#070b14] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-10">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center mb-4">
-            <Shield size={26} className="text-indigo-400" />
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Panel Operaciones</h1>
-          <p className="text-white/25 text-sm mt-1">Autenticación requerida</p>
-        </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6 space-y-4">
-          <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Email admin</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-white placeholder:text-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Contraseña</label>
-            <div className="relative">
-              <input
-                type={show ? 'text' : 'password'}
-                value={pass}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPass(e.target.value)}
-                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && submit()}
-                placeholder="••••••••••"
-                className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-white placeholder:text-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 pr-12"
-              />
-              <button onClick={() => setShow((s: boolean) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/60 transition-colors">
-                {show ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </div>
-          {err && <p className="text-xs text-rose-400 font-bold text-center">{err}</p>}
-          <button
-            onClick={submit}
-            disabled={loading || !email || !pass}
-            className="w-full py-3 rounded-xl text-sm font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
-          >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : null}
-            Iniciar sesión
-          </button>
-        </div>
-        <button onClick={() => navigate(-1)} className="w-full mt-4 text-center text-xs text-white/15 hover:text-white/40 transition-colors">← Volver</button>
-      </div>
-    </div>
-  );
-}
 
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 export default function SuperAdminPanel() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Auth layers
+  // Auth — PIN-only (no Firebase Auth to avoid killing user sessions)
   const [pinAuth, setPinAuth] = useState(() => sessionStorage.getItem('dualis_op_auth') === '1');
-  const emailAuth = !!user?.email && SUPER_ADMIN_EMAILS.includes(user.email);
 
   // Top-level tab
   const [topTab, setTopTab] = useState<TopTab>('dashboard');
@@ -454,16 +373,16 @@ export default function SuperAdminPanel() {
 
   // Load roadmap progress from Firestore
   useEffect(() => {
-    if (!pinAuth || !emailAuth) return;
+    if (!pinAuth) return;
     const unsub = onSnapshot(doc(db, 'system', 'roadmap'), snap => {
       if (snap.exists()) setRoadmapData(snap.data()?.items ?? {});
     });
     return unsub;
-  }, [pinAuth, emailAuth]);
+  }, [pinAuth]);
 
   // Load feedback from Firestore
   useEffect(() => {
-    if (!pinAuth || !emailAuth) return;
+    if (!pinAuth) return;
     setFeedbackLoading(true);
     const q = query(collection(db, 'feedback'), orderBy('createdAt', 'desc'), firestoreLimit(200));
     const unsub = onSnapshot(q, snap => {
@@ -471,11 +390,11 @@ export default function SuperAdminPanel() {
       setFeedbackLoading(false);
     }, () => setFeedbackLoading(false));
     return unsub;
-  }, [pinAuth, emailAuth]);
+  }, [pinAuth]);
 
   // Load dashboard analytics
   useEffect(() => {
-    if (!pinAuth || !emailAuth || topTab !== 'dashboard') return;
+    if (!pinAuth || topTab !== 'dashboard') return;
     setDashLoading(true);
     const loadDash = async () => {
       try {
@@ -542,7 +461,7 @@ export default function SuperAdminPanel() {
       setDashLoading(false);
     };
     loadDash();
-  }, [pinAuth, emailAuth, topTab]);
+  }, [pinAuth, topTab]);
 
   // AI chat handler
   const sendAiMessage = async () => {
@@ -690,7 +609,15 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
       newEnd.setDate(newEnd.getDate() + days);
 
       const field = bizData.subscription?.status === 'trial' ? 'subscription.trialEndsAt' : 'subscription.currentPeriodEnd';
-      await updateDoc(doc(db, 'businesses', businessId), { [field]: newEnd });
+      await updateDoc(doc(db, 'businesses', businessId), {
+        [field]: newEnd,
+        'subscription.bonusNotification': {
+          days,
+          grantedAt: new Date().toISOString(),
+          reason: fb.message?.slice(0, 100) || 'Feedback útil',
+          seen: false,
+        },
+      });
 
       // Mark on feedback
       await updateDoc(doc(db, 'feedback', fb.id), {
@@ -710,7 +637,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
 
   // Load pending approval users
   useEffect(() => {
-    if (!pinAuth || !emailAuth) return;
+    if (!pinAuth) return;
     const unsub = onSnapshot(
       query(collection(db, 'users'), where('status', '==', 'PENDING_APPROVAL')),
       snap => {
@@ -730,7 +657,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
       }
     );
     return unsub;
-  }, [pinAuth, emailAuth]);
+  }, [pinAuth]);
 
   const handleActivateUser = async (uid: string) => {
     setPendingUsers(prev => prev.map(u => u.uid === uid ? { ...u, activating: true } : u));
@@ -744,7 +671,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
 
   // Load all businesses
   useEffect(() => {
-    if (!pinAuth || !emailAuth) return;
+    if (!pinAuth) return;
     const unsub = onSnapshot(
       collection(db, 'businesses'),
       async snap => {
@@ -780,7 +707,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
       () => setLoading(false)
     );
     return unsub;
-  }, [pinAuth, emailAuth]);
+  }, [pinAuth]);
 
   // Sync form when selected business changes
   useEffect(() => {
@@ -1150,9 +1077,8 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
     setPromoDesc(p.description);
   };
 
-  if (!pinAuth || !emailAuth) {
-    if (!pinAuth) return <PinGate onAuth={() => setPinAuth(true)} />;
-    return <AdminLoginGate />;
+  if (!pinAuth) {
+    return <PinGate onAuth={() => setPinAuth(true)} />;
   }
 
   return (

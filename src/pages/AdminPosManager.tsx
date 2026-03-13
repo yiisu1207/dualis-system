@@ -121,6 +121,11 @@ export default function AdminPosManager() {
   const [isOpeningShift, setIsOpeningShift] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
+  // Saved cashier names
+  const [savedCashiers, setSavedCashiers] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('dualis_cashiers') || '[]'); } catch { return []; }
+  });
+
   // Arqueo modal
   const [arqueoTerminal, setArqueoTerminal] = useState<Terminal | null>(null);
   const [arqueoMovements, setArqueoMovements] = useState<any[]>([]);
@@ -225,6 +230,13 @@ export default function AdminPosManager() {
         movimientos: 0,
         cierreAt: null,
       });
+      // Save cashier name for autocomplete
+      const name = cashierName.trim();
+      if (!savedCashiers.includes(name)) {
+        const updated = [name, ...savedCashiers].slice(0, 20);
+        setSavedCashiers(updated);
+        localStorage.setItem('dualis_cashiers', JSON.stringify(updated));
+      }
       setOpenShiftModal(false);
       const newTab = window.open(`/${businessId}/pos/${selectedForOpen.tipo}?cajaId=${selectedForOpen.id}`, '_blank');
       if (!newTab) {
@@ -552,9 +564,23 @@ export default function AdminPosManager() {
                   value={cashierName}
                   onChange={e => setCashierName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleConfirmOpenShift()}
-                  placeholder="Ej. María González"
+                  placeholder="Ej. Maria Gonzalez"
                   className="w-full px-4 py-3.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/20 focus:ring-2 focus:ring-slate-900 dark:focus:ring-white/20 outline-none transition-all"
                 />
+                {savedCashiers.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {savedCashiers.filter(n => !cashierName || n.toLowerCase().includes(cashierName.toLowerCase())).slice(0, 6).map(name => (
+                      <button key={name} type="button" onClick={() => setCashierName(name)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all border ${
+                          cashierName === name
+                            ? 'bg-indigo-600 border-indigo-500 text-white'
+                            : 'border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                        }`}>
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3">

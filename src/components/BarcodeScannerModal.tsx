@@ -61,29 +61,38 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ onScan, onClo
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
       <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        {/* Header — z-50 to stay above scanner video element */}
+        <div className="relative z-50 flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center">
               <Camera size={16} />
             </div>
             <div>
-              <p className="text-[13px] font-black text-slate-900">Escáner de Cámara</p>
+              <p className="text-[13px] font-black text-slate-900">Escaner de Camara</p>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                {status === 'starting' ? 'Iniciando...' : status === 'scanning' ? 'Apunta al código' : 'Error'}
+                {status === 'starting' ? 'Iniciando...' : status === 'scanning' ? 'Apunta al codigo' : 'Error'}
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={handleClose}
-            className="h-9 w-9 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-all"
+            className="relative z-50 h-10 w-10 rounded-xl bg-red-100 text-red-600 hover:bg-red-200 flex items-center justify-center transition-all cursor-pointer"
           >
-            <X size={16} />
+            <X size={18} strokeWidth={3} />
           </button>
         </div>
 
         {/* Scanner area */}
         <div className="relative bg-slate-950">
+          {/* Floating close button over video */}
+          <button
+            type="button"
+            onClick={handleClose}
+            className="absolute top-3 right-3 z-50 h-9 w-9 rounded-full bg-black/60 text-white hover:bg-black/80 flex items-center justify-center transition-all cursor-pointer backdrop-blur-sm"
+          >
+            <X size={16} strokeWidth={3} />
+          </button>
           {/* The div that html5-qrcode mounts into */}
           <div id={SCANNER_ID} className="w-full" />
 

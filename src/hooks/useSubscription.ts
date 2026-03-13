@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -16,6 +16,13 @@ export interface SubscriptionAddOns {
   rrhhPro:         boolean; // +$15
 }
 
+export interface BonusNotification {
+  days:       number;
+  grantedAt:  string;
+  reason:     string;
+  seen:       boolean;
+}
+
 export interface SubscriptionData {
   plan:             PlanId;
   status:           SubscriptionStatus;
@@ -30,12 +37,14 @@ export interface SubscriptionData {
   lastPaymentAt?:   string;
   /** Monthly price in USD at time of last payment */
   amountUsd?:       number;
+  /** Bonus days notification from admin */
+  bonusNotification?: BonusNotification;
 }
 
 // ─── Plan limits ──────────────────────────────────────────────────────────────
 
 export const PLAN_LIMITS: Record<PlanId, { users: number; products: number; sucursales: number; modules: string[] }> = {
-  trial:      { users: 2,  products: 500,  sucursales: 0, modules: ['pos_detal','inventario','tasas','clientes','reportes'] },
+  trial:      { users: 2,  products: 500,  sucursales: 0, modules: ['*'] },
   starter:    { users: 2,  products: 500,  sucursales: 0, modules: ['pos_detal','inventario','tasas','clientes','cajas','reportes','contabilidad'] },
   negocio:    { users: 5,  products: 2000, sucursales: 1, modules: ['pos_detal','pos_mayor','inventario','tasas','clientes','proveedores','cajas','rrhh','reportes','sucursales','contabilidad','comparar'] },
   enterprise: { users: -1, products: -1,   sucursales: 3, modules: ['*'] },
@@ -78,6 +87,7 @@ export function useSubscription(businessId: string) {
           paymentRef:    raw.paymentRef,
           lastPaymentAt: raw.lastPaymentAt,
           amountUsd:     raw.amountUsd,
+          bonusNotification: raw.bonusNotification ?? undefined,
         });
       } else {
         // No subscription yet — SubscriptionWall handles creation
@@ -133,6 +143,13 @@ export function useSubscription(businessId: string) {
     return base + (subscription.addOns.extraProducts ?? 0) * 1000;
   })();
 
+  const markBonusSeen = async () => {
+    if (!businessId || !subscription?.bonusNotification) return;
+    try {
+      await updateDoc(doc(db, 'businesses', businessId), { 'subscription.bonusNotification.seen': true });
+    } catch {}
+  };
+
   return {
     subscription,
     loading,
@@ -142,5 +159,6 @@ export function useSubscription(businessId: string) {
     canAccess,
     maxUsers,
     maxProducts,
+    markBonusSeen,
   };
 }

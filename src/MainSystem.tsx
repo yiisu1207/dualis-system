@@ -271,7 +271,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const businessId = userProfile?.businessId || '';
   const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
-  const { canAccess } = useSubscription(businessId);
+  const { canAccess, subscription: subData, markBonusSeen } = useSubscription(businessId);
   const { permissions: rolePermissions, canView: canViewRole } = useRolePermissions(businessId, user?.role || 'member');
   const { moduleHidden, moduleForced, featureOverride, webhookUrl } = useVendor();
 
@@ -482,6 +482,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       items.push({ id: 'pending-join', title: `${pendingJoinCount} solicitud${pendingJoinCount > 1 ? 'es' : ''} de acceso al equipo`, subtitle: 'Ver en Configuración → Equipo', type: 'warning' });
     }
 
+    // 5. Bonus days notification
+    if (subData?.bonusNotification && !subData.bonusNotification.seen) {
+      items.push({ id: 'bonus-days', title: `🎉 +${subData.bonusNotification.days} días gratis añadidos a tu cuenta`, subtitle: subData.bonusNotification.reason || 'Gracias por tu feedback', type: 'info' });
+    }
+
     // 4. CxP pendiente con proveedores
     const supplierBalance: Record<string, number> = {};
     movements.filter(m => m.isSupplierMovement).forEach(m => {
@@ -495,7 +500,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     }
 
     return items;
-  }, [inventoryItems, movements, pendingJoinCount]);
+  }, [inventoryItems, movements, pendingJoinCount, subData]);
 
   const visibleNotifications = useMemo(
     () => notifications.filter(n => !dismissedNotifIds.has(n.id)),
@@ -503,13 +508,14 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   );
 
   const handleDismissNotif = useCallback((id: string) => {
+    if (id === 'bonus-days') markBonusSeen();
     setDismissedNotifIds(prev => {
       const next = new Set(prev);
       next.add(id);
       localStorage.setItem('dualis_dismissed_notifs', JSON.stringify([...next]));
       return next;
     });
-  }, []);
+  }, [markBonusSeen]);
 
   const handleDismissAllNotifs = useCallback(() => {
     setDismissedNotifIds(prev => {

@@ -231,6 +231,7 @@ export default function Inventario() {
     const saved = localStorage.getItem('dualis_last_margin');
     return saved ? parseFloat(saved) : 30;
   });
+  const [bulkCalc, setBulkCalc] = useState({ costoBulto: 0, unidades: 0 });
 
   // Stock adjustment states
   const [adjModalOpen, setAdjModalOpen] = useState(false);
@@ -855,7 +856,7 @@ export default function Inventario() {
               </button>
             ))}
           </div>
-          <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setShowAdvanced(false); setModalOpen(true); }}
+          <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setShowAdvanced(false); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
             className="flex items-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
             <Plus size={16} /> Registrar Mercancía
           </button>
@@ -1226,6 +1227,40 @@ export default function Inventario() {
                   ))}
                   <div className="flex-1" />
                   <span className="text-[9px] font-black text-white/20 uppercase tracking-widest">Mayor = Detal × 0.95</span>
+                </div>
+
+                {/* Bulk pricing calculator */}
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-1 block">Costo Bulto ($)</label>
+                    <input type="number" step="0.01" min="0" value={bulkCalc.costoBulto || ''}
+                      onChange={e => {
+                        const c = Number(e.target.value);
+                        setBulkCalc(b => ({ ...b, costoBulto: c }));
+                        if (c > 0 && bulkCalc.unidades > 0) handleCostoChange(parseFloat((c / bulkCalc.unidades).toFixed(4)));
+                      }}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-amber-400 outline-none transition-all placeholder:text-white/20" />
+                  </div>
+                  <div className="w-12 text-center text-white/20 text-lg font-black pb-2">/</div>
+                  <div className="flex-1">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-1 block">Unidades</label>
+                    <input type="number" step="1" min="1" value={bulkCalc.unidades || ''}
+                      onChange={e => {
+                        const u = Number(e.target.value);
+                        setBulkCalc(b => ({ ...b, unidades: u }));
+                        if (bulkCalc.costoBulto > 0 && u > 0) handleCostoChange(parseFloat((bulkCalc.costoBulto / u).toFixed(4)));
+                      }}
+                      placeholder="0"
+                      className="w-full px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-amber-400 outline-none transition-all placeholder:text-white/20" />
+                  </div>
+                  {bulkCalc.costoBulto > 0 && bulkCalc.unidades > 0 && (
+                    <div className="pb-1">
+                      <span className="text-[9px] font-black text-amber-400 bg-amber-500/10 px-2 py-1.5 rounded-lg whitespace-nowrap">
+                        = ${(bulkCalc.costoBulto / bulkCalc.unidades).toFixed(2)}/u
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-3">

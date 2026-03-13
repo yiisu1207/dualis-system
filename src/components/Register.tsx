@@ -66,7 +66,7 @@ const PLANS = [
 ] as const;
 
 type PlanId = 'starter' | 'negocio' | 'enterprise';
-type Step   = 'form' | 'otp' | 'plan' | 'success';
+type Step   = 'form' | 'otp' | 'success';
 
 /* ── Helpers ──────────────────────────────────────────── */
 function pwStrength(p: string) {
@@ -224,14 +224,13 @@ export default function Register() {
     } catch { setOtpError('Error al reenviar. Intenta de nuevo.'); }
   };
 
-  /* ── Step 2: Verify OTP → go to plan selection ─────── */
+  /* ── Step 2: Verify OTP → create account with trial ── */
   const handleVerifyOTP = () => {
     const entered = otpDigits.join('');
     if (entered.length < 6) { setOtpError('Ingresa los 6 dígitos del código.'); return; }
     if (entered !== otp)    { setOtpError('Código incorrecto. Verifica e intenta de nuevo.'); return; }
-    // For "join" mode, skip plan and go straight to creating account as employee
-    if (!isCreate) { handleCreateAccount('trial'); return; }
-    setStep('plan');
+    // Always go straight to account creation with trial — plan selection happens in SubscriptionWall
+    handleCreateAccount('trial');
   };
 
   /* ── Step 3: Create account with selected plan ─────── */
@@ -250,11 +249,17 @@ export default function Register() {
           gid = genId(); attempts++;
         }
         bid = gid;
+        const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         await setDoc(doc(db, 'businesses', bid), {
           name: form.fullName || 'Mi Negocio', ownerId: uid,
           createdAt: new Date().toISOString(),
-          plan: plan === 'trial' ? 'trial' : plan,
-          pendingPlan: plan !== 'trial' ? plan : null,
+          plan: 'trial',
+          subscription: {
+            plan: 'trial', status: 'trial',
+            trialEndsAt,
+            addOns: { extraUsers: 0, extraProducts: 0, extraSucursales: 0, visionLab: false, conciliacion: false, rrhhPro: false },
+            createdAt: new Date().toISOString(),
+          },
         });
         try { await logAudit(uid, 'create_workspace', { businessId: bid, plan }); } catch {}
       }
@@ -293,7 +298,7 @@ export default function Register() {
 
       try { await logAudit(uid, 'create_user', { businessId: bid, email: form.email, plan }); } catch {}
 
-      sendWelcomeEmail(form.email, form.displayName || form.fullName, bid).catch(() => {});
+      sendWelcomeEmail(form.email, form.displayName || form.fullName, bid).catch(err => console.error('[WelcomeEmail] Error:', err));
 
       setSuccessBid(bid);
       setSuccessUid(uid);
@@ -543,127 +548,6 @@ export default function Register() {
                 </button>
               </>
             )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /* ══════════════════════════════════════════════════════
-     PLAN SELECTION SCREEN
-  ══════════════════════════════════════════════════════ */
-  if (step === 'plan') {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4 py-10 relative overflow-hidden bg-[#060b1a]">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-[20%] left-[10%]  w-[60%] h-[60%] rounded-full bg-violet-600/15 blur-[120px]" />
-          <div className="absolute -bottom-[15%] right-[5%] w-[50%] h-[50%] rounded-full bg-indigo-600/10  blur-[100px]" />
-        </div>
-        <div className="absolute inset-0 opacity-[0.03]"
-          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
-
-        <div className="relative z-10 w-full max-w-3xl animate-in fade-in-0 slide-in-from-bottom-4 duration-400">
-
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full mb-4">
-              ✓ Correo verificado
-            </div>
-            <h1 className="text-3xl font-black text-white tracking-tight">Elige tu plan</h1>
-            <p className="text-white/35 text-sm mt-2">Puedes empezar gratis o activar un plan desde el primer día</p>
-          </div>
-
-          {/* Trial card — prominente */}
-          <button
-            onClick={() => handleCreateAccount('trial')}
-            disabled={creatingAccount}
-            className="w-full mb-5 group relative overflow-hidden bg-gradient-to-r from-emerald-600/20 to-teal-600/10 border-2 border-emerald-500/40 hover:border-emerald-400/60 rounded-3xl p-6 text-left transition-all hover:scale-[1.01] disabled:opacity-50"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="relative flex items-center gap-5">
-              <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20">
-                {creatingAccount && !selectedPlan
-                  ? <Loader2 size={22} className="text-white animate-spin" />
-                  : <Zap size={22} className="text-white" />
-                }
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <p className="text-lg font-black text-white">30 Días Gratis</p>
-                  <span className="px-2 py-0.5 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[9px] font-black uppercase tracking-widest rounded-full">Sin tarjeta</span>
-                </div>
-                <p className="text-sm text-white/40">Acceso completo al plan Negocio. Sin compromisos. Sin límites ocultos.</p>
-                <div className="flex flex-wrap gap-3 mt-2.5">
-                  {['Acceso inmediato', 'Todas las funciones', 'Sin pago requerido'].map(f => (
-                    <span key={f} className="flex items-center gap-1 text-[10px] font-bold text-emerald-400">
-                      <CheckCircle2 size={10} /> {f}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="shrink-0 text-emerald-400 group-hover:translate-x-1 transition-transform">
-                <ArrowRight size={20} />
-              </div>
-            </div>
-          </button>
-
-          {/* Divider */}
-          <div className="flex items-center gap-4 mb-5">
-            <div className="flex-1 h-px bg-white/[0.06]" />
-            <p className="text-[10px] font-black uppercase tracking-widest text-white/20">O elige un plan de pago</p>
-            <div className="flex-1 h-px bg-white/[0.06]" />
-          </div>
-
-          {/* Paid plans */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            {PLANS.map(plan => {
-              const Icon = plan.icon;
-              const isPopular = plan.badge === 'MÁS POPULAR';
-              const isLoading = creatingAccount && selectedPlan === plan.id;
-              return (
-                <button
-                  key={plan.id}
-                  onClick={() => handleCreateAccount(plan.id)}
-                  disabled={creatingAccount}
-                  className={`relative group flex flex-col text-left rounded-2xl border p-5 transition-all hover:scale-[1.02] disabled:opacity-50 ${plan.bg} ${plan.border} ${isPopular ? 'ring-1 ring-violet-500/30' : ''}`}
-                >
-                  {plan.badge && (
-                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[8px] font-black uppercase tracking-widest rounded-full whitespace-nowrap">
-                      {plan.badge}
-                    </div>
-                  )}
-                  <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${plan.gradient} flex items-center justify-center mb-3 shadow-lg`}>
-                    {isLoading
-                      ? <Loader2 size={16} className="text-white animate-spin" />
-                      : <Icon size={16} className="text-white" />
-                    }
-                  </div>
-                  <p className="font-black text-white text-sm mb-0.5">{plan.name}</p>
-                  <div className="flex items-baseline gap-1 mb-3">
-                    <span className="text-2xl font-black text-white">${plan.price}</span>
-                    <span className="text-[10px] text-white/30 font-bold">/mes</span>
-                  </div>
-                  <div className="space-y-1.5 flex-1">
-                    {plan.features.map(f => (
-                      <p key={f} className="text-[10px] text-white/40 flex items-center gap-1.5">
-                        <CheckCircle2 size={9} className="text-white/30 shrink-0" /> {f}
-                      </p>
-                    ))}
-                  </div>
-                  <div className={`mt-4 w-full py-2 rounded-xl bg-gradient-to-r ${plan.gradient} text-white text-[10px] font-black uppercase tracking-widest text-center opacity-80 group-hover:opacity-100 transition-opacity`}>
-                    Seleccionar
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Note about paid plans */}
-          <div className="flex items-start gap-2.5 p-4 bg-amber-500/[0.06] border border-amber-500/20 rounded-2xl">
-            <Clock size={13} className="text-amber-400 shrink-0 mt-0.5" />
-            <p className="text-[11px] text-amber-400/70 leading-relaxed">
-              <strong className="text-amber-400">Planes de pago:</strong> Al seleccionar uno, recibirás instrucciones de pago. Jesús revisará tu comprobante y activará tu cuenta en menos de 24 horas.
-            </p>
           </div>
         </div>
       </div>

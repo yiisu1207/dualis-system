@@ -999,6 +999,7 @@ const PosContent = () => {
           tenantId={empresa_id!}
           cajaId={cajaId}
           accentColor="slate"
+          readOnly={userProfile?.role !== 'owner' && userProfile?.role !== 'admin'}
           onClose={() => setShowHistory(false)}
         />
       )}
