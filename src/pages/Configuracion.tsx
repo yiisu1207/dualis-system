@@ -12,8 +12,12 @@ import { AppConfig } from '../../types';
 import {
   getBusinessConfig,
   listUsers,
-  updateBusiness
+  updateBusiness,
+  createInvitationWithMirror,
+  listInvitations,
+  revokeInvitation,
 } from '../firebase/api';
+import { sendInviteEmail } from '../utils/emailService';
 import {
   Building2,
   Receipt,
@@ -48,6 +52,11 @@ import {
   UserX,
   Clock,
   Sparkles,
+  Send,
+  Link,
+  Trash2,
+  UserPlus,
+  CheckCircle2,
 } from 'lucide-react';
 import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
@@ -138,6 +147,14 @@ const Configuracion: React.FC = () => {
   const [copyToast, setCopyToast] = useState(false);
   const [uiPrefs, setUiPrefs] = useState<UiPrefs>(DEFAULT_UI_PREFS);
   const [savingPrefs, setSavingPrefs] = useState(false);
+
+  // Invite modal
+  const [inviteModal, setInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('ventas');
+  const [inviteSending, setInviteSending] = useState(false);
+  const [invitations, setInvitations] = useState<any[]>([]);
+  const [inviteCopied, setInviteCopied] = useState<string | null>(null);
 
   // Feature toggles (guardados en businessConfigs/{bid})
   const [features, setFeatures] = useState({
@@ -268,6 +285,76 @@ const Configuracion: React.FC = () => {
       }
     }).catch(() => {});
   }, [userProfile?.uid]);
+
+  // Load invitations
+  useEffect(() => {
+    if (!businessId || !isAdmin) return;
+    listInvitations(businessId).then(setInvitations).catch(() => {});
+  }, [businessId, isAdmin]);
+
+  const handleSendInvite = async () => {
+    if (!businessId || !userProfile?.uid || !inviteEmail.trim()) return;
+    setInviteSending(true);
+    try {
+      const companyName = configData.companyName || 'Mi Negocio';
+      const result = await createInvitationWithMirror({
+        businessId,
+        email: inviteEmail.trim(),
+        role: inviteRole,
+        invitedBy: userProfile.uid,
+        inviterName: userProfile.displayName || userProfile.fullName || 'Admin',
+        businessName: companyName,
+        expiresInHours: 48,
+      });
+
+      const baseUrl = window.location.origin;
+      const inviteUrl = `${baseUrl}/join?token=${result.token}`;
+
+      try {
+        await sendInviteEmail({
+          toEmail: inviteEmail.trim(),
+          inviterName: userProfile.displayName || userProfile.fullName || 'Admin',
+          businessName: companyName,
+          role: inviteRole,
+          inviteUrl,
+          expiresAt: result.expiresAt,
+        });
+      } catch (e) {
+        console.warn('Email send failed, but invitation was created:', e);
+      }
+
+      toast.success(`Invitación enviada a ${inviteEmail}`);
+      setInviteModal(false);
+      setInviteEmail('');
+      setInviteRole('ventas');
+      // Reload invitations
+      listInvitations(businessId).then(setInvitations).catch(() => {});
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || 'Error al crear la invitación');
+    } finally {
+      setInviteSending(false);
+    }
+  };
+
+  const handleRevokeInvite = async (token: string) => {
+    if (!businessId || !userProfile?.uid) return;
+    if (!confirm('¿Revocar esta invitación? Ya no podrá ser utilizada.')) return;
+    try {
+      await revokeInvitation(businessId, token, userProfile.uid);
+      setInvitations(prev => prev.map(inv => inv.token === token ? { ...inv, status: 'revoked' } : inv));
+      toast.success('Invitación revocada');
+    } catch {
+      toast.error('Error al revocar la invitación');
+    }
+  };
+
+  const copyInviteLink = (token: string) => {
+    const url = `${window.location.origin}/join?token=${token}`;
+    navigator.clipboard?.writeText(url);
+    setInviteCopied(token);
+    setTimeout(() => setInviteCopied(null), 2000);
+  };
 
   const handleSaveConfig = async () => {
     if (!isAdmin || !businessId || !userProfile?.uid) return;
@@ -647,9 +734,14 @@ const Configuracion: React.FC = () => {
                     <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Gestión de Equipo</h3>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mt-0.5">Control de Roles y Autorizaciones</p>
                   </div>
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] rounded-xl text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest">
-                    <Plus size={14} /> Para invitar: comparte el código de espacio
-                  </div>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setInviteModal(true)}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md shadow-emerald-500/25 hover:shadow-lg hover:shadow-emerald-500/30 transition-all active:scale-95"
+                    >
+                      <UserPlus size={14} /> Invitar Miembro
+                    </button>
+                  )}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
@@ -737,6 +829,68 @@ const Configuracion: React.FC = () => {
                     <div className="px-5 py-12 text-center text-slate-400 dark:text-white/30 text-sm font-semibold">Sin miembros activos aún</div>
                   )}
                 </div>
+
+                {/* ── INVITACIONES PENDIENTES ── */}
+                {isAdmin && invitations.filter(i => i.status === 'active').length > 0 && (
+                  <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-emerald-500/20 shadow-lg shadow-black/10 overflow-hidden mx-5 mb-2 mt-2">
+                    <div className="px-5 py-4 border-b border-emerald-500/10 bg-emerald-500/[0.03] flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                        <Send size={14} className="text-emerald-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Invitaciones Activas</h3>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500/70 mt-0.5">
+                          {invitations.filter(i => i.status === 'active').length} invitación{invitations.filter(i => i.status === 'active').length > 1 ? 'es' : ''} pendiente{invitations.filter(i => i.status === 'active').length > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-50 dark:divide-white/[0.04]">
+                      {invitations.filter(i => i.status === 'active').map(inv => {
+                        const isExpired = new Date(inv.expiresAt) < new Date();
+                        const roleLabels: Record<string, string> = { admin: 'Admin', ventas: 'Ventas', auditor: 'Auditor', staff: 'Staff', member: 'Miembro' };
+                        return (
+                          <div key={inv.token} className="px-5 py-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center font-black text-emerald-400 text-sm shrink-0">
+                                <Mail size={15} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-black text-slate-900 dark:text-white truncate">{inv.email}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                                    {roleLabels[inv.role] || inv.role}
+                                  </span>
+                                  {isExpired ? (
+                                    <span className="text-[9px] font-black uppercase tracking-widest text-red-400">Expirada</span>
+                                  ) : (
+                                    <span className="text-[9px] text-white/20">
+                                      Expira {new Date(inv.expiresAt).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => copyInviteLink(inv.token)}
+                                className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 dark:bg-white/[0.05] hover:bg-indigo-50 dark:hover:bg-indigo-500/10 border border-slate-200 dark:border-white/[0.08] rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-white/40 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all"
+                              >
+                                {inviteCopied === inv.token ? <><CheckCircle2 size={12} className="text-emerald-400" /> Copiado</> : <><Link size={12} /> Copiar Link</>}
+                              </button>
+                              <button
+                                onClick={() => handleRevokeInvite(inv.token)}
+                                className="p-2 rounded-xl text-slate-300 dark:text-white/20 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-all"
+                                title="Revocar invitación"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* ── PERMISOS POR ROL (editable) ── */}
                 {isAdmin && (
@@ -1357,6 +1511,85 @@ const Configuracion: React.FC = () => {
                   {saving ? <Loader2 className="animate-spin" size={14} /> : 'Guardar PIN'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── INVITE MODAL ── */}
+      {inviteModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setInviteModal(false)}>
+          <div className="w-full max-w-md bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-2xl shadow-black/40" onClick={e => e.stopPropagation()}>
+            {/* Modal header */}
+            <div className="px-6 py-5 border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-600 flex items-center justify-center">
+                  <UserPlus size={18} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">Invitar Miembro</h3>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mt-0.5">Enviar invitación por correo</p>
+                </div>
+              </div>
+              <button onClick={() => setInviteModal(false)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 dark:text-white/30 transition-all">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 ml-1 mb-2 block">Correo del invitado</label>
+                <div className="relative">
+                  <Mail size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 dark:text-white/20" />
+                  <input
+                    type="email"
+                    placeholder="correo@ejemplo.com"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    className="w-full px-4 py-3 pl-10 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/40 transition-all"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 ml-1 mb-2 block">Rol asignado</label>
+                <select
+                  value={inviteRole}
+                  onChange={e => setInviteRole(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/40 transition-all"
+                >
+                  <option value="admin">Administrador</option>
+                  <option value="ventas">Ventas</option>
+                  <option value="auditor">Auditor</option>
+                  <option value="staff">Staff</option>
+                  <option value="member">Miembro</option>
+                </select>
+              </div>
+
+              <div className="bg-emerald-50 dark:bg-emerald-500/[0.06] border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1">¿Cómo funciona?</p>
+                <p className="text-xs text-emerald-700 dark:text-emerald-400/70 leading-relaxed">
+                  Se enviará un correo con un link seguro de invitación. El invitado podrá registrarse directamente en tu espacio de trabajo con el rol asignado. El link expira en 48 horas.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal footer */}
+            <div className="px-6 pb-6 flex gap-3">
+              <button
+                onClick={() => { setInviteModal(false); setInviteEmail(''); }}
+                className="flex-1 py-3 bg-slate-100 dark:bg-white/[0.07] text-slate-700 dark:text-slate-300 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-white/[0.12] transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSendInvite}
+                disabled={!inviteEmail.trim() || inviteSending}
+                className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-emerald-500 hover:to-teal-500 transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-md shadow-emerald-500/25"
+              >
+                {inviteSending ? <Loader2 className="animate-spin" size={14} /> : <><Send size={14} /> Enviar Invitación</>}
+              </button>
             </div>
           </div>
         </div>

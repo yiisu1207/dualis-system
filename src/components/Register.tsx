@@ -10,7 +10,7 @@ import {
 import ReCAPTCHA from 'react-google-recaptcha';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { logAudit, sendWorkspaceRequest } from '../firebase/api';
+import { logAudit, sendWorkspaceRequest, consumeInvitation } from '../firebase/api';
 import ModeToggle from './ModeToggle';
 import { generateOTP, sendOTPEmail, sendWelcomeEmail } from '../utils/emailService';
 
@@ -109,12 +109,18 @@ function genId() {
 /* ══════════════════════════════════════════════════════
    COMPONENT
 ══════════════════════════════════════════════════════ */
-export default function Register() {
-  const [mode,    setMode]    = useState<'create' | 'join'>('create');
+interface RegisterProps {
+  inviteToken?: string;
+  inviteData?: { businessId: string; email: string; role: string; inviterName?: string; businessName?: string } | null;
+}
+
+export default function Register({ inviteToken, inviteData }: RegisterProps = {}) {
+  const hasInvite = !!(inviteToken && inviteData);
+  const [mode,    setMode]    = useState<'create' | 'join'>(hasInvite ? 'join' : 'create');
   const [form,    setForm]    = useState({
-    workspaceCode: '',
+    workspaceCode: inviteData?.businessId || '',
     fullName: '', displayName: '',
-    email: '', password: '',
+    email: inviteData?.email || '', password: '',
     nationalId: '', country: '',
   });
   const [showPass,  setShowPass]  = useState(false);
@@ -265,15 +271,19 @@ export default function Register() {
       }
 
       const isTrial  = plan === 'trial' || !isCreate;
-      const role     = isCreate ? 'owner' : 'pending';
-      // join mode siempre PENDING_APPROVAL (esperando que el owner apruebe)
-      const status   = !isCreate ? 'PENDING_APPROVAL' : (isTrial ? 'PENDING_SETUP' : 'PENDING_APPROVAL');
+      // Si tiene invitación válida, se aprueba automáticamente con el rol de la invitación
+      const inviteRole = hasInvite ? (inviteData!.role || 'ventas') : null;
+      const role     = isCreate ? 'owner' : (inviteRole || 'pending');
+      const status   = !isCreate
+        ? (hasInvite ? 'ACTIVE' : 'PENDING_APPROVAL')
+        : (isTrial ? 'PENDING_SETUP' : 'PENDING_APPROVAL');
 
       await setDoc(doc(db, 'users', uid), {
         uid, email: form.email, fullName: form.fullName,
         displayName: form.displayName, businessId: bid, role, status,
         nationalId: form.nationalId, country: form.country, uiVersion: 'editorial',
         emailVerified: true, selectedPlan: plan, createdAt: new Date().toISOString(),
+        ...(hasInvite ? { invitedBy: inviteData!.inviterName, inviteToken } : {}),
       });
 
       if (isCreate) {
@@ -284,8 +294,16 @@ export default function Register() {
             displayName: form.displayName, role: 'owner', status, joinedAt: new Date().toISOString(),
           }, { merge: true });
         } catch {}
+      } else if (hasInvite) {
+        // Invite mode: consumir token y crear membership directamente
+        try {
+          await consumeInvitation(inviteToken!, uid);
+        } catch (e) {
+          console.warn('Failed to consume invitation:', e);
+        }
+        // No need for workspace request — user is auto-approved
       } else {
-        // Join mode: crear workspaceRequest para que el owner apruebe
+        // Manual join mode: crear workspaceRequest para que el owner apruebe
         try {
           await sendWorkspaceRequest({
             senderId:    uid,
@@ -315,14 +333,15 @@ export default function Register() {
   };
 
   /* ══════════════════════════════════════════════════════
-     SUCCESS SCREEN — JOIN MODE (waiting for approval)
+     SUCCESS SCREEN — JOIN MODE
   ══════════════════════════════════════════════════════ */
   if (step === 'success' && !isCreate) {
+    const wasInvited = hasInvite;
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden bg-[#060b1a]">
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-[20%] -left-[10%] w-[70%] h-[70%] rounded-full bg-emerald-600/15 blur-[120px]" />
-          <div className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] rounded-full bg-teal-600/10 blur-[100px]" />
+          <div className={`absolute -top-[20%] -left-[10%] w-[70%] h-[70%] rounded-full ${wasInvited ? 'bg-emerald-600/20' : 'bg-emerald-600/15'} blur-[120px]`} />
+          <div className={`absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] rounded-full ${wasInvited ? 'bg-teal-600/15' : 'bg-teal-600/10'} blur-[100px]`} />
         </div>
         <div className="absolute inset-0 opacity-[0.03]"
           style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
@@ -330,42 +349,78 @@ export default function Register() {
         <div className="relative z-10 w-full max-w-md animate-in zoom-in-95 fade-in-0 duration-500">
           <div className="bg-white/[0.04] border border-white/10 backdrop-blur-sm rounded-[3rem] p-10 flex flex-col items-center text-center shadow-2xl">
 
-            {/* Pulsing clock */}
-            <div className="relative mx-auto mb-6 w-20 h-20">
-              <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-ping" />
-              <div className="relative h-20 w-20 rounded-full bg-gradient-to-br from-amber-500/25 to-orange-500/10 border border-amber-500/30 flex items-center justify-center">
-                <Clock size={32} className="text-amber-400" />
-              </div>
-            </div>
+            {wasInvited ? (
+              /* ── Invite success — auto approved ── */
+              <>
+                <div className="relative mx-auto mb-6 w-20 h-20">
+                  <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
+                  <div className="relative h-20 w-20 rounded-full bg-gradient-to-br from-emerald-500/25 to-teal-500/10 border border-emerald-500/30 flex items-center justify-center">
+                    <CheckCircle2 size={32} className="text-emerald-400" />
+                  </div>
+                </div>
 
-            <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full mb-4">
-              ✦ Solicitud enviada
-            </div>
+                <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full mb-4">
+                  ✦ Acceso inmediato
+                </div>
 
-            <h2 className="text-2xl font-black text-white tracking-tight mb-2">¡Ya casi estás!</h2>
-            <p className="text-white/40 text-sm leading-relaxed mb-6 max-w-sm">
-              Tu solicitud fue enviada al administrador del equipo. Cuando te aprueben, podrás acceder al sistema <strong className="text-white/70">automáticamente</strong> sin volver a iniciar sesión.
-            </p>
+                <h2 className="text-2xl font-black text-white tracking-tight mb-2">¡Bienvenido al equipo!</h2>
+                <p className="text-white/40 text-sm leading-relaxed mb-6 max-w-sm">
+                  Tu cuenta ha sido creada y aprobada automáticamente en <strong className="text-white/70">{inviteData?.businessName || 'tu empresa'}</strong>. Ya puedes iniciar sesión.
+                </p>
 
-            <div className="w-full bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 mb-6 text-left space-y-2">
-              <p className="text-[9px] font-black uppercase tracking-[0.35em] text-white/20">Tu cuenta</p>
-              <p className="text-sm font-bold text-white/70 truncate">{form.email}</p>
-              <p className="text-[10px] text-white/25">Espacio: <span className="font-mono text-white/40">{form.workspaceCode}</span></p>
-            </div>
+                <div className="w-full bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 mb-6 text-left space-y-2">
+                  <p className="text-[9px] font-black uppercase tracking-[0.35em] text-white/20">Tu cuenta</p>
+                  <p className="text-sm font-bold text-white/70 truncate">{form.email}</p>
+                  <p className="text-[10px] text-emerald-400/60">Rol: <strong className="text-emerald-400">{inviteData?.role === 'admin' ? 'Administrador' : inviteData?.role === 'ventas' ? 'Ventas' : inviteData?.role === 'auditor' ? 'Auditor' : inviteData?.role === 'staff' ? 'Staff' : 'Miembro'}</strong></p>
+                </div>
 
-            <div className="flex items-center gap-2.5 p-3.5 bg-white/[0.04] border border-white/[0.07] rounded-2xl mb-6 w-full">
-              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-              <p className="text-xs text-white/40 text-left">
-                Acceso automático al ser aprobado. No necesitas hacer nada más.
-              </p>
-            </div>
+                <button
+                  onClick={() => nav('/login')}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all"
+                >
+                  Iniciar sesión <ArrowRight size={16} />
+                </button>
+              </>
+            ) : (
+              /* ── Manual join — waiting for approval ── */
+              <>
+                <div className="relative mx-auto mb-6 w-20 h-20">
+                  <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-ping" />
+                  <div className="relative h-20 w-20 rounded-full bg-gradient-to-br from-amber-500/25 to-orange-500/10 border border-amber-500/30 flex items-center justify-center">
+                    <Clock size={32} className="text-amber-400" />
+                  </div>
+                </div>
 
-            <button
-              onClick={() => nav('/login')}
-              className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all"
-            >
-              Ir al inicio de sesión <ArrowRight size={16} />
-            </button>
+                <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full mb-4">
+                  ✦ Solicitud enviada
+                </div>
+
+                <h2 className="text-2xl font-black text-white tracking-tight mb-2">¡Ya casi estás!</h2>
+                <p className="text-white/40 text-sm leading-relaxed mb-6 max-w-sm">
+                  Tu solicitud fue enviada al administrador del equipo. Cuando te aprueben, podrás acceder al sistema <strong className="text-white/70">automáticamente</strong> sin volver a iniciar sesión.
+                </p>
+
+                <div className="w-full bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 mb-6 text-left space-y-2">
+                  <p className="text-[9px] font-black uppercase tracking-[0.35em] text-white/20">Tu cuenta</p>
+                  <p className="text-sm font-bold text-white/70 truncate">{form.email}</p>
+                  <p className="text-[10px] text-white/25">Espacio: <span className="font-mono text-white/40">{form.workspaceCode}</span></p>
+                </div>
+
+                <div className="flex items-center gap-2.5 p-3.5 bg-white/[0.04] border border-white/[0.07] rounded-2xl mb-6 w-full">
+                  <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                  <p className="text-xs text-white/40 text-left">
+                    Acceso automático al ser aprobado. No necesitas hacer nada más.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => nav('/login')}
+                  className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all"
+                >
+                  Ir al inicio de sesión <ArrowRight size={16} />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -732,29 +787,47 @@ export default function Register() {
         <div className="bg-white/[0.03] border border-white/[0.08] backdrop-blur-sm rounded-[2.5rem] overflow-hidden shadow-2xl">
 
           <div className={`bg-gradient-to-br ${gradFrom} ${gradTo} p-8 transition-all duration-500`}>
-            <div className="flex bg-black/20 rounded-2xl p-1 gap-1 mb-6 w-fit">
-              <button type="button" onClick={() => { setMode('create'); setError(''); }}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isCreate ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white/80'}`}>
-                <Building2 size={12} /> Crear empresa
-              </button>
-              <button type="button" onClick={() => { setMode('join'); setError(''); }}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${!isCreate ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white/80'}`}>
-                <Users size={12} /> Unirme
-              </button>
-            </div>
-            <div className="animate-in fade-in-0 slide-in-from-left-2 duration-300" key={mode}>
-              <h1 className="text-2xl font-black text-white tracking-tight">
-                {isCreate ? 'Funda tu empresa digital' : '¡Únete a tu equipo!'}
-              </h1>
-              <p className="text-white/55 text-sm mt-1.5">
-                {isCreate ? 'Crea tu espacio de trabajo privado en minutos.' : 'Pega el código que te compartió tu administrador.'}
-              </p>
-            </div>
+            {hasInvite ? (
+              /* Invite mode — no toggle, show invite info */
+              <div>
+                <div className="inline-flex items-center gap-2 bg-white/20 border border-white/20 text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full mb-4">
+                  <ShieldCheck size={12} /> Invitación verificada
+                </div>
+                <h1 className="text-2xl font-black text-white tracking-tight">
+                  ¡Únete a {inviteData?.businessName || 'tu equipo'}!
+                </h1>
+                <p className="text-white/55 text-sm mt-1.5">
+                  <strong className="text-white/80">{inviteData?.inviterName}</strong> te invitó como <strong className="text-white/80">{inviteData?.role === 'admin' ? 'Administrador' : inviteData?.role === 'ventas' ? 'Ventas' : inviteData?.role === 'auditor' ? 'Auditor' : inviteData?.role === 'staff' ? 'Staff' : 'Miembro'}</strong>
+                </p>
+              </div>
+            ) : (
+              /* Normal mode — create/join toggle */
+              <>
+                <div className="flex bg-black/20 rounded-2xl p-1 gap-1 mb-6 w-fit">
+                  <button type="button" onClick={() => { setMode('create'); setError(''); }}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isCreate ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white/80'}`}>
+                    <Building2 size={12} /> Crear empresa
+                  </button>
+                  <button type="button" onClick={() => { setMode('join'); setError(''); }}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${!isCreate ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white/80'}`}>
+                    <Users size={12} /> Unirme
+                  </button>
+                </div>
+                <div className="animate-in fade-in-0 slide-in-from-left-2 duration-300" key={mode}>
+                  <h1 className="text-2xl font-black text-white tracking-tight">
+                    {isCreate ? 'Funda tu empresa digital' : '¡Únete a tu equipo!'}
+                  </h1>
+                  <p className="text-white/55 text-sm mt-1.5">
+                    {isCreate ? 'Crea tu espacio de trabajo privado en minutos.' : 'Pega el código que te compartió tu administrador.'}
+                  </p>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="p-8">
             <form onSubmit={handleSubmit} className="space-y-4">
-              {!isCreate && (
+              {!isCreate && !hasInvite && (
                 <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-5">
                   <p className="text-[9px] font-black uppercase tracking-[0.35em] text-amber-400 mb-3">Código del Espacio de Trabajo</p>
                   <input required type="text" placeholder="key_XXXXXXXXX..." autoComplete="off" spellCheck={false}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { TenantProvider } from '../context/TenantContext';
@@ -24,6 +24,7 @@ import SubscriptionWall from '../pages/SubscriptionWall';
 import PendingApprovalWall from '../pages/PendingApprovalWall';
 import { useSubscription } from '../hooks/useSubscription';
 import { VendorProvider } from '../context/VendorContext';
+import { findInvitationByToken } from '../firebase/api';
 
 function resolveTenantId(profile: { empresa_id?: string; businessId?: string } | null) {
   if (!profile) return '';
@@ -182,6 +183,64 @@ function LegacyRedirect() {
   return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
 }
 
+function JoinPage() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const token = searchParams.get('token') || '';
+  const [status, setStatus] = useState<'loading' | 'valid' | 'invalid'>('loading');
+  const [invite, setInvite] = useState<any>(null);
+
+  useEffect(() => {
+    if (!token) { setStatus('invalid'); return; }
+    findInvitationByToken(token).then(inv => {
+      if (!inv || inv.status !== 'active') { setStatus('invalid'); return; }
+      if (new Date(inv.expiresAt) < new Date()) { setStatus('invalid'); return; }
+      if (inv.usedCount >= inv.maxUses) { setStatus('invalid'); return; }
+      setInvite(inv);
+      setStatus('valid');
+    }).catch(() => setStatus('invalid'));
+  }, [token]);
+
+  useEffect(() => {
+    if (user) {
+      navigate('/', { replace: true });
+    }
+  }, [user]);
+
+  if (status === 'loading') {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-[#060b1a]">
+        <div className="w-8 h-8 border-2 border-emerald-500/40 border-t-emerald-500 rounded-full animate-spin mb-4" />
+        <p className="text-white/30 text-sm font-medium">Verificando invitación...</p>
+      </div>
+    );
+  }
+
+  if (status === 'invalid') {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-[#060b1a] px-4">
+        <div className="w-full max-w-sm bg-white/[0.04] border border-white/10 rounded-2xl p-8 text-center">
+          <div className="h-16 w-16 rounded-2xl bg-red-500/15 border border-red-500/25 flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </div>
+          <h2 className="text-xl font-black text-white mb-2">Invitación no válida</h2>
+          <p className="text-white/40 text-sm mb-6">Esta invitación ha expirado, ya fue utilizada, o el enlace es incorrecto.</p>
+          <button
+            onClick={() => navigate('/register')}
+            className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 transition-all"
+          >
+            Ir a Registro
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Valid invite — render Register with invite data
+  return <Register inviteToken={token} inviteData={invite} />;
+}
+
 export default function AppRouter() {
   return (
     <Routes>
@@ -189,6 +248,7 @@ export default function AppRouter() {
       <Route path="/" element={<AuthEntry><LandingPage /></AuthEntry>} />
       <Route path="/login" element={<AuthEntry><Login /></AuthEntry>} />
       <Route path="/register" element={<AuthEntry><Register /></AuthEntry>} />
+      <Route path="/join" element={<JoinPage />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
       {/* Internal ops panel — PIN-protected, path from env */}

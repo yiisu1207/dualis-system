@@ -213,6 +213,97 @@ function buildWelcomeHtml(name: string, businessId: string): string {
 </html>`;
 }
 
+/* ── Invite email HTML ────────────────────────────────────────────────── */
+function buildInviteHtml(inviterName: string, businessName: string, role: string, inviteUrl: string, expiresAt: string): string {
+  const roleLabels: Record<string, string> = {
+    admin: 'Administrador', ventas: 'Ventas', auditor: 'Auditor', staff: 'Staff', member: 'Miembro',
+  };
+  const roleLabel = roleLabels[role] || role;
+  const expiresDate = new Date(expiresAt).toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#070b14;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#070b14;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#0d1424;border:1px solid rgba(255,255,255,0.07);border-radius:24px;overflow:hidden;">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#059669,#0d9488);padding:36px 40px;text-align:center;">
+            <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,0.15);margin-bottom:16px;">
+              <span style="font-size:28px;font-weight:900;color:#fff;letter-spacing:-1px;">D</span>
+            </div>
+            <h1 style="margin:0;font-size:22px;font-weight:900;color:#fff;letter-spacing:-0.5px;">Dualis ERP</h1>
+            <p style="margin:6px 0 0;font-size:12px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:3px;">Invitaci&oacute;n al equipo</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 8px;font-size:16px;color:rgba(255,255,255,0.5);">&#128075; &iexcl;Hola!</p>
+            <p style="margin:0 0 24px;font-size:15px;color:rgba(255,255,255,0.4);line-height:1.7;">
+              <strong style="color:#e2e8f0;">${inviterName}</strong> te ha invitado a unirte a
+              <strong style="color:#6ee7b7;">${businessName}</strong> en Dualis ERP con el rol de
+              <strong style="color:#6ee7b7;">${roleLabel}</strong>.
+            </p>
+
+            <!-- CTA Button -->
+            <div style="text-align:center;margin:32px 0;">
+              <a href="${inviteUrl}" style="display:inline-block;padding:16px 48px;background:linear-gradient(135deg,#059669,#0d9488);color:#fff;font-size:14px;font-weight:900;text-decoration:none;border-radius:16px;text-transform:uppercase;letter-spacing:2px;">
+                Aceptar Invitaci&oacute;n
+              </a>
+            </div>
+
+            <p style="margin:0 0 24px;font-size:12px;color:rgba(255,255,255,0.25);text-align:center;">
+              O copia y pega este enlace en tu navegador:<br>
+              <span style="color:rgba(255,255,255,0.4);word-break:break-all;font-size:11px;">${inviteUrl}</span>
+            </p>
+
+            <!-- Info box -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:16px;margin:0 0 24px;">
+              <tr>
+                <td style="padding:20px 24px;">
+                  <p style="margin:0 0 8px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,0.25);">Detalles de la invitaci&oacute;n</p>
+                  <p style="margin:0 0 4px;font-size:13px;color:rgba(255,255,255,0.4);">&#127970; <strong style="color:rgba(255,255,255,0.6);">Empresa:</strong> ${businessName}</p>
+                  <p style="margin:0 0 4px;font-size:13px;color:rgba(255,255,255,0.4);">&#128100; <strong style="color:rgba(255,255,255,0.6);">Rol:</strong> ${roleLabel}</p>
+                  <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.4);">&#9200; <strong style="color:rgba(255,255,255,0.6);">Expira:</strong> ${expiresDate}</p>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.2);line-height:1.6;">
+              Si no esperabas esta invitaci&oacute;n, puedes ignorar este correo de forma segura.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:24px 40px;border-top:1px solid rgba(255,255,255,0.05);">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:rgba(255,255,255,0.3);">Dualis ERP</p>
+                  <p style="margin:0;font-size:10px;color:rgba(255,255,255,0.15);">Soporte: soporte@dualis.app &nbsp;|&nbsp; WhatsApp: 0412-534-3141</p>
+                </td>
+                <td align="right">
+                  <span style="font-size:10px;color:rgba(255,255,255,0.1);">&copy; 2026 Dualis</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
 /* ── Public API ───────────────────────────────────────────────────────── */
 export async function sendOTPEmail(toEmail: string, toName: string, otp: string): Promise<void> {
   if (DEV) {
@@ -237,5 +328,29 @@ export async function sendWelcomeEmail(toEmail: string, toName: string, business
     to_name:   toName,
     subject:   '¡Bienvenido a Dualis ERP! — Guarda tu llave',
     html_body: buildWelcomeHtml(toName, businessId),
+  }, PUB);
+}
+
+const INVITE_TPL = import.meta.env.VITE_EMAILJS_INVITE_TEMPLATE ?? '';
+
+export async function sendInviteEmail(payload: {
+  toEmail: string;
+  inviterName: string;
+  businessName: string;
+  role: string;
+  inviteUrl: string;
+  expiresAt: string;
+}): Promise<void> {
+  const { toEmail, inviterName, businessName, role, inviteUrl, expiresAt } = payload;
+  if (DEV || (!INVITE_TPL && !WELCOME_TPL)) {
+    console.info(`%c[EmailService] Invitación enviada a ${toEmail} → ${inviteUrl}`, 'color:#059669;font-weight:bold;font-size:14px');
+    return;
+  }
+  const tpl = INVITE_TPL || WELCOME_TPL;
+  await emailjs.send(SVC, tpl, {
+    to_email:  toEmail,
+    to_name:   toEmail,
+    subject:   `${inviterName} te invitó a ${businessName} — Dualis ERP`,
+    html_body: buildInviteHtml(inviterName, businessName, role, inviteUrl, expiresAt),
   }, PUB);
 }

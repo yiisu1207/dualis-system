@@ -146,6 +146,17 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && belongsToMe(resource.data) && (myRole() == 'admin' || myRole() == 'owner');
     }
 
+    // INVITACIONES (root mirror para lookup por token)
+    match /invitations/{token} {
+      // Cualquier usuario puede leer una invitación por token (para validar en /join)
+      allow get: if true;
+      // Solo admins del negocio pueden crear/actualizar
+      allow create: if isSignedIn() && isAdmin(request.resource.data.businessId);
+      // Consumir invitación: cualquier usuario autenticado (al registrarse)
+      allow update: if isSignedIn();
+      allow delete: if false;
+    }
+
     // SOLICITUDES
     match /workspaceRequests/{docId} {
       allow create: if isSignedIn();

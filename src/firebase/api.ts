@@ -707,6 +707,169 @@ export async function updateBusiness(businessId: string, changes: Record<string,
   return true;
 }
 
+/* ── Invitation System ─────────────────────────────────────────────────── */
+
+function generateInviteToken(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return 'inv_' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function createInvitation(payload: {
+  businessId: string;
+  email: string;
+  role: string;
+  invitedBy: string;
+  inviterName?: string;
+  businessName?: string;
+  maxUses?: number;
+  expiresInHours?: number;
+}) {
+  const token = generateInviteToken();
+  const expiresAt = new Date(Date.now() + (payload.expiresInHours || 48) * 60 * 60 * 1000).toISOString();
+  const now = new Date().toISOString();
+
+  const inviteData = {
+    token,
+    businessId: payload.businessId,
+    email: payload.email.toLowerCase().trim(),
+    role: payload.role,
+    invitedBy: payload.invitedBy,
+    inviterName: payload.inviterName || '',
+    businessName: payload.businessName || '',
+    maxUses: payload.maxUses || 1,
+    usedCount: 0,
+    expiresAt,
+    status: 'active' as const,
+    createdAt: now,
+  };
+
+  await setDoc(doc(db, 'businesses', payload.businessId, 'invitations', token), inviteData);
+
+  try {
+    await logAudit(payload.invitedBy, 'create_invitation', {
+      businessId: payload.businessId,
+      email: payload.email,
+      role: payload.role,
+      token,
+    });
+  } catch {}
+
+  return { token, expiresAt, ...inviteData };
+}
+
+export async function getInvitation(businessId: string, token: string) {
+  const snap = await getDoc(doc(db, 'businesses', businessId, 'invitations', token));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as any;
+}
+
+export async function findInvitationByToken(token: string) {
+  // Token contains businessId prefix implicitly — we search all businesses
+  // But since tokens are globally unique, we can store a mirror in root collection
+  const snap = await getDoc(doc(db, 'invitations', token));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as any;
+}
+
+export async function createInvitationWithMirror(payload: {
+  businessId: string;
+  email: string;
+  role: string;
+  invitedBy: string;
+  inviterName?: string;
+  businessName?: string;
+  maxUses?: number;
+  expiresInHours?: number;
+}) {
+  const result = await createInvitation(payload);
+
+  // Mirror in root `invitations` collection for easy token lookup
+  try {
+    await setDoc(doc(db, 'invitations', result.token), {
+      token: result.token,
+      businessId: payload.businessId,
+      email: payload.email.toLowerCase().trim(),
+      role: result.role,
+      inviterName: result.inviterName,
+      businessName: result.businessName,
+      maxUses: result.maxUses,
+      usedCount: 0,
+      expiresAt: result.expiresAt,
+      status: 'active',
+      createdAt: result.createdAt,
+    });
+  } catch (e) {
+    console.warn('Failed to mirror invitation to root collection:', e);
+  }
+
+  return result;
+}
+
+export async function consumeInvitation(token: string, userId: string) {
+  const inviteSnap = await getDoc(doc(db, 'invitations', token));
+  if (!inviteSnap.exists()) throw new Error('Invitación no encontrada');
+
+  const invite = inviteSnap.data() as any;
+
+  if (invite.status !== 'active') throw new Error('Esta invitación ya no es válida');
+  if (new Date(invite.expiresAt) < new Date()) throw new Error('Esta invitación ha expirado');
+  if (invite.usedCount >= invite.maxUses) throw new Error('Esta invitación ya fue utilizada');
+
+  // Mark as used
+  const newCount = (invite.usedCount || 0) + 1;
+  const newStatus = newCount >= invite.maxUses ? 'used' : 'active';
+
+  await updateDoc(doc(db, 'invitations', token), {
+    usedCount: newCount,
+    status: newStatus,
+    lastUsedBy: userId,
+    lastUsedAt: new Date().toISOString(),
+  });
+
+  // Also update business subcollection mirror
+  try {
+    await updateDoc(doc(db, 'businesses', invite.businessId, 'invitations', token), {
+      usedCount: newCount,
+      status: newStatus,
+      lastUsedBy: userId,
+      lastUsedAt: new Date().toISOString(),
+    });
+  } catch {}
+
+  return invite;
+}
+
+export async function listInvitations(businessId: string) {
+  const q = query(
+    collection(db, 'businesses', businessId, 'invitations'),
+    orderBy('createdAt', 'desc')
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function revokeInvitation(businessId: string, token: string, revokedBy: string) {
+  await updateDoc(doc(db, 'businesses', businessId, 'invitations', token), {
+    status: 'revoked',
+    revokedAt: new Date().toISOString(),
+    revokedBy,
+  });
+
+  try {
+    await updateDoc(doc(db, 'invitations', token), {
+      status: 'revoked',
+      revokedAt: new Date().toISOString(),
+    });
+  } catch {}
+
+  try {
+    await logAudit(revokedBy, 'revoke_invitation', { businessId, token });
+  } catch {}
+
+  return true;
+}
+
 export async function listCustomers(businessId: string) {
   const q = query(collection(db, 'customers'), where('businessId', '==', businessId));
   const snap = await getDocs(q);
