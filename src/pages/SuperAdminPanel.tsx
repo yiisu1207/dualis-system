@@ -26,7 +26,7 @@ import {
 import { uploadToCloudinary } from '../utils/cloudinary';
 import { GoogleGenAI } from '@google/genai';
 import {
-  getAuth, createUserWithEmailAndPassword,
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
 } from 'firebase/auth';
 import { initializeApp, getApps } from 'firebase/app';
 import { db, firebaseConfig } from '../firebase/config';
@@ -218,18 +218,39 @@ function fmt(ts: any): string {
 // ─── PIN Gate ─────────────────────────────────────────────────────────────────
 function PinGate({ onAuth }: { onAuth: () => void }) {
   const [pin, setPin] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
-  const [err, setErr] = useState(false);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const submit = () => {
-    if (pin === ADMIN_PIN) {
+  const submit = async () => {
+    if (pin !== ADMIN_PIN) {
+      setErr('PIN incorrecto');
+      setPin('');
+      setTimeout(() => setErr(''), 2000);
+      return;
+    }
+    if (!email.trim() || !password.trim()) {
+      setErr('Ingresa email y contraseña');
+      setTimeout(() => setErr(''), 2000);
+      return;
+    }
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(getAuth(), email.trim(), password);
       sessionStorage.setItem('dualis_op_auth', '1');
       onAuth();
-    } else {
-      setErr(true);
-      setPin('');
-      setTimeout(() => setErr(false), 1500);
+    } catch (e: any) {
+      const msg = e?.code === 'auth/invalid-credential' ? 'Credenciales inválidas'
+        : e?.code === 'auth/user-not-found' ? 'Usuario no encontrado'
+        : e?.code === 'auth/wrong-password' ? 'Contraseña incorrecta'
+        : e?.message || 'Error de autenticación';
+      setErr(msg);
+      setTimeout(() => setErr(''), 3000);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -243,24 +264,48 @@ function PinGate({ onAuth }: { onAuth: () => void }) {
           <h1 className="text-2xl font-black text-white tracking-tight">Panel Operaciones</h1>
           <p className="text-white/25 text-sm mt-1">Dualis Internal — Acceso restringido</p>
         </div>
-        <div className={`rounded-2xl border p-6 transition-all ${err ? 'border-rose-500/40 bg-rose-500/[0.05]' : 'border-white/[0.07] bg-white/[0.02]'}`}>
-          <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">PIN de acceso</label>
-          <div className="relative mb-4">
+        <div className={`rounded-2xl border p-6 transition-all space-y-4 ${err ? 'border-rose-500/40 bg-rose-500/[0.05]' : 'border-white/[0.07] bg-white/[0.02]'}`}>
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Correo electrónico</label>
             <input
-              type={show ? 'text' : 'password'}
+              type="email"
+              value={email}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+              placeholder="admin@email.com"
+              className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-white placeholder:text-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Contraseña</label>
+            <div className="relative">
+              <input
+                type={show ? 'text' : 'password'}
+                value={password}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-white placeholder:text-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 pr-12"
+              />
+              <button onClick={() => setShow((s: boolean) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/60 transition-colors">
+                {show ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">PIN de acceso</label>
+            <input
+              type="password"
               value={pin}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPin(e.target.value)}
               onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && submit()}
               placeholder="••••••••••"
-              className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-white placeholder:text-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 pr-12"
+              className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-white placeholder:text-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
             />
-            <button onClick={() => setShow((s: boolean) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/60 transition-colors">
-              {show ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
           </div>
-          {err && <p className="text-xs text-rose-400 font-bold mb-3 text-center">PIN incorrecto</p>}
-          <button onClick={submit} className="w-full py-3 rounded-xl text-sm font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5" style={{ background:'linear-gradient(135deg,#4f46e5,#7c3aed)' }}>
-            Entrar
+          {err && <p className="text-xs text-rose-400 font-bold text-center">{err}</p>}
+          <button onClick={submit} disabled={loading}
+            className="w-full py-3 rounded-xl text-sm font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-50"
+            style={{ background:'linear-gradient(135deg,#4f46e5,#7c3aed)' }}>
+            {loading ? <Loader2 size={16} className="animate-spin" /> : 'Entrar'}
           </button>
         </div>
         <button onClick={() => navigate(-1)} className="w-full mt-4 text-center text-xs text-white/15 hover:text-white/40 transition-colors">← Volver</button>
@@ -276,8 +321,13 @@ export default function SuperAdminPanel() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Auth — PIN-only (no Firebase Auth to avoid killing user sessions)
-  const [pinAuth, setPinAuth] = useState(() => sessionStorage.getItem('dualis_op_auth') === '1');
+  // Auth — PIN + Firebase Auth (superadmin must be authenticated for Firestore rules)
+  const [pinAuth, setPinAuth] = useState(() => {
+    const stored = sessionStorage.getItem('dualis_op_auth') === '1';
+    // If session stored but no Firebase user, force re-auth
+    if (stored && !user) return false;
+    return stored;
+  });
 
   // Top-level tab
   const [topTab, setTopTab] = useState<TopTab>('dashboard');
@@ -1099,7 +1149,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
           <div className="flex items-center gap-3">
             <span className="text-xs text-white/25 font-medium">{user?.email}</span>
             <button
-              onClick={() => { sessionStorage.removeItem('dualis_op_auth'); navigate('/'); }}
+              onClick={async () => { sessionStorage.removeItem('dualis_op_auth'); try { await getAuth().signOut(); } catch {} navigate('/'); }}
               className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest text-white/40 border border-white/[0.07] hover:bg-white/[0.06] transition-all"
             >
               Salir

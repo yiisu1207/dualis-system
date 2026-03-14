@@ -19,7 +19,7 @@ export const auth = getAuth(app);
 // App Check — protege Firestore/Storage de bots y scrapers
 if (typeof window !== 'undefined') {
   initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider('6LfVXYMsAAAAAPq77qq07ZlGH41rtDuDjCpNCAg-'),
+    provider: new ReCaptchaV3Provider('6LeuQIosAAAAAI0lS_E6NmZGP9EtjU2EFFEBJaMw-'),
     isTokenAutoRefreshEnabled: true,
   });
 }
