@@ -215,13 +215,13 @@ const Configuracion: React.FC = () => {
     loadData();
   }, [businessId]);
 
-  // Listener en tiempo real de solicitudes pendientes de unirse al equipo
+  // Listener en tiempo real de solicitudes pendientes — consulta directamente users collection
   useEffect(() => {
     if (!businessId || !isAdmin) return;
     const q = query(
-      collection(db, 'workspaceRequests'),
-      where('workspaceId', '==', businessId),
-      where('status', '==', 'pending')
+      collection(db, 'users'),
+      where('businessId', '==', businessId),
+      where('status', '==', 'PENDING_APPROVAL')
     );
     const unsub = onSnapshot(q, snap => {
       const reqs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -239,8 +239,7 @@ const Configuracion: React.FC = () => {
     setProcessingReq(req.id);
     try {
       await acceptRequest(req.id, requestRoles[req.id] || 'ventas');
-      // Refresca lista de usuarios
-      setUsers(prev => [...prev, { uid: req.senderId, email: req.senderEmail, fullName: req.senderName, role: requestRoles[req.id] || 'ventas', status: 'ACTIVE' }]);
+      setUsers(prev => [...prev, { uid: req.id, email: req.email, fullName: req.fullName, role: requestRoles[req.id] || 'ventas', status: 'ACTIVE' }]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -252,8 +251,6 @@ const Configuracion: React.FC = () => {
     setProcessingReq(req.id);
     try {
       await rejectRequest(req.id);
-      // Marcar usuario como REJECTED
-      await updateDoc(doc(db, 'users', req.senderId), { status: 'REJECTED' });
     } catch (e) {
       console.error(e);
     } finally {
@@ -403,7 +400,7 @@ const Configuracion: React.FC = () => {
     'w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold dark:text-white focus:ring-2 focus:ring-indigo-500 transition-all outline-none placeholder:text-slate-300 dark:placeholder:text-white/20';
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] flex flex-col font-inter">
+    <div className="min-h-full bg-slate-50 dark:bg-[#070b14] flex flex-col font-inter">
       {/* HEADER */}
       <header className="h-16 bg-white dark:bg-[#0d1424] border-b border-slate-200 dark:border-white/[0.07] px-4 md:px-6 flex items-center justify-between shrink-0 z-20 shadow-sm shadow-black/5">
         <div className="flex items-center gap-4">
@@ -594,13 +591,13 @@ const Configuracion: React.FC = () => {
                           {/* Avatar + info */}
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-black text-amber-400 text-base shrink-0">
-                              {(req.senderName || req.senderEmail || '?').charAt(0).toUpperCase()}
+                              {(req.fullName || req.email || '?').charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-sm font-black text-slate-900 dark:text-white truncate">{req.senderName || 'Sin nombre'}</p>
-                              <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 truncate">{req.senderEmail}</p>
+                              <p className="text-sm font-black text-slate-900 dark:text-white truncate">{req.fullName || 'Sin nombre'}</p>
+                              <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 truncate">{req.email}</p>
                               <p className="text-[9px] text-white/20 mt-0.5">
-                                {req.createdAt ? new Date(req.createdAt).toLocaleDateString('es-VE', { day:'2-digit', month:'short', year:'numeric' }) : ''}
+                                {(req.joinRequestedAt || req.createdAt) ? new Date(req.joinRequestedAt || req.createdAt).toLocaleDateString('es-VE', { day:'2-digit', month:'short', year:'numeric' }) : ''}
                               </p>
                             </div>
                           </div>

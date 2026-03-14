@@ -1560,7 +1560,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
             </div>
           )}
           {/* HEADER DETAIL */}
-          <div className="app-panel p-8">
+          <div className="app-panel p-4 sm:p-8">
             <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
               <div className="space-y-6">
                 <div className="flex items-center gap-6">
@@ -1969,9 +1969,11 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           <div
             className={`app-panel overflow-hidden flex-1 flex flex-col border-t-[6px] ${contextColors.border}`}
           >
+            {/* Scrollable table wrapper */}
+            <div className="overflow-auto custom-scroll flex-1 flex flex-col" ref={detailTableRef}>
             {/* Table Header */}
             <div
-              className={`px-8 py-4 ${contextColors.bg} border-b border-slate-200 dark:border-white/10 grid grid-cols-10 text-[10px] font-black uppercase tracking-widest ${contextColors.text}`}
+              className={`px-4 sm:px-8 py-4 ${contextColors.bg} border-b border-slate-200 dark:border-white/10 grid grid-cols-10 text-[10px] font-black uppercase tracking-widest ${contextColors.text} min-w-[700px]`}
             >
               <div className="col-span-2">Fecha / Hora</div>
               <div className="col-span-2">Concepto</div>
@@ -1987,7 +1989,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               <div className="col-span-1 text-center">Acción</div>
             </div>
 
-            <div className="overflow-y-auto custom-scroll flex-1" ref={detailTableRef}>
+            <div className="flex-1" >
               {detailData.length === 0 ? (
                 <div className="py-16 text-center text-slate-300 font-black uppercase">
                   <div className="text-sm">Sin movimientos registrados</div>
@@ -1999,7 +2001,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                 detailData.map((mov) => (
                   <div
                     key={mov.id}
-                    className="px-8 py-4 border-b border-slate-100 dark:border-white/[0.07] grid grid-cols-10 items-center hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors text-xs group"
+                    className="px-4 sm:px-8 py-4 border-b border-slate-100 dark:border-white/[0.07] grid grid-cols-10 items-center hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors text-xs group min-w-[700px]"
                   >
                     <div className="col-span-2 font-bold text-slate-500">
                       {formatDateTime((mov as any).displayDate || mov.date)}
@@ -2079,6 +2081,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                 ))
               )}
             </div>
+            </div>
           </div>
         </div>
       )}
@@ -2108,7 +2111,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               </button>
             </div>
 
-            <div className="p-8 space-y-5">
+            <div className="p-4 sm:p-8 space-y-5">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">

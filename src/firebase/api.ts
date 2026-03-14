@@ -166,16 +166,12 @@ export async function sendWorkspaceRequest(payload: {
   senderName?: string;
   workspaceId: string;
 }) {
-  const col = collection(db, 'workspaceRequests');
-  const docRef = await addDoc(col, {
-    senderId: payload.senderId,
-    senderEmail: payload.senderEmail,
-    senderName: payload.senderName || '',
-    workspaceId: payload.workspaceId,
-    status: 'pending',
-    createdAt: new Date().toISOString(),
+  // Write join request info directly to the user's own doc (always writable by the user).
+  // The user doc already has businessId + status:'PENDING_APPROVAL' — admin queries users instead.
+  const userRef = doc(db, 'users', payload.senderId);
+  await updateDoc(userRef, {
+    joinRequestedAt: new Date().toISOString(),
   });
-  // Log audit
   try {
     await addDoc(collection(db, 'audits'), {
       userId: payload.senderId,
@@ -187,81 +183,67 @@ export async function sendWorkspaceRequest(payload: {
   } catch (e) {
     console.warn('Audit log failed', e);
   }
-  return docRef.id;
+  return payload.senderId;
 }
 
 export async function getSentRequests(senderId: string) {
-  const q = query(
-    collection(db, 'workspaceRequests'),
-    where('senderId', '==', senderId),
-    orderBy('createdAt', 'desc')
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Kept for backward compat — now returns the user's own doc as a single-item array
+  const snap = await getDoc(doc(db, 'users', senderId));
+  if (!snap.exists()) return [];
+  const d = snap.data() as any;
+  if (d.status !== 'PENDING_APPROVAL') return [];
+  return [{ id: snap.id, senderId: snap.id, senderEmail: d.email, senderName: d.fullName, workspaceId: d.businessId, status: 'pending', createdAt: d.joinRequestedAt || d.createdAt }];
 }
 
 export async function getReceivedRequests(workspaceId: string) {
+  // Query users collection directly — no root collection write needed
   const q = query(
-    collection(db, 'workspaceRequests'),
-    where('workspaceId', '==', workspaceId),
-    where('status', '==', 'pending'),
-    orderBy('createdAt', 'desc')
+    collection(db, 'users'),
+    where('businessId', '==', workspaceId),
+    where('status', '==', 'PENDING_APPROVAL')
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-export async function acceptRequest(requestId: string, role: string = 'ventas') {
-  const reqRef = doc(db, 'workspaceRequests', requestId);
-  const reqSnap = await getDoc(reqRef);
-  if (!reqSnap.exists()) throw new Error('Solicitud no encontrada');
-  const data: any = reqSnap.data();
+export async function acceptRequest(userId: string, role: string = 'ventas') {
+  const userRef = doc(db, 'users', userId);
+  const userSnap = await getDoc(userRef);
+  if (!userSnap.exists()) throw new Error('Usuario no encontrado');
+  const data: any = userSnap.data();
 
-  // 1) marcar como accepted
-  await updateDoc(reqRef, { status: 'accepted', respondedAt: new Date().toISOString(), assignedRole: role });
+  // 1) Activar al usuario con el rol asignado
+  await updateDoc(userRef, {
+    role,
+    status: 'ACTIVE',
+    activatedAt: new Date().toISOString(),
+  });
 
-  // 2) activar al usuario con el rol asignado
-  if (data.senderId) {
-    const userRef = doc(db, 'users', data.senderId);
+  // 2) Añadir como miembro en businesses/{id}/members
+  try {
+    const memberRef = doc(db, 'businesses', data.businessId, 'members', userId);
     await setDoc(
-      userRef,
+      memberRef,
       {
-        uid: data.senderId,
-        email: data.senderEmail,
-        fullName: data.senderName || '',
-        businessId: data.workspaceId,
+        uid: userId,
+        email: data.email,
+        fullName: data.fullName || '',
         role,
         status: 'ACTIVE',
+        joinedAt: new Date().toISOString(),
       },
       { merge: true }
     );
-    // 3) añadir también como miembro en la subcolección businesses/{id}/members
-    try {
-      const memberRef = doc(db, 'businesses', data.workspaceId, 'members', data.senderId);
-      await setDoc(
-        memberRef,
-        {
-          uid: data.senderId,
-          email: data.senderEmail,
-          fullName: data.senderName || '',
-          role,
-          status: 'ACTIVE',
-          joinedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-    } catch (e) {
-      console.warn('Failed to write member subcollection', e);
-    }
+  } catch (e) {
+    console.warn('Failed to write member subcollection', e);
   }
 
-  // audit
   try {
     await addDoc(collection(db, 'audits'), {
-      userId: data.senderId || null,
+      userId,
       action: 'accept_request',
-      meta: { requestId, workspaceId: data.workspaceId, businessId: data.workspaceId },
-      businessId: data.workspaceId,
+      meta: { workspaceId: data.businessId, businessId: data.businessId },
+      businessId: data.businessId,
       createdAt: new Date().toISOString(),
     });
   } catch (e) {
@@ -271,16 +253,17 @@ export async function acceptRequest(requestId: string, role: string = 'ventas') 
   return true;
 }
 
-export async function rejectRequest(requestId: string) {
-  await updateDoc(doc(db, 'workspaceRequests', requestId), {
-    status: 'rejected',
-    respondedAt: new Date().toISOString(),
+export async function rejectRequest(userId: string) {
+  const userRef = doc(db, 'users', userId);
+  await updateDoc(userRef, {
+    status: 'REJECTED',
+    rejectedAt: new Date().toISOString(),
   });
   try {
     await addDoc(collection(db, 'audits'), {
-      userId: null,
+      userId,
       action: 'reject_request',
-      meta: { requestId },
+      meta: {},
       createdAt: new Date().toISOString(),
     });
   } catch (e) {

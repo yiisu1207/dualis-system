@@ -193,7 +193,7 @@ function parseRawText(text: string): string[][] {
 
 // ─── COMPONENTS ──────────────────────────────────────────────────────────────
 const KPICard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
-  <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 flex items-center gap-4 hover:shadow-xl hover:shadow-black/15 transition-all flex-1 min-w-[240px] group">
+  <div className="bg-white dark:bg-[#0d1424] p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 flex items-center gap-3 sm:gap-4 hover:shadow-xl hover:shadow-black/15 transition-all group">
     <div className={`h-11 w-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 shrink-0 ${colorClass}`}>
       <Icon size={22} />
     </div>
@@ -817,8 +817,8 @@ export default function Inventario() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] p-8 pt-24 pb-32 font-inter">
-      <div className="max-w-7xl mx-auto space-y-10">
+    <div className="min-h-full bg-slate-50 dark:bg-[#070b14] p-4 sm:p-6 pb-10 font-inter">
+      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-10">
 
         {/* DASHBOARD */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -843,21 +843,21 @@ export default function Inventario() {
         </div>
 
         {/* NAV */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex gap-1.5 p-1.5 bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.07] rounded-xl shadow-sm">
+        <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+          <div className="flex gap-1 sm:gap-1.5 p-1 sm:p-1.5 bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.07] rounded-xl shadow-sm overflow-x-auto">
             {[
-              { id: 'catalog', label: 'Catálogo Maestro', icon: Package },
-              { id: 'kardex', label: 'Kardex / Auditoría', icon: History },
+              { id: 'catalog', label: 'Catálogo', icon: Package },
+              { id: 'kardex', label: 'Kardex', icon: History },
               { id: 'tools', label: 'Herramientas', icon: Settings2 },
             ].map((tab) => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as TabType)}
-                className={`flex items-center gap-2.5 px-5 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.06]'}`}>
+                className={`flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.06]'}`}>
                 <tab.icon size={13} /> {tab.label}
               </button>
             ))}
           </div>
           <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setShowAdvanced(false); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
-            className="flex items-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
+            className="flex items-center justify-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
             <Plus size={16} /> Registrar Mercancía
           </button>
         </div>
@@ -1147,8 +1147,8 @@ export default function Inventario() {
 
       {/* ═══════════════ MODAL: PRODUCT ═══════════════ */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-[#0d1424] w-full max-w-lg rounded-2xl shadow-2xl shadow-black/40 border border-slate-100 dark:border-white/[0.07] overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-3 sm:p-4">
+          <div className="bg-white dark:bg-[#0d1424] w-full max-w-lg rounded-2xl shadow-2xl shadow-black/40 border border-slate-100 dark:border-white/[0.07] overflow-hidden overflow-y-auto max-h-[95vh] animate-in fade-in zoom-in-95 duration-300">
 
             {/* Header */}
             <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.07] flex items-center justify-between bg-slate-50/50 dark:bg-white/[0.02]">
@@ -1474,11 +1474,11 @@ export default function Inventario() {
       {/* ═══════════════ MODAL: STOCK ADJUSTMENT ═══════════════ */}
       {adjModalOpen && selectedProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-[#0d1424] w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden animate-in zoom-in-95 duration-500">
-            <div className="p-12 space-y-10">
+          <div className="bg-white dark:bg-[#0d1424] w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden overflow-y-auto max-h-[95vh] animate-in zoom-in-95 duration-500">
+            <div className="p-6 sm:p-12 space-y-6 sm:space-y-10">
               <div className="text-center">
-                <div className="h-20 w-20 bg-slate-900 rounded-xl flex items-center justify-center mx-auto mb-6 shadow-2xl animate-pulse"><TrendingUp className="text-white" size={32} /></div>
-                <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Ajuste de Stock</h2>
+                <div className="h-16 w-16 sm:h-20 sm:w-20 bg-slate-900 rounded-xl flex items-center justify-center mx-auto mb-4 sm:mb-6 shadow-2xl animate-pulse"><TrendingUp className="text-white" size={28} /></div>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Ajuste de Stock</h2>
                 <p className="text-[10px] font-black text-slate-400 uppercase mt-2 tracking-[0.2em]">{selectedProduct.nombre}</p>
               </div>
               <div className="space-y-5">
@@ -1509,7 +1509,7 @@ export default function Inventario() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
           <div className="bg-white dark:bg-[#0d1424] w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-100 dark:border-white/[0.07] overflow-hidden animate-in fade-in zoom-in-95 duration-400 flex flex-col max-h-[90vh]">
             {/* Header */}
-            <div className="px-10 py-8 border-b border-slate-100 dark:border-white/[0.07] bg-gradient-to-r from-indigo-50 to-violet-50 flex justify-between items-center shrink-0">
+            <div className="px-5 sm:px-10 py-5 sm:py-8 border-b border-slate-100 dark:border-white/[0.07] bg-gradient-to-r from-indigo-50 to-violet-50 flex justify-between items-center shrink-0">
               <div>
                 <div className="flex items-center gap-3 mb-1">
                   <Upload size={18} className="text-indigo-600" />

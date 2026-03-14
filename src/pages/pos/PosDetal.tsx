@@ -128,8 +128,8 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/70 backdrop-blur-sm p-0 sm:p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden overflow-y-auto max-h-[95vh] animate-in slide-in-from-bottom sm:zoom-in-95 duration-300">
         {/* Header */}
         <div className="p-6 bg-slate-900 text-white flex justify-between items-start gap-4">
           <div className="flex-1 min-w-0">
@@ -417,6 +417,9 @@ const PosContent = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Mobile tab mode
+  const [mobileTab, setMobileTab] = useState<'products' | 'cart'>('products');
+
   // Payment
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -652,13 +655,13 @@ const PosContent = () => {
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white font-inter">
 
       {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 px-5 flex items-center justify-between shrink-0 z-30 shadow-sm gap-4">
+      <header className="h-14 sm:h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 px-3 sm:px-5 flex items-center justify-between shrink-0 z-30 shadow-sm gap-2 sm:gap-4">
         {/* Left: terminal info */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md">
-            <Scan size={19} />
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md">
+            <Scan size={17} />
           </div>
-          <div>
+          <div className="hidden sm:block">
             <h1 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight leading-none">
               {terminalLabel}
             </h1>
@@ -670,7 +673,7 @@ const PosContent = () => {
         </div>
 
         {/* Center: barcode scanner input + camera button */}
-        <div className="flex-1 max-w-xl flex items-center gap-2">
+        <div className="flex-1 flex items-center gap-2">
           {!isOnline && (
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl text-[9px] font-black uppercase tracking-wider shrink-0">
               <WifiOff size={11} /> Offline
@@ -708,15 +711,15 @@ const PosContent = () => {
         </div>
 
         {/* Right: date/time, rate, logout */}
-        <div className="flex items-center gap-4 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {/* Notifications */}
           {success && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black">
               <CheckCircle2 size={13} />{success}
             </div>
           )}
           {error && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-xl text-xs font-black">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-xl text-xs font-black">
               <AlertTriangle size={13} />{error}
             </div>
           )}
@@ -728,12 +731,12 @@ const PosContent = () => {
           </div>
 
           {/* Rate */}
-          <div className="text-right">
+          <div className="text-right hidden sm:block">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">BCV</p>
             <p className="text-sm font-black text-slate-900 dark:text-white">{rates.tasaBCV.toFixed(2)} Bs</p>
           </div>
 
-          <div className="w-px h-8 bg-slate-100 dark:bg-white/[0.07]" />
+          <div className="w-px h-8 bg-slate-100 dark:bg-white/[0.07] hidden sm:block" />
 
           <button
             onClick={() => auth.signOut()}
@@ -747,7 +750,7 @@ const PosContent = () => {
       <div className="flex-1 flex overflow-hidden">
 
         {/* ── LEFT: PRODUCT GRID ─────────────────────────────────────────────── */}
-        <section className="w-[35%] min-w-[280px] bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-white/[0.07] flex flex-col">
+        <section className={`${mobileTab === 'products' ? 'flex' : 'hidden'} lg:flex flex-col w-full lg:w-[35%] lg:min-w-[280px] bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-white/[0.07]`}>
           <div className="px-4 py-3 border-b border-slate-100 dark:border-white/[0.07]">
             <div className="relative">
               <input
@@ -800,7 +803,7 @@ const PosContent = () => {
         </section>
 
         {/* ── RIGHT: CART + CHECKOUT ─────────────────────────────────────────── */}
-        <aside className="flex-1 flex flex-col bg-white dark:bg-slate-900">
+        <aside className={`${mobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex flex-col flex-1 bg-white dark:bg-slate-900`}>
 
           {/* Cart items table */}
           <div className="flex-1 overflow-y-auto custom-scroll">
@@ -863,7 +866,7 @@ const PosContent = () => {
           </div>
 
           {/* ── CHECKOUT PANEL ─────────────────────────────────────────────── */}
-          <div className="border-t border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-[#0d1424] p-5 flex gap-5">
+          <div className="border-t border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-[#0d1424] p-3 sm:p-5 flex flex-col sm:flex-row gap-3 sm:gap-5">
 
             {/* Client section */}
             <div className="flex-1 space-y-3 min-w-0">
@@ -942,7 +945,7 @@ const PosContent = () => {
             </div>
 
             {/* Total + pay button */}
-            <div className="w-[38%] bg-slate-900 rounded-[1.8rem] p-6 flex flex-col justify-between shadow-2xl text-white relative overflow-hidden shrink-0">
+            <div className="w-full sm:w-[38%] bg-slate-900 rounded-[1.8rem] p-4 sm:p-6 flex flex-col justify-between shadow-2xl text-white relative overflow-hidden shrink-0">
               <div className="absolute -right-8 -top-8 h-36 w-36 bg-white dark:bg-slate-900/5 rounded-full blur-2xl pointer-events-none" />
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Total a Pagar</p>
@@ -1011,6 +1014,29 @@ const PosContent = () => {
             </div>
           </div>
         </aside>
+      </div>
+
+      {/* ── MOBILE BOTTOM TAB BAR ─────────────────────────────────────────── */}
+      <div className="lg:hidden h-16 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-white/10 flex shrink-0 z-20">
+        <button
+          onClick={() => setMobileTab('products')}
+          className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-black uppercase tracking-widest transition-all ${mobileTab === 'products' ? 'text-slate-900 dark:text-white bg-slate-50 dark:bg-white/[0.05]' : 'text-slate-400'}`}
+        >
+          <Package size={18} />
+          Productos
+        </button>
+        <button
+          onClick={() => setMobileTab('cart')}
+          className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-black uppercase tracking-widest transition-all relative ${mobileTab === 'cart' ? 'text-slate-900 dark:text-white bg-slate-50 dark:bg-white/[0.05]' : 'text-slate-400'}`}
+        >
+          <ShoppingCart size={18} />
+          Carrito
+          {items.length > 0 && (
+            <span className="absolute top-2 right-[calc(50%-18px)] w-4 h-4 bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+              {items.reduce((a, i) => a + i.qty, 0)}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* ── PAYMENT MODAL ──────────────────────────────────────────────────── */}

@@ -14,6 +14,39 @@ export function accrueVacationDays(startDate: string, daysPerYear = 15): number 
   return Math.max(0, Math.floor(years * daysPerYear));
 }
 
+/** Rango de fechas del período según frecuencia */
+function calcDateRange(frequency: string, refDate?: Date): { from: string; to: string; label: string } {
+  const ref = refDate || new Date();
+  const fmt = (d: Date) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  if (frequency === 'semanal') {
+    const from = new Date(ref);
+    from.setDate(from.getDate() - 7);
+    return { from: fmt(from), to: fmt(ref), label: 'Semanal' };
+  } else if (frequency === 'quincenal') {
+    const d = ref.getDate();
+    if (d <= 15) {
+      return {
+        from: fmt(new Date(ref.getFullYear(), ref.getMonth(), 1)),
+        to:   fmt(new Date(ref.getFullYear(), ref.getMonth(), 15)),
+        label: '1ra Quincena',
+      };
+    } else {
+      return {
+        from: fmt(new Date(ref.getFullYear(), ref.getMonth(), 16)),
+        to:   fmt(new Date(ref.getFullYear(), ref.getMonth() + 1, 0)),
+        label: '2da Quincena',
+      };
+    }
+  } else {
+    return {
+      from: fmt(new Date(ref.getFullYear(), ref.getMonth(), 1)),
+      to:   fmt(new Date(ref.getFullYear(), ref.getMonth() + 1, 0)),
+      label: 'Mensual',
+    };
+  }
+}
+
 /** Imprimir hoja de vales de un empleado */
 export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi Negocio') {
   const w = window.open('', '_blank', 'width=794,height=1123');
@@ -40,10 +73,11 @@ export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi 
   .tr{text-align:right}.tc{text-align:center}
   .total-row td{background:#f7f7f7;font-weight:900;border-top:2px solid #111;font-size:12px}
   .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:900;text-transform:uppercase}
-  .bp{background:#fee2e2;color:#dc2626}.bd{background:#d1fae5;color:#059669}
+  .bp{background:#fee2e2;color:#dc2626}.bd{background:#d1fae5;color:#059669}.bc{background:#fef3c7;color:#b45309}
   .sigs{display:grid;grid-template-columns:1fr 1fr;gap:60px;margin-top:50px}
   .sig-line{border-top:1px solid #111;padding-top:6px;font-size:10px;color:#666;text-align:center}
   .sig-sub{text-align:center;font-size:9px;color:#aaa;margin-top:3px}
+  .footer{margin-top:32px;text-align:center;font-size:9px;color:#ccc;letter-spacing:.08em;text-transform:uppercase}
   @media print{body{padding:18px}}
 </style></head><body>
 <div class="header">
@@ -68,13 +102,13 @@ export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi 
   </tr></thead>
   <tbody>
     ${vouchers.map((v: any)=>`<tr>
-      <td>${v.createdAt?.toDate?v.createdAt.toDate().toLocaleDateString('es-VE'):'—'}</td>
-      <td>${v.reason||'—'}</td>
+      <td>${v.createdAt?.toDate?v.createdAt.toDate().toLocaleDateString('es-VE'):v.voucherDate||'—'}</td>
+      <td>${v.reason||'—'}${v.correctedFrom?'<br><span style="font-size:9px;color:#b45309">[CORREGIDO de '+fmtHR(Number(v.originalAmount||0))+']</span>':''}</td>
       <td class="tc">${v.currency}</td>
       <td class="tr">${v.currency==='USD'?'$':'Bs '}${fmtHR(Number(v.amount))}</td>
       <td class="tr">${v.rateUsed?'Bs '+fmtHR(Number(v.rateUsed)):'—'}</td>
       <td class="tr">${v.amountUSD!=null?'$'+fmtHR(Number(v.amountUSD)):v.currency==='USD'?'$'+fmtHR(Number(v.amount)):'—'}</td>
-      <td class="tc"><span class="badge ${v.status==='PENDIENTE'?'bp':'bd'}">${v.status}</span></td>
+      <td class="tc"><span class="badge ${v.status==='PENDIENTE'?'bp':v.status==='CORREGIDO'?'bc':'bd'}">${v.status}</span></td>
     </tr>`).join('')}
     <tr class="total-row">
       <td colspan="3">TOTALES PENDIENTES (${pending.length} vales)</td>
@@ -89,75 +123,159 @@ export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi 
   <div><div class="sig-line">Firma del Empleado</div><div class="sig-sub">${emp.fullName} · ${emp.cedula||'S/N'}</div></div>
   <div><div class="sig-line">Autorizado por</div><div class="sig-sub">Administración / RRHH</div></div>
 </div>
+<div class="footer">con tecnología Dualis</div>
 </body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 400);
 }
 
-/** Imprimir recibo de nómina (payslip) individual */
-export function printPayslip(emp: any, row: any, period: string, frequency: string, businessName = 'Mi Negocio') {
-  const w = window.open('', '_blank', 'width=794,height=600');
+/** Imprimir recibo de nómina individual */
+export function printPayslip(
+  emp: any,
+  row: any,
+  period: string,
+  frequency: string,
+  businessName = 'Mi Negocio',
+  periodVouchers: any[] = [],
+  processDate?: string,
+  activeLoans: any[] = [],
+) {
+  const w = window.open('', '_blank', 'width=794,height=900');
   if (!w) return;
-  const freqLabel = frequency === 'quincenal' ? 'Quincenal' : frequency === 'semanal' ? 'Semanal' : 'Mensual';
+
+  const refDate = processDate ? new Date(processDate) : new Date();
+  const { from, to, label } = calcDateRange(frequency, refDate);
+
+  // Per-period divisor
+  const freqDiv = frequency === 'semanal' ? 4.33 : frequency === 'quincenal' ? 2 : 1;
+
+  // Per-period income amounts
+  const pSalUSD   = (emp.salaryUSD  || 0) / freqDiv;
+  const pBonusUSD = (emp.bonusUSD   || 0) / freqDiv;
+  const pSalBs    = (emp.salaryBs   || 0) / freqDiv;
+  const pBonusBs  = (emp.bonusBs    || 0) / freqDiv;
+  const pGrossUSD = pSalUSD + pBonusUSD;
+  const pGrossBs  = pSalBs  + pBonusBs;
+
+  // Per-period deductions (IVSS/Paro are monthly, divide by period)
+  const pIVSS   = (row.ivssUSD    || 0) / freqDiv;
+  const pParo   = (row.paroUSD    || 0) / freqDiv;
+  // Vouchers and loan installments are already period-based
+  const pVales  = row.voucherDedUSD || 0;
+  const pLoans  = row.loanDedUSD    || 0;
+  const pTotalDed = pVales + pIVSS + pParo + pLoans;
+  const pNetUSD = Math.max(0, pGrossUSD - pTotalDed);
+  const pNetBs  = Math.max(0, pGrossBs - (row.voucherDedBs || 0));
+
+  const voucherRows = periodVouchers.length > 0
+    ? periodVouchers.map((v: any) =>
+        `<tr><td style="padding-left:24px;color:#888">↳ ${v.reason||'Vale'} <span style="font-size:9px;color:#bbb">(${v.voucherDate||v.createdAt?.toDate?.().toLocaleDateString('es-VE')||''})</span></td>
+         <td class="tr negative">-${v.currency==='USD'?'$':'Bs '}${fmtHR(Number(v.amount))}</td></tr>`
+      ).join('')
+    : '';
+
+  const empLoans = (activeLoans || []).filter((l: any) => l.employeeId === emp.id && l.status === 'ACTIVO');
+  const loanRows = empLoans.length > 0
+    ? empLoans.map((l: any) =>
+        `<tr><td style="padding-left:24px;color:#888">↳ ${l.reason||'Préstamo'} <span style="font-size:9px;color:#bbb">(cuota ${l.paidInstallments+1}/${l.totalInstallments})</span></td>
+         <td class="tr negative">-${l.currency==='USD'?'$':'Bs '}${fmtHR(Number(l.installmentAmount))}</td></tr>`
+      ).join('')
+    : '';
+
+  const emissionDate = new Date().toLocaleDateString('es-VE', { year:'numeric', month:'long', day:'numeric' });
+
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>Recibo de Nómina – ${emp.fullName}</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:32px;max-width:680px;margin:0 auto}
   .header{display:flex;justify-content:space-between;margin-bottom:20px;padding-bottom:14px;border-bottom:2.5px solid #111}
-  .biz{font-size:20px;font-weight:900}.sub{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.1em;margin-top:2px}
-  .period-badge{background:#111;color:#fff;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:900;letter-spacing:.05em}
-  .emp-row{display:flex;gap:32px;background:#f7f7f7;padding:14px;border-radius:4px;margin-bottom:20px}
+  .biz{font-size:20px;font-weight:900}
+  .sub{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.1em;margin-top:2px}
+  .period-box{text-align:right}
+  .period-badge{display:inline-block;background:#111;color:#fff;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:900;letter-spacing:.05em}
+  .period-range{font-size:10px;color:#888;margin-top:5px}
+  .emp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;background:#f7f7f7;padding:14px;border-radius:4px;margin-bottom:20px}
   .ef-label{font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#999;margin-bottom:2px}
-  .ef-val{font-size:13px;font-weight:700}
+  .ef-val{font-size:12px;font-weight:700}
   .section-title{font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#999;margin-bottom:8px;margin-top:16px}
   table{width:100%;border-collapse:collapse}
   td{padding:7px 10px;border-bottom:1px solid #ebebeb;font-size:11px}
   .tl{text-align:left}.tr{text-align:right}
   .positive{color:#16a34a;font-weight:700}.negative{color:#dc2626;font-weight:700}
-  .net-row td{background:#111;color:#fff;font-weight:900;font-size:14px;padding:10px}
-  .sig{border-top:1px solid #111;padding-top:6px;font-size:10px;color:#666;text-align:center;width:200px;margin-top:36px}
+  .subtotal td{background:#f7f7f7;font-weight:700}
+  .net-row td{background:#111;color:#fff;font-weight:900;font-size:15px;padding:11px 10px}
+  .sigs{display:flex;gap:60px;margin-top:40px}
+  .sig{text-align:center}
+  .sig-line{border-top:1px solid #111;padding-top:6px;font-size:10px;color:#666;width:200px}
+  .sig-sub{font-size:9px;color:#aaa;margin-top:3px}
+  .footer{margin-top:28px;text-align:center;font-size:9px;color:#ccc;letter-spacing:.08em;text-transform:uppercase}
   @media print{body{padding:18px}}
 </style></head><body>
+
 <div class="header">
-  <div><div class="biz">${businessName}</div><div class="sub">Recibo de Nómina</div></div>
-  <div style="text-align:right">
-    <div class="period-badge">${period}</div>
-    <div style="font-size:10px;color:#999;margin-top:6px">${freqLabel} · ${new Date().toLocaleDateString('es-VE')}</div>
+  <div>
+    <div class="biz">${businessName}</div>
+    <div class="sub">Recibo de Nómina</div>
+  </div>
+  <div class="period-box">
+    <div class="period-badge">${label}</div>
+    <div class="period-range">Del ${from}<br>al ${to}</div>
+    <div style="font-size:9px;color:#bbb;margin-top:4px">Emitido: ${emissionDate}</div>
   </div>
 </div>
-<div class="emp-row">
+
+<div class="emp-grid">
   <div><div class="ef-label">Empleado</div><div class="ef-val">${emp.fullName}</div></div>
+  <div><div class="ef-label">Cédula</div><div class="ef-val">${emp.cedula||'S/N'}</div></div>
+  <div><div class="ef-label">Teléfono</div><div class="ef-val">${emp.phone||'—'}</div></div>
   <div><div class="ef-label">Departamento</div><div class="ef-val">${emp.department||'—'}</div></div>
   <div><div class="ef-label">Cargo</div><div class="ef-val">${emp.role||'—'}</div></div>
-  <div><div class="ef-label">Cédula</div><div class="ef-val">${emp.cedula||'S/N'}</div></div>
+  <div><div class="ef-label">Frecuencia de Pago</div><div class="ef-val">${label}</div></div>
+  <div><div class="ef-label">Fecha de Ingreso</div><div class="ef-val">${emp.startDate||'—'}</div></div>
+  <div><div class="ef-label">Moneda de Pago</div><div class="ef-val">${emp.paymentCurrency||'USD'}</div></div>
+  <div><div class="ef-label">Estatus</div><div class="ef-val">${emp.status||'Activo'}</div></div>
 </div>
-<div class="section-title">Ingresos</div>
+
+<div class="section-title">Ingresos del Período (${label})</div>
 <table>
-  ${row.grossUSD>0?`<tr><td class="tl">Salario Base USD</td><td class="tr positive">$${fmtHR(row.emp?.salaryUSD||0)}</td></tr>`:''}
-  ${(row.emp?.bonusUSD||0)>0?`<tr><td class="tl">Bono en USD</td><td class="tr positive">+$${fmtHR(row.emp.bonusUSD)}</td></tr>`:''}
-  ${row.grossBs>0?`<tr><td class="tl">Salario Base Bs (BCV)</td><td class="tr positive">Bs ${fmtHR(row.emp?.salaryBs||0)}</td></tr>`:''}
-  ${(row.emp?.bonusBs||0)>0?`<tr><td class="tl">Bono en Bs (BCV)</td><td class="tr positive">+Bs ${fmtHR(row.emp.bonusBs)}</td></tr>`:''}
-  ${row.grossUSD>0?`<tr style="background:#f7f7f7"><td class="tl" style="font-weight:700">Total Bruto USD</td><td class="tr" style="font-weight:700">$${fmtHR(row.grossUSD)}</td></tr>`:''}
+  ${pSalUSD>0?`<tr><td class="tl">Salario Base USD</td><td class="tr positive">$${fmtHR(pSalUSD)}</td></tr>`:''}
+  ${pBonusUSD>0?`<tr><td class="tl">Bono en ${emp.bonusUSDCurrency==='BS'?'Bs (BCV)':'USD'}</td><td class="tr positive">+$${fmtHR(pBonusUSD)}</td></tr>`:''}
+  ${pSalBs>0?`<tr><td class="tl">Salario Base Bs (BCV)</td><td class="tr positive">Bs ${fmtHR(pSalBs)}</td></tr>`:''}
+  ${pBonusBs>0?`<tr><td class="tl">Bono Bs (BCV)</td><td class="tr positive">+Bs ${fmtHR(pBonusBs)}</td></tr>`:''}
+  ${pGrossUSD>0?`<tr class="subtotal"><td class="tl">Total Bruto Período (USD)</td><td class="tr">$${fmtHR(pGrossUSD)}</td></tr>`:''}
+  ${pGrossBs>0?`<tr class="subtotal"><td class="tl">Total Bruto Período (Bs)</td><td class="tr">Bs ${fmtHR(pGrossBs)}</td></tr>`:''}
 </table>
+
 <div class="section-title">Deducciones</div>
 <table>
-  ${row.voucherDedUSD>0?`<tr><td class="tl">Vales / Adelantos</td><td class="tr negative">-$${fmtHR(row.voucherDedUSD)}</td></tr>`:''}
-  ${row.ivssUSD>0?`<tr><td class="tl">IVSS (${row.emp?.ivssRate||4}%)</td><td class="tr negative">-$${fmtHR(row.ivssUSD)}</td></tr>`:''}
-  ${row.paroUSD>0?`<tr><td class="tl">Paro Forzoso (${row.emp?.paroRate||2}%)</td><td class="tr negative">-$${fmtHR(row.paroUSD)}</td></tr>`:''}
-  ${row.loanDedUSD>0?`<tr><td class="tl">Préstamos a Cuotas</td><td class="tr negative">-$${fmtHR(row.loanDedUSD)}</td></tr>`:''}
-  ${row.totalDedUSD>0?`<tr style="background:#f7f7f7"><td class="tl" style="font-weight:700">Total Deducciones</td><td class="tr negative" style="font-weight:700">-$${fmtHR(row.totalDedUSD)}</td></tr>`:'<tr><td colspan="2" style="color:#999;font-size:11px;text-align:center;padding:8px">Sin deducciones este período</td></tr>'}
+  ${pVales>0?`<tr><td class="tl">Vales / Adelantos (${periodVouchers.length})</td><td class="tr negative">-$${fmtHR(pVales)}</td></tr>${voucherRows}`:''}
+  ${pIVSS>0?`<tr><td class="tl">IVSS (${emp.ivssRate||4}%)</td><td class="tr negative">-$${fmtHR(pIVSS)}</td></tr>`:''}
+  ${pParo>0?`<tr><td class="tl">Paro Forzoso (${emp.paroRate||2}%)</td><td class="tr negative">-$${fmtHR(pParo)}</td></tr>`:''}
+  ${pLoans>0?`<tr><td class="tl">Préstamos a Cuotas (${empLoans.length})</td><td class="tr negative">-$${fmtHR(pLoans)}</td></tr>${loanRows}`:''}
+  ${pTotalDed===0?`<tr><td colspan="2" style="color:#999;font-size:11px;text-align:center;padding:8px">Sin deducciones este período</td></tr>`:''}
+  ${pTotalDed>0?`<tr class="subtotal"><td class="tl">Total Deducciones</td><td class="tr negative">-$${fmtHR(pTotalDed)}</td></tr>`:''}
 </table>
+
 <table style="margin-top:8px">
   <tr class="net-row">
     <td class="tl">NETO A RECIBIR</td>
-    <td class="tr">$${fmtHR(row.netUSD)}${row.netBs>0?' / Bs '+fmtHR(row.netBs):''}</td>
+    <td class="tr">$${fmtHR(pNetUSD)}${pNetBs>0?' &nbsp;/&nbsp; Bs '+fmtHR(pNetBs):''}</td>
   </tr>
 </table>
-<div style="display:flex;gap:60px;margin-top:40px">
-  <div class="sig">Firma del Empleado<br><span style="font-size:9px;color:#aaa">${emp.fullName}</span></div>
-  <div class="sig">Administración / RRHH<br><span style="font-size:9px;color:#aaa">Dualis ERP</span></div>
+
+<div class="sigs">
+  <div class="sig">
+    <div class="sig-line">Firma del Empleado</div>
+    <div class="sig-sub">${emp.fullName} · ${emp.cedula||'S/N'}</div>
+  </div>
+  <div class="sig">
+    <div class="sig-line">Autorizado por</div>
+    <div class="sig-sub">Administración / RRHH</div>
+  </div>
 </div>
+
+<div class="footer">con tecnología Dualis</div>
 </body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 400);

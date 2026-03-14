@@ -4,15 +4,18 @@ import { useToast } from '../context/ToastContext';
 import { db } from '../firebase/config';
 import {
   collection, onSnapshot, query, addDoc, doc, updateDoc,
-  deleteDoc, serverTimestamp, orderBy, writeBatch,
+  deleteDoc, serverTimestamp, orderBy, writeBatch, getDoc,
 } from 'firebase/firestore';
 import {
   Users, UserPlus, Pencil, Trash2, X, Save, Loader2, Circle,
   Ticket, Scissors, Plus, AlertTriangle, DollarSign, Banknote,
   Gift, FileText, Printer, Download, Filter, RefreshCw,
   ShieldCheck, CreditCard, Sun, Clock, TrendingDown, ChevronDown,
+  ChevronRight, RotateCcw, History, GitCompare, MessageSquare, Send,
+  Eye, CheckCircle2, XCircle, ArrowLeftRight,
 } from 'lucide-react';
 import { printVoucherSheet, printPayslip, exportNominaCSV, accrueVacationDays, fmtHR } from '../utils/hrUtils';
+import { listUsers } from '../firebase/api';
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const DEPARTMENTS = ['Administración','Ventas','Almacén','Caja','Operaciones','Gerencia','Servicios','Logística','RRHH','Otro'];
@@ -39,8 +42,10 @@ interface Voucher {
   id: string; employeeId: string; employeeName: string;
   amount: number; currency: 'USD'|'BS';
   amountUSD: number; rateUsed?: number;
-  reason: string; status: 'PENDIENTE'|'DESCONTADO';
+  reason: string; status: 'PENDIENTE'|'DESCONTADO'|'CORREGIDO';
   createdAt: any; settledAt?: any;
+  voucherDate?: string;
+  correctedFrom?: string; originalAmount?: number; correctionNote?: string; correctedAt?: any;
 }
 interface VoucherRate {
   id: string; rate: number; createdAt: any; createdBy: string; notes?: string;
@@ -57,6 +62,7 @@ interface PayrollDetail {
   grossUSD: number; grossBs: number;
   voucherDedUSD: number; ivssUSD: number; paroUSD: number; loanDedUSD: number;
   totalDedUSD: number; netUSD: number; netBs: number;
+  settledVouchers?: { reason: string; amount: number; currency: string; amountUSD?: number }[];
 }
 interface PayrollRun {
   id: string; period: string; frequency: string; processedAt: any;
@@ -71,7 +77,7 @@ type NominaRow = {
   totalDedUSD: number; netUSD: number; netBs: number;
   vCount: number; isOverdraft: boolean;
 };
-type SubTab = 'directory'|'vouchers'|'nomina'|'tasas';
+type SubTab = 'directory'|'vouchers'|'nomina'|'tasas'|'comparar';
 
 const EMPTY_EMP: Omit<Employee,'id'> = {
   fullName:'', cedula:'', phone:'', role:'Vendedor', department:'Ventas',
@@ -89,7 +95,7 @@ function periodSal(emp: Employee, cur: 'USD'|'BS') {
 
 // ── SMALL COMPONENTS ─────────────────────────────────────────────────────────
 const KPI = ({ title, value, sub, icon: Icon, color, bg, onClick, btn }: any) => (
-  <div className={`p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg flex-1 min-w-[155px] bg-white ${bg||'dark:bg-[#0d1424]'}`}>
+  <div className={`p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg flex-1 min-w-[calc(50%-8px)] sm:min-w-[155px] bg-white ${bg||'dark:bg-[#0d1424]'}`}>
     <div className="flex justify-between items-start mb-3">
       <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${color}`}><Icon size={19}/></div>
       {onClick && <button onClick={onClick} className="px-3 py-1.5 bg-slate-900 dark:bg-white/[0.1] text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-indigo-600 transition-all">{btn}</button>}
@@ -428,16 +434,37 @@ export default function RecursosHumanos() {
   const [procLoading, setProcLoading] = useState(false);
 
   // Vouchers tab quick form
-  const [qv, setQv] = useState({ empId:'', amount:'', currency:'USD' as 'USD'|'BS', reason:'Adelanto' });
+  const [qv, setQv] = useState({ empId:'', date: new Date().toISOString().slice(0,10), amount:'', currency:'USD' as 'USD'|'BS', reason:'Adelanto' });
   const amtRef = useRef<HTMLInputElement>(null);
+
+  // Voucher correction
+  const [correcting, setCorrecting] = useState<{v:Voucher; newAmt:string; note:string}|null>(null);
+
+  // Payroll history detail
+  const [selectedRun, setSelectedRun] = useState<PayrollRun|null>(null);
 
   // Tasas tab
   const [rateInput, setRateInput] = useState('');
   const [rateNotes, setRateNotes] = useState('');
   const [savingRate, setSavingRate] = useState(false);
 
-  // Business name for prints
-  const businessName = userProfile?.businessId || 'Mi Negocio';
+  // Comparar tab
+  const [compareUsers, setCompareUsers] = useState<{id:string;fullName?:string;email?:string}[]>([]);
+  const [compareTargetId, setCompareTargetId] = useState('');
+  const [compareTargetVouchers, setCompareTargetVouchers] = useState<Voucher[]>([]);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareComments, setCompareComments] = useState<{id:string;voucherId:string;text:string;author:string;createdAt:any}[]>([]);
+  const [commentDraft, setCommentDraft] = useState<Record<string,string>>({});
+  const [compareFilter, setCompareFilter] = useState<'all'|'match'|'diff'|'missing'>('all');
+
+  // Business name for prints (fetched from Firestore)
+  const [businessName, setBusinessName] = useState('Mi Negocio');
+  useEffect(() => {
+    if (!bid) return;
+    getDoc(doc(db, 'businesses', bid)).then(snap => {
+      if (snap.exists()) setBusinessName(snap.data().name || 'Mi Negocio');
+    }).catch(() => {});
+  }, [bid]);
 
   // ── Listeners ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -459,6 +486,22 @@ export default function RecursosHumanos() {
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const currentRate   = voucherRates[0]?.rate || 0;
+
+  // Find the applicable rate for a specific date (latest rate on or before that date)
+  const getRateForDate = useCallback((dateStr: string): number => {
+    if (!voucherRates.length) return currentRate;
+    const target = new Date(dateStr + 'T23:59:59');
+    const sorted = [...voucherRates].sort((a, b) => {
+      const da = a.createdAt?.toDate?.() ?? new Date(a.createdAt);
+      const db2 = b.createdAt?.toDate?.() ?? new Date(b.createdAt);
+      return db2.getTime() - da.getTime();
+    });
+    for (const r of sorted) {
+      const rd = r.createdAt?.toDate?.() ?? new Date(r.createdAt);
+      if (rd <= target) return r.rate;
+    }
+    return sorted[sorted.length - 1]?.rate || currentRate;
+  }, [voucherRates, currentRate]);
   const pendingVouchers = useMemo(()=>vouchers.filter(v=>v.status==='PENDIENTE'),[vouchers]);
   const activeLoans     = useMemo(()=>loans.filter(l=>l.status==='ACTIVO'),[loans]);
 
@@ -521,8 +564,23 @@ export default function RecursosHumanos() {
     setSaving(true);
     try {
       if(editId) {
+        const prev = employees.find(x=>x.id===editId);
+        const salaryChanged = prev && (
+          prev.salaryUSD!==empForm.salaryUSD || prev.bonusUSD!==empForm.bonusUSD ||
+          prev.salaryBs!==empForm.salaryBs  || prev.bonusBs!==empForm.bonusBs
+        );
+        if(salaryChanged && prev) {
+          await addDoc(collection(db,`businesses/${bid}/employees/${editId}/salary_history`),{
+            previousSalaryUSD:prev.salaryUSD, previousBonusUSD:prev.bonusUSD,
+            previousSalaryBs:prev.salaryBs,  previousBonusBs:prev.bonusBs,
+            newSalaryUSD:empForm.salaryUSD,   newBonusUSD:empForm.bonusUSD,
+            newSalaryBs:empForm.salaryBs,     newBonusBs:empForm.bonusBs,
+            changedAt:serverTimestamp(),
+            changedBy:userProfile?.fullName||userProfile?.email||'Sistema',
+          });
+        }
         await updateDoc(doc(db,`businesses/${bid}/employees`,editId),{...empForm,updatedAt:serverTimestamp()});
-        toast.success('Empleado actualizado');
+        toast.success(salaryChanged ? 'Empleado actualizado · historial salarial guardado' : 'Empleado actualizado');
         if(fichaEmp?.id===editId) setFichaEmp({id:editId,...empForm});
       } else {
         await addDoc(collection(db,`businesses/${bid}/employees`),{...empForm,createdAt:serverTimestamp()});
@@ -551,17 +609,47 @@ export default function RecursosHumanos() {
     setSaving(true);
     const emp = employees.find(x=>x.id===qv.empId);
     const amt = Number(qv.amount);
+    const rateForDate = qv.currency==='BS' ? getRateForDate(qv.date) : 0;
     try {
       await handleAddVoucher({
         employeeId:qv.empId, employeeName:emp?.fullName||'',
         amount:amt, currency:qv.currency,
-        amountUSD:qv.currency==='USD'?amt:(currentRate>0?amt/currentRate:0),
-        rateUsed:qv.currency==='BS'?currentRate:undefined,
+        amountUSD:qv.currency==='USD'?amt:(rateForDate>0?amt/rateForDate:0),
+        rateUsed:qv.currency==='BS'?rateForDate:undefined,
         reason:qv.reason, status:'PENDIENTE',
+        voucherDate: qv.date,
       });
-      setQv(f=>({...f,empId:'',amount:''}));
+      setQv(f=>({...f,empId:'',amount:'',date:new Date().toISOString().slice(0,10)}));
       setTimeout(()=>amtRef.current?.focus(),100);
     } finally { setSaving(false); }
+  };
+
+  const handleCorrectVoucher = async () => {
+    if(!correcting||!bid) return;
+    const {v,newAmt,note} = correcting;
+    const newAmount = Number(newAmt);
+    if(!newAmount||newAmount<=0) return;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db,`businesses/${bid}/vouchers`,v.id),{
+        status:'CORREGIDO', correctedAt:serverTimestamp(),
+        correctionNote:note, correctedToAmount:newAmount,
+      });
+      const rateForDate = v.currency==='BS'&&v.rateUsed ? v.rateUsed : (v.currency==='BS'?currentRate:0);
+      await addDoc(collection(db,`businesses/${bid}/vouchers`),{
+        employeeId:v.employeeId, employeeName:v.employeeName,
+        amount:newAmount, currency:v.currency,
+        amountUSD:v.currency==='USD'?newAmount:(rateForDate>0?newAmount/rateForDate:0),
+        rateUsed:v.currency==='BS'?rateForDate:undefined,
+        reason:v.reason, status:'PENDIENTE',
+        correctedFrom:v.id, originalAmount:v.amount, correctionNote:note,
+        voucherDate:v.voucherDate,
+        createdAt:serverTimestamp(),
+      });
+      toast.success(`Vale corregido: ${v.currency==='USD'?'$':'Bs '}${fmtHR(v.amount)} → ${v.currency==='USD'?'$':'Bs '}${fmtHR(newAmount)}`);
+      setCorrecting(null);
+    } catch { toast.error('Error al corregir el vale'); }
+    finally { setSaving(false); }
   };
 
   const handleCorte = () => {
@@ -599,6 +687,8 @@ export default function RecursosHumanos() {
               grossUSD:n.grossUSD,grossBs:n.grossBs,
               voucherDedUSD:n.voucherDedUSD,ivssUSD:n.ivssUSD,paroUSD:n.paroUSD,loanDedUSD:n.loanDedUSD,
               totalDedUSD:n.totalDedUSD,netUSD:n.netUSD,netBs:n.netBs,
+              settledVouchers:pendingVouchers.filter(v=>v.employeeId===n.emp.id)
+                .map(v=>({reason:v.reason,amount:v.amount,currency:v.currency,amountUSD:v.amountUSD})),
             })),
           };
           await addDoc(collection(db,`businesses/${bid}/payroll_runs`),run);
@@ -651,6 +741,120 @@ export default function RecursosHumanos() {
   const openNew  = () => {setEditId(null);setEmpForm(EMPTY_EMP);setEmpModal(true);};
   const openEdit = (e:Employee) => {setEditId(e.id);setEmpForm(e);setEmpModal(true);};
 
+  // ── Compare: load workspace users ───────────────────────────────────────────
+  useEffect(() => {
+    if (activeTab !== 'comparar' || !bid) return;
+    listUsers(bid).then((u: any[]) => setCompareUsers(u.filter((x: any) => x.id !== userProfile?.uid)));
+  }, [activeTab, bid, userProfile?.uid]);
+
+  // ── Compare: load target vouchers ───────────────────────────────────────────
+  useEffect(() => {
+    if (!compareTargetId || !bid) { setCompareTargetVouchers([]); return; }
+    setCompareLoading(true);
+    const u = onSnapshot(
+      query(collection(db, `businesses/${bid}/vouchers`), orderBy('createdAt', 'desc')),
+      s => { setCompareTargetVouchers(s.docs.map(d => ({ id: d.id, ...d.data() } as Voucher))); setCompareLoading(false); },
+      () => setCompareLoading(false),
+    );
+    return () => u();
+  }, [compareTargetId, bid]);
+
+  // ── Compare: load comments ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!compareTargetId || !bid) { setCompareComments([]); return; }
+    const u = onSnapshot(
+      query(collection(db, `businesses/${bid}/voucher_compare_comments`), orderBy('createdAt', 'desc')),
+      s => setCompareComments(s.docs.map(d => ({ id: d.id, ...d.data() } as any))),
+      () => {},
+    );
+    return () => u();
+  }, [compareTargetId, bid]);
+
+  const handleAddComment = async (voucherId: string) => {
+    const text = commentDraft[voucherId]?.trim();
+    if (!text || !bid) return;
+    await addDoc(collection(db, `businesses/${bid}/voucher_compare_comments`), {
+      voucherId, text,
+      author: userProfile?.fullName || userProfile?.email || 'Usuario',
+      authorId: userProfile?.uid,
+      targetUserId: compareTargetId,
+      createdAt: serverTimestamp(),
+    });
+    setCommentDraft(d => ({ ...d, [voucherId]: '' }));
+    toast.success('Comentario agregado');
+  };
+
+  // ── Compare: diff logic ─────────────────────────────────────────────────────
+  const compareData = useMemo(() => {
+    if (!compareTargetId) return { myVouchers: [], theirVouchers: [], diffs: [] };
+
+    // "My" vouchers are the ones I see for a specific employee
+    // "Their" vouchers are what the target user recorded
+    // For comparison, we match by employeeId + voucherDate + amount
+    const myV = vouchers.filter(v => v.status !== 'CORREGIDO');
+    const theirV = compareTargetVouchers.filter(v => v.status !== 'CORREGIDO');
+
+    type DiffRow = {
+      key: string;
+      employeeName: string;
+      date: string;
+      myVoucher: Voucher | null;
+      theirVoucher: Voucher | null;
+      status: 'match' | 'diff' | 'only_mine' | 'only_theirs';
+    };
+
+    const rows: DiffRow[] = [];
+    const usedTheirs = new Set<string>();
+
+    for (const mv of myV) {
+      const match = theirV.find(tv => !usedTheirs.has(tv.id) &&
+        tv.employeeId === mv.employeeId &&
+        tv.voucherDate === mv.voucherDate &&
+        tv.amount === mv.amount &&
+        tv.currency === mv.currency
+      );
+      if (match) {
+        usedTheirs.add(match.id);
+        rows.push({ key: mv.id, employeeName: mv.employeeName, date: mv.voucherDate || '', myVoucher: mv, theirVoucher: match, status: 'match' });
+      } else {
+        // Check for partial match (same employee + date but different amount)
+        const partial = theirV.find(tv => !usedTheirs.has(tv.id) &&
+          tv.employeeId === mv.employeeId &&
+          tv.voucherDate === mv.voucherDate
+        );
+        if (partial) {
+          usedTheirs.add(partial.id);
+          rows.push({ key: mv.id, employeeName: mv.employeeName, date: mv.voucherDate || '', myVoucher: mv, theirVoucher: partial, status: 'diff' });
+        } else {
+          rows.push({ key: mv.id, employeeName: mv.employeeName, date: mv.voucherDate || '', myVoucher: mv, theirVoucher: null, status: 'only_mine' });
+        }
+      }
+    }
+
+    // Add unmatched theirs
+    for (const tv of theirV) {
+      if (!usedTheirs.has(tv.id)) {
+        rows.push({ key: tv.id, employeeName: tv.employeeName, date: tv.voucherDate || '', myVoucher: null, theirVoucher: tv, status: 'only_theirs' });
+      }
+    }
+
+    rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    const filtered = compareFilter === 'all' ? rows
+      : compareFilter === 'match' ? rows.filter(r => r.status === 'match')
+      : compareFilter === 'diff' ? rows.filter(r => r.status === 'diff')
+      : rows.filter(r => r.status === 'only_mine' || r.status === 'only_theirs');
+
+    return {
+      myVouchers: myV,
+      theirVouchers: theirV,
+      diffs: filtered,
+      totalMatch: rows.filter(r => r.status === 'match').length,
+      totalDiff: rows.filter(r => r.status === 'diff').length,
+      totalMissing: rows.filter(r => r.status === 'only_mine' || r.status === 'only_theirs').length,
+    };
+  }, [vouchers, compareTargetVouchers, compareTargetId, compareFilter]);
+
   const tabCls = (t:SubTab) => `px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
     activeTab===t
       ?'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25'
@@ -660,19 +864,19 @@ export default function RecursosHumanos() {
   if(loading) return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-[#070b14]"><Loader2 className="animate-spin text-indigo-500" size={36}/></div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] p-5 font-inter">
+    <div className="min-h-full bg-slate-50 dark:bg-[#070b14] p-4 sm:p-5 font-inter">
       <div className="max-w-7xl mx-auto space-y-5">
 
         {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Capital Humano</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Capital Humano</h1>
             <p className="text-slate-400 dark:text-white/40 font-medium text-[10px] mt-2 uppercase tracking-[0.2em]">Nómina · Vales · Préstamos · Tasas</p>
           </div>
-          <div className="flex gap-1.5 p-1.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-2xl shadow-sm flex-wrap">
-            {(['directory','vouchers','nomina','tasas'] as SubTab[]).map(t=>(
-              <button key={t} onClick={()=>setActiveTab(t)} className={tabCls(t)}>
-                {t==='directory'?'Directorio':t==='vouchers'?'Vales':t==='nomina'?'Nómina':'Tasas de Vales'}
+          <div className="flex gap-1.5 p-1.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-2xl shadow-sm overflow-x-auto">
+            {(['directory','vouchers','nomina','tasas','comparar'] as SubTab[]).map(t=>(
+              <button key={t} onClick={()=>setActiveTab(t)} className={`${tabCls(t)} whitespace-nowrap shrink-0`}>
+                {t==='directory'?'Directorio':t==='vouchers'?'Vales':t==='nomina'?'Nómina':t==='tasas'?'Tasas':'Comparar'}
               </button>
             ))}
           </div>
@@ -753,7 +957,13 @@ export default function RecursosHumanos() {
                     <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                       {filteredEmps.map(e=>{
                         const ePend = pendingVouchers.filter(v=>v.employeeId===e.id).reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
+                        const ePendBs = pendingVouchers.filter(v=>v.employeeId===e.id&&v.currency==='BS').reduce((s,v)=>s+v.amount,0);
                         const isOv  = overdraftList.some(o=>o.id===e.id);
+                        const eLoans = loans.filter(l=>l.employeeId===e.id&&l.status==='ACTIVO');
+                        const eLoanRemaining = eLoans.reduce((s,l)=>s+(l.totalInstallments-l.paidInstallments)*l.installmentAmount,0);
+                        const pSal = periodSal(e,'USD');
+                        const pSalBs = periodSal(e,'BS');
+                        const eVoucherCount = pendingVouchers.filter(v=>v.employeeId===e.id).length;
                         return (
                           <tr key={e.id} className="group hover:bg-slate-50 dark:hover:bg-white/[0.03] cursor-pointer" onClick={()=>setFichaEmp(e)}>
                             <td className="px-5 py-3.5">
@@ -765,7 +975,22 @@ export default function RecursosHumanos() {
                                   <p className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
                                     {e.fullName}{isOv&&<AlertTriangle size={12} className="text-rose-500"/>}
                                   </p>
-                                  <p className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest">{e.role}</p>
+                                  <p className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest">{e.role} · {e.cedula||'S/C'}</p>
+                                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                    <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-black">
+                                      Neto: ${fmtHR(Math.max(0,pSal-ePend))} {pSalBs>0?`/ Bs ${fmtHR(Math.max(0,pSalBs-ePendBs))}`:''} <span className="text-slate-400 dark:text-white/25 font-bold">({FREQ_LABEL[e.payFrequency]})</span>
+                                    </span>
+                                    {eLoans.length>0&&(
+                                      <span className="text-[8px] bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-black uppercase" title={`Restante: $${fmtHR(eLoanRemaining)} en ${eLoans.reduce((s,l)=>s+(l.totalInstallments-l.paidInstallments),0)} cuotas`}>
+                                        Préstamo · ${fmtHR(eLoanRemaining)}
+                                      </span>
+                                    )}
+                                    {eVoucherCount>0&&(
+                                      <span className="text-[8px] bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 rounded font-black uppercase">
+                                        {eVoucherCount} vale{eVoucherCount>1?'s':''}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </td>
@@ -810,7 +1035,7 @@ export default function RecursosHumanos() {
                   {currentRate>0&&<span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase rounded-full border border-indigo-100 dark:border-indigo-500/25">Tasa: Bs {fmtHR(currentRate)}</span>}
                 </div>
                 {/* Quick form */}
-                <form onSubmit={handleQuickVoucher} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
+                <form onSubmit={handleQuickVoucher} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
                     <select required value={qv.empId} onChange={e=>setQv(f=>({...f,empId:e.target.value}))}
@@ -818,6 +1043,11 @@ export default function RecursosHumanos() {
                       <option value="">Seleccionar...</option>
                       {employees.filter(e=>e.status==='Activo').map(e=><option key={e.id} value={e.id}>{e.fullName} ({e.department})</option>)}
                     </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Fecha del Vale</label>
+                    <input type="date" required value={qv.date} onChange={e=>setQv(f=>({...f,date:e.target.value}))}
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"/>
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Moneda</label>
@@ -828,7 +1058,8 @@ export default function RecursosHumanos() {
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">
-                      Monto {qv.currency==='BS'&&currentRate>0&&qv.amount?`→ $${fmtHR(Number(qv.amount)/currentRate)}`:''}
+                      Monto {qv.currency==='BS'&&qv.date&&qv.amount?`→ $${fmtHR(Number(qv.amount)/getRateForDate(qv.date))}`:''}{' '}
+                      {qv.currency==='BS'&&qv.date&&<span className="text-[8px] text-indigo-400">Tasa: Bs {fmtHR(getRateForDate(qv.date))}</span>}
                     </label>
                     <input ref={amtRef} required type="number" step="0.01" value={qv.amount} onChange={e=>setQv(f=>({...f,amount:e.target.value}))}
                       placeholder="0.00"
@@ -857,16 +1088,62 @@ export default function RecursosHumanos() {
                   <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                     {vouchers.length===0&&<tr><td colSpan={8} className="px-5 py-16 text-center"><Ticket size={40} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin vales</p></td></tr>}
                     {vouchers.map(v=>(
-                      <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
-                        <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{v.createdAt?.toDate?v.createdAt.toDate().toLocaleDateString('es-VE'):'—'}</td>
-                        <td className="px-5 py-3 font-black text-slate-900 dark:text-white text-sm">{v.employeeName}</td>
+                      <React.Fragment key={v.id}>
+                      <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${v.status==='CORREGIDO'?'opacity-50':''}`}>
+                        <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{v.voucherDate||v.createdAt?.toDate?v.createdAt.toDate().toLocaleDateString('es-VE'):'—'}</td>
+                        <td className="px-5 py-3 font-black text-slate-900 dark:text-white text-sm">
+                          {v.employeeName}
+                          {v.correctedFrom&&<span className="ml-2 text-[8px] bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-black uppercase">Corrección</span>}
+                        </td>
                         <td className="px-5 py-3 text-center"><span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase border ${v.currency==='USD'?'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20':'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-100 dark:border-sky-500/20'}`}>{v.currency}</span></td>
-                        <td className="px-5 py-3 text-right font-black text-slate-900 dark:text-white">{v.currency==='USD'?'$':'Bs '}{fmtHR(v.amount)}</td>
+                        <td className="px-5 py-3 text-right font-black text-slate-900 dark:text-white">
+                          {v.correctedFrom&&v.originalAmount!=null&&<span className="text-[9px] text-slate-400 dark:text-white/25 line-through mr-1">{v.currency==='USD'?'$':'Bs '}{fmtHR(v.originalAmount)}</span>}
+                          {v.currency==='USD'?'$':'Bs '}{fmtHR(v.amount)}
+                        </td>
                         <td className="px-5 py-3 text-right text-[10px] font-mono text-slate-400 dark:text-white/30">{v.rateUsed?`Bs ${fmtHR(v.rateUsed)}`:'—'}</td>
                         <td className="px-5 py-3 text-right font-black text-slate-700 dark:text-slate-300">{v.amountUSD!=null?'$'+fmtHR(v.amountUSD):v.currency==='USD'?'$'+fmtHR(v.amount):'—'}</td>
-                        <td className="px-5 py-3 text-slate-400 dark:text-white/40 italic text-xs">{v.reason}</td>
-                        <td className="px-5 py-3 text-right"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${v.status==='PENDIENTE'?'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/30':'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30'}`}>{v.status}</span></td>
+                        <td className="px-5 py-3 text-slate-400 dark:text-white/40 italic text-xs">{v.reason}{v.correctionNote&&<span className="block text-[9px] text-amber-500 not-italic">{v.correctionNote}</span>}</td>
+                        <td className="px-5 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${v.status==='PENDIENTE'?'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/30':v.status==='CORREGIDO'?'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/30':'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30'}`}>{v.status}</span>
+                            {v.status==='PENDIENTE'&&(
+                              <button onClick={()=>setCorrecting({v,newAmt:String(v.amount),note:''})}
+                                className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-100 transition-all" title="Corregir vale">
+                                <Pencil size={11}/>
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
+                      {/* Inline correction form */}
+                      {correcting?.v.id===v.id&&(
+                        <tr>
+                          <td colSpan={8} className="px-5 py-3 bg-amber-50 dark:bg-amber-500/[0.06] border-l-4 border-amber-400">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                              <div className="flex items-center gap-1.5 text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest shrink-0">
+                                <RotateCcw size={11}/> Corrección: {v.currency==='USD'?'$':'Bs '}{fmtHR(v.amount)}
+                                <ChevronRight size={11}/>
+                              </div>
+                              <input type="number" step="0.01" min="0.01" placeholder="Nuevo monto"
+                                value={correcting.newAmt} onChange={e=>setCorrecting(c=>c?{...c,newAmt:e.target.value}:null)}
+                                className="px-3 py-1.5 text-xs font-black bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500 w-32"/>
+                              <input placeholder="Motivo de la corrección (opcional)"
+                                value={correcting.note} onChange={e=>setCorrecting(c=>c?{...c,note:e.target.value}:null)}
+                                className="px-3 py-1.5 text-xs bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500 flex-1 min-w-0"/>
+                              <div className="flex gap-1.5 shrink-0">
+                                <button onClick={handleCorrectVoucher} disabled={saving}
+                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-black text-[10px] uppercase tracking-widest disabled:opacity-50 flex items-center gap-1">
+                                  {saving?<Loader2 size={11} className="animate-spin"/>:<Save size={11}/>} Guardar
+                                </button>
+                                <button onClick={()=>setCorrecting(null)} className="px-3 py-1.5 border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 rounded-lg font-black text-[10px] uppercase hover:bg-slate-50 dark:hover:bg-white/[0.04]">
+                                  <X size={11}/>
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -930,7 +1207,7 @@ export default function RecursosHumanos() {
                           <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400 text-base">{n.netUSD>0?`$${fmtHR(n.netUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-sky-600 dark:text-sky-400">{n.netBs>0?`Bs ${fmtHR(n.netBs)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right">
-                            <button onClick={()=>printPayslip(n.emp,n,new Date().toISOString().slice(0,7),n.emp.payFrequency,businessName)}
+                            <button onClick={()=>printPayslip(n.emp,n,new Date().toISOString().slice(0,7),n.emp.payFrequency,businessName,pendingVouchers.filter(v=>v.employeeId===n.emp.id),undefined,loans)}
                               className="p-2 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all" title="Imprimir recibo">
                               <Printer size={13}/>
                             </button>
@@ -954,23 +1231,29 @@ export default function RecursosHumanos() {
               {/* Payroll history */}
               {payrollHistory.length>0&&(
                 <div className="border-t border-slate-100 dark:border-white/[0.06]">
-                  <div className="px-5 py-3 bg-slate-50/50 dark:bg-white/[0.02]"><h4 className="text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Historial de Nóminas</h4></div>
+                  <div className="px-5 py-3 bg-slate-50/50 dark:bg-white/[0.02] flex items-center gap-2">
+                    <History size={14} className="text-indigo-400"/>
+                    <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Historial de Nóminas</h4>
+                    <span className="text-[9px] text-slate-300 dark:text-white/20">Haz clic para ver detalle</span>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
                       <thead><tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05]">
                         <th className="px-5 py-3">Período</th><th className="px-5 py-3 text-center">Empl.</th>
                         <th className="px-5 py-3 text-right">Bruto USD</th><th className="px-5 py-3 text-right">Deduc.</th>
                         <th className="px-5 py-3 text-right">Neto USD</th><th className="px-5 py-3 text-right">Neto Bs</th>
+                        <th className="px-5 py-3"></th>
                       </tr></thead>
                       <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                         {payrollHistory.slice(0,10).map(r=>(
-                          <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+                          <tr key={r.id} className="hover:bg-indigo-50/40 dark:hover:bg-indigo-500/[0.04] cursor-pointer transition-colors" onClick={()=>setSelectedRun(r)}>
                             <td className="px-5 py-3"><p className="font-black text-slate-800 dark:text-slate-200 text-sm">{r.period}</p><p className="text-[10px] text-slate-400 dark:text-white/30">{FREQ_LABEL[r.frequency]||r.frequency} · {r.processedAt?.toDate?r.processedAt.toDate().toLocaleDateString('es-VE'):'—'}</p></td>
                             <td className="px-5 py-3 text-center font-bold text-slate-600 dark:text-slate-400">{r.employeeCount}</td>
                             <td className="px-5 py-3 text-right font-black text-slate-700 dark:text-slate-300">{r.totalGrossUSD>0?`$${fmtHR(r.totalGrossUSD)}`:'—'}</td>
                             <td className="px-5 py-3 text-right font-black text-rose-500 dark:text-rose-400">{r.totalDedUSD>0?`-$${fmtHR(r.totalDedUSD)}`:'—'}</td>
                             <td className="px-5 py-3 text-right font-black text-emerald-600 dark:text-emerald-400">{`$${fmtHR(r.totalNetUSD)}`}</td>
                             <td className="px-5 py-3 text-right font-black text-sky-600 dark:text-sky-400">{r.totalNetBs>0?`Bs ${fmtHR(r.totalNetBs)}`:'—'}</td>
+                            <td className="px-5 py-3"><ChevronRight size={14} className="text-slate-300 dark:text-white/20"/></td>
                           </tr>
                         ))}
                       </tbody>
@@ -1056,6 +1339,191 @@ export default function RecursosHumanos() {
             </>
           )}
 
+          {/* ── COMPARAR VALES ──────────────────────────────────────────── */}
+          {activeTab==='comparar' && (
+            <>
+              <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.06]">
+                <div className="flex items-center gap-2 mb-4">
+                  <ArrowLeftRight size={18} className="text-violet-500"/>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Comparar Vales</h3>
+                </div>
+                <p className="text-[10px] text-slate-400 dark:text-white/40 mb-4">Compara tus registros de vales con los de otro usuario del equipo. Detecta diferencias, faltantes y agrega comentarios.</p>
+
+                {/* User selector */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+                  <div className="flex-1 min-w-0">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Comparar con</label>
+                    <select value={compareTargetId} onChange={e=>setCompareTargetId(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
+                      <option value="">Seleccionar usuario...</option>
+                      {compareUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.email||u.id}</option>)}
+                    </select>
+                  </div>
+                  {compareTargetId && (
+                    <div className="flex gap-1.5 p-1 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-xl">
+                      {([['all','Todos'],['match','Iguales'],['diff','Diferentes'],['missing','Faltantes']] as const).map(([k,l])=>(
+                        <button key={k} onClick={()=>setCompareFilter(k)}
+                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                            compareFilter===k
+                              ?'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md'
+                              :'text-slate-400 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                          }`}>{l}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Compare content */}
+              {!compareTargetId ? (
+                <div className="py-16 text-center">
+                  <ArrowLeftRight size={48} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/>
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Selecciona un usuario para comparar</p>
+                  <p className="text-[10px] text-slate-300 dark:text-white/20 mt-1">Verás las diferencias entre tus registros y los del otro usuario</p>
+                </div>
+              ) : compareLoading ? (
+                <div className="py-16 text-center"><Loader2 size={32} className="mx-auto animate-spin text-violet-500"/></div>
+              ) : (
+                <>
+                  {/* Summary KPIs */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-50 dark:divide-white/[0.06] border-b border-slate-50 dark:border-white/[0.06]">
+                    <div className="px-4 py-3 text-center">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1">Mis Vales</p>
+                      <p className="text-lg font-black text-slate-700 dark:text-slate-300">{compareData.myVouchers.length}</p>
+                    </div>
+                    <div className="px-4 py-3 text-center">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500 dark:text-emerald-400 mb-1">Coinciden</p>
+                      <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">{compareData.totalMatch}</p>
+                    </div>
+                    <div className="px-4 py-3 text-center">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-amber-500 dark:text-amber-400 mb-1">Diferentes</p>
+                      <p className="text-lg font-black text-amber-600 dark:text-amber-400">{compareData.totalDiff}</p>
+                    </div>
+                    <div className="px-4 py-3 text-center">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-rose-500 dark:text-rose-400 mb-1">Faltantes</p>
+                      <p className="text-lg font-black text-rose-600 dark:text-rose-400">{compareData.totalMissing}</p>
+                    </div>
+                  </div>
+
+                  {/* Diff table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
+                          <th className="px-4 py-3">Estado</th>
+                          <th className="px-4 py-3">Empleado</th>
+                          <th className="px-4 py-3">Fecha</th>
+                          <th className="px-4 py-3 text-right">Mi Registro</th>
+                          <th className="px-4 py-3 text-right">Su Registro</th>
+                          <th className="px-4 py-3 text-right">Diferencia</th>
+                          <th className="px-4 py-3">Comentarios</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
+                        {compareData.diffs.length===0 && (
+                          <tr><td colSpan={7} className="px-4 py-12 text-center">
+                            <CheckCircle2 size={36} className="mx-auto text-emerald-300 dark:text-emerald-500/30 mb-2"/>
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">
+                              {compareFilter==='all'?'Sin registros para comparar':'Sin resultados en este filtro'}
+                            </p>
+                          </td></tr>
+                        )}
+                        {compareData.diffs.map(row => {
+                          const vComments = compareComments.filter(c => c.voucherId === row.key);
+                          const statusColor = row.status==='match'
+                            ?'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30'
+                            :row.status==='diff'
+                            ?'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/30'
+                            :'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/30';
+                          const statusLabel = row.status==='match'?'Igual':row.status==='diff'?'Difiere':row.status==='only_mine'?'Solo mío':'Solo suyo';
+                          const myAmt = row.myVoucher ? `${row.myVoucher.currency==='USD'?'$':'Bs '}${fmtHR(row.myVoucher.amount)}` : '—';
+                          const theirAmt = row.theirVoucher ? `${row.theirVoucher.currency==='USD'?'$':'Bs '}${fmtHR(row.theirVoucher.amount)}` : '—';
+                          const diffAmt = row.myVoucher && row.theirVoucher
+                            ? row.myVoucher.amount - row.theirVoucher.amount
+                            : null;
+
+                          return (
+                            <React.Fragment key={row.key}>
+                              <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] ${row.status!=='match'?'bg-opacity-30':''}`}>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase border ${statusColor}`}>
+                                    {statusLabel}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 font-black text-slate-900 dark:text-white text-sm">{row.employeeName}</td>
+                                <td className="px-4 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{row.date||'—'}</td>
+                                <td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">
+                                  {myAmt}
+                                  {row.myVoucher?.reason && <p className="text-[9px] text-slate-400 dark:text-white/25 font-normal italic">{row.myVoucher.reason}</p>}
+                                </td>
+                                <td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">
+                                  {theirAmt}
+                                  {row.theirVoucher?.reason && <p className="text-[9px] text-slate-400 dark:text-white/25 font-normal italic">{row.theirVoucher.reason}</p>}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {diffAmt !== null && diffAmt !== 0 ? (
+                                    <span className={`font-black text-sm ${diffAmt>0?'text-rose-600 dark:text-rose-400':'text-emerald-600 dark:text-emerald-400'}`}>
+                                      {diffAmt>0?'+':''}${fmtHR(Math.abs(diffAmt))}
+                                    </span>
+                                  ) : diffAmt === 0 ? (
+                                    <CheckCircle2 size={14} className="inline text-emerald-500"/>
+                                  ) : (
+                                    <span className="text-slate-300 dark:text-white/15">—</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-1.5">
+                                    {vComments.length > 0 && (
+                                      <span className="text-[9px] bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-full font-black border border-violet-100 dark:border-violet-500/25">
+                                        {vComments.length} <MessageSquare size={9} className="inline"/>
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                              {/* Comment section */}
+                              {row.status !== 'match' && (
+                                <tr>
+                                  <td colSpan={7} className="px-4 py-2 bg-slate-50/50 dark:bg-white/[0.02]">
+                                    <div className="flex flex-col gap-1.5">
+                                      {vComments.map(c => (
+                                        <div key={c.id} className="flex items-start gap-2 text-[10px]">
+                                          <span className="font-black text-violet-600 dark:text-violet-400 shrink-0">{c.author}:</span>
+                                          <span className="text-slate-600 dark:text-white/50">{c.text}</span>
+                                          <span className="text-[8px] text-slate-300 dark:text-white/15 shrink-0 ml-auto">
+                                            {c.createdAt?.toDate?.().toLocaleDateString('es-VE')||''}
+                                          </span>
+                                        </div>
+                                      ))}
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        <input
+                                          value={commentDraft[row.key]||''}
+                                          onChange={e=>setCommentDraft(d=>({...d,[row.key]:e.target.value}))}
+                                          onKeyDown={e=>e.key==='Enter'&&handleAddComment(row.key)}
+                                          placeholder="Agregar comentario..."
+                                          className="flex-1 px-2.5 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-[10px] dark:text-white outline-none focus:ring-1 focus:ring-violet-500"
+                                        />
+                                        <button onClick={()=>handleAddComment(row.key)}
+                                          className="p-1.5 bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-all disabled:opacity-50"
+                                          disabled={!commentDraft[row.key]?.trim()}>
+                                          <Send size={10}/>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
         </div>
       </div>
 
@@ -1069,6 +1537,74 @@ export default function RecursosHumanos() {
           onAddVoucher={handleAddVoucher}
           onAddLoan={handleAddLoan}
         />
+      )}
+
+      {/* PAYROLL RUN DETAIL MODAL */}
+      {selectedRun&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={()=>setSelectedRun(null)}>
+          <div className="bg-white dark:bg-[#0d1424] w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 dark:border-white/[0.08] overflow-hidden animate-in zoom-in-95 max-h-[90vh] flex flex-col" onClick={e=>e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-50 dark:border-white/[0.06] flex justify-between items-center bg-slate-50/50 dark:bg-white/[0.03] shrink-0">
+              <div>
+                <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <History size={16} className="text-indigo-400"/> Nómina {selectedRun.period}
+                </h2>
+                <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/40 mt-0.5 tracking-widest">
+                  {FREQ_LABEL[selectedRun.frequency]||selectedRun.frequency} · {selectedRun.processedAt?.toDate?selectedRun.processedAt.toDate().toLocaleString('es-VE'):'—'} · {selectedRun.employeeCount} empleados
+                </p>
+              </div>
+              <button onClick={()=>setSelectedRun(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl text-slate-400"><X size={18}/></button>
+            </div>
+
+            {/* Summary KPIs */}
+            <div className="grid grid-cols-3 divide-x divide-slate-50 dark:divide-white/[0.06] border-b border-slate-50 dark:border-white/[0.06] shrink-0">
+              {[
+                {l:'Bruto Total',v:`$${fmtHR(selectedRun.totalGrossUSD)}`,c:'text-slate-700 dark:text-slate-300'},
+                {l:'Deducciones',v:`-$${fmtHR(selectedRun.totalDedUSD)}`,c:'text-rose-600 dark:text-rose-400'},
+                {l:'Neto Total USD',v:`$${fmtHR(selectedRun.totalNetUSD)}`,c:'text-emerald-600 dark:text-emerald-400'},
+              ].map(({l,v,c})=>(
+                <div key={l} className="px-5 py-3 text-center">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1">{l}</p>
+                  <p className={`text-lg font-black ${c}`}>{v}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Detail table */}
+            <div className="overflow-y-auto flex-1">
+              {selectedRun.details?.map((det,i)=>{
+                const hasVouchers = (det.settledVouchers||[]).length>0;
+                return (
+                  <div key={det.employeeId||i} className="border-b border-slate-50 dark:border-white/[0.04] px-6 py-4">
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mb-1">
+                      <p className="font-black text-slate-900 dark:text-white text-sm">{det.name}</p>
+                      <span className="text-[9px] bg-slate-50 dark:bg-white/[0.06] border border-slate-100 dark:border-white/[0.08] text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded uppercase font-black">{det.department}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-5 gap-y-0.5 text-[10px]">
+                      {det.grossUSD>0&&<span className="text-slate-500 dark:text-white/40">Bruto: <strong className="text-slate-700 dark:text-slate-300">${fmtHR(det.grossUSD)}</strong></span>}
+                      {det.voucherDedUSD>0&&<span className="text-rose-500 dark:text-rose-400">Vales: -${fmtHR(det.voucherDedUSD)}</span>}
+                      {det.ivssUSD>0&&<span className="text-orange-500 dark:text-orange-400">IVSS: -${fmtHR(det.ivssUSD)}</span>}
+                      {det.paroUSD>0&&<span className="text-orange-500 dark:text-orange-400">Paro: -${fmtHR(det.paroUSD)}</span>}
+                      {det.loanDedUSD>0&&<span className="text-amber-600 dark:text-amber-400">Préstamo: -${fmtHR(det.loanDedUSD)}</span>}
+                      <span className="font-black text-emerald-600 dark:text-emerald-400">Neto: ${fmtHR(det.netUSD)}</span>
+                      {det.netBs>0&&<span className="font-black text-sky-600 dark:text-sky-400">/ Bs {fmtHR(det.netBs)}</span>}
+                    </div>
+                    {hasVouchers&&(
+                      <div className="mt-2 pl-3 border-l-2 border-rose-200 dark:border-rose-500/25 space-y-0.5">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-rose-500 dark:text-rose-400 mb-1">Vales descontados este período:</p>
+                        {det.settledVouchers!.map((sv,j)=>(
+                          <p key={j} className="text-[10px] text-slate-500 dark:text-white/40">
+                            · {sv.reason} — <strong>{sv.currency==='USD'?'$':'Bs '}{fmtHR(Number(sv.amount))}</strong>
+                            {sv.currency==='BS'&&sv.amountUSD!=null&&` (≈ $${fmtHR(Number(sv.amountUSD))})`}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* EMPLOYEE MODAL */}

@@ -432,12 +432,12 @@ export default function AdminDashboard({
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-5 sm:space-y-8 animate-in fade-in duration-500">
 
       {/* ── HEADER ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-syne font-bold text-[20px] md:text-[24px] text-slate-900 dark:text-white leading-tight">
+          <h1 className="font-syne font-bold text-[17px] md:text-[24px] text-slate-900 dark:text-white leading-tight">
             {greeting}, {userProfile?.displayName || 'Admin'}
           </h1>
           <p className="text-slate-400 dark:text-slate-500 text-[13px] font-medium mt-0.5">

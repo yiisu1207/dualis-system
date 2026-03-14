@@ -340,9 +340,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     const role = userProfile?.role;
     if (!businessId || (role !== 'owner' && role !== 'admin')) return;
     const q = query(
-      collection(db, 'workspaceRequests'),
-      where('workspaceId', '==', businessId),
-      where('status', '==', 'pending')
+      collection(db, 'users'),
+      where('businessId', '==', businessId),
+      where('status', '==', 'PENDING_APPROVAL')
     );
     const unsub = onSnapshot(q, snap => setPendingJoinCount(snap.size));
     return unsub;

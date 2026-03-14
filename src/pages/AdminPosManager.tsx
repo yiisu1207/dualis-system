@@ -372,8 +372,8 @@ export default function AdminPosManager() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0a0f1e] font-inter transition-colors">
-      <div className="max-w-7xl mx-auto p-6 space-y-7">
+    <div className="min-h-full bg-slate-50 dark:bg-[#0a0f1e] font-inter transition-colors">
+      <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-5 sm:space-y-7">
 
         {/* ── HEADER ─────────────────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-5">
@@ -382,7 +382,7 @@ export default function AdminPosManager() {
               <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">Centro de Control</span>
             </div>
-            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Administrador de Cajas</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Administrador de Cajas</h1>
             <p className="text-slate-400 dark:text-slate-500 text-sm font-semibold mt-2">
               <span className="text-slate-600 dark:text-slate-300 font-black">{headerTime}</span>
               {' — '}{headerDate}
@@ -646,7 +646,7 @@ export default function AdminPosManager() {
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleCreateTerminal} className="p-8 space-y-6">
+            <form onSubmit={handleCreateTerminal} className="p-4 sm:p-8 space-y-6">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2 block">
                   Nombre Identificador

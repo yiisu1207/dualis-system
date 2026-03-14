@@ -315,7 +315,65 @@ export default function Register() {
   };
 
   /* ══════════════════════════════════════════════════════
-     SUCCESS SCREEN
+     SUCCESS SCREEN — JOIN MODE (waiting for approval)
+  ══════════════════════════════════════════════════════ */
+  if (step === 'success' && !isCreate) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden bg-[#060b1a]">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-[20%] -left-[10%] w-[70%] h-[70%] rounded-full bg-emerald-600/15 blur-[120px]" />
+          <div className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] rounded-full bg-teal-600/10 blur-[100px]" />
+        </div>
+        <div className="absolute inset-0 opacity-[0.03]"
+          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
+
+        <div className="relative z-10 w-full max-w-md animate-in zoom-in-95 fade-in-0 duration-500">
+          <div className="bg-white/[0.04] border border-white/10 backdrop-blur-sm rounded-[3rem] p-10 flex flex-col items-center text-center shadow-2xl">
+
+            {/* Pulsing clock */}
+            <div className="relative mx-auto mb-6 w-20 h-20">
+              <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-ping" />
+              <div className="relative h-20 w-20 rounded-full bg-gradient-to-br from-amber-500/25 to-orange-500/10 border border-amber-500/30 flex items-center justify-center">
+                <Clock size={32} className="text-amber-400" />
+              </div>
+            </div>
+
+            <div className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full mb-4">
+              ✦ Solicitud enviada
+            </div>
+
+            <h2 className="text-2xl font-black text-white tracking-tight mb-2">¡Ya casi estás!</h2>
+            <p className="text-white/40 text-sm leading-relaxed mb-6 max-w-sm">
+              Tu solicitud fue enviada al administrador del equipo. Cuando te aprueben, podrás acceder al sistema <strong className="text-white/70">automáticamente</strong> sin volver a iniciar sesión.
+            </p>
+
+            <div className="w-full bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 mb-6 text-left space-y-2">
+              <p className="text-[9px] font-black uppercase tracking-[0.35em] text-white/20">Tu cuenta</p>
+              <p className="text-sm font-bold text-white/70 truncate">{form.email}</p>
+              <p className="text-[10px] text-white/25">Espacio: <span className="font-mono text-white/40">{form.workspaceCode}</span></p>
+            </div>
+
+            <div className="flex items-center gap-2.5 p-3.5 bg-white/[0.04] border border-white/[0.07] rounded-2xl mb-6 w-full">
+              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+              <p className="text-xs text-white/40 text-left">
+                Acceso automático al ser aprobado. No necesitas hacer nada más.
+              </p>
+            </div>
+
+            <button
+              onClick={() => nav('/login')}
+              className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all"
+            >
+              Ir al inicio de sesión <ArrowRight size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════
+     SUCCESS SCREEN — CREATE MODE
   ══════════════════════════════════════════════════════ */
   if (step === 'success') {
     const isPaid = selectedPlan && selectedPlan !== 'trial';
