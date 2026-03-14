@@ -152,12 +152,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
           if (needsProfileUpdate) {
             const ownerId = profile.uid || firebaseUser.uid;
-            await updateDoc(doc(db, 'users', ownerId), firestoreUpdate);
+            try {
+              await updateDoc(doc(db, 'users', ownerId), firestoreUpdate);
+            } catch (e) {
+              console.warn('[AuthContext] profile update failed (may lack permissions):', e);
+            }
           }
-          if (profile.businessId) {
+          // Solo asegurar membership si el usuario está activo (no pendientes de aprobación)
+          if (profile.businessId && profile.status !== 'PENDING_APPROVAL' && profile.role !== 'pending') {
             const ownerId = profile.uid || firebaseUser.uid;
             const role = (profile.role || 'owner') as UserProfile['role'];
-            await ensureMembership(profile.businessId, ownerId, role);
+            try {
+              await ensureMembership(profile.businessId, ownerId, role);
+            } catch (e) {
+              console.warn('[AuthContext] ensureMembership failed (may lack permissions):', e);
+            }
           }
           finalProfile = profile;
         } else {
