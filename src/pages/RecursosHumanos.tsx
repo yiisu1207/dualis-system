@@ -593,8 +593,13 @@ export default function RecursosHumanos() {
 
   const handleAddVoucher = useCallback(async (v: any) => {
     if(!bid) return;
-    await addDoc(collection(db,`businesses/${bid}/vouchers`),{...v,createdAt:serverTimestamp()});
-    toast.success(`Vale registrado — ${v.employeeName}`);
+    try {
+      await addDoc(collection(db,`businesses/${bid}/vouchers`),{...v,createdAt:serverTimestamp()});
+      toast.success(`Vale registrado — ${v.employeeName}`);
+    } catch (err: any) {
+      toast.error(err?.code === 'permission-denied' ? 'Sin permisos para registrar vales' : `Error: ${err?.message || 'intenta de nuevo'}`);
+      throw err;
+    }
   },[bid,toast]);
 
   const handleAddLoan = useCallback(async (l: any) => {
@@ -621,7 +626,8 @@ export default function RecursosHumanos() {
       });
       setQv(f=>({...f,empId:'',amount:'',date:new Date().toISOString().slice(0,10)}));
       setTimeout(()=>amtRef.current?.focus(),100);
-    } finally { setSaving(false); }
+    } catch { /* error ya mostrado por handleAddVoucher */ }
+    finally { setSaving(false); }
   };
 
   const handleCorrectVoucher = async () => {
@@ -1090,7 +1096,7 @@ export default function RecursosHumanos() {
                     {vouchers.map(v=>(
                       <React.Fragment key={v.id}>
                       <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${v.status==='CORREGIDO'?'opacity-50':''}`}>
-                        <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{v.voucherDate||v.createdAt?.toDate?v.createdAt.toDate().toLocaleDateString('es-VE'):'—'}</td>
+                        <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{v.voucherDate || (v.createdAt?.toDate ? v.createdAt.toDate().toLocaleDateString('es-VE') : '—')}</td>
                         <td className="px-5 py-3 font-black text-slate-900 dark:text-white text-sm">
                           {v.employeeName}
                           {v.correctedFrom&&<span className="ml-2 text-[8px] bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-black uppercase">Corrección</span>}
