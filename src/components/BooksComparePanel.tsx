@@ -390,38 +390,50 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
 
   /* ── ACCEPT ── */
   const handleAccept = async (req: BookCompareRequest) => {
-    await updateDoc(doc(db, 'bookCompareRequests', req.id), {
-      status: 'active',
-      respondedAt: serverTimestamp(),
-    });
-    setActiveRequestId(req.id);
-    setActiveRequest({ ...req, status: 'active' });
-    setRequestStatus('active');
-    logAudit(businessId, currentUserId, 'EDITAR', 'COMPARAR_LIBROS', `Aceptar ${req.id}`);
+    try {
+      await updateDoc(doc(db, 'bookCompareRequests', req.id), {
+        status: 'active',
+        respondedAt: serverTimestamp(),
+      });
+      setActiveRequestId(req.id);
+      setActiveRequest({ ...req, status: 'active' });
+      setRequestStatus('active');
+      logAudit(businessId, currentUserId, 'EDITAR', 'COMPARAR_LIBROS', `Aceptar ${req.id}`);
+    } catch (err: any) {
+      showToast(err?.code === 'permission-denied' ? 'Sin permisos para aceptar esta solicitud.' : `Error al aceptar: ${err?.message || 'intenta de nuevo'}`);
+    }
   };
 
   /* ── REJECT ── */
   const handleReject = async (req: BookCompareRequest) => {
-    await updateDoc(doc(db, 'bookCompareRequests', req.id), {
-      status: 'rejected',
-      rejectReason: rejectReason.trim() || null,
-      respondedAt: serverTimestamp(),
-    });
-    setRejectingId(null);
-    setRejectReason('');
-    logAudit(businessId, currentUserId, 'ELIMINAR', 'COMPARAR_LIBROS', `Rechazar ${req.id}`);
+    try {
+      await updateDoc(doc(db, 'bookCompareRequests', req.id), {
+        status: 'rejected',
+        rejectReason: rejectReason.trim() || null,
+        respondedAt: serverTimestamp(),
+      });
+      setRejectingId(null);
+      setRejectReason('');
+      logAudit(businessId, currentUserId, 'ELIMINAR', 'COMPARAR_LIBROS', `Rechazar ${req.id}`);
+    } catch (err: any) {
+      showToast(err?.code === 'permission-denied' ? 'Sin permisos para rechazar esta solicitud.' : `Error al rechazar: ${err?.message || 'intenta de nuevo'}`);
+    }
   };
 
   /* ── CLOSE ── */
   const handleClose = async () => {
     if (!activeRequestId) return;
-    await updateDoc(doc(db, 'bookCompareRequests', activeRequestId), {
-      status: 'closed',
-      closedAt: serverTimestamp(),
-      closedBy: currentUserId,
-    });
-    logAudit(businessId, currentUserId, 'EDITAR', 'COMPARAR_LIBROS', `Cerrar ${activeRequestId}`);
-    resetSession();
+    try {
+      await updateDoc(doc(db, 'bookCompareRequests', activeRequestId), {
+        status: 'closed',
+        closedAt: serverTimestamp(),
+        closedBy: currentUserId,
+      });
+      logAudit(businessId, currentUserId, 'EDITAR', 'COMPARAR_LIBROS', `Cerrar ${activeRequestId}`);
+      resetSession();
+    } catch (err: any) {
+      showToast(err?.code === 'permission-denied' ? 'Sin permisos para cerrar la sesión.' : `Error al cerrar: ${err?.message || 'intenta de nuevo'}`);
+    }
   };
 
   /* ── SEND CHAT MSG ── */
@@ -749,7 +761,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
                     <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                       {mod?.label || req.module}
                     </span>
-                    {req.entityName && (
+                    {req.entityName && !req.entityName.includes('undefined') && (
                       <span className="text-[9px] text-slate-500 dark:text-white/30">· {req.entityName}</span>
                     )}
                   </div>
