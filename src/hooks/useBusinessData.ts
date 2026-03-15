@@ -48,12 +48,13 @@ export function useBusinessData(businessId: string): BusinessData {
     ));
 
     const qEmp = query(
-      collection(db, `businesses/${businessId}/employees`),
-      orderBy('fullName', 'asc')
+      collection(db, `businesses/${businessId}/employees`)
     );
-    unsubs.push(onSnapshot(qEmp, snap =>
-      setEmployees(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
-    ));
+    unsubs.push(onSnapshot(qEmp, snap => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      docs.sort((a: any, b: any) => (a.fullName || a.name || '').localeCompare(b.fullName || b.name || ''));
+      setEmployees(docs);
+    }));
 
     const qAdv = query(
       collection(db, `businesses/${businessId}/payroll_advances`),

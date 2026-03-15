@@ -84,6 +84,30 @@ service cloud.firestore {
         allow update: if isMember(bid);
       }
 
+      // Vales (vouchers): cualquier miembro puede registrar y leer
+      match /vouchers/{docId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
+      // Préstamos: cualquier miembro puede registrar
+      match /loans/{docId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
+      // Adelantos de nómina: cualquier miembro puede registrar
+      match /payroll_advances/{docId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
       // Chat: todos los miembros pueden crear canales y enviar mensajes
       match /conversations/{convId} {
         allow read:   if isMember(bid);
@@ -155,6 +179,30 @@ service cloud.firestore {
       // Consumir invitación: cualquier usuario autenticado (al registrarse)
       allow update: if isSignedIn();
       allow delete: if false;
+    }
+
+    // COMPARAR LIBROS — solicitudes
+    match /bookCompareRequests/{docId} {
+      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow create: if isSignedIn() && belongsToMe(request.resource.data);
+      // El receptor puede aceptar/rechazar; el solicitante puede cancelar/cerrar; admin siempre
+      allow update: if isSignedIn() && (
+        resource.data.receiverId == request.auth.uid ||
+        resource.data.requesterId == request.auth.uid ||
+        (belongsToMe(resource.data) && (myRole() == 'admin' || myRole() == 'owner'))
+      );
+    }
+
+    // COMPARAR LIBROS — chat de sesión
+    match /bookCompareChats/{docId} {
+      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow create: if isSignedIn() && belongsToMe(request.resource.data);
+    }
+
+    // COMPARAR LIBROS — notas por fila
+    match /bookCompareNotes/{docId} {
+      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow create, update: if isSignedIn() && belongsToMe(request.resource.data);
     }
 
     // SOLICITUDES
