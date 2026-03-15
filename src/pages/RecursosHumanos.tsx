@@ -111,7 +111,7 @@ function periodSal(emp: Employee, cur: 'USD'|'BS') {
 
 // ── SMALL COMPONENTS ─────────────────────────────────────────────────────────
 const KPI = ({ title, value, sub, icon: Icon, color, bg, onClick, btn }: any) => (
-  <div className={`p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg flex-1 min-w-[calc(50%-8px)] sm:min-w-[155px] bg-white ${bg||'dark:bg-[#0d1424]'}`}>
+  <div className={`p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg flex-1 min-w-[calc(50%-8px)] sm:min-w-[155px] bg-white dark:bg-[#0d1424] ${bg||''}`}>
     <div className="flex justify-between items-start mb-3">
       <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${color}`}><Icon size={19}/></div>
       {onClick && <button onClick={onClick} className="px-3 py-1.5 bg-slate-900 dark:bg-white/[0.1] text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-indigo-600 transition-all">{btn}</button>}

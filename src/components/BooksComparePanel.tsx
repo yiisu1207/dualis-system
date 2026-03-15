@@ -201,6 +201,20 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     return onSnapshot(q, snap => setVouchers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
   }, [businessId]);
 
+  /* ── Employees (fetched internally as fallback — prop may arrive empty) ── */
+  const [localEmployees, setLocalEmployees] = useState<any[]>([]);
+  useEffect(() => {
+    if (!businessId) return;
+    const q = query(collection(db, `businesses/${businessId}/employees`));
+    return onSnapshot(q, snap => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      docs.sort((a: any, b: any) => (a.fullName || a.name || '').localeCompare(b.fullName || b.name || ''));
+      setLocalEmployees(docs);
+    });
+  }, [businessId]);
+  // Use prop if available, otherwise use local fetch
+  const resolvedEmployees = employees.length > 0 ? employees : localEmployees;
+
   /* ── Time entries (fetched internally for RRHH comparison) ── */
   const [timeEntries, setTimeEntries] = useState<any[]>([]);
   useEffect(() => {
@@ -613,10 +627,9 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
       label: s.contacto || (s as any).nombre || s.id,
       sub: s.rif || s.categoria || '',
     }));
-    if (selModule === 'rrhh') return employees.map(e => {
-      const em = e as any;
-      const full = em.fullName || [em.name, em.lastName].filter(Boolean).join(' ') || em.nombre || e.id;
-      return { id: e.id, label: full, sub: em.cedula || em.idNumber || em.position || em.role || '' };
+    if (selModule === 'rrhh') return resolvedEmployees.map((e: any) => {
+      const full = e.fullName || [e.name, e.lastName].filter(Boolean).join(' ') || e.nombre || e.id;
+      return { id: e.id, label: full, sub: e.cedula || e.idNumber || e.position || e.role || '' };
     });
     if (selModule === 'inventario') {
       const seen = new Map<string, string>();
@@ -627,7 +640,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
       return Array.from(seen.entries()).map(([id, label]) => ({ id, label, sub: '' }));
     }
     return [{ id: '__all__', label: 'Todos los movimientos', sub: '' }];
-  }, [selModule, customers, suppliers, employees, movements]);
+  }, [selModule, customers, suppliers, resolvedEmployees, movements]);
 
   /* ── ADD MISSING MOVEMENT ── */
   const [addingRowKey, setAddingRowKey] = useState<string | null>(null);

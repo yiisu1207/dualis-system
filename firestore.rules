@@ -142,13 +142,38 @@ service cloud.firestore {
         }
       }
 
+      // Empleados: cualquier miembro puede leer/crear/actualizar
+      match /employees/{docId} {
+        allow read: if isMember(bid);
+        allow create, update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
+      // Tasas de vales: cualquier miembro puede leer/crear
+      match /voucher_rates/{docId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update, delete: if isAdmin(bid);
+      }
+
+      // Payroll runs: cualquier miembro puede leer/crear (procesar nómina)
+      match /payroll_runs/{docId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
+      // Catch-all: cualquier subcollection NO listada arriba
+      // Miembros pueden leer y crear/actualizar; solo admin puede borrar
       match /{allSubcollections=**} {
         allow read: if isMember(bid);
-        allow write: if isAdmin(bid);
+        allow create, update: if isMember(bid);
+        allow delete: if isAdmin(bid);
       }
     }
 
-    // CONFIGURACIONES
+    // CONFIGURACIONES (solo admin puede escribir)
     match /businessConfigs/{bid} {
       allow read: if isMember(bid);
       allow write: if isAdmin(bid);
@@ -179,11 +204,13 @@ service cloud.firestore {
     }
 
     // COLECCIONES OPERATIVAS EN RAÍZ
-    // (Clientes, Movimientos, Inventario, etc.)
+    // (movements, customers, suppliers, auditLogs, etc.)
+    // Cualquier miembro puede leer, crear y actualizar; solo admin puede borrar
     match /{collectionName}/{docId} {
       allow read: if isSignedIn() && belongsToMe(resource.data);
       allow create: if isSignedIn() && belongsToMe(request.resource.data);
-      allow update, delete: if isSignedIn() && belongsToMe(resource.data) && (myRole() == 'admin' || myRole() == 'owner');
+      allow update: if isSignedIn() && belongsToMe(resource.data);
+      allow delete: if isSignedIn() && belongsToMe(resource.data) && (myRole() == 'admin' || myRole() == 'owner');
     }
 
     // INVITACIONES (root mirror para lookup por token)
