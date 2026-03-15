@@ -557,6 +557,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           user={user}
           config={{ companyName: userProfile?.businessId } as any}
           rolePermissions={rolePermissions}
+          canCompare={canAccess('comparar')}
           onLogout={() => auth.signOut()}
           onOpenProfile={() => setIsProfileOpen(true)}
         />
