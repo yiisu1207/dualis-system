@@ -639,7 +639,18 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             {activeTab === 'comparar' && (
               !canView('comparar') ? <NoAccess /> :
               canAccess('comparar')
-                ? <BooksComparePanel movements={movements} customers={customers} rates={legacyRates as any} />
+                ? <BooksComparePanel
+                    businessId={businessId}
+                    currentUserId={userProfile?.uid || ''}
+                    currentUserName={userProfile?.displayName || userProfile?.fullName || userProfile?.email || 'Yo'}
+                    isAdmin={userProfile?.role === 'owner' || userProfile?.role === 'admin'}
+                    movements={movements}
+                    customers={customers}
+                    suppliers={suppliers}
+                    employees={employees}
+                    advances={advances}
+                    rates={legacyRates as any}
+                  />
                 : <LockedModule moduleName="Comparar Libros" requiredPlan="negocio" />
             )}
 
