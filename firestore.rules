@@ -92,6 +92,14 @@ service cloud.firestore {
         allow delete: if isAdmin(bid);
       }
 
+      // Time entries (overtime/absences/missing days): cualquier miembro
+      match /time_entries/{docId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
       // Préstamos: cualquier miembro puede registrar
       match /loans/{docId} {
         allow read: if isMember(bid);
@@ -105,6 +113,14 @@ service cloud.firestore {
         allow read: if isMember(bid);
         allow create: if isMember(bid);
         allow update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
+      // Comentarios de comparación de vales: cualquier miembro puede leer/crear
+      match /voucher_compare_comments/{docId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isMember(bid) && request.auth.uid == resource.data.authorId;
         allow delete: if isAdmin(bid);
       }
 

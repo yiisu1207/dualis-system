@@ -41,6 +41,9 @@ export const DEFAULT_CONFIG: AppConfig = {
     ivaEnabled: true,
     scannerEnabled: true,
   },
+  operation: {
+    isolationMode: 'shared',
+  },
   messageTemplates: [
     {
       id: 'recordatorio',
@@ -84,6 +87,10 @@ export const mergeConfig = (incoming?: Partial<AppConfig>): AppConfig => {
     fiscal: {
       ...DEFAULT_CONFIG.fiscal,
       ...(data.fiscal || {}),
+    },
+    operation: {
+      ...DEFAULT_CONFIG.operation,
+      ...(data.operation || {}),
     },
     messageTemplates:
       data.messageTemplates && data.messageTemplates.length > 0

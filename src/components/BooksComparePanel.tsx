@@ -201,6 +201,14 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     return onSnapshot(q, snap => setVouchers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
   }, [businessId]);
 
+  /* ── Time entries (fetched internally for RRHH comparison) ── */
+  const [timeEntries, setTimeEntries] = useState<any[]>([]);
+  useEffect(() => {
+    if (!businessId) return;
+    const q = query(collection(db, `businesses/${businessId}/time_entries`));
+    return onSnapshot(q, snap => setTimeEntries(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+  }, [businessId]);
+
   /* ── Business users (fetched internally) ── */
   const [bizUsers, setBizUsers] = useState<any[]>([]);
 
@@ -483,11 +491,18 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     const mod = req.module;
     const eid = req.entityId;
 
+    // Helper: check if a movement was registered/created by this user
+    const byUser = (m: any) =>
+      m.registeredBy === userId ||
+      m.vendedorId === userId ||
+      m.createdBy === userId ||
+      m.ownerId === userId;
+
     if (mod === 'cxc') {
       return movements.filter(m =>
         !m.isSupplierMovement &&
         !(m as any).anulada &&
-        (m.ownerId === userId || (m as any).vendedorId === userId) &&
+        byUser(m) &&
         (!eid || m.entityId === eid)
       );
     }
@@ -495,16 +510,22 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
       return movements.filter(m =>
         m.isSupplierMovement &&
         !(m as any).anulada &&
-        (m.ownerId === userId || (m as any).vendedorId === userId) &&
+        byUser(m) &&
         (!eid || m.entityId === eid)
       );
     }
     if (mod === 'rrhh') {
-      // Advances (préstamos / adelantos)
-      const advFiltered = advances.filter(a => !eid || a.employeeId === eid);
-      // Vouchers (vales descontados de nómina)
+      // Advances filtered by user who registered them
+      const advFiltered = advances.filter(a =>
+        byUser(a) && (!eid || a.employeeId === eid)
+      );
+      // Vouchers filtered by registeredBy
       const voucherFiltered = vouchers
-        .filter(v => (!eid || v.employeeId === eid) && v.status !== 'CORREGIDO')
+        .filter(v =>
+          (v.registeredBy === userId || (!v.registeredBy && userId === currentUserId)) &&
+          (!eid || v.employeeId === eid) &&
+          v.status !== 'CORREGIDO'
+        )
         .map(v => ({
           id:             v.id,
           employeeId:     v.employeeId,
@@ -518,19 +539,41 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
           movementType:   'VALE',
           status:         v.status,
         } as any));
-      return [...advFiltered, ...voucherFiltered] as CashAdvance[];
+      // Time entries filtered by registeredBy
+      const teFiltered = timeEntries
+        .filter(t =>
+          (t.registeredBy === userId || (!t.registeredBy && userId === currentUserId)) &&
+          (!eid || t.employeeId === eid) &&
+          t.status !== 'APLICADO'
+        )
+        .map(t => ({
+          id:             t.id,
+          employeeId:     t.employeeId,
+          concept:        `${t.type === 'overtime' ? 'H. Extra' : t.type === 'absence' ? 'Ausencia' : 'Día faltante'} — ${t.reason || ''}`,
+          reason:         t.reason,
+          amount:         Math.abs(t.amountUSD || 0),
+          originalAmount: Math.abs(t.amountUSD || 0),
+          currency:       'USD',
+          createdAt:      t.createdAt,
+          date:           t.date || t.createdAt,
+          movementType:   t.type === 'overtime' ? 'H_EXTRA' : t.type === 'absence' ? 'AUSENCIA' : 'DIA_FALTANTE',
+          status:         t.status,
+          hours:          t.hours,
+          days:           t.days,
+        } as any));
+      return [...advFiltered, ...voucherFiltered, ...teFiltered] as CashAdvance[];
     }
     if (mod === 'inventario') {
       return movements.filter(m =>
         (m as any).movementType === 'AJUSTE' &&
-        (m.ownerId === userId || (m as any).vendedorId === userId) &&
+        byUser(m) &&
         (!eid || m.entityId === eid || (m as any).productId === eid)
       );
     }
     if (mod === 'contabilidad') {
       return movements.filter(m =>
         !(m as any).anulada &&
-        (m.ownerId === userId || (m as any).vendedorId === userId)
+        byUser(m)
       );
     }
     return [];
@@ -544,7 +587,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
       ? activeRequest.receiverId
       : activeRequest.requesterId, activeRequest);
     return buildDiff(leftData, rightData, rates);
-  }, [activeRequest, requestStatus, movements, advances, rates, currentUserId]);
+  }, [activeRequest, requestStatus, movements, advances, vouchers, rates, currentUserId]);
 
   const diffStats = useMemo(() => ({
     total:    diffRows.length,
@@ -585,6 +628,123 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     }
     return [{ id: '__all__', label: 'Todos los movimientos', sub: '' }];
   }, [selModule, customers, suppliers, employees, movements]);
+
+  /* ── ADD MISSING MOVEMENT ── */
+  const [addingRowKey, setAddingRowKey] = useState<string | null>(null);
+
+  const handleAddMissing = async (row: CompareRow) => {
+    // Determine which item the current user is missing
+    const sourceItem = row.status === 'only-left' ? row.left : row.right;
+    if (!sourceItem || !activeRequest) return;
+
+    const rowKey = `${(row.left as any)?.id || 'L'}_${(row.right as any)?.id || 'R'}`;
+    setAddingRowKey(rowKey);
+
+    try {
+      const mod = activeRequest.module;
+      const data: any = { ...sourceItem };
+      // Remove the original ID so Firestore generates a new one
+      delete data.id;
+      // Tag it as added from comparison
+      data.addedFromComparison = true;
+      data.comparisonRequestId = activeRequestId;
+      data.registeredBy = currentUserId;
+      data.addedAt = serverTimestamp();
+
+      if (mod === 'rrhh') {
+        // Add as a voucher to the business
+        await addDoc(collection(db, `businesses/${businessId}/vouchers`), {
+          employeeId: data.employeeId || '',
+          employeeName: data.employeeName || '',
+          amount: data.originalAmount || data.amount || 0,
+          currency: data.currency || 'USD',
+          amountUSD: data.amount || 0,
+          rateUsed: data.rateUsed || undefined,
+          reason: data.reason || data.concept || 'Agregado desde comparación',
+          status: 'PENDIENTE',
+          voucherDate: data.voucherDate || data.date || '',
+          registeredBy: currentUserId,
+          registeredByName: currentUserName,
+          addedFromComparison: true,
+          comparisonRequestId: activeRequestId,
+          createdAt: serverTimestamp(),
+        });
+      } else {
+        // Add as a movement to root collection
+        await addDoc(collection(db, 'movements'), {
+          businessId,
+          entityId: data.entityId || '',
+          concept: data.concept || data.reason || 'Agregado desde comparación',
+          amount: data.amount || 0,
+          originalAmount: data.originalAmount || data.amount || 0,
+          currency: data.currency || 'USD',
+          date: data.date || new Date().toISOString(),
+          movementType: data.movementType || 'FACTURA',
+          accountType: data.accountType || 'customer',
+          isSupplierMovement: data.isSupplierMovement || false,
+          vendedorId: currentUserId,
+          vendedorNombre: currentUserName,
+          addedFromComparison: true,
+          comparisonRequestId: activeRequestId,
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      logAudit(businessId, currentUserId, 'CREAR', 'COMPARAR_LIBROS',
+        `Añadir movimiento faltante desde comparación ${activeRequestId}: ${(sourceItem as any).concept || (sourceItem as any).reason || ''} — ${fmtAmount(sourceItem)}`);
+      showToast('Movimiento añadido a tu libro.');
+    } catch (err: any) {
+      showToast(err?.code === 'permission-denied' ? 'Sin permisos.' : `Error: ${err?.message || 'intenta de nuevo'}`);
+    } finally {
+      setAddingRowKey(null);
+    }
+  };
+
+  /* ── EXPORT EXCEL ── */
+  const handleExportExcel = () => {
+    const diffs = diffRows.filter(r => r.status !== 'match');
+    if (!diffs.length) { showToast('No hay diferencias para exportar.'); return; }
+
+    const otherName = getUserName(
+      activeRequest?.requesterId === currentUserId ? activeRequest?.receiverId! : activeRequest?.requesterId!
+    );
+    const modLabel = MODULES.find(m => m.id === activeRequest?.module)?.label || '';
+
+    // Build CSV with BOM for Excel
+    const headers = ['Estado', 'Fecha (mío)', 'Concepto (mío)', 'Monto (mío)', 'Fecha (otro)', 'Concepto (otro)', 'Monto (otro)', 'Dif.', 'Nota'];
+    const rows = diffs.map(r => {
+      const rowKey = `${(r.left as any)?.id || ''}_${(r.right as any)?.id || ''}`;
+      const note = notesByRow[rowKey]?.text || '';
+      const statusLabel = r.status === 'mismatch-amount' ? 'Monto distinto'
+        : r.status === 'only-left' ? 'Solo en mi libro' : 'Solo en su libro';
+      return [
+        statusLabel,
+        r.left ? fmtDate((r.left as any).createdAt || (r.left as any).date) : '',
+        r.left ? ((r.left as any).concept || (r.left as any).reason || '') : '',
+        r.left ? fmtAmount(r.left) : '',
+        r.right ? fmtDate((r.right as any).createdAt || (r.right as any).date) : '',
+        r.right ? ((r.right as any).concept || (r.right as any).reason || '') : '',
+        r.right ? fmtAmount(r.right) : '',
+        r.diffUsd != null ? formatCurrency(Math.abs(r.diffUsd)) : '',
+        note,
+      ];
+    });
+
+    const csvContent = '\uFEFF' + // BOM for Excel
+      `Comparación de Libros — ${modLabel}\n` +
+      `Mi libro: ${currentUserName} | Contraparte: ${otherName}\n` +
+      `Generado: ${new Date().toLocaleString('es-VE')}\n\n` +
+      headers.join(',') + '\n' +
+      rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `comparacion-libros-${activeRequestId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   /* ── EXPORT PDF ── */
   const handleExport = async () => {
@@ -634,14 +794,20 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
 
   /* ── ROW COMPONENT ── */
   const RowCard = ({
-    item, side, status, diffUsd, rowKey
+    item, side, status, diffUsd, rowKey, parentRow
   }: {
     item?: Movement | CashAdvance; side: 'left' | 'right';
     status: CompareRow['status']; diffUsd?: number; rowKey: string;
+    parentRow: CompareRow;
   }) => {
     const note = notesByRow[rowKey];
     const isLeft = side === 'left';
     const isEmpty = !item;
+    // Show "add missing" button on the empty side (the side that doesn't have the entry)
+    const canAddMissing = isEmpty && (
+      (status === 'only-left' && !isLeft) ||
+      (status === 'only-right' && isLeft)
+    );
     const highlight =
       status === 'match'           ? 'border-emerald-500/20 dark:bg-emerald-950/20'
       : status === 'mismatch-amount' ? 'border-amber-500/20 dark:bg-amber-950/20'
@@ -651,7 +817,19 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     return (
       <div className={`rounded-xl border p-3 text-xs flex flex-col gap-1.5 bg-white dark:bg-white/[0.02] ${highlight} transition-all`}>
         {isEmpty ? (
-          <span className="text-slate-400 dark:text-white/20 italic text-center py-2">— No registrado —</span>
+          <div className="flex flex-col items-center gap-2 py-2">
+            <span className="text-slate-400 dark:text-white/20 italic">— No registrado —</span>
+            {canAddMissing && (
+              <button
+                onClick={() => handleAddMissing(parentRow)}
+                disabled={addingRowKey === rowKey}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase tracking-widest hover:bg-indigo-500/20 transition-all disabled:opacity-50"
+              >
+                {addingRowKey === rowKey ? <RefreshCw size={10} className="animate-spin" /> : <ArrowRight size={10} />}
+                Añadir a mi libro
+              </button>
+            )}
+          </div>
         ) : (
           <>
             <div className="flex items-center justify-between gap-2">
@@ -1173,6 +1351,12 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
                   <Download size={11} /> PDF
                 </button>
               </HelpTooltip>
+              <HelpTooltip text="Exporta las diferencias a Excel/CSV para respaldo contable." side="bottom" asChild>
+                <button onClick={handleExportExcel}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] text-[10px] font-black uppercase text-slate-400 dark:text-white/30 hover:text-white hover:border-white/20 transition-all">
+                  <Download size={11} /> Excel
+                </button>
+              </HelpTooltip>
             </div>
           </div>
 
@@ -1310,8 +1494,8 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
                       </div>
                     )}
                     <div className="grid grid-cols-2 gap-3">
-                      <RowCard item={row.left}  side="left"  status={row.status} diffUsd={row.diffUsd} rowKey={rowKey} />
-                      <RowCard item={row.right} side="right" status={row.status} diffUsd={row.diffUsd} rowKey={rowKey} />
+                      <RowCard item={row.left}  side="left"  status={row.status} diffUsd={row.diffUsd} rowKey={rowKey} parentRow={row} />
+                      <RowCard item={row.right} side="right" status={row.status} diffUsd={row.diffUsd} rowKey={rowKey} parentRow={row} />
                     </div>
                   </div>
                 );

@@ -13,6 +13,11 @@ import {
   Bell,
   Calculator,
   Camera,
+  GitCompare,
+  AlertTriangle,
+  Lock,
+  Unlock,
+  Info,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
@@ -29,6 +34,7 @@ interface ConfigSectionProps {
     | 'SISTEMA'
     | 'FISCAL'
     | 'MENSAJES'
+    | 'OPERACION'
     | 'AUDITORIA';
   userUiVersion?: 'classic' | 'editorial';
   onUpdateUiVersion?: (version: 'classic' | 'editorial') => void;
@@ -51,7 +57,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
   const navigate = useNavigate();
   const [localConfig, setLocalConfig] = useState<AppConfig>(config);
   const [activeTab, setActiveTab] = useState<
-    'EMPRESA' | 'USUARIOS' | 'PERSONALIZACION' | 'SISTEMA' | 'FISCAL' | 'MENSAJES' | 'AUDITORIA'
+    'EMPRESA' | 'USUARIOS' | 'PERSONALIZACION' | 'SISTEMA' | 'FISCAL' | 'MENSAJES' | 'OPERACION' | 'AUDITORIA'
   >('EMPRESA');
   const [auditQuery, setAuditQuery] = useState('');
   const [auditActionFilter, setAuditActionFilter] = useState('ALL');
@@ -206,6 +212,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
             { id: 'PERSONALIZACION', icon: Palette, label: 'Estilo' },
             { id: 'SISTEMA', icon: Settings, label: 'Sistema' },
             { id: 'FISCAL', icon: Calculator, label: 'Fiscal / POS' },
+            { id: 'OPERACION', icon: GitCompare, label: 'Operación' },
             { id: 'AUDITORIA', icon: Shield, label: 'Auditoría' },
           ].map((tab) =>
             tab.id === 'AUDITORIA' && !['admin', 'owner'].includes(userRole) ? null : (
@@ -507,6 +514,123 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- TAB: OPERACION --- */}
+        {activeTab === 'OPERACION' && (
+          <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50">
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Modo de Operación — Libros</h3>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Define cómo los usuarios manejan los registros contables y operativos.</p>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Mode selector */}
+              <div className="grid sm:grid-cols-2 gap-4">
+                {/* Individual */}
+                <button
+                  onClick={() => setLocalConfig(c => ({ ...c, operation: { ...c.operation, isolationMode: 'individual' } }))}
+                  className={`rounded-2xl border-2 p-5 text-left transition-all ${
+                    localConfig.operation?.isolationMode === 'individual'
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 shadow-lg shadow-indigo-500/10'
+                      : 'border-slate-200 dark:border-white/10 hover:border-indigo-300 dark:hover:border-indigo-500/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
+                      localConfig.operation?.isolationMode === 'individual'
+                        ? 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400'
+                        : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400'
+                    }`}>
+                      <Lock size={18} />
+                    </div>
+                    <div>
+                      <p className={`text-sm font-black ${
+                        localConfig.operation?.isolationMode === 'individual' ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-300'
+                      }`}>Modo Individual</p>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">Aislado</p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Cada usuario opera en su propio libro. No puede ver ni alterar lo que registra otro usuario en el mismo módulo.
+                    Ideal para empresas con múltiples cajeros o áreas contables independientes.
+                  </p>
+                </button>
+
+                {/* Shared */}
+                <button
+                  onClick={() => setLocalConfig(c => ({ ...c, operation: { ...c.operation, isolationMode: 'shared' } }))}
+                  className={`rounded-2xl border-2 p-5 text-left transition-all ${
+                    localConfig.operation?.isolationMode === 'shared' || !localConfig.operation?.isolationMode
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 shadow-lg shadow-emerald-500/10'
+                      : 'border-slate-200 dark:border-white/10 hover:border-emerald-300 dark:hover:border-emerald-500/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
+                      localConfig.operation?.isolationMode === 'shared' || !localConfig.operation?.isolationMode
+                        ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400'
+                    }`}>
+                      <Unlock size={18} />
+                    </div>
+                    <div>
+                      <p className={`text-sm font-black ${
+                        localConfig.operation?.isolationMode === 'shared' || !localConfig.operation?.isolationMode ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300'
+                      }`}>Modo Compartido</p>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">Colaborativo</p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Todos los usuarios operan sobre el mismo libro general. Los cambios de cualquier usuario son visibles para todos.
+                    Ideal para equipos pequeños con alta confianza.
+                  </p>
+                </button>
+              </div>
+
+              {/* Recommendations */}
+              <div className="rounded-2xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/[0.06] p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={15} className="text-amber-600 dark:text-amber-400" />
+                  <p className="text-xs font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">Recomendaciones de seguridad</p>
+                </div>
+                <ul className="text-[11px] text-amber-800/80 dark:text-amber-300/70 space-y-2 pl-5 list-disc leading-relaxed">
+                  <li><strong>Modo Individual</strong> es recomendado cuando tienes <strong>más de 2 usuarios</strong> operando el mismo módulo (ej: 2 cajeros, vendedor + admin).</li>
+                  <li>Evita que un usuario con malas intenciones <strong>elimine o modifique cargos</strong> sin que el otro se dé cuenta.</li>
+                  <li>Con modo individual activo, los usuarios pueden <strong>solicitar comparaciones</strong> para detectar discrepancias entre libros.</li>
+                  <li>El <strong>AuditLog</strong> registra todas las operaciones independientemente del modo — úsalo para trazabilidad.</li>
+                  <li>Si cambias de modo, los registros existentes <strong>no se pierden</strong>. Solo cambia cómo se filtran y muestran.</li>
+                </ul>
+              </div>
+
+              {/* Info about Compare feature */}
+              {localConfig.operation?.isolationMode === 'individual' && (
+                <div className="rounded-2xl border border-indigo-200 dark:border-indigo-500/20 bg-indigo-50 dark:bg-indigo-500/[0.06] p-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Info size={15} className="text-indigo-600 dark:text-indigo-400" />
+                    <p className="text-xs font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-400">Comparar Libros habilitado</p>
+                  </div>
+                  <p className="text-[11px] text-indigo-700/70 dark:text-indigo-300/60 leading-relaxed">
+                    Con el modo individual activo, la sección <strong>"Comparar Libros"</strong> cobra mayor utilidad.
+                    Los usuarios pueden solicitar comparaciones cruzadas, detectar diferencias automáticamente,
+                    chatear sobre discrepancias y exportar reportes. Todo queda registrado en el AuditLog.
+                  </p>
+                </div>
+              )}
+
+              {/* Save button */}
+              <button
+                onClick={() => {
+                  onUpdateConfig(localConfig);
+                  localStorage.setItem('operation_isolation_mode', localConfig.operation?.isolationMode || 'shared');
+                  success('Modo de operación actualizado');
+                }}
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/25"
+              >
+                <Save size={13} /> Guardar configuración
+              </button>
             </div>
           </div>
         )}

@@ -135,6 +135,9 @@ export interface AppConfig {
     ivaEnabled: boolean;
     scannerEnabled: boolean;
   };
+  operation?: {
+    isolationMode: 'individual' | 'shared';  // individual = libros aislados, shared = libro compartido
+  };
   messageTemplates?: MessageTemplate[];
   authorizedUsers?: User[]; // Nuevo: Gestión de usuarios
 }
