@@ -263,6 +263,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [helpOpen, setHelpOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [pendingJoinCount, setPendingJoinCount] = useState(0);
+  const [pendingCompareCount, setPendingCompareCount] = useState(0);
   const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('dualis_dismissed_notifs');
@@ -347,6 +348,20 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     const unsub = onSnapshot(q, snap => setPendingJoinCount(snap.size));
     return unsub;
   }, [businessId, userProfile?.role]);
+
+  // ── Listener: solicitudes de Comparar Libros pendientes ──────────────────────
+  useEffect(() => {
+    const uid = firebaseUser?.uid;
+    if (!uid || !businessId) return;
+    const q = query(
+      collection(db, 'bookCompareRequests'),
+      where('businessId', '==', businessId),
+      where('receiverId', '==', uid),
+      where('status', '==', 'pending')
+    );
+    const unsub = onSnapshot(q, snap => setPendingCompareCount(snap.size));
+    return unsub;
+  }, [businessId, firebaseUser?.uid]);
 
   // ── Confirm helper ───────────────────────────────────────────────────────────
   const withConfirm = useCallback((message: string, action: () => Promise<void>) => {
@@ -498,6 +513,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       items.push({ id: 'bonus-days', title: `🎉 +${subData.bonusNotification.days} días gratis añadidos a tu cuenta`, subtitle: subData.bonusNotification.reason || 'Gracias por tu feedback', type: 'info' });
     }
 
+    // 6. Solicitudes de Comparar Libros pendientes
+    if (pendingCompareCount > 0) {
+      items.push({ id: 'pending-compare', title: `📬 ${pendingCompareCount} solicitud${pendingCompareCount > 1 ? 'es' : ''} de Comparar Libros`, subtitle: 'Alguien quiere cotejar registros contigo', type: 'warning' });
+    }
+
     // 4. CxP pendiente con proveedores
     const supplierBalance: Record<string, number> = {};
     movements.filter(m => m.isSupplierMovement).forEach(m => {
@@ -511,7 +531,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     }
 
     return items;
-  }, [inventoryItems, movements, pendingJoinCount, subData]);
+  }, [inventoryItems, movements, pendingJoinCount, pendingCompareCount, subData]);
 
   const visibleNotifications = useMemo(
     () => notifications.filter(n => !dismissedNotifIds.has(n.id)),

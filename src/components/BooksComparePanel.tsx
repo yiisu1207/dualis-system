@@ -358,6 +358,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
   /* ── SEND REQUEST ── */
   const handleSendRequest = async () => {
     if (!selModule || !selUserId || !businessId) return;
+    if (!currentUserId) { showToast('Error: sesión no identificada. Recarga la página.'); return; }
     setLoading(true);
     try {
       const ref = await addDoc(collection(db, 'bookCompareRequests'), {
@@ -377,6 +378,11 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
       setRequestStatus('pending');
       logAudit(businessId, currentUserId, 'CREAR', 'COMPARAR_LIBROS',
         `${selModule} → ${selEntityName || 'general'} con ${getUserName(selUserId)}`);
+    } catch (err: any) {
+      const msg = err?.code === 'permission-denied'
+        ? 'Sin permisos para enviar solicitudes. Contacta al administrador.'
+        : `Error al enviar: ${err?.message || 'intenta de nuevo'}`;
+      showToast(msg);
     } finally {
       setLoading(false);
     }
