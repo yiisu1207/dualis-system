@@ -355,11 +355,13 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     if (!uid || !businessId) return;
     const q = query(
       collection(db, 'bookCompareRequests'),
-      where('businessId', '==', businessId),
       where('receiverId', '==', uid),
       where('status', '==', 'pending')
     );
-    const unsub = onSnapshot(q, snap => setPendingCompareCount(snap.size));
+    const unsub = onSnapshot(q, snap => {
+      const count = snap.docs.filter(d => d.data().businessId === businessId).length;
+      setPendingCompareCount(count);
+    });
     return unsub;
   }, [businessId, firebaseUser?.uid]);
 

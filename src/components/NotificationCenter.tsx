@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { X, Bell, AlertTriangle, Info, Package, TrendingUp, ChevronRight, Users, FileText, CheckCheck } from 'lucide-react';
+import { X, Bell, AlertTriangle, Info, Package, TrendingUp, ChevronRight, Users, FileText, CheckCheck, GitCompare } from 'lucide-react';
 import { Movement } from '../../types';
 
 interface Notification {
@@ -24,6 +24,7 @@ const NAV_MAP: Record<string, string> = {
   'today-activity': 'contabilidad',
   'overdue-cxc': 'clientes',
   'pending-cxp': 'proveedores',
+  'pending-compare': 'comparar',
 };
 
 const NotificationCenter: React.FC<NotificationCenterProps> = ({
@@ -98,7 +99,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
         <div className="flex-1 overflow-y-auto custom-scroll">
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-3">
-              <div className="w-16 h-16 rounded-3xl bg-emerald-50 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-3xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center">
                 <Bell size={24} className="text-emerald-500" />
               </div>
               <p className="font-black text-slate-700 dark:text-slate-300 text-[15px]">Todo en orden</p>
@@ -115,6 +116,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   if (notif.id === 'today-activity') return <TrendingUp size={15} className="text-blue-600" />;
                   if (notif.id === 'overdue-cxc') return <Users size={15} className="text-rose-600" />;
                   if (notif.id === 'pending-cxp') return <FileText size={15} className="text-blue-600" />;
+                  if (notif.id === 'pending-compare') return <GitCompare size={15} className="text-indigo-500" />;
                   return isWarning
                     ? <AlertTriangle size={15} className="text-amber-600" />
                     : <Info size={15} className="text-blue-600" />;
@@ -130,41 +132,43 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   <div
                     key={notif.id}
                     className={`rounded-2xl border overflow-hidden ${
-                      isWarning ? 'border-amber-100 bg-amber-50/60' : 'border-blue-100 bg-blue-50/60'
+                      isWarning
+                        ? 'border-amber-200 bg-amber-50/60 dark:border-amber-500/20 dark:bg-amber-500/[0.06]'
+                        : 'border-blue-200 bg-blue-50/60 dark:border-blue-500/20 dark:bg-blue-500/[0.06]'
                     }`}
                   >
                     <button
                       onClick={() => { onNavigate(tab); onClose(); }}
                       className={`w-full p-4 flex items-start gap-3 text-left transition-all ${
-                        isWarning ? 'hover:bg-amber-50' : 'hover:bg-blue-50'
+                        isWarning ? 'hover:bg-amber-50 dark:hover:bg-amber-500/10' : 'hover:bg-blue-50 dark:hover:bg-blue-500/10'
                       }`}
                     >
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                        isWarning ? 'bg-amber-100' : 'bg-blue-100'
+                        isWarning ? 'bg-amber-100 dark:bg-amber-500/15' : 'bg-blue-100 dark:bg-blue-500/15'
                       }`}>
                         {icon}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`font-black text-[13px] leading-tight ${isWarning ? 'text-amber-800' : 'text-blue-800'}`}>
+                        <p className={`font-black text-[13px] leading-tight ${isWarning ? 'text-amber-800 dark:text-amber-300' : 'text-blue-800 dark:text-blue-300'}`}>
                           {notif.title}
                         </p>
                         {detail && (
-                          <p className={`text-[11px] mt-0.5 truncate ${isWarning ? 'text-amber-600' : 'text-blue-600'}`}>
+                          <p className={`text-[11px] mt-0.5 truncate ${isWarning ? 'text-amber-600 dark:text-amber-400/70' : 'text-blue-600 dark:text-blue-400/70'}`}>
                             {detail}
                           </p>
                         )}
-                        <p className={`text-[11px] mt-1.5 flex items-center gap-1 font-semibold ${isWarning ? 'text-amber-500' : 'text-blue-500'}`}>
+                        <p className={`text-[11px] mt-1.5 flex items-center gap-1 font-semibold ${isWarning ? 'text-amber-500 dark:text-amber-400' : 'text-blue-500 dark:text-blue-400'}`}>
                           {notif.subtitle} <ChevronRight size={11} />
                         </p>
                       </div>
                     </button>
-                    <div className={`px-4 pb-3 flex justify-end border-t ${isWarning ? 'border-amber-100/60' : 'border-blue-100/60'}`}>
+                    <div className={`px-4 pb-3 flex justify-end border-t ${isWarning ? 'border-amber-100/60 dark:border-amber-500/15' : 'border-blue-100/60 dark:border-blue-500/15'}`}>
                       <button
                         onClick={() => onDismiss(notif.id)}
                         className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-lg transition-all ${
                           isWarning
-                            ? 'text-amber-400 hover:text-amber-600 hover:bg-amber-100'
-                            : 'text-blue-400 hover:text-blue-600 hover:bg-blue-100'
+                            ? 'text-amber-400 hover:text-amber-600 hover:bg-amber-100 dark:hover:text-amber-300 dark:hover:bg-amber-500/15'
+                            : 'text-blue-400 hover:text-blue-600 hover:bg-blue-100 dark:hover:text-blue-300 dark:hover:bg-blue-500/15'
                         }`}
                       >
                         Marcar como leída

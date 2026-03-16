@@ -307,13 +307,18 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     if (!businessId || !currentUserId) return;
     const q = query(
       collection(db, 'bookCompareRequests'),
-      where('businessId', '==', businessId),
       where('receiverId', '==', currentUserId),
-      where('status', '==', 'pending'),
-      orderBy('createdAt', 'desc')
+      where('status', '==', 'pending')
     );
     return onSnapshot(q, snap => {
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as BookCompareRequest));
+      const items = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as BookCompareRequest))
+        .filter(r => r.businessId === businessId)
+        .sort((a, b) => {
+          const ta = a.createdAt?.toMillis?.() || 0;
+          const tb = b.createdAt?.toMillis?.() || 0;
+          return tb - ta;
+        });
       const nextIds = new Set(items.map(i => i.id));
       if (items.some(i => !lastIncomingIds.current.has(i.id))) {
         const top = items[0];
@@ -321,6 +326,8 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
       }
       lastIncomingIds.current = nextIds;
       setIncoming(items);
+    }, err => {
+      console.error('BooksCompare incoming listener error:', err);
     });
   }, [businessId, currentUserId]);
 
@@ -342,12 +349,20 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     if (!activeRequestId) { setChatMessages([]); return; }
     const q = query(
       collection(db, 'bookCompareChats'),
-      where('requestId', '==', activeRequestId),
-      orderBy('createdAt', 'asc')
+      where('requestId', '==', activeRequestId)
     );
     return onSnapshot(q, snap => {
-      setChatMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const msgs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a: any, b: any) => {
+          const ta = a.createdAt?.toMillis?.() || 0;
+          const tb = b.createdAt?.toMillis?.() || 0;
+          return ta - tb;
+        });
+      setChatMessages(msgs);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    }, err => {
+      console.error('BooksCompare chat listener error:', err);
     });
   }, [activeRequestId]);
 
