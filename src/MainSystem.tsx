@@ -668,7 +668,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               canAccess('comparar')
                 ? <BooksComparePanel
                     businessId={businessId}
-                    currentUserId={userProfile?.uid || ''}
+                    currentUserId={userProfile?.uid || firebaseUser?.uid || ''}
                     currentUserName={userProfile?.displayName || userProfile?.fullName || userProfile?.email || 'Yo'}
                     isAdmin={userProfile?.role === 'owner' || userProfile?.role === 'admin'}
                     movements={movements}

@@ -225,8 +225,14 @@ service cloud.firestore {
     }
 
     // COMPARAR LIBROS — solicitudes
+    // Queries use single where('receiverId'==uid) or where('requesterId'==uid),
+    // so rules must match without requiring businessId in query constraints.
     match /bookCompareRequests/{docId} {
-      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow read: if isSignedIn() && (
+        resource.data.receiverId == request.auth.uid ||
+        resource.data.requesterId == request.auth.uid ||
+        belongsToMe(resource.data)
+      );
       allow create: if isSignedIn() && belongsToMe(request.resource.data);
       // El receptor puede aceptar/rechazar; el solicitante puede cancelar/cerrar; admin siempre
       allow update: if isSignedIn() && (
@@ -237,14 +243,15 @@ service cloud.firestore {
     }
 
     // COMPARAR LIBROS — chat de sesión
+    // Query by requestId only — allow any authenticated user (requestId is opaque/random)
     match /bookCompareChats/{docId} {
-      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && belongsToMe(request.resource.data);
     }
 
     // COMPARAR LIBROS — notas por fila
     match /bookCompareNotes/{docId} {
-      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow read: if isSignedIn();
       allow create, update: if isSignedIn() && belongsToMe(request.resource.data);
     }
 

@@ -117,6 +117,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (docSnap.exists()) {
           const profile = docSnap.data() as UserProfile;
+          // Ensure uid is always set (doc ID = auth UID)
+          if (!profile.uid) profile.uid = firebaseUser.uid;
           // Forzar sincronía de ID — también persiste en Firestore si falta businessId
           if (profile.empresa_id && !profile.businessId) {
             profile.businessId = profile.empresa_id;
@@ -203,6 +205,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const data = snap.data() as UserProfile;
           const updated: UserProfile = {
             ...data,
+            uid: data.uid || firebaseUser.uid,
             businessId: data.businessId || data.empresa_id || '',
             displayName: data.displayName || data.fullName || data.email || 'Usuario',
             role: data.role || 'owner',
