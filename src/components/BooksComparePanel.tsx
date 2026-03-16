@@ -1014,7 +1014,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
 
       {/* ── IDLE: WIZARD ── */}
       {requestStatus === 'idle' && (
-        <div className="rounded-2xl border border-white/[0.07] bg-white dark:bg-[#0d1424] overflow-hidden">
+        <div className="rounded-2xl border border-white/[0.07] bg-white dark:bg-[#0d1424]">
           {/* Step indicators */}
           <div className="flex border-b border-white/[0.06]">
             {[{ n: 1, label: 'Módulo' }, { n: 2, label: 'Entidad y usuario' }, { n: 3, label: 'Confirmar' }].map(s => (

@@ -525,8 +525,16 @@ export default function RecursosHumanos() {
 
   // ── Derived ────────────────────────────────────────────────────────────────
   // When isolation mode = individual, only show MY entries
-  const visibleVouchers   = useMemo(() => isIndividual ? vouchers.filter(v => !v.registeredBy || v.registeredBy === myUid) : vouchers, [vouchers, isIndividual, myUid]);
-  const visibleTimeEntries = useMemo(() => isIndividual ? timeEntries.filter(t => !t.registeredBy || t.registeredBy === myUid) : timeEntries, [timeEntries, isIndividual, myUid]);
+  const isOwner = userProfile?.role === 'owner';
+  const visibleVouchers   = useMemo(() => {
+    if (!isIndividual) return vouchers;
+    // En modo individual: solo tus registros. Owner ve también los que no tienen registeredBy (legacy)
+    return vouchers.filter(v => v.registeredBy === myUid || (isOwner && !v.registeredBy));
+  }, [vouchers, isIndividual, myUid, isOwner]);
+  const visibleTimeEntries = useMemo(() => {
+    if (!isIndividual) return timeEntries;
+    return timeEntries.filter(t => t.registeredBy === myUid || (isOwner && !t.registeredBy));
+  }, [timeEntries, isIndividual, myUid, isOwner]);
 
   const currentRate   = voucherRates[0]?.rate || 0;
 
