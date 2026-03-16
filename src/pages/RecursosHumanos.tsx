@@ -1174,7 +1174,13 @@ export default function RecursosHumanos() {
                 <form onSubmit={handleQuickVoucher} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
-                    <select required value={qv.empId} onChange={e=>setQv(f=>({...f,empId:e.target.value}))}
+                    <select required value={qv.empId} onChange={e=>{
+                      const empId = e.target.value;
+                      const emp = employees.find(x=>x.id===empId);
+                      // Auto-detect currency from employee's payment config
+                      const autoCurrency = emp?.paymentCurrency === 'BS' ? 'BS' : 'USD';
+                      setQv(f=>({...f, empId, currency: autoCurrency}));
+                    }}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-indigo-500">
                       <option value="">Seleccionar...</option>
                       {employees.filter(e=>e.status==='Activo').map(e=><option key={e.id} value={e.id}>{e.fullName} ({e.department})</option>)}
@@ -1194,8 +1200,15 @@ export default function RecursosHumanos() {
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">
-                      Monto {qv.currency==='BS'&&qv.date&&qv.amount?`→ $${fmtHR(Number(qv.amount)/getRateForDate(qv.date))}`:''}{' '}
-                      {qv.currency==='BS'&&qv.date&&<span className="text-[8px] text-indigo-400">Tasa: Bs {fmtHR(getRateForDate(qv.date))}</span>}
+                      Monto{' '}
+                      {qv.currency==='BS'&&qv.date&&(()=>{
+                        const rate = getRateForDate(qv.date);
+                        const amt = Number(qv.amount);
+                        return <>
+                          <span className="text-[8px] text-indigo-400 normal-case">(Tasa {qv.date}: Bs {fmtHR(rate)})</span>
+                          {amt > 0 && <span className="text-emerald-400 text-[9px] ml-1">≈ ${fmtHR(amt / rate)}</span>}
+                        </>;
+                      })()}
                     </label>
                     <input ref={amtRef} required type="number" step="0.01" value={qv.amount} onChange={e=>setQv(f=>({...f,amount:e.target.value}))}
                       placeholder="0.00"

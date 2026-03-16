@@ -582,10 +582,10 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
         .map(t => ({
           id:             t.id,
           employeeId:     t.employeeId,
-          concept:        `${t.type === 'overtime' ? 'H. Extra' : t.type === 'absence' ? 'Ausencia' : 'Día faltante'} — ${t.reason || ''}`,
+          concept:        `${t.type === 'overtime' ? 'H. Extra (+)' : t.type === 'absence' ? 'Ausencia (−)' : 'Día faltante (−)'} — ${t.reason || ''}`,
           reason:         t.reason,
-          amount:         Math.abs(t.amountUSD || 0),
-          originalAmount: Math.abs(t.amountUSD || 0),
+          amount:         t.amountUSD || 0,
+          originalAmount: t.amountUSD || 0,
           currency:       'USD',
           createdAt:      t.createdAt,
           date:           t.date || t.createdAt,
