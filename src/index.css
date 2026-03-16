@@ -90,6 +90,18 @@
     color: var(--ui-ink);
   }
 
+  /* Dark mode selects & options */
+  html.dark select {
+    color-scheme: dark;
+  }
+  html.dark select option {
+    background: #0d1424;
+    color: #f1f5f9;
+  }
+  html.dark select option:checked {
+    background: #312e81;
+  }
+
   /* ── UI PREFS VARIABLES (overridden via JS) ────────────────────── */
   :root {
     --ui-radius: 12px;

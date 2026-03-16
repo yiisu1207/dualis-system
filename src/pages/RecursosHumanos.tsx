@@ -172,7 +172,7 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
       employeeId: emp.id, employeeName: emp.fullName,
       amount: amt, currency: vForm.currency,
       amountUSD: vForm.currency==='USD' ? amt : (currentRate>0 ? amt/currentRate : 0),
-      rateUsed: vForm.currency==='BS' ? currentRate : undefined,
+      ...(vForm.currency==='BS' && currentRate > 0 ? { rateUsed: currentRate } : {}),
       reason: vForm.reason, status: 'PENDIENTE',
     });
     setVForm(f=>({...f,amount:'',reason:'Adelanto'}));
@@ -646,8 +646,11 @@ export default function RecursosHumanos() {
   const handleAddVoucher = useCallback(async (v: any) => {
     if(!bid) return;
     try {
+      // Remove undefined values — Firestore rejects them
+      const clean: Record<string, any> = {};
+      for (const [k, val] of Object.entries(v)) { if (val !== undefined) clean[k] = val; }
       await addDoc(collection(db,`businesses/${bid}/vouchers`),{
-        ...v,
+        ...clean,
         registeredBy: userProfile?.uid || '',
         registeredByName: userProfile?.fullName || userProfile?.email || 'Usuario',
         createdAt: serverTimestamp(),
@@ -677,7 +680,7 @@ export default function RecursosHumanos() {
         employeeId:qv.empId, employeeName:emp?.fullName||'',
         amount:amt, currency:qv.currency,
         amountUSD:qv.currency==='USD'?amt:(rateForDate>0?amt/rateForDate:0),
-        rateUsed:qv.currency==='BS'?rateForDate:undefined,
+        ...(qv.currency==='BS' && rateForDate > 0 ? { rateUsed: rateForDate } : {}),
         reason:qv.reason, status:'PENDIENTE',
         voucherDate: qv.date,
       });
@@ -748,7 +751,7 @@ export default function RecursosHumanos() {
         employeeId:v.employeeId, employeeName:v.employeeName,
         amount:newAmount, currency:v.currency,
         amountUSD:v.currency==='USD'?newAmount:(rateForDate>0?newAmount/rateForDate:0),
-        rateUsed:v.currency==='BS'?rateForDate:undefined,
+        ...(v.currency==='BS' && rateForDate > 0 ? { rateUsed: rateForDate } : {}),
         reason:v.reason, status:'PENDIENTE',
         correctedFrom:v.id, originalAmount:v.amount, correctionNote:note,
         voucherDate:v.voucherDate,
