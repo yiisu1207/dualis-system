@@ -420,6 +420,23 @@ export default function RecursosHumanos() {
   const toast           = useToast();
   const bid             = userProfile?.businessId || '';
 
+  // ── Isolation mode (individual vs shared) ──────────────────────────────────
+  const [isolationMode, setIsolationMode] = useState<'individual' | 'shared'>(() => {
+    return (localStorage.getItem('operation_isolation_mode') as 'individual' | 'shared') || 'shared';
+  });
+  // Listen for config changes
+  useEffect(() => {
+    const handler = () => {
+      const mode = (localStorage.getItem('operation_isolation_mode') as 'individual' | 'shared') || 'shared';
+      setIsolationMode(mode);
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, []);
+
+  const isIndividual = isolationMode === 'individual';
+  const myUid = userProfile?.uid || '';
+
   const [activeTab,      setActiveTab]      = useState<SubTab>('directory');
   const [employees,      setEmployees]      = useState<Employee[]>([]);
   const [vouchers,       setVouchers]       = useState<Voucher[]>([]);
@@ -507,6 +524,10 @@ export default function RecursosHumanos() {
   }, [bid]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
+  // When isolation mode = individual, only show MY entries
+  const visibleVouchers   = useMemo(() => isIndividual ? vouchers.filter(v => !v.registeredBy || v.registeredBy === myUid) : vouchers, [vouchers, isIndividual, myUid]);
+  const visibleTimeEntries = useMemo(() => isIndividual ? timeEntries.filter(t => !t.registeredBy || t.registeredBy === myUid) : timeEntries, [timeEntries, isIndividual, myUid]);
+
   const currentRate   = voucherRates[0]?.rate || 0;
 
   // Find the applicable rate for a specific date (latest rate on or before that date)
@@ -524,13 +545,13 @@ export default function RecursosHumanos() {
     }
     return sorted[sorted.length - 1]?.rate || currentRate;
   }, [voucherRates, currentRate]);
-  const pendingVouchers = useMemo(()=>vouchers.filter(v=>v.status==='PENDIENTE'),[vouchers]);
+  const pendingVouchers = useMemo(()=>visibleVouchers.filter(v=>v.status==='PENDIENTE'),[visibleVouchers]);
   const activeLoans     = useMemo(()=>loans.filter(l=>l.status==='ACTIVO'),[loans]);
 
   const pendingTotalUSD = useMemo(()=>pendingVouchers.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0),[pendingVouchers]);
   const pendingTotalBs  = useMemo(()=>pendingVouchers.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0),[pendingVouchers]);
 
-  const pendingTimeEntries = useMemo(() => timeEntries.filter(t => t.status === 'PENDIENTE'), [timeEntries]);
+  const pendingTimeEntries = useMemo(() => visibleTimeEntries.filter(t => t.status === 'PENDIENTE'), [visibleTimeEntries]);
 
   const nominaRows = useMemo(():NominaRow[] => {
     const filtered = employees.filter(e=>e.status==='Activo' && (freqFilter==='all'||e.payFrequency===freqFilter));
@@ -973,6 +994,19 @@ export default function RecursosHumanos() {
           </div>
         </div>
 
+        {/* Isolation mode banner */}
+        {isIndividual && (
+          <div className="flex items-center gap-3 px-5 py-3 rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.06]">
+            <div className="h-8 w-8 rounded-lg bg-indigo-500/20 flex items-center justify-center shrink-0">
+              <Eye size={15} className="text-indigo-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Modo Individual Activo</p>
+              <p className="text-[10px] text-indigo-300/60 mt-0.5">Solo ves tus propios registros. Para comparar con otro usuario, usa la pestaña <strong>Comparar</strong>.</p>
+            </div>
+          </div>
+        )}
+
         {/* KPIs */}
         <div className="flex flex-wrap gap-4">
           <KPI title="Plantilla Activa" value={employees.filter(e=>e.status==='Activo').length}
@@ -1177,8 +1211,8 @@ export default function RecursosHumanos() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                    {vouchers.length===0&&<tr><td colSpan={8} className="px-5 py-16 text-center"><Ticket size={40} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin vales</p></td></tr>}
-                    {vouchers.map(v=>(
+                    {visibleVouchers.length===0&&<tr><td colSpan={8} className="px-5 py-16 text-center"><Ticket size={40} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin vales{isIndividual ? ' (modo individual — solo tus registros)' : ''}</p></td></tr>}
+                    {visibleVouchers.map(v=>(
                       <React.Fragment key={v.id}>
                       <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${v.status==='CORREGIDO'?'opacity-50':''}`}>
                         <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{v.voucherDate || (v.createdAt?.toDate ? v.createdAt.toDate().toLocaleDateString('es-VE') : '—')}</td>
@@ -1310,8 +1344,8 @@ export default function RecursosHumanos() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                    {timeEntries.length===0&&<tr><td colSpan={7} className="px-5 py-16 text-center"><Clock size={40} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin registros de tiempo</p></td></tr>}
-                    {timeEntries.map(t=>(
+                    {visibleTimeEntries.length===0&&<tr><td colSpan={7} className="px-5 py-16 text-center"><Clock size={40} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin registros de tiempo{isIndividual ? ' (modo individual)' : ''}</p></td></tr>}
+                    {visibleTimeEntries.map(t=>(
                       <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
                         <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{t.date || '—'}</td>
                         <td className="px-5 py-3">
@@ -1725,7 +1759,7 @@ export default function RecursosHumanos() {
       {/* PROFILE PANEL */}
       {fichaEmp&&(
         <ProfilePanel
-          emp={fichaEmp} vouchers={vouchers} loans={loans}
+          emp={fichaEmp} vouchers={visibleVouchers} loans={loans}
           payrollHistory={payrollHistory} businessId={bid}
           currentRate={currentRate} businessName={businessName}
           onClose={()=>setFichaEmp(null)}

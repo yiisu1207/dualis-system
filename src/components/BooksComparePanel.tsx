@@ -190,6 +190,10 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
   advances,
   rates,
 }) => {
+  /* ── Isolation mode ── */
+  const isolationMode = localStorage.getItem('operation_isolation_mode') || 'shared';
+  const isIndividual = isolationMode === 'individual';
+
   /* ── Vouchers (fetched internally for RRHH comparison) ── */
   const [vouchers, setVouchers] = useState<any[]>([]);
   useEffect(() => {
@@ -930,8 +934,19 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
               <li><strong className="text-slate-600 dark:text-white/60">Elige el módulo</strong> que quieres cotejar (CxC, CxP, RRHH, Inventario o Contabilidad).</li>
               <li><strong className="text-slate-600 dark:text-white/60">Selecciona un compañero</strong> — se le enviará una notificación para que acepte la sesión.</li>
               <li>Al aceptar, <strong className="text-slate-600 dark:text-white/60">ambos ven los registros en pantalla dividida</strong> con diferencias resaltadas en colores.</li>
-              <li>Pueden <strong className="text-slate-600 dark:text-white/60">chatear, anotar filas</strong> y exportar el reporte en PDF.</li>
+              <li>Pueden <strong className="text-slate-600 dark:text-white/60">chatear, anotar filas</strong>, añadir movimientos faltantes y exportar en PDF o Excel.</li>
             </ol>
+            {isIndividual ? (
+              <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 w-fit">
+                <Eye size={11} className="text-emerald-400" />
+                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Modo Individual activo — cada usuario tiene su propio libro</span>
+              </div>
+            ) : (
+              <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 w-fit">
+                <AlertTriangle size={11} className="text-amber-400" />
+                <span className="text-[10px] font-black text-amber-300/80">Modo Compartido — activa el modo individual en Configuración → Operación para aislar libros por usuario.</span>
+              </div>
+            )}
           </div>
         </div>
       )}
