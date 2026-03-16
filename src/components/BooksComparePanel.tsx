@@ -548,14 +548,14 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
       );
     }
     if (mod === 'rrhh') {
-      // Advances filtered by user who registered them
+      // Advances filtered by registeredBy (strict attribution for comparison)
       const advFiltered = advances.filter(a =>
-        byUser(a) && (!eid || a.employeeId === eid)
+        (a as any).registeredBy === userId && (!eid || a.employeeId === eid)
       );
-      // Vouchers filtered by registeredBy
+      // Vouchers filtered by registeredBy (strict — only attributed vouchers)
       const voucherFiltered = vouchers
         .filter(v =>
-          (v.registeredBy === userId || (!v.registeredBy && userId === currentUserId)) &&
+          v.registeredBy === userId &&
           (!eid || v.employeeId === eid) &&
           v.status !== 'CORREGIDO'
         )
@@ -572,10 +572,10 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
           movementType:   'VALE',
           status:         v.status,
         } as any));
-      // Time entries filtered by registeredBy
+      // Time entries filtered by registeredBy (strict — only attributed entries)
       const teFiltered = timeEntries
         .filter(t =>
-          (t.registeredBy === userId || (!t.registeredBy && userId === currentUserId)) &&
+          t.registeredBy === userId &&
           (!eid || t.employeeId === eid) &&
           t.status !== 'APLICADO'
         )
