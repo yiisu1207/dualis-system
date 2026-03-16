@@ -684,23 +684,51 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
       data.addedAt = serverTimestamp();
 
       if (mod === 'rrhh') {
-        // Add as a voucher to the business
-        await addDoc(collection(db, `businesses/${businessId}/vouchers`), {
-          employeeId: data.employeeId || '',
-          employeeName: data.employeeName || '',
-          amount: data.originalAmount || data.amount || 0,
-          currency: data.currency || 'USD',
-          amountUSD: data.amount || 0,
-          rateUsed: data.rateUsed || undefined,
-          reason: data.reason || data.concept || 'Agregado desde comparación',
-          status: 'PENDIENTE',
-          voucherDate: data.voucherDate || data.date || '',
-          registeredBy: currentUserId,
-          registeredByName: currentUserName,
-          addedFromComparison: true,
-          comparisonRequestId: activeRequestId,
-          createdAt: serverTimestamp(),
-        });
+        // Determine if this is a time entry (H_EXTRA, AUSENCIA, DIA_FALTANTE) or a voucher
+        const mType = data.movementType;
+        const isTimeEntry = mType === 'H_EXTRA' || mType === 'AUSENCIA' || mType === 'DIA_FALTANTE';
+
+        if (isTimeEntry) {
+          // Add as time_entry
+          const tePayload: Record<string, any> = {
+            employeeId: data.employeeId || '',
+            type: mType === 'H_EXTRA' ? 'overtime' : mType === 'AUSENCIA' ? 'absence' : 'missing_day',
+            reason: data.reason || data.concept || 'Agregado desde comparación',
+            amountUSD: data.amount || 0,
+            status: 'PENDIENTE',
+            date: data.date || '',
+            registeredBy: currentUserId,
+            registeredByName: currentUserName,
+            addedFromComparison: true,
+            comparisonRequestId: activeRequestId,
+            createdAt: serverTimestamp(),
+          };
+          if (data.hours) tePayload.hours = data.hours;
+          if (data.days) tePayload.days = data.days;
+          await addDoc(collection(db, `businesses/${businessId}/time_entries`), tePayload);
+        } else {
+          // Add as voucher — strip undefined values
+          const vPayload: Record<string, any> = {
+            employeeId: data.employeeId || '',
+            employeeName: data.employeeName || '',
+            amount: data.originalAmount || data.amount || 0,
+            currency: data.currency || 'USD',
+            amountUSD: data.amount || 0,
+            reason: data.reason || data.concept || 'Agregado desde comparación',
+            status: 'PENDIENTE',
+            voucherDate: data.voucherDate || data.date || '',
+            registeredBy: currentUserId,
+            registeredByName: currentUserName,
+            addedFromComparison: true,
+            comparisonRequestId: activeRequestId,
+            createdAt: serverTimestamp(),
+          };
+          // Only include rateUsed if it has a real value
+          if (data.rateUsed != null && data.rateUsed > 0) {
+            vPayload.rateUsed = data.rateUsed;
+          }
+          await addDoc(collection(db, `businesses/${businessId}/vouchers`), vPayload);
+        }
       } else {
         // Add as a movement to root collection
         await addDoc(collection(db, 'movements'), {
@@ -835,11 +863,9 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     const note = notesByRow[rowKey];
     const isLeft = side === 'left';
     const isEmpty = !item;
-    // Show "add missing" button on the empty side (the side that doesn't have the entry)
-    const canAddMissing = isEmpty && (
-      (status === 'only-left' && !isLeft) ||
-      (status === 'only-right' && isLeft)
-    );
+    // Show "add missing" button ONLY on MY empty side (I can only add to my own book)
+    // only-right = exists in their book, missing from mine (left) → show button on left
+    const canAddMissing = isEmpty && status === 'only-right' && isLeft;
     const highlight =
       status === 'match'           ? 'border-emerald-500/20 dark:bg-emerald-950/20'
       : status === 'mismatch-amount' ? 'border-amber-500/20 dark:bg-amber-950/20'
