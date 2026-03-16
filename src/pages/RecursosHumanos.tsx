@@ -14,7 +14,7 @@ import {
   ChevronRight, RotateCcw, History, GitCompare, MessageSquare, Send,
   Eye, CheckCircle2, XCircle, ArrowLeftRight,
 } from 'lucide-react';
-import { printVoucherSheet, printPayslip, exportNominaCSV, accrueVacationDays, fmtHR } from '../utils/hrUtils';
+import { printVoucherSheet, printPayslip, printPayrollRunPDF, exportNominaCSV, accrueVacationDays, fmtHR } from '../utils/hrUtils';
 import { logAudit } from '../utils/auditLogger';
 import { listUsers } from '../firebase/api';
 
@@ -1805,7 +1805,14 @@ export default function RecursosHumanos() {
                   {FREQ_LABEL[selectedRun.frequency]||selectedRun.frequency} · {selectedRun.processedAt?.toDate?selectedRun.processedAt.toDate().toLocaleString('es-VE'):'—'} · {selectedRun.employeeCount} empleados
                 </p>
               </div>
-              <button onClick={()=>setSelectedRun(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl text-slate-400"><X size={18}/></button>
+              <div className="flex items-center gap-2">
+                <button onClick={()=>printPayrollRunPDF(selectedRun, businessName)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-100 dark:hover:bg-indigo-500/25 transition-all border border-indigo-100 dark:border-indigo-500/25"
+                  title="Exportar PDF">
+                  <Download size={12}/> PDF
+                </button>
+                <button onClick={()=>setSelectedRun(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl text-slate-400"><X size={18}/></button>
+              </div>
             </div>
 
             {/* Summary KPIs */}

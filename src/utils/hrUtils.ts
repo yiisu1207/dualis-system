@@ -281,6 +281,171 @@ export function printPayslip(
   setTimeout(() => w.print(), 400);
 }
 
+/** Imprimir resumen de corte de nómina completo (todos los empleados) */
+export function printPayrollRunPDF(
+  run: any,
+  businessName = 'Mi Negocio',
+  contactInfo?: { phone?: string; email?: string; rif?: string; address?: string },
+) {
+  const w = window.open('', '_blank', 'width=794,height=1123');
+  if (!w) return;
+
+  const processedDate = run.processedAt?.toDate
+    ? run.processedAt.toDate().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' })
+    : new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const details: any[] = run.details || [];
+  const freqLabel: Record<string,string> = { semanal: 'Semanal', quincenal: 'Quincenal', mensual: 'Mensual', mixta: 'Mixta' };
+
+  // Build detail rows
+  const detailRows = details.map((d: any, i: number) => {
+    const vouchersSum = d.voucherDedUSD || 0;
+    const ivss = d.ivssUSD || 0;
+    const paro = d.paroUSD || 0;
+    const loans = d.loanDedUSD || 0;
+    const overtime = d.overtimeUSD || 0;
+    const absences = d.absenceDeductionUSD || 0;
+    const totalDed = d.totalDedUSD || 0;
+
+    // Voucher detail sub-rows
+    const voucherSubs = (d.settledVouchers || []).map((sv: any) =>
+      `<tr class="sub-row"><td colspan="2" style="padding-left:24px">↳ ${sv.reason || 'Vale'}</td>
+       <td class="tr">-${sv.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(sv.amount))}</td>
+       <td colspan="5"></td></tr>`
+    ).join('');
+
+    return `<tr class="${i % 2 === 0 ? 'even' : ''}">
+      <td class="emp-name">${d.name}</td>
+      <td class="dept">${d.department || '—'}</td>
+      <td class="tr">${d.grossUSD > 0 ? '$' + fmtHR(d.grossUSD) : '—'}</td>
+      <td class="tr neg">${vouchersSum > 0 ? '-$' + fmtHR(vouchersSum) : '—'}</td>
+      <td class="tr neg">${(ivss + paro) > 0 ? '-$' + fmtHR(ivss + paro) : '—'}</td>
+      <td class="tr pos">${overtime > 0 ? '+$' + fmtHR(overtime) : '—'}</td>
+      <td class="tr neg">${absences > 0 ? '-$' + fmtHR(absences) : '—'}</td>
+      <td class="tr net">$${fmtHR(d.netUSD)}${d.netBs > 0 ? '<br><span class="bs">Bs ' + fmtHR(d.netBs) + '</span>' : ''}</td>
+    </tr>${voucherSubs}`;
+  }).join('');
+
+  // Contact info line
+  const contactLine = [
+    contactInfo?.rif && `RIF: ${contactInfo.rif}`,
+    contactInfo?.phone && `Tel: ${contactInfo.phone}`,
+    contactInfo?.email && contactInfo.email,
+    contactInfo?.address && contactInfo.address,
+  ].filter(Boolean).join(' · ');
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Corte de Nómina – ${run.period}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a1a;padding:28px 32px;max-width:760px;margin:0 auto}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;padding-bottom:12px;border-bottom:2.5px solid #1a1a1a}
+  .biz{font-size:20px;font-weight:900;letter-spacing:-0.5px}
+  .contact{font-size:8px;color:#888;margin-top:3px;letter-spacing:.02em}
+  .doc-type{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#666;margin-top:2px}
+  .period-box{text-align:right}
+  .period-badge{display:inline-block;background:#1a1a1a;color:#fff;padding:4px 14px;border-radius:20px;font-size:10px;font-weight:900;letter-spacing:.05em}
+  .period-sub{font-size:9px;color:#888;margin-top:4px}
+
+  .kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1.5px solid #1a1a1a;border-radius:6px;overflow:hidden;margin-bottom:18px}
+  .kpi{padding:10px 12px;text-align:center;border-right:1px solid #ddd}
+  .kpi:last-child{border-right:none}
+  .kpi-label{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-bottom:3px}
+  .kpi-val{font-size:16px;font-weight:900}
+  .kpi-val.pos{color:#16a34a}.kpi-val.neg{color:#dc2626}
+
+  table{width:100%;border-collapse:collapse;margin-bottom:14px}
+  th{font-size:7.5px;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#555;padding:6px 6px;border-bottom:2px solid #1a1a1a;text-align:left}
+  td{padding:5px 6px;border-bottom:1px solid #eee;font-size:10px}
+  .tr{text-align:right}.tc{text-align:center}
+  .emp-name{font-weight:700;font-size:10px}
+  .dept{font-size:9px;color:#888}
+  .pos{color:#16a34a;font-weight:600}.neg{color:#dc2626;font-weight:600}
+  .net{font-weight:900;color:#111;font-size:11px}
+  .bs{font-size:8px;color:#0284c7;font-weight:600}
+  .even{background:#fafafa}
+  .sub-row td{font-size:9px;color:#999;padding:2px 6px;border-bottom:none}
+  .total-row td{background:#f0f0f0;font-weight:900;border-top:2px solid #1a1a1a;font-size:11px}
+
+  .footer-section{margin-top:24px;padding-top:12px;border-top:1.5px solid #ddd}
+  .sigs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:36px}
+  .sig-line{border-top:1px solid #111;padding-top:5px;font-size:9px;color:#666;text-align:center}
+  .sig-sub{text-align:center;font-size:8px;color:#aaa;margin-top:2px}
+  .powered{margin-top:20px;text-align:center;font-size:7px;color:#ccc;letter-spacing:.1em;text-transform:uppercase}
+  @media print{body{padding:16px 20px}}
+</style></head><body>
+
+<div class="header">
+  <div>
+    <div class="biz">${businessName}</div>
+    <div class="doc-type">Resumen de Corte de Nómina</div>
+    ${contactLine ? `<div class="contact">${contactLine}</div>` : ''}
+  </div>
+  <div class="period-box">
+    <div class="period-badge">${run.period}</div>
+    <div class="period-sub">${freqLabel[run.frequency] || run.frequency} · ${run.employeeCount} empleados</div>
+    <div class="period-sub">Procesado: ${processedDate}</div>
+  </div>
+</div>
+
+<div class="kpi-strip">
+  <div class="kpi">
+    <div class="kpi-label">Empleados</div>
+    <div class="kpi-val">${run.employeeCount}</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Bruto Total</div>
+    <div class="kpi-val">$${fmtHR(run.totalGrossUSD)}</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Deducciones</div>
+    <div class="kpi-val neg">-$${fmtHR(run.totalDedUSD)}</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Neto a Pagar</div>
+    <div class="kpi-val pos">$${fmtHR(run.totalNetUSD)}</div>
+  </div>
+</div>
+
+<table>
+  <thead><tr>
+    <th>Empleado</th><th>Depto.</th><th class="tr">Bruto</th>
+    <th class="tr">Vales</th><th class="tr">IVSS/Paro</th>
+    <th class="tr">H.Extra</th><th class="tr">Ausencias</th><th class="tr">Neto</th>
+  </tr></thead>
+  <tbody>
+    ${detailRows}
+    <tr class="total-row">
+      <td colspan="2">TOTALES (${run.employeeCount})</td>
+      <td class="tr">$${fmtHR(run.totalGrossUSD)}</td>
+      <td class="tr neg">${details.reduce((s: number, d: any) => s + (d.voucherDedUSD || 0), 0) > 0 ? '-$' + fmtHR(details.reduce((s: number, d: any) => s + (d.voucherDedUSD || 0), 0)) : '—'}</td>
+      <td class="tr neg">${details.reduce((s: number, d: any) => s + (d.ivssUSD || 0) + (d.paroUSD || 0), 0) > 0 ? '-$' + fmtHR(details.reduce((s: number, d: any) => s + (d.ivssUSD || 0) + (d.paroUSD || 0), 0)) : '—'}</td>
+      <td class="tr pos">${details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0), 0) > 0 ? '+$' + fmtHR(details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0), 0)) : '—'}</td>
+      <td class="tr neg">${details.reduce((s: number, d: any) => s + (d.absenceDeductionUSD || 0), 0) > 0 ? '-$' + fmtHR(details.reduce((s: number, d: any) => s + (d.absenceDeductionUSD || 0), 0)) : '—'}</td>
+      <td class="tr net">$${fmtHR(run.totalNetUSD)}${run.totalNetBs > 0 ? '<br><span class="bs">Bs ' + fmtHR(run.totalNetBs) + '</span>' : ''}</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footer-section">
+  <p style="font-size:8px;color:#999;margin-bottom:3px">Observaciones:</p>
+  <div style="border:1px solid #ddd;border-radius:4px;min-height:40px;padding:6px;font-size:9px;color:#bbb">
+    Corte procesado automáticamente. Los vales incluidos fueron marcados como DESCONTADO.
+  </div>
+</div>
+
+<div class="sigs">
+  <div><div class="sig-line">Elaborado por</div><div class="sig-sub">RRHH / Administración</div></div>
+  <div><div class="sig-line">Revisado por</div><div class="sig-sub">Gerencia</div></div>
+  <div><div class="sig-line">Aprobado por</div><div class="sig-sub">Dirección</div></div>
+</div>
+
+<div class="powered">Generado con tecnología Dualis · ${new Date().toLocaleDateString('es-VE')} ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</div>
+</body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
+
 /** Exportar nómina a CSV (Excel compatible con UTF-8 BOM) */
 export function exportNominaCSV(rows: any[], period: string) {
   const header = [
