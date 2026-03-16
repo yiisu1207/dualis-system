@@ -160,8 +160,8 @@ const Configuracion: React.FC = () => {
   const [features, setFeatures] = useState({
     teamChat:         true,
     bookComparison:   true,
-    personalBooks:    false, // Phase 2
-    peerComparison:   false, // Phase 2
+    personalBooks:    false,
+    peerComparison:   true,
     perUserBilling:   false, // Phase 2
     aiVision:         true,
     multiCurrency:    true,
@@ -218,6 +218,10 @@ const Configuracion: React.FC = () => {
         setUsers(usersSnap);
         if (featuresSnap?.features) {
           setFeatures(prev => ({ ...prev, ...featuresSnap.features }));
+          // Sync isolation mode from Firestore to localStorage
+          if (featuresSnap.features.personalBooks !== undefined) {
+            localStorage.setItem('operation_isolation_mode', featuresSnap.features.personalBooks ? 'individual' : 'shared');
+          }
         }
         if (featuresSnap?.rolePermissions) {
           setRolePerms(prev => ({ ...prev, ...featuresSnap.rolePermissions }));
@@ -441,6 +445,8 @@ const Configuracion: React.FC = () => {
     setSavingFeatures(true);
     try {
       await setDoc(doc(db, 'businessConfigs', businessId), { features }, { merge: true });
+      // Sync isolation mode with localStorage for RRHH and BooksComparePanel
+      localStorage.setItem('operation_isolation_mode', features.personalBooks ? 'individual' : 'shared');
       toast.success('Funciones del sistema actualizadas');
     } catch (e) {
       console.error(e);
@@ -1021,17 +1027,17 @@ const Configuracion: React.FC = () => {
                       {
                         key: 'personalBooks',
                         icon: Globe,
-                        title: 'Libros Personales por Vendedor',
-                        desc: 'Cada vendedor tiene su propio registro de CxC/CxP. El dueño ve todo y compara por usuario.',
-                        phase: 'Fase 2 · Próximamente',
+                        title: 'Libros Individuales por Usuario',
+                        desc: 'Cada usuario opera en su propio libro de RRHH/Nómina. Nadie puede ver ni alterar lo que otro registra. El dueño ve todo desde el AuditLog.',
+                        phase: null,
                         color: 'text-sky-400',
                       },
                       {
                         key: 'peerComparison',
                         icon: Users2,
                         title: 'Comparación entre Compañeros',
-                        desc: 'Los vendedores pueden comparar sus cuentas entre ellos y resolver discrepancias con comentarios.',
-                        phase: 'Fase 2 · Próximamente',
+                        desc: 'Los usuarios pueden comparar sus libros entre ellos, detectar diferencias y resolver discrepancias con comentarios.',
+                        phase: null,
                         color: 'text-rose-400',
                       },
                       {
