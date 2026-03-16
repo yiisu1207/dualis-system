@@ -34,6 +34,7 @@ interface SidebarProps {
   config: AppConfig;
   canCompare?: boolean;
   rolePermissions?: RolePermissions;
+  badges?: Record<string, number>;
   onLogout: () => void;
   onOpenProfile: () => void;
 }
@@ -139,6 +140,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   config,
   canCompare = false,
   rolePermissions,
+  badges = {},
   onLogout,
   onOpenProfile,
 }) => {
@@ -316,11 +318,18 @@ const Sidebar: React.FC<SidebarProps> = ({
                         <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full bg-gradient-to-b from-indigo-400 to-violet-400 shadow-[0_0_8px_rgba(99,102,241,0.7)]" />
                       )}
 
-                      <item.Icon
-                        size={15}
-                        strokeWidth={isActive ? 2.2 : 1.7}
-                        className="relative z-10 shrink-0"
-                      />
+                      <span className="relative shrink-0">
+                        <item.Icon
+                          size={15}
+                          strokeWidth={isActive ? 2.2 : 1.7}
+                          className="relative z-10"
+                        />
+                        {(badges[item.id] ?? 0) > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 z-20 min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[8px] font-black leading-none shadow-[0_0_6px_rgba(244,63,94,0.5)]">
+                            {badges[item.id]}
+                          </span>
+                        )}
+                      </span>
 
                       {/* Label — always visible on mobile, hidden when collapsed on lg */}
                       <span

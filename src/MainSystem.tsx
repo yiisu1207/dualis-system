@@ -353,13 +353,16 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   useEffect(() => {
     const uid = firebaseUser?.uid;
     if (!uid || !businessId) return;
+    // Single where to avoid composite index requirement — filter status + businessId client-side
     const q = query(
       collection(db, 'bookCompareRequests'),
-      where('receiverId', '==', uid),
-      where('status', '==', 'pending')
+      where('receiverId', '==', uid)
     );
     const unsub = onSnapshot(q, snap => {
-      const count = snap.docs.filter(d => d.data().businessId === businessId).length;
+      const count = snap.docs.filter(d => {
+        const data = d.data();
+        return data.businessId === businessId && data.status === 'pending';
+      }).length;
       setPendingCompareCount(count);
     });
     return unsub;
@@ -580,6 +583,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           config={{ companyName: userProfile?.businessId } as any}
           rolePermissions={rolePermissions}
           canCompare={canAccess('comparar')}
+          badges={{ comparar: pendingCompareCount }}
           onLogout={() => auth.signOut()}
           onOpenProfile={() => setIsProfileOpen(true)}
         />

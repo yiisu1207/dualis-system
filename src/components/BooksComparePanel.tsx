@@ -305,15 +305,15 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
   /* ── Listen: incoming requests ── */
   useEffect(() => {
     if (!businessId || !currentUserId) return;
+    // Single where to avoid composite index requirement
     const q = query(
       collection(db, 'bookCompareRequests'),
-      where('receiverId', '==', currentUserId),
-      where('status', '==', 'pending')
+      where('receiverId', '==', currentUserId)
     );
     return onSnapshot(q, snap => {
       const items = snap.docs
         .map(d => ({ id: d.id, ...d.data() } as BookCompareRequest))
-        .filter(r => r.businessId === businessId)
+        .filter(r => r.businessId === businessId && r.status === 'pending')
         .sort((a, b) => {
           const ta = a.createdAt?.toMillis?.() || 0;
           const tb = b.createdAt?.toMillis?.() || 0;
