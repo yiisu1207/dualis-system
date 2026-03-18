@@ -51,6 +51,7 @@ interface Voucher {
 }
 interface VoucherRate {
   id: string; rate: number; createdAt: any; createdBy: string; notes?: string;
+  effectiveDate?: string; // YYYY-MM-DD — the date this rate applies to
 }
 interface Loan {
   id: string; employeeId: string; employeeName: string;
@@ -483,6 +484,7 @@ export default function RecursosHumanos() {
   // Tasas tab
   const [rateInput, setRateInput] = useState('');
   const [rateNotes, setRateNotes] = useState('');
+  const [rateDate, setRateDate]   = useState(() => new Date().toISOString().slice(0,10));
   const [savingRate, setSavingRate] = useState(false);
 
   // Comparar tab
@@ -538,20 +540,21 @@ export default function RecursosHumanos() {
 
   const currentRate   = voucherRates[0]?.rate || 0;
 
-  // Find the applicable rate for a specific date (latest rate on or before that date)
+  // Find the applicable rate for a specific date (latest effectiveDate on or before that date)
   const getRateForDate = useCallback((dateStr: string): number => {
     if (!voucherRates.length) return currentRate;
+    // Use effectiveDate if available, else fall back to createdAt
+    const withDates = voucherRates.map(r => {
+      const ed = r.effectiveDate
+        ? new Date(r.effectiveDate + 'T23:59:59')
+        : (r.createdAt?.toDate?.() ?? new Date(r.createdAt));
+      return { ...r, _date: ed };
+    }).sort((a, b) => b._date.getTime() - a._date.getTime());
     const target = new Date(dateStr + 'T23:59:59');
-    const sorted = [...voucherRates].sort((a, b) => {
-      const da = a.createdAt?.toDate?.() ?? new Date(a.createdAt);
-      const db2 = b.createdAt?.toDate?.() ?? new Date(b.createdAt);
-      return db2.getTime() - da.getTime();
-    });
-    for (const r of sorted) {
-      const rd = r.createdAt?.toDate?.() ?? new Date(r.createdAt);
-      if (rd <= target) return r.rate;
+    for (const r of withDates) {
+      if (r._date <= target) return r.rate;
     }
-    return sorted[sorted.length - 1]?.rate || currentRate;
+    return withDates[withDates.length - 1]?.rate || currentRate;
   }, [voucherRates, currentRate]);
   const pendingVouchers = useMemo(()=>visibleVouchers.filter(v=>v.status==='PENDIENTE'),[visibleVouchers]);
   const activeLoans     = useMemo(()=>loans.filter(l=>l.status==='ACTIVO'),[loans]);
@@ -848,10 +851,11 @@ export default function RecursosHumanos() {
     try {
       await addDoc(collection(db,`businesses/${bid}/voucher_rates`),{
         rate:Number(rateInput),notes:rateNotes,
+        effectiveDate:rateDate,
         createdBy:userProfile?.fullName||userProfile?.email||'Usuario',
         createdAt:serverTimestamp(),
       });
-      setRateInput('');setRateNotes('');
+      setRateInput('');setRateNotes('');setRateDate(new Date().toISOString().slice(0,10));
       toast.success('Tasa actualizada');
     } catch { toast.error('Error al guardar la tasa'); }
     finally { setSavingRate(false); }
@@ -1535,7 +1539,10 @@ export default function RecursosHumanos() {
                       <p className="text-5xl font-black text-indigo-700 dark:text-indigo-300 tracking-tight">Bs {fmtHR(currentRate)}</p>
                       <p className="text-sm text-indigo-600/60 dark:text-indigo-400/50 mt-1">por 1 USD</p>
                       <p className="text-[10px] text-indigo-600/50 dark:text-indigo-400/40 mt-3">
-                        Actualizada: {voucherRates[0]?.createdAt?.toDate?voucherRates[0].createdAt.toDate().toLocaleString('es-VE'):'—'} · por {voucherRates[0]?.createdBy}
+                        {voucherRates[0]?.effectiveDate
+                          ? <>Vigente desde: <span className="font-bold">{new Date(voucherRates[0].effectiveDate+'T12:00:00').toLocaleDateString('es-VE',{day:'2-digit',month:'short',year:'numeric'})}</span> · </>
+                          : null}
+                        Registrada: {voucherRates[0]?.createdAt?.toDate?voucherRates[0].createdAt.toDate().toLocaleString('es-VE'):'—'} · por {voucherRates[0]?.createdBy}
                       </p>
                       {voucherRates[0]?.notes&&<p className="text-[10px] text-indigo-600/50 dark:text-indigo-400/40 italic mt-1">{voucherRates[0].notes}</p>}
                     </>
@@ -1546,11 +1553,19 @@ export default function RecursosHumanos() {
                 {/* Update rate form */}
                 <form onSubmit={handleSaveRate} className="p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-white/[0.02] space-y-4">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Actualizar Tasa</p>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 ml-1">Nueva Tasa (Bs / USD)</label>
-                    <input required type="number" step="0.01" min="1" value={rateInput}
-                      onChange={e=>setRateInput(e.target.value)} placeholder="Ej. 40.50"
-                      className={inp}/>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 ml-1">Nueva Tasa (Bs / USD)</label>
+                      <input required type="number" step="0.01" min="1" value={rateInput}
+                        onChange={e=>setRateInput(e.target.value)} placeholder="Ej. 40.50"
+                        className={inp}/>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 ml-1">Fecha Vigencia</label>
+                      <input required type="date" value={rateDate}
+                        onChange={e=>setRateDate(e.target.value)}
+                        className={inp}/>
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 ml-1">Notas (opcional)</label>
@@ -1573,12 +1588,13 @@ export default function RecursosHumanos() {
                   <div className="px-5 py-3 bg-slate-50/50 dark:bg-white/[0.02]"><p className="text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Historial de Tasas</p></div>
                   <table className="w-full text-left">
                     <thead><tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05]">
-                      <th className="px-5 py-3">Fecha</th><th className="px-5 py-3 text-right">Tasa (Bs/USD)</th>
-                      <th className="px-5 py-3">Actualizada por</th><th className="px-5 py-3">Notas</th>
+                      <th className="px-5 py-3">Vigencia</th><th className="px-5 py-3">Registrada</th><th className="px-5 py-3 text-right">Tasa (Bs/USD)</th>
+                      <th className="px-5 py-3">Por</th><th className="px-5 py-3">Notas</th>
                     </tr></thead>
                     <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                       {voucherRates.slice(0,20).map((r,i)=>(
                         <tr key={r.id} className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] ${i===0?'bg-indigo-50/30 dark:bg-indigo-500/[0.04]':''}`}>
+                          <td className="px-5 py-3 font-mono text-[11px] font-bold text-indigo-600 dark:text-indigo-400">{r.effectiveDate?new Date(r.effectiveDate+'T12:00:00').toLocaleDateString('es-VE',{day:'2-digit',month:'short',year:'numeric'}):<span className="text-slate-400 dark:text-white/30 text-[10px]">—</span>}</td>
                           <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{r.createdAt?.toDate?r.createdAt.toDate().toLocaleString('es-VE'):'—'}</td>
                           <td className="px-5 py-3 text-right font-black text-slate-900 dark:text-white text-sm">Bs {fmtHR(r.rate)}{i===0&&<span className="ml-2 text-[8px] text-indigo-500 font-black uppercase">vigente</span>}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400 text-xs">{r.createdBy}</td>
