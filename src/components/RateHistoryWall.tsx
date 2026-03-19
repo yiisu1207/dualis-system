@@ -212,7 +212,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       const grupoNum = Number(String(manualGrupo).replace(',', '.')) || 0;
 
       // 1. Actualizar businessConfigs → se propaga en tiempo real a todos los dispositivos
-      await updateRates({ tasaBCV: bcvPreview.rate });
+      await updateRates({ tasaBCV: bcvPreview.rate, ...(grupoNum > 0 ? { tasaGrupo: grupoNum } : {}) });
 
       // 2. Guardar en historial
       await createExchangeRateEntry(
@@ -309,6 +309,10 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     }
     setIsPublishing(true);
     try {
+      // 1. Actualizar tasa activa en businessConfigs → se propaga a todos los dispositivos
+      await updateRates({ tasaBCV: bcv, tasaGrupo: grupo });
+
+      // 2. Guardar en historial
       await createExchangeRateEntry(
         resolvedBusinessId,
         manualDate,
@@ -321,6 +325,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             }
           : undefined
       );
+      success(`Tasas actualizadas: BCV ${bcv.toFixed(4)} · Grupo ${grupo.toFixed(4)}`);
       setManualBcv('');
       setManualGrupo('');
     } catch (error) {
