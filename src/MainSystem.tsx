@@ -43,6 +43,7 @@ import NotificationCenter from './components/NotificationCenter';
 import ReportesSection from './components/ReportesSection';
 import ReconciliationSection from './components/ReconciliationSection';
 import FiscalSection from './pages/FiscalSection';
+import LibroVentasSection from './components/LibroVentasSection';
 
 // WIDGETS
 import StickyNotesWidget from './components/StickyNotesWidget';
@@ -317,6 +318,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     cajas:         `${adminBase}/cajas`,
     sucursales:    `${adminBase}/sucursales`,
     fiscal:        `${adminBase}/fiscal`,
+    libroventas:   `${adminBase}/libroventas`,
     config:        `${adminBase}/configuracion`,
     help:          `${adminBase}/help`,
   }), [adminBase]);
@@ -568,7 +570,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     proveedores: 'Proveedores', rrhh: 'RRHH', inventario: 'Inventario',
     reportes: 'Reportes', vision: 'VisionLab', widgets: 'Herramientas',
     comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
-    cajas: 'Cajas', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal',
+    cajas: 'Cajas', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Libro de Ventas',
     config: 'Configuración', help: 'Ayuda',
   };
 
@@ -657,6 +659,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                 : <LockedModule moduleName="Conciliación Bancaria" requiredPlan="negocio" isAddon />
             )}
             {activeTab === 'fiscal'  && (canView('fiscal')  ? <FiscalSection /> : <NoAccess />)}
+            {activeTab === 'libroventas' && (canView('reportes') ? <LibroVentasSection /> : <NoAccess />)}
             {activeTab === 'vision' && (
               !canView('vision') ? <NoAccess /> :
               canAccess('vision')

@@ -24,6 +24,7 @@ import {
   ClipboardList,
   MapPin,
   Scale,
+  FileText,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -65,6 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'inventario',   label: 'Inventario',      Icon: Package,         path: 'inventario'    },
       { id: 'cajas',        label: 'Ventas / Cajas',  Icon: ShoppingCart,    path: 'cajas'         },
+      { id: 'libroventas', label: 'Libro de Ventas', Icon: FileText,        path: 'libroventas'   },
       { id: 'rrhh',         label: 'RRHH / Nómina',  Icon: Users,           path: 'rrhh'          },
       { id: 'sucursales',   label: 'Sucursales',      Icon: MapPin,          path: 'sucursales'    },
     ],

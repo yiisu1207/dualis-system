@@ -615,6 +615,15 @@ const PosContent = () => {
 
       const { formatted: nroControl } = await getNextNroControl(empresa_id);
 
+      // Build pagos breakdown for audit
+      const pagos: Record<string, number> = {};
+      if (method === 'mixto') {
+        if (mixCash > 0) pagos['Efectivo USD'] = mixCash;
+        if (mixTransfer > 0) pagos['Transferencia'] = mixTransfer;
+      } else {
+        pagos[METHOD_LABELS[method]] = grandTotal;
+      }
+
       const movementPayload: any = {
         businessId: empresa_id,
         nroControl,
@@ -635,6 +644,8 @@ const PosContent = () => {
         accountType: 'BCV',
         rateUsed: rateValue,
         metodoPago: METHOD_LABELS[method],
+        esPagoMixto: method === 'mixto',
+        pagos,
         referencia: reference || null,
         cashGiven: cashGiven || null,
         changeUsd: changeUsd || null,
@@ -892,7 +903,7 @@ const PosContent = () => {
           {/* Cart items table */}
           <div className="flex-1 overflow-y-auto custom-scroll">
             <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-white dark:bg-slate-900 z-10 text-[10px] font-black uppercase tracking-widest text-slate-400 shadow-sm">
+              <thead className="sticky top-0 bg-white dark:bg-slate-900 z-10 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 shadow-sm">
                 <tr>
                   <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07]">Producto</th>
                   <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-center">Cant.</th>
@@ -908,15 +919,15 @@ const PosContent = () => {
                       <div className="inline-flex h-16 w-16 rounded-3xl bg-slate-50 dark:bg-slate-800/50 items-center justify-center mb-4">
                         <ShoppingCart size={28} className="text-slate-300" />
                       </div>
-                      <h3 className="text-base font-black text-slate-300 uppercase tracking-widest mb-1">Carrito Vacío</h3>
-                      <p className="text-xs text-slate-300 font-medium">Escanea un código o selecciona un producto</p>
+                      <h3 className="text-base font-black text-slate-300 dark:text-white/20 uppercase tracking-widest mb-1">Carrito Vacío</h3>
+                      <p className="text-xs text-slate-300 dark:text-white/15 font-medium">Escanea un código o selecciona un producto</p>
                     </td>
                   </tr>
                 ) : items.map(item => (
                   <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.04] group transition-colors">
                     <td className="px-5 py-3.5">
                       <p className="text-sm font-black text-slate-800 dark:text-slate-200 leading-none">{item.nombre}</p>
-                      <p className="text-[10px] font-mono text-slate-400 mt-0.5">{item.codigo}</p>
+                      <p className="text-[10px] font-mono text-slate-400 dark:text-white/30 mt-0.5">{item.codigo}</p>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-center gap-2">
@@ -931,7 +942,7 @@ const PosContent = () => {
                         </button>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500">
+                    <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500 dark:text-white/50">
                       ${item.priceUsd.toFixed(2)}
                     </td>
                     <td className="px-5 py-3.5 text-right text-base font-black text-slate-900 dark:text-white">
@@ -956,7 +967,7 @@ const PosContent = () => {
             <div className="flex-1 space-y-3 min-w-0">
               {/* Consumidor Final toggle */}
               <div className="flex items-center justify-between">
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Cliente</label>
+                <label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest">Cliente</label>
                 <button
                   onClick={() => { setConsumidorFinal(!consumidorFinal); setCustomer(null); setClientQuery(''); }}
                   className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg transition-all border ${consumidorFinal ? 'bg-sky-500 text-white border-sky-500' : 'bg-white dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-white/10 hover:border-slate-300 dark:border-white/15'}`}>
@@ -966,11 +977,11 @@ const PosContent = () => {
               </div>
 
               {consumidorFinal ? (
-                <div className="bg-sky-50 border border-sky-100 rounded-xl p-3.5 flex items-center gap-3">
+                <div className="bg-sky-50 dark:bg-sky-500/10 border border-sky-100 dark:border-sky-500/20 rounded-xl p-3.5 flex items-center gap-3">
                   <div className="h-9 w-9 rounded-full bg-sky-500 text-white flex items-center justify-center font-black text-sm shrink-0">CF</div>
                   <div>
-                    <p className="text-sm font-black text-slate-800 dark:text-slate-200">Consumidor Final</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Venta sin cliente registrado</p>
+                    <p className="text-sm font-black text-slate-800 dark:text-white">Consumidor Final</p>
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-sky-300/70 uppercase">Venta sin cliente registrado</p>
                   </div>
                 </div>
               ) : !customer ? (
@@ -980,7 +991,7 @@ const PosContent = () => {
                     value={clientQuery}
                     onChange={e => setClientQuery(e.target.value)}
                     placeholder="Buscar cliente (nombre, RIF, cédula)..."
-                    className="w-full pl-9 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold focus:ring-2 focus:ring-slate-900 outline-none shadow-sm transition-all"
+                    className="w-full pl-9 pr-4 py-3 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30 focus:ring-2 focus:ring-slate-900 dark:focus:ring-indigo-500 outline-none shadow-sm transition-all"
                   />
                   {filteredClients.length > 0 && (
                     <div className="absolute bottom-full left-0 right-0 mb-2 max-h-36 overflow-y-auto bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-white/[0.07] z-50 p-1">
@@ -998,13 +1009,13 @@ const PosContent = () => {
                   )}
                 </div>
               ) : (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl p-3.5 flex items-center gap-3 shadow-sm">
-                  <div className="h-9 w-9 rounded-full bg-slate-900 text-white flex items-center justify-center font-black text-sm shrink-0">
+                <div className="bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl p-3.5 flex items-center gap-3 shadow-sm">
+                  <div className="h-9 w-9 rounded-full bg-slate-900 dark:bg-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0">
                     {(customer.fullName || customer.nombre || 'C').charAt(0)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-black text-slate-900 dark:text-white truncate">{customer.fullName || customer.nombre}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">{customer.rif || customer.cedula || 'Consumidor Final'}</p>
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase">{customer.rif || customer.cedula || 'Consumidor Final'}</p>
                   </div>
                   <button onClick={() => { setCustomer(null); setClientQuery(''); }}
                     className="text-[9px] font-black uppercase text-rose-400 hover:text-rose-600 shrink-0">
@@ -1015,12 +1026,12 @@ const PosContent = () => {
 
               {/* Mini stats */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white dark:bg-white/[0.05] p-3 rounded-xl border border-slate-100 dark:border-white/[0.1] shadow-sm">
-                  <p className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-400 mb-1">Items</p>
+                <div className="bg-white dark:bg-white/[0.06] p-3 rounded-xl border border-slate-100 dark:border-white/[0.1] shadow-sm">
+                  <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/40 mb-1 tracking-widest">Items</p>
                   <p className="text-xl font-black text-slate-800 dark:text-white">{items.reduce((a, i) => a + i.qty, 0)}</p>
                 </div>
-                <div className="bg-white dark:bg-white/[0.05] p-3 rounded-xl border border-slate-100 dark:border-white/[0.1] shadow-sm">
-                  <p className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-400 mb-1">Total Bs</p>
+                <div className="bg-white dark:bg-white/[0.06] p-3 rounded-xl border border-slate-100 dark:border-white/[0.1] shadow-sm">
+                  <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/40 mb-1 tracking-widest">Total Bs</p>
                   <p className="text-xl font-black text-slate-800 dark:text-white truncate">
                     {totals.totalBs.toLocaleString('es-VE', { maximumFractionDigits: 0 })}
                   </p>
@@ -1032,10 +1043,10 @@ const PosContent = () => {
             <div className="w-full sm:w-[38%] bg-slate-900 rounded-[1.8rem] p-4 sm:p-6 flex flex-col justify-between shadow-2xl text-white relative overflow-hidden shrink-0">
               <div className="absolute -right-8 -top-8 h-36 w-36 bg-white dark:bg-slate-900/5 rounded-full blur-2xl pointer-events-none" />
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Total a Pagar</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Total a Pagar</p>
                 {totals.taxUsd > 0 && (
                   <div className="mt-2 space-y-0.5 mb-1">
-                    <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                    <div className="flex justify-between text-[10px] font-bold text-white/50">
                       <span>Base</span>
                       <span>${totals.subtotalUsd.toFixed(2)}</span>
                     </div>
@@ -1048,7 +1059,7 @@ const PosContent = () => {
 
                 {/* ── Descuento ── */}
                 <div className="mt-2 flex items-center gap-1.5">
-                  <Tag size={11} className="text-slate-500 shrink-0" />
+                  <Tag size={11} className="text-white/40 shrink-0" />
                   <HelpTooltip
                     title="Descuento"
                     text="Aplica un descuento a toda la venta. Elige % para porcentaje o $ para monto fijo en dólares. El descuento se resta del total antes de cobrar."

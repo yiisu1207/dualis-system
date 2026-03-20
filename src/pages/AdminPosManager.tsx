@@ -227,25 +227,28 @@ export default function AdminPosManager() {
     setExpandedShiftSale(null);
     const loadMov = async () => {
       try {
+        // Simple query: businessId + cajaId only (avoids composite index issues)
+        const cajaId = selectedArqueo.terminalId || selectedArqueo.cajaId || '';
         const q = query(
           collection(db, 'movements'),
           where('businessId', '==', businessId),
-          where('cajaId', '==', selectedArqueo.terminalId || selectedArqueo.cajaId),
-          where('movementType', '==', 'FACTURA'),
-          orderBy('createdAt', 'desc'),
+          where('cajaId', '==', cajaId),
         );
         const snap = await getDocs(q);
         const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        // Filter to this shift's time range
+        // Client-side filter: FACTURA only, within shift time range
         const shiftStart = selectedArqueo.apertura || null;
         const shiftEnd = selectedArqueo.cierreAt || null;
         const filtered = all.filter((m: any) => {
+          if (m.movementType !== 'FACTURA') return false;
           const ts = m.createdAt;
           if (!ts) return false;
           if (shiftStart && ts < shiftStart) return false;
           if (shiftEnd && ts > shiftEnd) return false;
           return true;
         });
+        // Sort descending by createdAt
+        filtered.sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || ''));
         setShiftMovements(filtered);
       } catch (err) {
         console.error('[AdminPosManager] Error loading shift movements:', err);

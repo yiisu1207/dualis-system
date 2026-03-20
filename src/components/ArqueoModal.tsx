@@ -123,17 +123,35 @@ export default function ArqueoModal({ terminal, movements, businessId, currentUs
   const summary = useMemo(() => {
     const valid = movements.filter(m => !m.anulada && m.movementType === 'FACTURA');
     const total = valid.reduce((a, m) => a + (m.amountInUSD ?? m.amount ?? 0), 0);
+
+    // Use the structured `pagos` object when available, fallback to `metodoPago` string
     const byMethod: Record<string, number> = {};
     for (const m of valid) {
-      const met = m.metodoPago || 'Sin método';
-      byMethod[met] = (byMethod[met] ?? 0) + (m.amountInUSD ?? m.amount ?? 0);
+      if (m.pagos && typeof m.pagos === 'object' && Object.keys(m.pagos).length > 0) {
+        // New structured format — each key is a method label, value is USD amount
+        for (const [method, amount] of Object.entries(m.pagos)) {
+          byMethod[method] = (byMethod[method] ?? 0) + (amount as number);
+        }
+      } else {
+        // Legacy: single metodoPago string
+        const met = m.metodoPago || 'Sin método';
+        byMethod[met] = (byMethod[met] ?? 0) + (m.amountInUSD ?? m.amount ?? 0);
+      }
     }
-    // Expected cash = sum of efectivo USD sales
-    const cashKeys = ['Efectivo USD', 'Efectivo', 'Cash', 'Contado'];
+
+    // Cash-only methods that require physical bill counting
+    const CASH_LABELS = ['efectivo usd', 'efectivo bs', 'efectivo', 'cash', 'contado'];
     const expectedCashUsd = Object.entries(byMethod)
-      .filter(([k]) => cashKeys.some(ck => k.toLowerCase().includes(ck.toLowerCase())))
+      .filter(([k]) => CASH_LABELS.some(ck => k.toLowerCase().includes(ck)))
       .reduce((a, [, v]) => a + v, 0);
-    return { total, count: valid.length, byMethod, expectedCashUsd };
+
+    // Digital/electronic totals (informational — no variance calc needed)
+    const DIGITAL_LABELS = ['transferencia', 'pago móvil', 'pago movil', 'punto', 'zelle'];
+    const digitalTotalUsd = Object.entries(byMethod)
+      .filter(([k]) => DIGITAL_LABELS.some(dk => k.toLowerCase().includes(dk)))
+      .reduce((a, [, v]) => a + v, 0);
+
+    return { total, count: valid.length, byMethod, expectedCashUsd, digitalTotalUsd };
   }, [movements]);
 
   // ── Denomination totals ───────────────────────────────────────────────────
@@ -258,15 +276,55 @@ export default function ArqueoModal({ terminal, movements, businessId, currentUs
                 <p className="text-[9px] text-white/25 uppercase tracking-widest">Efectivo esperado</p>
               </div>
             </div>
-            {/* By method */}
+            {/* By method — grouped cash vs digital */}
             {Object.keys(summary.byMethod).length > 0 && (
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 space-y-1.5">
-                {Object.entries(summary.byMethod).map(([m, v]) => (
-                  <div key={m} className="flex justify-between items-center">
-                    <span className="text-xs text-white/40 font-medium">{m}</span>
-                    <span className="text-xs font-black text-white/80">${(v as number).toFixed(2)}</span>
-                  </div>
-                ))}
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 space-y-3">
+                {/* Cash methods */}
+                {(() => {
+                  const CASH_TEST = ['efectivo', 'cash', 'contado'];
+                  const DIGITAL_TEST = ['transferencia', 'pago móvil', 'pago movil', 'punto', 'zelle'];
+                  const cashEntries = Object.entries(summary.byMethod).filter(([k]) => CASH_TEST.some(c => k.toLowerCase().includes(c)));
+                  const digitalEntries = Object.entries(summary.byMethod).filter(([k]) => DIGITAL_TEST.some(d => k.toLowerCase().includes(d)));
+                  const otherEntries = Object.entries(summary.byMethod).filter(([k]) =>
+                    !CASH_TEST.some(c => k.toLowerCase().includes(c)) && !DIGITAL_TEST.some(d => k.toLowerCase().includes(d))
+                  );
+                  return (
+                    <>
+                      {cashEntries.length > 0 && (
+                        <div>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400/50 mb-1.5">Efectivo</p>
+                          {cashEntries.map(([m, v]) => (
+                            <div key={m} className="flex justify-between items-center py-0.5">
+                              <span className="text-xs text-white/40 font-medium">{m}</span>
+                              <span className="text-xs font-black text-emerald-400">${(v as number).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {digitalEntries.length > 0 && (
+                        <div className={cashEntries.length > 0 ? 'border-t border-white/[0.05] pt-2' : ''}>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-sky-400/50 mb-1.5">Digital / Electrónico</p>
+                          {digitalEntries.map(([m, v]) => (
+                            <div key={m} className="flex justify-between items-center py-0.5">
+                              <span className="text-xs text-white/40 font-medium">{m}</span>
+                              <span className="text-xs font-black text-sky-400">${(v as number).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {otherEntries.length > 0 && (
+                        <div className={(cashEntries.length > 0 || digitalEntries.length > 0) ? 'border-t border-white/[0.05] pt-2' : ''}>
+                          {otherEntries.map(([m, v]) => (
+                            <div key={m} className="flex justify-between items-center py-0.5">
+                              <span className="text-xs text-white/40 font-medium">{m}</span>
+                              <span className="text-xs font-black text-white/80">${(v as number).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -344,6 +402,12 @@ export default function ArqueoModal({ terminal, movements, businessId, currentUs
               <div className="flex items-center gap-2 mt-2 p-2.5 rounded-xl bg-rose-500/[0.08] border border-rose-500/20">
                 <AlertTriangle size={13} className="text-rose-400 shrink-0" />
                 <p className="text-xs text-rose-400">Hay una diferencia significativa. Verifica el conteo.</p>
+              </div>
+            )}
+            {summary.digitalTotalUsd > 0 && (
+              <div className="border-t border-white/[0.06] pt-2 mt-2 flex justify-between items-center">
+                <span className="text-xs text-sky-400/60">Total digital (informativo)</span>
+                <span className="text-sm font-black text-sky-400">${summary.digitalTotalUsd.toFixed(2)}</span>
               </div>
             )}
           </div>
