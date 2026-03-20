@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { PosKioskContext } from '../pages/pos/PosDetal';
 import { useAuth } from '../context/AuthContext';
 import { TenantProvider } from '../context/TenantContext';
 import PosLayout from '../layouts/PosLayout';
@@ -25,6 +28,12 @@ import PendingApprovalWall from '../pages/PendingApprovalWall';
 import { useSubscription } from '../hooks/useSubscription';
 import { VendorProvider } from '../context/VendorContext';
 import { findInvitationByToken } from '../firebase/api';
+import { CartProvider } from '../context/CartContext';
+
+function KioskPosPage({ tipo }: { tipo: string }) {
+  if (tipo === 'mayor') return <PosMayor />;
+  return <PosDetal />;
+}
 
 function resolveTenantId(profile: { empresa_id?: string; businessId?: string } | null) {
   if (!profile) return '';
@@ -241,6 +250,52 @@ function JoinPage() {
   return <Register inviteToken={token} inviteData={invite} />;
 }
 
+// ─── KIOSK GATE — resolves /caja/:posToken → renders POS without auth ──────────
+function KioskGate() {
+  const { posToken } = useParams<{ posToken: string }>();
+  const [state, setState] = useState<'loading' | 'ready' | 'invalid'>('loading');
+  const [kioskData, setKioskData] = useState<{ businessId: string; cajaId: string; tipo: string } | null>(null);
+
+  useEffect(() => {
+    if (!posToken) { setState('invalid'); return; }
+    getDoc(doc(db, 'terminalTokens', posToken)).then(snap => {
+      if (!snap.exists()) { setState('invalid'); return; }
+      const d = snap.data() as { businessId: string; cajaId: string; tipo: string };
+      setKioskData(d);
+      setState('ready');
+    }).catch(() => setState('invalid'));
+  }, [posToken]);
+
+  if (state === 'loading') return (
+    <div className="h-screen flex items-center justify-center bg-[#070b14]">
+      <div className="w-8 h-8 border-2 border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" />
+    </div>
+  );
+
+  if (state === 'invalid' || !kioskData) return (
+    <div className="h-screen flex items-center justify-center bg-[#070b14] px-4">
+      <div className="text-center">
+        <p className="text-4xl mb-4">🔒</p>
+        <h2 className="text-white font-black text-xl mb-2">Acceso no válido</h2>
+        <p className="text-white/40 text-sm">Este terminal no existe o el turno fue cerrado.</p>
+      </div>
+    </div>
+  );
+
+  // Inline CartProvider + PosContent (mirrors PosLayout without needing Outlet)
+  return (
+    <PosKioskContext.Provider value={{ businessId: kioskData.businessId, cajaId: kioskData.cajaId, token: posToken! }}>
+      <TenantProvider tenantId={kioskData.businessId}>
+        <CartProvider>
+          <div className="min-h-screen w-full bg-gray-50 dark:bg-[#0a0f1e] text-gray-900 dark:text-white">
+            <KioskPosPage tipo={kioskData.tipo} />
+          </div>
+        </CartProvider>
+      </TenantProvider>
+    </PosKioskContext.Provider>
+  );
+}
+
 export default function AppRouter() {
   return (
     <Routes>
@@ -314,6 +369,9 @@ export default function AppRouter() {
         <Route path="detal" element={<PosDetal />} />
         <Route path="mayor" element={<PosMayor />} />
       </Route>
+
+      {/* Kiosk POS — clean URL without business ID */}
+      <Route path="/caja/:posToken" element={<KioskGate />} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>

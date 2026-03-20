@@ -10,7 +10,8 @@ import {
   orderBy,
   limit,
   Timestamp,
-  serverTimestamp
+  serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import {
   BadgeDollarSign,
@@ -45,6 +46,12 @@ import {
   ChevronDown,
   RotateCcw,
   Tag,
+  Percent,
+  ToggleLeft,
+  ToggleRight,
+  ListChecks,
+  FolderEdit,
+  CheckCheck,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { db } from '../firebase/config';
@@ -273,6 +280,88 @@ export default function Inventario() {
   });
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
+  // ── MULTI-SELECT & BULK ACTIONS ────────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) => setSelectedIds(prev => {
+    const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s;
+  });
+  const clearSelect = () => setSelectedIds(new Set());
+
+  // ── MASTER CONTROLS ────────────────────────────────────────────────────────
+  const [masterPanel, setMasterPanel] = useState<'margin' | 'iva' | 'category' | null>(null);
+  const [masterMargin, setMasterMargin] = useState('30');
+  const [masterMarginTarget, setMasterMarginTarget] = useState<'detal' | 'mayor' | 'both'>('both');
+  const [masterIvaType, setMasterIvaType] = useState<'GENERAL' | 'REDUCIDO' | 'EXENTO'>('GENERAL');
+  const [masterIvaValue, setMasterIvaValue] = useState('16');
+  const [masterCategory, setMasterCategory] = useState('');
+  const [masterApplying, setMasterApplying] = useState(false);
+
+  const getMasterScope = () => selectedIds.size > 0 ? [...selectedIds].map(id => products.find(p => p.id === id)!).filter(Boolean)
+    : filteredProducts;
+
+  const handleMasterMargin = async () => {
+    if (!tenantId || masterApplying) return;
+    const margin = parseFloat(masterMargin);
+    if (isNaN(margin) || margin <= 0) return;
+    const scope = getMasterScope();
+    setMasterApplying(true);
+    try {
+      const batch = writeBatch(db);
+      scope.forEach(p => {
+        const ref = doc(db, `businesses/${tenantId}/products`, p.id);
+        const updates: Partial<Product> = {};
+        if (masterMarginTarget === 'detal' || masterMarginTarget === 'both')
+          updates.precioDetal = parseFloat((p.costoUSD * (1 + margin / 100)).toFixed(2));
+        if (masterMarginTarget === 'mayor' || masterMarginTarget === 'both')
+          updates.precioMayor = parseFloat((p.costoUSD * (1 + margin / 100) * 0.95).toFixed(2));
+        batch.update(ref, updates);
+      });
+      await batch.commit();
+      setMasterPanel(null);
+    } finally { setMasterApplying(false); }
+  };
+
+  const handleMasterIva = async () => {
+    if (!tenantId || masterApplying) return;
+    const ivaVal = parseFloat(masterIvaValue);
+    const scope = getMasterScope();
+    setMasterApplying(true);
+    try {
+      const batch = writeBatch(db);
+      scope.forEach(p => {
+        batch.update(doc(db, `businesses/${tenantId}/products`, p.id), {
+          iva: masterIvaType === 'EXENTO' ? 0 : ivaVal,
+          ivaTipo: masterIvaType,
+        });
+      });
+      await batch.commit();
+      setMasterPanel(null);
+    } finally { setMasterApplying(false); }
+  };
+
+  const handleMasterCategory = async () => {
+    if (!tenantId || !masterCategory.trim() || masterApplying) return;
+    const scope = getMasterScope();
+    setMasterApplying(true);
+    try {
+      const batch = writeBatch(db);
+      scope.forEach(p => {
+        batch.update(doc(db, `businesses/${tenantId}/products`, p.id), { categoria: masterCategory.trim() });
+      });
+      await batch.commit();
+      setMasterPanel(null);
+    } finally { setMasterApplying(false); }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!tenantId || selectedIds.size === 0) return;
+    if (!window.confirm(`¿Eliminar ${selectedIds.size} producto(s)? Esta acción no se puede deshacer.`)) return;
+    const batch = writeBatch(db);
+    selectedIds.forEach(id => batch.delete(doc(db, `businesses/${tenantId}/products`, id)));
+    await batch.commit();
+    clearSelect();
+  };
+
   // 1. DATA LISTENERS
   useEffect(() => {
     if (!tenantId) return;
@@ -383,6 +472,12 @@ export default function Inventario() {
   const totalPages = Math.ceil(filteredProducts.length / PAGE_SIZE);
   const pagedProducts = filteredProducts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   useEffect(() => { setCurrentPage(1); }, [searchTerm]);
+  const selectPage = () => setSelectedIds(new Set(pagedProducts.map(p => p.id)));
+  const selectAllProducts = () => setSelectedIds(new Set(filteredProducts.map(p => p.id)));
+  const selectAll = selectPage; // alias used in header checkbox
+  const allPageSelected = pagedProducts.length > 0 && pagedProducts.every(p => selectedIds.has(p.id));
+  const allFilteredSelected = filteredProducts.length > 0 && filteredProducts.every(p => selectedIds.has(p.id));
+  const uniqueCategories = useMemo(() => [...new Set(products.map(p => p.categoria).filter(Boolean))].sort(), [products]);
 
   // ── SMART ADVISOR ───────────────────────────────────────────────────────────
   const smartAdvisor = useMemo(() => {
@@ -881,10 +976,176 @@ export default function Inventario() {
                   </div>
                 </div>
               </div>
+              {/* ── INFO CARD ────────────────────────────────────────────────── */}
+              <div className="mx-5 mt-4 mb-0 p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-500/[0.06] border border-indigo-100 dark:border-indigo-500/20 flex items-start gap-3">
+                <div className="w-7 h-7 rounded-xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                  <ListChecks size={14} className="text-indigo-500 dark:text-indigo-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-black text-indigo-700 dark:text-indigo-300 mb-1">Selección y Ajuste Masivo</p>
+                  <ul className="space-y-0.5 text-[10px] text-indigo-600/70 dark:text-indigo-400/60 font-semibold leading-relaxed">
+                    <li>· Haz <strong>hover</strong> sobre cualquier fila y marca el checkbox para seleccionar productos.</li>
+                    <li>· Usa el checkbox del <strong>encabezado</strong> para seleccionar toda la página. Aparecerá la opción de seleccionar <strong>todos los productos</strong> de una vez.</li>
+                    <li>· Con productos seleccionados, los botones <strong>Margen / IVA / Categoría</strong> aplican solo a la selección.</li>
+                    <li>· Sin selección, los ajustes aplican a <strong>todos los productos visibles</strong> (puedes usar el buscador para filtrar primero).</li>
+                    <li>· El badge <strong>IVA</strong> en cada fila alterna entre GENERAL↔EXENTO con un solo clic.</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* ── MASTER CONTROLS BAR ──────────────────────────────────────── */}
+              <div className="px-5 py-2.5 border-b border-slate-100 dark:border-white/[0.06] bg-slate-50/30 dark:bg-white/[0.01] flex flex-wrap items-center gap-2 mt-3">
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mr-1">Ajuste Masivo:</span>
+
+                {/* MARGEN BUTTON */}
+                <div className="relative">
+                  <button onClick={() => setMasterPanel(masterPanel === 'margin' ? null : 'margin')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border ${masterPanel === 'margin' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-white/[0.05] text-slate-600 dark:text-white/60 border-slate-200 dark:border-white/[0.08] hover:border-indigo-400 hover:text-indigo-600'}`}>
+                    <Percent size={11} /> Margen
+                  </button>
+                  {masterPanel === 'margin' && (
+                    <div className="absolute left-0 top-full mt-2 z-50 w-72 bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">
+                        Aplicar Margen de Ganancia
+                      </p>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30">Margen %</label>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {['10','20','30','50','100'].map(v => (
+                            <button key={v} onClick={() => setMasterMargin(v)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${masterMargin === v ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-white/50 hover:bg-indigo-50 dark:hover:bg-indigo-500/10'}`}>
+                              +{v}%
+                            </button>
+                          ))}
+                          <input type="number" min="1" value={masterMargin} onChange={e => setMasterMargin(e.target.value)}
+                            className="w-16 px-2 py-1 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-slate-50 dark:bg-white/[0.06] text-slate-900 dark:text-white text-[11px] font-black text-center focus:ring-1 focus:ring-indigo-500 outline-none" />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30">Aplicar a</label>
+                        <div className="flex gap-1.5">
+                          {(['detal','mayor','both'] as const).map(t => (
+                            <button key={t} onClick={() => setMasterMarginTarget(t)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${masterMarginTarget === t ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-white/50'}`}>
+                              {t === 'both' ? 'Ambos' : t === 'detal' ? 'Detal' : 'Mayor'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="pt-1 text-[9px] text-slate-400 dark:text-white/30 italic">
+                        {selectedIds.size > 0 ? `Aplicará a ${selectedIds.size} seleccionados` : `Aplicará a ${filteredProducts.length} producto(s) ${searchTerm ? 'filtrados' : 'en total'}`}
+                      </div>
+                      <button onClick={handleMasterMargin} disabled={masterApplying}
+                        className="w-full py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50">
+                        {masterApplying ? <Loader2 size={11} className="animate-spin" /> : <CheckCheck size={11} />}
+                        Aplicar
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* IVA BUTTON */}
+                <div className="relative">
+                  <button onClick={() => setMasterPanel(masterPanel === 'iva' ? null : 'iva')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border ${masterPanel === 'iva' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white dark:bg-white/[0.05] text-slate-600 dark:text-white/60 border-slate-200 dark:border-white/[0.08] hover:border-emerald-400 hover:text-emerald-600'}`}>
+                    <Tag size={11} /> IVA
+                  </button>
+                  {masterPanel === 'iva' && (
+                    <div className="absolute left-0 top-full mt-2 z-50 w-64 bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Tipo de IVA</p>
+                      {([['GENERAL','16% General','16'],['REDUCIDO','8% Reducido','8'],['EXENTO','0% Exento','0']] as [string,string,string][]).map(([type,label,val]) => (
+                        <button key={type} onClick={() => { setMasterIvaType(type as any); setMasterIvaValue(val); }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[11px] font-black border transition-all ${masterIvaType === type ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 dark:bg-white/[0.04] text-slate-700 dark:text-white/70 border-slate-100 dark:border-white/[0.07] hover:border-emerald-400'}`}>
+                          <span>{label}</span>
+                          {masterIvaType === type && <CheckCircle2 size={13} />}
+                        </button>
+                      ))}
+                      <div className="pt-1 text-[9px] text-slate-400 dark:text-white/30 italic">
+                        {selectedIds.size > 0 ? `Aplicará a ${selectedIds.size} seleccionados` : `Aplicará a ${filteredProducts.length} producto(s)`}
+                      </div>
+                      <button onClick={handleMasterIva} disabled={masterApplying}
+                        className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50">
+                        {masterApplying ? <Loader2 size={11} className="animate-spin" /> : <CheckCheck size={11} />}
+                        Aplicar IVA
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* CATEGORÍA BUTTON */}
+                <div className="relative">
+                  <button onClick={() => setMasterPanel(masterPanel === 'category' ? null : 'category')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border ${masterPanel === 'category' ? 'bg-violet-600 text-white border-violet-600' : 'bg-white dark:bg-white/[0.05] text-slate-600 dark:text-white/60 border-slate-200 dark:border-white/[0.08] hover:border-violet-400 hover:text-violet-600'}`}>
+                    <FolderEdit size={11} /> Categoría
+                  </button>
+                  {masterPanel === 'category' && (
+                    <div className="absolute left-0 top-full mt-2 z-50 w-60 bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Cambiar Categoría</p>
+                      <input value={masterCategory} onChange={e => setMasterCategory(e.target.value)} placeholder="Nueva categoría..."
+                        list="cat-list"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/[0.1] bg-slate-50 dark:bg-white/[0.06] text-slate-900 dark:text-white text-sm font-bold focus:ring-1 focus:ring-violet-500 outline-none" />
+                      <datalist id="cat-list">{uniqueCategories.map(c => <option key={c} value={c} />)}</datalist>
+                      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                        {uniqueCategories.map(c => (
+                          <button key={c} onClick={() => setMasterCategory(c)}
+                            className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border transition-all ${masterCategory === c ? 'bg-violet-600 text-white border-violet-600' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/40 border-slate-200 dark:border-white/[0.08]'}`}>
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="pt-1 text-[9px] text-slate-400 dark:text-white/30 italic">
+                        {selectedIds.size > 0 ? `Aplicará a ${selectedIds.size} seleccionados` : `Aplicará a ${filteredProducts.length} producto(s)`}
+                      </div>
+                      <button onClick={handleMasterCategory} disabled={masterApplying || !masterCategory.trim()}
+                        className="w-full py-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50">
+                        {masterApplying ? <Loader2 size={11} className="animate-spin" /> : <CheckCheck size={11} />}
+                        Cambiar
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* close panel on outside click */}
+                {masterPanel && (
+                  <div className="fixed inset-0 z-40" onClick={() => setMasterPanel(null)} />
+                )}
+
+                <div className="ml-auto flex items-center gap-2 flex-wrap">
+                  {selectedIds.size > 0 && (
+                    <>
+                      <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">
+                        {selectedIds.size} de {filteredProducts.length} seleccionados
+                      </span>
+                      {!allFilteredSelected && (
+                        <button onClick={selectAllProducts}
+                          className="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase hover:bg-indigo-500 transition-all">
+                          Seleccionar todos ({filteredProducts.length})
+                        </button>
+                      )}
+                      <button onClick={handleBulkDelete} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white text-[10px] font-black uppercase transition-all border border-rose-500/20">
+                        <Trash2 size={11} /> Eliminar
+                      </button>
+                      <button onClick={clearSelect} className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/40 text-[10px] font-black uppercase hover:bg-slate-200 dark:hover:bg-white/[0.1] transition-all border border-slate-200 dark:border-white/[0.08]">
+                        Limpiar
+                      </button>
+                    </>
+                  )}
+                  {selectedIds.size === 0 && (
+                    <span className="text-[9px] text-slate-400 dark:text-white/30 italic">{filteredProducts.length} productos en catálogo</span>
+                  )}
+                </div>
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead className="bg-slate-50/50 dark:bg-white/[0.02] text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 border-b border-slate-100 dark:border-white/[0.07]">
                     <tr>
+                      <th className="px-3 py-3.5">
+                        <button onClick={allPageSelected ? clearSelect : selectAll}
+                          className="w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 border-slate-300 dark:border-white/20 hover:border-indigo-500">
+                          {allPageSelected ? <CheckSquare size={12} className="text-indigo-600 dark:text-indigo-400" /> : <Square size={12} className="text-slate-300 dark:text-white/20" />}
+                        </button>
+                      </th>
                       <th className="px-2.5 py-2 sm:px-5 sm:py-3.5">Producto / SKU</th>
                       <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 hidden sm:table-cell">Categoría</th>
                       <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right hidden md:table-cell">Costo Base</th>
@@ -895,11 +1156,21 @@ export default function Inventario() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                    {pagedProducts.map((p) => (
-                      <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors group border-b border-slate-50 dark:border-white/[0.04]">
+                    {pagedProducts.map((p) => {
+                      const isSelected = selectedIds.has(p.id);
+                      const marginDetal = p.costoUSD > 0 ? Math.round(((p.precioDetal - p.costoUSD) / p.costoUSD) * 100) : 0;
+                      return (
+                      <tr key={p.id} className={`transition-colors group border-b border-slate-50 dark:border-white/[0.04] ${isSelected ? 'bg-indigo-50/40 dark:bg-indigo-500/[0.06]' : 'hover:bg-slate-50 dark:hover:bg-white/[0.03]'}`}>
+                        {/* Checkbox */}
+                        <td className="px-3 py-4 w-8">
+                          <button onClick={() => toggleSelect(p.id)}
+                            className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 dark:border-white/20 hover:border-indigo-400 opacity-0 group-hover:opacity-100'}`}>
+                            {isSelected && <CheckSquare size={12} className="text-white" />}
+                          </button>
+                        </td>
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/40 flex items-center justify-center group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:to-violet-600 group-hover:text-white transition-all shrink-0">
+                            <div className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${isSelected ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/40 group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:to-violet-600 group-hover:text-white'}`}>
                               <Package size={16} />
                             </div>
                             <div>
@@ -928,22 +1199,41 @@ export default function Inventario() {
                             <span className="text-[8px] font-black uppercase text-slate-400 tracking-tighter">UND</span>
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-right">
-                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
-                            <button onClick={() => { setSelectedProduct(p); setAdjModalOpen(true); }} className="p-2 rounded-xl bg-indigo-600 text-white hover:bg-emerald-500 transition-all shadow-md shadow-indigo-500/25" title="Ajuste de Stock"><TrendingUp size={14} /></button>
-                            <button onClick={() => { setEditingId(p.id); setForm(p); setQuickMode(false); setMayorManual(true); setShowAdvanced(true); setModalOpen(true); }} className="p-2 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-900 hover:text-white dark:hover:bg-white/[0.12] transition-all"><Pencil size={14} /></button>
+                        <td className="px-4 py-4">
+                          <div className="flex justify-end items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+                            {/* IVA badge — quick toggle */}
+                            <button
+                              title={`IVA: ${p.ivaTipo || 'GENERAL'} ${p.iva ?? 16}%`}
+                              onClick={async () => {
+                                const next = (p.ivaTipo === 'EXENTO') ? { iva: 16, ivaTipo: 'GENERAL' } : { iva: 0, ivaTipo: 'EXENTO' };
+                                await setDoc(doc(db, `businesses/${tenantId}/products`, p.id), next, { merge: true });
+                              }}
+                              className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider border transition-all ${(p.ivaTipo === 'EXENTO' || p.iva === 0) ? 'bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/30 border-slate-200 dark:border-white/[0.08]' : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'}`}>
+                              {(p.ivaTipo === 'EXENTO' || p.iva === 0) ? 'Exento' : `IVA ${p.iva ?? 16}%`}
+                            </button>
+                            {/* Margin badge */}
+                            <span className={`px-2 py-1 rounded-lg text-[8px] font-black border ${marginDetal >= 30 ? 'bg-indigo-50 dark:bg-indigo-500/[0.08] text-indigo-500 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20' : 'bg-slate-50 dark:bg-white/[0.04] text-slate-400 dark:text-white/30 border-slate-100 dark:border-white/[0.07]'}`}
+                              title="Margen detal">
+                              +{marginDetal}%
+                            </span>
+                            {/* Stock adjust */}
+                            <button onClick={() => { setSelectedProduct(p); setAdjModalOpen(true); }} className="p-1.5 rounded-xl bg-indigo-600 text-white hover:bg-emerald-500 transition-all shadow-md shadow-indigo-500/25" title="Ajuste de Stock"><TrendingUp size={13} /></button>
+                            {/* Edit */}
+                            <button onClick={() => { setEditingId(p.id); setForm(p); setQuickMode(false); setMayorManual(true); setShowAdvanced(true); setModalOpen(true); }} className="p-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-900 hover:text-white dark:hover:bg-white/[0.12] transition-all"><Pencil size={13} /></button>
+                            {/* Delete */}
                             {deleteConfirmId === p.id ? (
                               <div className="flex items-center gap-1">
-                                <button onClick={async () => { await deleteDoc(doc(db, `businesses/${tenantId}/products`, p.id)); setDeleteConfirmId(null); }} className="p-2 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase tracking-wider">Sí</button>
-                                <button onClick={() => setDeleteConfirmId(null)} className="p-2 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 text-[10px] font-black uppercase tracking-wider">No</button>
+                                <button onClick={async () => { await deleteDoc(doc(db, `businesses/${tenantId}/products`, p.id)); setDeleteConfirmId(null); }} className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black">Sí</button>
+                                <button onClick={() => setDeleteConfirmId(null)} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 text-[9px] font-black">No</button>
                               </div>
                             ) : (
-                              <button onClick={() => setDeleteConfirmId(p.id)} className="p-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-500 hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={14} /></button>
+                              <button onClick={() => setDeleteConfirmId(p.id)} className="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-500 hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={13} /></button>
                             )}
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
                 {products.length === 0 && !loading && (

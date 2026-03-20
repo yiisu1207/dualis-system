@@ -1,10 +1,14 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
-import { useCart, CartProvider, DiscountType } from '../../context/CartContext';
+
+// ─── KIOSK CONTEXT (for clean /caja/:token URL) ────────────────────────────────
+interface PosKioskCtx { businessId: string; cajaId: string; token: string; }
+export const PosKioskContext = createContext<PosKioskCtx | null>(null);
+import { useCart, CartProvider, DiscountType, CartItem } from '../../context/CartContext';
 import { useRates } from '../../context/RatesContext';
 import {
   collection, getDocs, query, where, addDoc, doc, updateDoc,
-  increment, getDoc,
+  increment, getDoc, runTransaction,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
@@ -13,7 +17,7 @@ import {
   Scan, ShoppingCart, Search, Trash2, Plus, Minus, Receipt,
   Package, CheckCircle2, AlertTriangle, LogOut, X, Banknote,
   Smartphone, Layers, ArrowLeftRight, User, Clock, Camera, History,
-  Tag, MessageCircle, Printer, WifiOff,
+  Tag, MessageCircle, Printer, WifiOff, Pause, Play,
 } from 'lucide-react';
 import ReceiptModal from '../../components/ReceiptModal';
 import { getNextNroControl } from '../../utils/facturaUtils';
@@ -33,6 +37,16 @@ type QuickProduct = {
 };
 
 type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'transferencia' | 'mixto';
+
+type HeldCart = {
+  id: string;
+  items: CartItem[];
+  customer: any;
+  consumidorFinal: boolean;
+  discountType: DiscountType;
+  discountValue: number;
+  heldAt: Date;
+};
 
 // ── IGTF (Impuesto a las Grandes Transacciones Financieras) ────────────────────
 // Ley venezolana: 3 % sobre pagos en divisas o criptomonedas
@@ -359,13 +373,15 @@ const AccessDenied = () => (
 // ─── POS CONTENT ──────────────────────────────────────────────────────────────
 const PosContent = () => {
   const [searchParams] = useSearchParams();
-  const { empresa_id } = useParams();
-  const cajaId = searchParams.get('cajaId');
-  const urlToken = searchParams.get('token');
+  const params = useParams();
+  const kioskCtx = useContext(PosKioskContext);
+  const empresa_id = kioskCtx?.businessId ?? params.empresa_id ?? '';
+  const cajaId = kioskCtx?.cajaId ?? searchParams.get('cajaId');
+  const urlToken = kioskCtx?.token ?? searchParams.get('token');
   const { userProfile } = useAuth();
   const { rates } = useRates();
 
-  const { items, addProductByCode, updateQty, removeItem, totals, rateValue, setRateValue, clearCart, discountType, discountValue, setDiscount } = useCart();
+  const { items, addProductByCode, updateQty, removeItem, totals, rateValue, setRateValue, clearCart, discountType, discountValue, setDiscount, startedAt, loadCart } = useCart();
 
   // ─── Token validation (kiosk mode) ────────────────────────────────────────
   const [tokenValid, setTokenValid] = useState<boolean | null>(null); // null = loading
@@ -430,6 +446,10 @@ const PosContent = () => {
   // History panel
   const [showHistory, setShowHistory] = useState(false);
 
+  // Ventas en espera
+  const [heldCarts, setHeldCarts] = useState<HeldCart[]>([]);
+  const [showHeld, setShowHeld] = useState(false);
+
   // Terminal info
   const [terminalInfo, setTerminalInfo] = useState<{ nombre: string; cajeroNombre: string } | null>(null);
 
@@ -458,7 +478,7 @@ const PosContent = () => {
     if (!empresa_id) return;
     const loadData = async () => {
       try {
-        const qp = query(collection(db, `businesses/${empresa_id}/products`), where('stock', '>', 0));
+        const qp = query(collection(db, `businesses/${empresa_id}/products`));
         const snap = await getDocs(qp);
         setProducts(snap.docs.map(d => {
           const data = d.data();
@@ -532,6 +552,32 @@ const PosContent = () => {
     }
   };
 
+  const holdCart = useCallback(() => {
+    if (items.length === 0) return;
+    setHeldCarts(prev => [...prev, {
+      id: crypto.randomUUID(),
+      items: [...items],
+      customer,
+      consumidorFinal,
+      discountType,
+      discountValue,
+      heldAt: new Date(),
+    }]);
+    clearCart();
+    setCustomer(null);
+    setClientQuery('');
+    setConsumidorFinal(false);
+  }, [items, customer, consumidorFinal, discountType, discountValue, clearCart]);
+
+  const restoreHeldCart = useCallback((held: HeldCart) => {
+    loadCart(held.items, held.discountType, held.discountValue);
+    setCustomer(held.customer);
+    setConsumidorFinal(held.consumidorFinal);
+    if (held.customer) setClientQuery(held.customer.fullName || held.customer.nombre || '');
+    setHeldCarts(prev => prev.filter(h => h.id !== held.id));
+    setShowHeld(false);
+  }, [loadCart]);
+
   const handleCharge = async (
     method: PaymentMethod,
     cashGiven: number,
@@ -584,8 +630,10 @@ const PosContent = () => {
         mixTransfer: method === 'mixto' ? mixTransfer : null,
         items: items.map(i => ({ id: i.id, nombre: i.nombre, qty: i.qty, price: i.priceUsd, subtotal: i.qty * i.priceUsd })),
         cajaId: cajaId || 'principal',
+        cajaName: terminalLabel,
         vendedorId: userProfile?.uid || 'sistema',
         vendedorNombre: userProfile?.fullName || 'Vendedor',
+        startedAt: startedAt?.toISOString() || isoDate,
         // Venta Detal es siempre de contado — no genera CxC pendiente
         pagado: true,
         estadoPago: 'PAGADO',
@@ -594,10 +642,14 @@ const PosContent = () => {
 
       await addDoc(collection(db, 'movements'), movementPayload);
 
-      // Update stock
+      // Update stock — floor at 0, never negative
       for (const item of items) {
-        await updateDoc(doc(db, `businesses/${empresa_id}/products`, item.id), {
-          stock: increment(-item.qty),
+        await runTransaction(db, async (txn) => {
+          const ref = doc(db, `businesses/${empresa_id}/products`, item.id);
+          const snap = await txn.get(ref);
+          if (!snap.exists()) return;
+          const cur = Number(snap.data().stock ?? 0);
+          txn.update(ref, { stock: Math.max(0, cur - item.qty) });
         });
       }
 
@@ -700,6 +752,16 @@ const PosContent = () => {
               </button>
             </HelpTooltip>
           )}
+          {heldCarts.length > 0 && (
+            <button
+              onClick={() => setShowHeld(true)}
+              className="relative h-10 px-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20 flex items-center gap-1.5 transition-all shrink-0 border border-amber-200 dark:border-amber-500/20"
+              title="Ventas en espera"
+            >
+              <Pause size={14} />
+              <span className="text-[10px] font-black">{heldCarts.length}</span>
+            </button>
+          )}
           <HelpTooltip title="Historial de Ventas" text="Muestra las últimas 30 ventas del día. Desde aquí puedes ver el detalle de cada venta y anularla si fue un error." side="bottom">
             <button
               onClick={() => setShowHistory(true)}
@@ -783,13 +845,15 @@ const PosContent = () => {
               <div className="grid grid-cols-2 xl:grid-cols-3 gap-2.5">
                 {displayProducts.map(product => (
                   <button key={product.id} onClick={() => handleAddProduct(product)}
-                    className="group bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-sm hover:shadow-md hover:border-slate-300 dark:border-white/15 hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between">
+                    className={`group bg-white dark:bg-slate-900 p-3 rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between ${product.stock === 0 ? 'border-rose-100 dark:border-rose-500/15 opacity-80' : 'border-slate-100 dark:border-white/[0.07] hover:border-slate-300 dark:border-white/15'}`}>
                     <div>
                       <div className="flex justify-between items-start mb-1.5">
                         <div className="h-7 w-7 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-slate-400 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white transition-colors">
                           <Package size={12} />
                         </div>
-                        <span className="text-[9px] font-black text-slate-300 bg-slate-50 dark:bg-slate-800/50 px-1.5 py-0.5 rounded-md">{product.stock}</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${product.stock === 0 ? 'text-rose-500 bg-rose-50 dark:bg-rose-500/10' : 'text-slate-300 bg-slate-50 dark:bg-slate-800/50'}`}>
+                          {product.stock === 0 ? 'SIN STOCK' : product.stock}
+                        </span>
                       </div>
                       <p className="text-[11px] font-black text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight">{product.name}</p>
                       {product.marca && <p className="text-[8px] font-black text-indigo-400 uppercase mt-0.5">{product.marca}</p>}
@@ -1000,17 +1064,28 @@ const PosContent = () => {
                   <span className="text-xl mt-0.5 opacity-40">$</span>
                   {totals.totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </div>
-                <p className="text-xs font-bold text-slate-500 mt-1">
-                  {totals.totalBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs
-                </p>
+                <div className="mt-2 pt-2 border-t border-white/10 flex items-baseline justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Total Bs</span>
+                  <span className="text-2xl font-black text-white/80 tracking-tight">
+                    {totals.totalBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} <span className="text-base text-white/40">Bs</span>
+                  </span>
+                </div>
               </div>
 
               <button
                 disabled={!canCharge}
                 onClick={() => setShowPaymentModal(true)}
-                className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canCharge ? 'bg-white text-slate-900 hover:bg-emerald-400 hover:text-white shadow-xl hover:scale-[1.02]' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
-                <Receipt size={15} />Cobrar
+                className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canCharge ? 'bg-white text-slate-900 hover:bg-emerald-400 hover:text-white shadow-xl hover:scale-[1.02]' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
+                <Receipt size={16} />Cobrar
               </button>
+              {items.length > 0 && (
+                <button
+                  onClick={holdCart}
+                  className="w-full mt-2 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 text-white/50 hover:text-white hover:bg-white/10 transition-all border border-white/10"
+                >
+                  <Pause size={13} /> Poner en Espera
+                </button>
+              )}
             </div>
           </div>
         </aside>
@@ -1083,6 +1158,73 @@ const PosContent = () => {
           readOnly={userProfile?.role !== 'owner' && userProfile?.role !== 'admin'}
           onClose={() => setShowHistory(false)}
         />
+      )}
+
+      {/* ── VENTAS EN ESPERA PANEL ─────────────────────────────────────────── */}
+      {showHeld && (
+        <div className="fixed inset-0 z-[200] flex">
+          <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={() => setShowHeld(false)} />
+          <div className="w-full max-w-sm bg-white dark:bg-[#0d1424] h-full flex flex-col shadow-2xl shadow-black/30 animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-white/[0.07]">
+              <div>
+                <h2 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2">
+                  <Pause size={16} /> Ventas en Espera
+                </h2>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">{heldCarts.length} carrito{heldCarts.length !== 1 ? 's' : ''} guardado{heldCarts.length !== 1 ? 's' : ''}</p>
+              </div>
+              <button onClick={() => setShowHeld(false)} className="h-9 w-9 rounded-full bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center hover:bg-slate-200 dark:hover:bg-white/[0.12] transition-all">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scroll p-4 space-y-3">
+              {heldCarts.length === 0 ? (
+                <p className="text-center text-xs text-slate-400 py-12 font-bold">No hay ventas en espera.</p>
+              ) : heldCarts.map(held => (
+                <div key={held.id} className="bg-white dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07] rounded-2xl p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-black text-slate-800 dark:text-slate-200">
+                        {held.consumidorFinal ? 'Consumidor Final' : held.customer?.fullName || held.customer?.nombre || 'Sin cliente'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {held.items.length} producto{held.items.length !== 1 ? 's' : ''} · <span className="font-black text-slate-700 dark:text-slate-300">${held.items.reduce((s, i) => s + i.qty * i.priceUsd, 0).toFixed(2)}</span>
+                      </p>
+                      <p className="text-[9px] text-slate-300 mt-0.5 flex items-center gap-1">
+                        <Clock size={9} />
+                        En espera desde {held.heldAt.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      <button
+                        onClick={() => restoreHeldCart(held)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 rounded-xl text-[10px] font-black uppercase transition-all"
+                      >
+                        <Play size={11} /> Retomar
+                      </button>
+                      <button
+                        onClick={() => setHeldCarts(prev => prev.filter(h => h.id !== held.id))}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-xl text-[10px] font-black uppercase transition-all"
+                      >
+                        <X size={11} /> Descartar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-slate-50 dark:border-white/[0.05] space-y-1">
+                    {held.items.slice(0, 3).map(item => (
+                      <div key={item.id} className="flex justify-between text-[10px] text-slate-500">
+                        <span className="truncate flex-1">{item.nombre}</span>
+                        <span className="font-black ml-2 shrink-0">x{item.qty} · ${(item.qty * item.priceUsd).toFixed(2)}</span>
+                      </div>
+                    ))}
+                    {held.items.length > 3 && (
+                      <p className="text-[9px] text-slate-300">+{held.items.length - 3} más...</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

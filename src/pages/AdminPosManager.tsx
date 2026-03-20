@@ -3,14 +3,15 @@ import { useAuth } from '../context/AuthContext';
 import { useRates } from '../context/RatesContext';
 import {
   collection, onSnapshot, query, where, addDoc, doc, updateDoc,
-  serverTimestamp, orderBy, limit,
+  serverTimestamp, orderBy, limit, setDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import {
   Monitor, Lock, Unlock, Plus, Store, Factory, Calculator, Receipt,
   Activity, X, ExternalLink, Loader2, Save, Download,
   Calendar, User, Eye, Copy, CheckCircle2, BarChart3,
-  AlertTriangle, Share2, MessageCircle, Shield,
+  AlertTriangle, Share2, MessageCircle, Shield, History,
+  TrendingUp, FileText, ChevronRight, Printer,
 } from 'lucide-react';
 
 import { useToast } from '../context/ToastContext';
@@ -108,7 +109,7 @@ export default function AdminPosManager() {
 
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'detal' | 'mayor'>('detal');
+  const [activeTab, setActiveTab] = useState<'detal' | 'mayor' | 'historial'>('detal');
 
   // New terminal modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -136,6 +137,12 @@ export default function AdminPosManager() {
   const [auditMovements, setAuditMovements] = useState<any[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
 
+  // Shift history (arqueos)
+  const [arqueoHistory, setArqueoHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [selectedArqueo, setSelectedArqueo] = useState<any | null>(null);
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'detal' | 'mayor'>('all');
+
   // Live clock
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -155,6 +162,22 @@ export default function AdminPosManager() {
       setTerminals(snap.docs.map(d => ({ id: d.id, ...d.data() } as Terminal)));
       setLoading(false);
     }, () => setLoading(false));
+    return () => unsub();
+  }, [businessId]);
+
+  // ── Arqueo history listener ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!businessId) return;
+    setLoadingHistory(true);
+    const q = query(
+      collection(db, 'businesses', businessId, 'arqueos'),
+      orderBy('createdAt', 'desc'),
+      limit(60)
+    );
+    const unsub = onSnapshot(q, snap => {
+      setArqueoHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoadingHistory(false);
+    }, () => setLoadingHistory(false));
     return () => unsub();
   }, [businessId]);
 
@@ -186,8 +209,12 @@ export default function AdminPosManager() {
   }, [terminals, rates]);
 
   const filteredTerminals = useMemo(
-    () => terminals.filter(t => t.tipo === activeTab),
+    () => terminals.filter(t => t.tipo === activeTab && activeTab !== 'historial'),
     [terminals, activeTab]
+  );
+  const filteredArqueos = useMemo(() =>
+    historyFilter === 'all' ? arqueoHistory : arqueoHistory.filter(a => a.terminalType === historyFilter),
+    [arqueoHistory, historyFilter]
   );
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -241,8 +268,15 @@ export default function AdminPosManager() {
         setSavedCashiers(updated);
         localStorage.setItem('dualis_cashiers', JSON.stringify(updated));
       }
+      // Register clean kiosk URL token (no businessId exposed)
+      await setDoc(doc(db, 'terminalTokens', token), {
+        businessId,
+        cajaId: selectedForOpen.id,
+        tipo: selectedForOpen.tipo,
+        createdAt: serverTimestamp(),
+      });
       setOpenShiftModal(false);
-      const kioskUrl = `/${businessId}/pos/${selectedForOpen.tipo}?cajaId=${selectedForOpen.id}&token=${token}`;
+      const kioskUrl = `/caja/${token}`;
       const newTab = window.open(kioskUrl, '_blank');
       if (!newTab) {
         warning('El navegador bloqueó la pestaña. Permite popups para este sitio e intenta de nuevo.');
@@ -254,8 +288,8 @@ export default function AdminPosManager() {
   };
 
   const handleEnterTerminal = (terminal: Terminal) => {
-    const tokenParam = terminal.sessionToken ? `&token=${terminal.sessionToken}` : '';
-    const newTab = window.open(`/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}${tokenParam}`, '_blank');
+    const url = terminal.sessionToken ? `/caja/${terminal.sessionToken}` : `/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}`;
+    const newTab = window.open(url, '_blank');
     if (!newTab) warning('El navegador bloqueó la pestaña. Permite popups para este sitio.');
   };
 
@@ -293,8 +327,8 @@ export default function AdminPosManager() {
   };
 
   const getKioskUrl = (terminal: Terminal) => {
-    const tokenParam = terminal.sessionToken ? `&token=${terminal.sessionToken}` : '';
-    return `${window.location.origin}/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}${tokenParam}`;
+    if (terminal.sessionToken) return `${window.location.origin}/caja/${terminal.sessionToken}`;
+    return `${window.location.origin}/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}`;
   };
 
   const handleCopyUrl = (terminal: Terminal) => {
@@ -411,19 +445,124 @@ export default function AdminPosManager() {
         </div>
 
         {/* ── TABS ───────────────────────────────────────────────────────── */}
-        <div className="flex gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] w-fit">
-          {(['detal', 'mayor'] as const).map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`flex items-center gap-2 px-7 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                activeTab === tab
+        <div className="flex gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/[0.06] w-fit flex-wrap">
+          {([
+            { id: 'detal', label: 'Sucursal Detal', icon: Store },
+            { id: 'mayor', label: 'Sucursal Mayor', icon: Factory },
+            { id: 'historial', label: 'Historial', icon: History },
+          ] as const).map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-7 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all relative ${
+                activeTab === tab.id
                   ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md'
                   : 'text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-white/[0.05]'
               }`}>
-              {tab === 'detal' ? <Store size={13} /> : <Factory size={13} />}
-              {tab === 'detal' ? 'Sucursal Detal' : 'Sucursal Mayor'}
+              <tab.icon size={13} />{tab.label}
+              {tab.id === 'historial' && arqueoHistory.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full text-[8px] font-black bg-indigo-600 text-white">
+                  {arqueoHistory.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
+
+        {/* ── HISTORIAL DE TURNOS ──────────────────────────────────────── */}
+        {activeTab === 'historial' && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/[0.06] shadow-md overflow-hidden pb-6">
+            {/* Sub-filters */}
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-sm font-black text-slate-900 dark:text-white">Historial de Turnos</h2>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Todos los cierres de caja registrados · últimos 60</p>
+              </div>
+              <div className="flex gap-1.5 p-1 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/[0.06]">
+                {(['all','detal','mayor'] as const).map(f => (
+                  <button key={f} onClick={() => setHistoryFilter(f)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${historyFilter === f ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm' : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}>
+                    {f === 'all' ? 'Todos' : f === 'detal' ? 'Detal' : 'Mayor'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loadingHistory ? (
+              <div className="py-20 flex items-center justify-center gap-3 text-slate-400 dark:text-slate-600">
+                <Loader2 size={20} className="animate-spin" />
+                <span className="text-xs font-bold uppercase tracking-widest">Cargando historial...</span>
+              </div>
+            ) : filteredArqueos.length === 0 ? (
+              <div className="py-20 text-center">
+                <History size={40} className="mx-auto mb-3 text-slate-200 dark:text-slate-700" />
+                <p className="text-sm font-black text-slate-400 dark:text-slate-600">Sin turnos cerrados todavía</p>
+                <p className="text-xs text-slate-300 dark:text-slate-700 mt-1">Los cierres de caja aparecerán aquí</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50/50 dark:bg-white/[0.02] text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-100 dark:border-white/[0.06]">
+                    <tr>
+                      <th className="px-6 py-3.5">Fecha Cierre</th>
+                      <th className="px-6 py-3.5">Terminal</th>
+                      <th className="px-6 py-3.5">Cajero</th>
+                      <th className="px-6 py-3.5 text-right">Ventas</th>
+                      <th className="px-6 py-3.5 text-center">Transac.</th>
+                      <th className="px-6 py-3.5 text-right">Contado USD</th>
+                      <th className="px-6 py-3.5 text-center">Diferencia</th>
+                      <th className="px-6 py-3.5 text-right">Ver</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
+                    {filteredArqueos.map(a => {
+                      const fechaCierre = a.cierreAt ? new Date(a.cierreAt) : (a.createdAt?.toDate?.() ?? null);
+                      const varOk = Math.abs(a.varianceUsd || 0) < 0.5;
+                      return (
+                        <tr key={a.id} onClick={() => setSelectedArqueo(a)}
+                          className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors cursor-pointer group">
+                          <td className="px-6 py-4">
+                            <p className="text-xs font-black text-slate-900 dark:text-white">
+                              {fechaCierre ? fechaCierre.toLocaleDateString('es-VE', { day:'2-digit', month:'short', year:'numeric' }) : '—'}
+                            </p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                              {fechaCierre ? fechaCierre.toLocaleTimeString('es-VE', { hour:'2-digit', minute:'2-digit' }) : ''}
+                              {a.apertura ? ` · Apertura ${new Date(a.apertura).toLocaleTimeString('es-VE',{hour:'2-digit',minute:'2-digit'})}` : ''}
+                            </p>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${a.terminalType === 'detal' ? 'bg-sky-100 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400' : 'bg-violet-100 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400'}`}>
+                                {a.terminalType === 'detal' ? <Store size={13} /> : <Factory size={13} />}
+                              </div>
+                              <span className="text-xs font-black text-slate-700 dark:text-slate-300">{a.terminalName || '—'}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400 font-bold">{a.cajero || '—'}</td>
+                          <td className="px-6 py-4 text-right">
+                            <p className="text-sm font-black text-emerald-600">${(a.salesTotal || 0).toFixed(2)}</p>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="px-2.5 py-1 bg-slate-100 dark:bg-white/[0.06] rounded-lg text-xs font-black text-slate-700 dark:text-slate-300">{a.salesCount || 0}</span>
+                          </td>
+                          <td className="px-6 py-4 text-right text-xs font-black text-slate-700 dark:text-slate-300">
+                            ${(a.totalCountedUsd || 0).toFixed(2)}
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${varOk ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+                              {(a.varianceUsd || 0) >= 0 ? '+' : ''}{(a.varianceUsd || 0).toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <ChevronRight size={16} className="ml-auto text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 transition-colors" />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── TERMINAL GRID ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 pb-16">
@@ -697,6 +836,106 @@ export default function AdminPosManager() {
           onClose={() => { setArqueoTerminal(null); setArqueoMovements([]); }}
           onDone={handleArqueoDone}
         />
+      )}
+
+      {/* ══ ARQUEO DETAIL MODAL ════════════════════════════════════════════════ */}
+      {selectedArqueo && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" onClick={() => setSelectedArqueo(null)}>
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.08] shadow-2xl shadow-black/40" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/[0.07]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center">
+                  <FileText size={18} className="text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <p className="font-black text-slate-900 dark:text-white">Detalle del Turno</p>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500">{selectedArqueo.terminalName} · {selectedArqueo.cajero}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedArqueo(null)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-all">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              {/* Times */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+                  <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30 mb-1">Apertura</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-white">{selectedArqueo.apertura ? new Date(selectedArqueo.apertura).toLocaleString('es-VE') : '—'}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+                  <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30 mb-1">Cierre</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-white">{selectedArqueo.cierreAt ? new Date(selectedArqueo.cierreAt).toLocaleString('es-VE') : '—'}</p>
+                </div>
+              </div>
+              {/* KPIs */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/[0.07] border border-emerald-100 dark:border-emerald-500/20 text-center">
+                  <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">${(selectedArqueo.salesTotal||0).toFixed(2)}</p>
+                  <p className="text-[9px] font-black uppercase text-emerald-600/60 dark:text-emerald-400/50">Total ventas</p>
+                </div>
+                <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-500/[0.07] border border-sky-100 dark:border-sky-500/20 text-center">
+                  <p className="text-lg font-black text-sky-600 dark:text-sky-400">{selectedArqueo.salesCount||0}</p>
+                  <p className="text-[9px] font-black uppercase text-sky-600/60 dark:text-sky-400/50">Operaciones</p>
+                </div>
+                <div className={`p-3 rounded-xl border text-center ${Math.abs(selectedArqueo.varianceUsd||0) < 0.5 ? 'bg-emerald-50 dark:bg-emerald-500/[0.07] border-emerald-100 dark:border-emerald-500/20' : 'bg-rose-50 dark:bg-rose-500/[0.07] border-rose-100 dark:border-rose-500/20'}`}>
+                  <p className={`text-lg font-black ${Math.abs(selectedArqueo.varianceUsd||0) < 0.5 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                    {(selectedArqueo.varianceUsd||0) >= 0 ? '+' : ''}{(selectedArqueo.varianceUsd||0).toFixed(2)}
+                  </p>
+                  <p className="text-[9px] font-black uppercase text-slate-500 dark:text-white/30">Diferencia</p>
+                </div>
+              </div>
+              {/* Payment breakdown */}
+              {selectedArqueo.paymentBreakdown && Object.keys(selectedArqueo.paymentBreakdown).length > 0 && (
+                <div className="rounded-xl border border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                  <p className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-100 dark:border-white/[0.06]">Por método de pago</p>
+                  {Object.entries(selectedArqueo.paymentBreakdown).map(([m, v]) => (
+                    <div key={m} className="flex justify-between items-center px-4 py-2 border-b border-slate-50 dark:border-white/[0.04] last:border-0">
+                      <span className="text-xs text-slate-600 dark:text-slate-400">{m}</span>
+                      <span className="text-xs font-black text-slate-900 dark:text-white">${(v as number).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Cash counted */}
+              <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Efectivo esperado</span>
+                <span className="text-sm font-black text-slate-900 dark:text-white">${(selectedArqueo.expectedCashUsd||0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Efectivo contado USD</span>
+                <span className="text-sm font-black text-slate-900 dark:text-white">${(selectedArqueo.totalCountedUsd||0).toFixed(2)}</span>
+              </div>
+              {selectedArqueo.totalCountedBs > 0 && (
+                <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Efectivo contado Bs</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white">Bs.{(selectedArqueo.totalCountedBs||0).toFixed(2)}</span>
+                </div>
+              )}
+              {selectedArqueo.note && (
+                <div className="px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-500/[0.07] border border-amber-100 dark:border-amber-500/20">
+                  <p className="text-[9px] font-black uppercase text-amber-600 dark:text-amber-400 mb-1">Nota del cierre</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">{selectedArqueo.note}</p>
+                </div>
+              )}
+              {/* Reprint Z */}
+              <button
+                onClick={() => {
+                  // Reprint using stored data
+                  const w = window.open('', '_blank', 'width=380,height=620,toolbar=0,menubar=0');
+                  if (!w) return;
+                  const methods = Object.entries(selectedArqueo.paymentBreakdown||{}).map(([m,v])=>`<tr><td>${m}</td><td align="right">$${(v as number).toFixed(2)}</td></tr>`).join('');
+                  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Z Report</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:10px;width:80mm;padding:10px}h1{font-size:13px;font-weight:bold;text-align:center}h2{font-size:10px;text-align:center;margin:2px 0 6px}.sep{border-top:1px dashed #000;margin:5px 0}.row{display:flex;justify-content:space-between;margin:1px 0}table{width:100%;font-size:9px;margin:3px 0}td{padding:1px 2px}.big{font-size:12px;font-weight:bold}@media print{button{display:none}}</style></head><body><h1>REPORTE Z — ARQUEO DE CAJA</h1><h2>${selectedArqueo.terminalName}</h2><div class="sep"></div><div class="row"><span>Apertura:</span><span>${selectedArqueo.apertura?new Date(selectedArqueo.apertura).toLocaleString('es-VE'):'—'}</span></div><div class="row"><span>Cierre:</span><span>${selectedArqueo.cierreAt?new Date(selectedArqueo.cierreAt).toLocaleString('es-VE'):'—'}</span></div><div class="row"><span>Cajero:</span><span>${selectedArqueo.cajero||'—'}</span></div><div class="sep"></div><div class="row big"><span>TOTAL VENTAS</span><span>$${(selectedArqueo.salesTotal||0).toFixed(2)}</span></div><div class="row"><span>N° operaciones:</span><span>${selectedArqueo.salesCount||0}</span></div><div class="sep"></div><b>POR MÉTODO DE PAGO</b><table>${methods}</table><div class="sep"></div><div class="row"><span>Efectivo esperado:</span><span>$${(selectedArqueo.expectedCashUsd||0).toFixed(2)}</span></div><div class="row"><span>Efectivo contado:</span><span>$${(selectedArqueo.totalCountedUsd||0).toFixed(2)}</span></div><div class="row"><span>Diferencia:</span><span>${(selectedArqueo.varianceUsd||0)>=0?'+':''}${(selectedArqueo.varianceUsd||0).toFixed(2)}</span></div>${selectedArqueo.note?`<div class="sep"></div><div>Nota: ${selectedArqueo.note}</div>`:''}<div class="sep"></div><div style="text-align:center">Firma del cajero: ___________________</div><div style="margin-top:8px;text-align:center">Firma supervisor: ___________________</div><div style="margin-top:8px;text-align:center"><button onclick="window.print()">🖨 Imprimir</button></div></body></html>`);
+                  w.document.close();
+                  setTimeout(() => w.print(), 600);
+                }}
+                className="w-full py-3 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-indigo-500/25">
+                <Printer size={14} /> Reimprimir Reporte Z
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ══ AUDIT PANEL ════════════════════════════════════════════════════════ */}

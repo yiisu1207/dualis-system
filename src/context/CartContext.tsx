@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, getDocs, getDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useTenant } from './TenantContext';
@@ -7,7 +7,7 @@ type PriceTier = 'detal' | 'mayor' | 'granMayor';
 
 export type DiscountType = 'none' | 'percent' | 'fixed';
 
-type CartItem = {
+export type CartItem = {
   id: string;
   codigo: string;
   nombre: string;
@@ -27,6 +27,7 @@ type CartTotals = {
 
 type CartContextValue = {
   items: CartItem[];
+  startedAt: Date | null;
   rateValue: number;
   setRateValue: (value: number) => void;
   totals: CartTotals;
@@ -37,6 +38,7 @@ type CartContextValue = {
   updateQty: (id: string, qty: number) => void;
   removeItem: (id: string) => void;
   clearCart: () => void;
+  loadCart: (items: CartItem[], discountType: DiscountType, discountValue: number) => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -66,6 +68,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [rateValue, setRateValue] = useState(36.5);
   const [discountType, setDiscountType] = useState<DiscountType>('none');
   const [discountValue, setDiscountValue] = useState(0);
+  const [startedAt, setStartedAt] = useState<Date | null>(null);
+  const itemsRef = useRef<CartItem[]>([]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   const setDiscount = useCallback((type: DiscountType, value: number) => {
     setDiscountType(type);
@@ -116,6 +121,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         stock: Number(data.stock || 0),
       };
 
+      if (itemsRef.current.length === 0) setStartedAt(new Date());
       setItems((prev) => {
         const existing = prev.find((item) => item.id === nextItem.id);
         if (!existing) return [...prev, nextItem];
@@ -142,6 +148,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems([]);
     setDiscountType('none');
     setDiscountValue(0);
+    setStartedAt(null);
+  }, []);
+
+  const loadCart = useCallback((newItems: CartItem[], dType: DiscountType, dValue: number) => {
+    setItems(newItems);
+    setDiscountType(dType);
+    setDiscountValue(dValue);
+    setStartedAt(new Date());
   }, []);
 
   const totals = useMemo<CartTotals>(() => {
@@ -165,6 +179,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<CartContextValue>(
     () => ({
       items,
+      startedAt,
       rateValue,
       setRateValue,
       totals,
@@ -175,8 +190,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       updateQty,
       removeItem,
       clearCart,
+      loadCart,
     }),
-    [items, rateValue, totals, discountType, discountValue, setDiscount, addProductByCode, updateQty, removeItem, clearCart]
+    [items, startedAt, rateValue, totals, discountType, discountValue, setDiscount, addProductByCode, updateQty, removeItem, clearCart, loadCart]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
