@@ -17,7 +17,7 @@ import {
   Scan, ShoppingCart, Search, Trash2, Plus, Minus, Receipt,
   Package, CheckCircle2, AlertTriangle, LogOut, X, Banknote,
   Smartphone, Layers, ArrowLeftRight, User, Clock, Camera, History,
-  Tag, MessageCircle, Printer, WifiOff, Pause, Play,
+  Tag, MessageCircle, Printer, WifiOff, Pause, Play, CreditCard,
 } from 'lucide-react';
 import ReceiptModal from '../../components/ReceiptModal';
 import { getNextNroControl } from '../../utils/facturaUtils';
@@ -36,7 +36,7 @@ type QuickProduct = {
   marca?: string;
 };
 
-type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'transferencia' | 'mixto';
+type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'transferencia' | 'pago_movil' | 'punto' | 'mixto';
 
 type HeldCart = {
   id: string;
@@ -52,6 +52,7 @@ type HeldCart = {
 // Ley venezolana: 3 % sobre pagos en divisas o criptomonedas
 const IGTF_RATE = 0.03;
 const IGTF_METHODS = new Set<PaymentMethod>(['efectivo_usd', 'mixto']);
+// Punto de venta y pago móvil no aplican IGTF (operaciones en Bs)
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const DAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -66,14 +67,18 @@ function formatLiveTime(d: Date) {
 
 const METHOD_LABELS: Record<PaymentMethod, string> = {
   efectivo_usd: 'Efectivo USD',
-  efectivo_bs: 'Efectivo BS',
-  transferencia: 'Transferencia / Pago Móvil',
+  efectivo_bs: 'Efectivo Bs',
+  transferencia: 'Transferencia',
+  pago_movil: 'Pago Móvil',
+  punto: 'Punto de Venta',
   mixto: 'Mixto (Efectivo + Transf.)',
 };
 const METHOD_ICONS: Record<PaymentMethod, React.ReactNode> = {
   efectivo_usd: <Banknote size={15} />,
   efectivo_bs: <Banknote size={15} />,
   transferencia: <Smartphone size={15} />,
+  pago_movil: <Smartphone size={15} />,
+  punto: <CreditCard size={15} />,
   mixto: <Layers size={15} />,
 };
 
@@ -120,7 +125,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
   const canConfirm = (() => {
     if (method === 'efectivo_usd') return parseFloat(cashInput || '0') >= grandUsd;
     if (method === 'efectivo_bs')  return parseFloat(cashInput || '0') >= totalBs;
-    if (method === 'transferencia') return reference.trim().length > 0;
+    if (method === 'transferencia' || method === 'pago_movil' || method === 'punto') return reference.trim().length > 0;
     if (method === 'mixto') {
       const c = parseFloat(mixCash || '0');
       const t = parseFloat(mixTransfer || '0');
@@ -219,12 +224,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
           {/* Method selector */}
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Método de Pago</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {(Object.keys(METHOD_LABELS) as PaymentMethod[]).map(m => (
                 <button key={m} onClick={() => { setMethod(m); setCashInput(''); setReference(''); }}
-                  className={`flex items-center gap-2 px-3 py-3 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all ${method === m ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-slate-800/50 text-slate-400 hover:border-slate-200 dark:border-white/10'}`}>
+                  className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl border-2 text-[9px] font-black uppercase tracking-widest transition-all text-center ${method === m ? 'border-slate-900 dark:border-indigo-500 bg-slate-900 dark:bg-indigo-600 text-white' : 'border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.04] text-slate-400 hover:border-slate-200 dark:hover:border-white/[0.15]'}`}>
                   {METHOD_ICONS[m]}
-                  <span className="text-left leading-tight">{METHOD_LABELS[m]}</span>
+                  <span className="leading-tight">{METHOD_LABELS[m]}</span>
                 </button>
               ))}
             </div>
@@ -286,15 +291,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
             </div>
           )}
 
-          {/* Transferencia */}
-          {method === 'transferencia' && (
+          {/* Transferencia / Pago Móvil / Punto */}
+          {(method === 'transferencia' || method === 'pago_movil' || method === 'punto') && (
             <div>
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Número de Referencia</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">
+                {method === 'punto' ? 'Últimos 4 dígitos / Lote' : 'Número de Referencia'}
+              </label>
               <input autoFocus
                 value={reference}
                 onChange={e => setReference(e.target.value)}
-                placeholder="Ej. 00123456789"
-                className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-all"
+                placeholder={method === 'punto' ? 'Ej. 1234' : method === 'pago_movil' ? 'Ej. C2C-0001' : 'Ej. 00123456789'}
+                className="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800/50 border-2 border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-all text-slate-900 dark:text-white"
               />
             </div>
           )}
@@ -411,6 +418,7 @@ const PosContent = () => {
   // Product grid
   const [products, setProducts] = useState<QuickProduct[]>([]);
   const [productFilter, setProductFilter] = useState('');
+  const [stockFilter, setStockFilter] = useState<'all' | 'inStock' | 'noStock'>('all');
   const [loading, setLoading] = useState(true);
 
   // Client
@@ -511,19 +519,24 @@ const PosContent = () => {
   }, [clientQuery, clients]);
 
   const displayProducts = useMemo(() => {
+    let filtered = products;
+    if (stockFilter === 'inStock') filtered = filtered.filter(p => p.stock > 0);
+    if (stockFilter === 'noStock') filtered = filtered.filter(p => p.stock === 0);
     const q = (productFilter || searchQuery).trim().toLowerCase();
-    if (!q) return products;
-    return products.filter(p =>
+    if (!q) return filtered;
+    return filtered.filter(p =>
       (p.name || '').toLowerCase().includes(q) ||
       (p.codigo || '').toLowerCase().includes(q) ||
       (p.marca || '').toLowerCase().includes(q)
     );
-  }, [products, productFilter, searchQuery]);
+  }, [products, productFilter, searchQuery, stockFilter]);
+
+  const noStockCount = useMemo(() => products.filter(p => p.stock === 0).length, [products]);
 
   const handleAddProduct = useCallback(async (product: QuickProduct) => {
     const ok = await addProductByCode(product.codigo, 'detal');
     if (!ok) {
-      setError(`Sin stock: ${product.name}`);
+      setError(`Producto no encontrado: ${product.name}`);
       setTimeout(() => setError(''), 2000);
     }
   }, [addProductByCode]);
@@ -829,9 +842,16 @@ const PosContent = () => {
                 </button>
               )}
             </div>
-            <div className="flex justify-between items-center mt-2 px-0.5">
-              <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Acceso Rápido</span>
-              <span className="text-[9px] font-bold text-slate-300">{displayProducts.length} productos</span>
+            <div className="flex items-center justify-between mt-2 px-0.5 gap-1">
+              <div className="flex items-center gap-1">
+                {(['all', 'inStock', 'noStock'] as const).map(f => (
+                  <button key={f} onClick={() => setStockFilter(f)}
+                    className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${stockFilter === f ? 'bg-slate-900 dark:bg-white/[0.15] text-white' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06]'}`}>
+                    {f === 'all' ? 'Todos' : f === 'inStock' ? 'Con Stock' : `Sin Stock (${noStockCount})`}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[9px] font-bold text-slate-300 shrink-0">{displayProducts.length}</span>
             </div>
           </div>
 
@@ -845,20 +865,20 @@ const PosContent = () => {
               <div className="grid grid-cols-2 xl:grid-cols-3 gap-2.5">
                 {displayProducts.map(product => (
                   <button key={product.id} onClick={() => handleAddProduct(product)}
-                    className={`group bg-white dark:bg-slate-900 p-3 rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between ${product.stock === 0 ? 'border-rose-100 dark:border-rose-500/15 opacity-80' : 'border-slate-100 dark:border-white/[0.07] hover:border-slate-300 dark:border-white/15'}`}>
+                    className={`group bg-white dark:bg-white/[0.05] p-3 rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between ${product.stock === 0 ? 'border-amber-200 dark:border-amber-500/25' : 'border-slate-100 dark:border-white/[0.1] hover:border-slate-300 dark:hover:border-white/20'}`}>
                     <div>
                       <div className="flex justify-between items-start mb-1.5">
-                        <div className="h-7 w-7 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-slate-400 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white transition-colors">
+                        <div className="h-7 w-7 rounded-lg bg-slate-50 dark:bg-white/[0.08] text-slate-400 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white transition-colors">
                           <Package size={12} />
                         </div>
-                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${product.stock === 0 ? 'text-rose-500 bg-rose-50 dark:bg-rose-500/10' : 'text-slate-300 bg-slate-50 dark:bg-slate-800/50'}`}>
-                          {product.stock === 0 ? 'SIN STOCK' : product.stock}
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${product.stock === 0 ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15' : 'text-slate-500 dark:text-slate-300 bg-slate-50 dark:bg-white/[0.08]'}`}>
+                          {product.stock === 0 ? 'AGOTADO' : product.stock}
                         </span>
                       </div>
-                      <p className="text-[11px] font-black text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight">{product.name}</p>
-                      {product.marca && <p className="text-[8px] font-black text-indigo-400 uppercase mt-0.5">{product.marca}</p>}
+                      <p className="text-xs font-black text-slate-700 dark:text-white/90 line-clamp-2 leading-tight">{product.name}</p>
+                      {product.marca && <p className="text-[9px] font-black text-indigo-400 dark:text-indigo-300 uppercase mt-0.5">{product.marca}</p>}
                     </div>
-                    <p className="text-sm font-black text-emerald-600">${product.price.toFixed(2)}</p>
+                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${product.price.toFixed(2)}</p>
                   </button>
                 ))}
               </div>
@@ -995,13 +1015,13 @@ const PosContent = () => {
 
               {/* Mini stats */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-white/[0.07] shadow-sm">
-                  <p className="text-[9px] font-black uppercase text-slate-300 mb-1">Items</p>
-                  <p className="text-xl font-black text-slate-800 dark:text-slate-200">{items.reduce((a, i) => a + i.qty, 0)}</p>
+                <div className="bg-white dark:bg-white/[0.05] p-3 rounded-xl border border-slate-100 dark:border-white/[0.1] shadow-sm">
+                  <p className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-400 mb-1">Items</p>
+                  <p className="text-xl font-black text-slate-800 dark:text-white">{items.reduce((a, i) => a + i.qty, 0)}</p>
                 </div>
-                <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-white/[0.07] shadow-sm">
-                  <p className="text-[9px] font-black uppercase text-slate-300 mb-1">Total Bs</p>
-                  <p className="text-xl font-black text-slate-800 dark:text-slate-200 truncate">
+                <div className="bg-white dark:bg-white/[0.05] p-3 rounded-xl border border-slate-100 dark:border-white/[0.1] shadow-sm">
+                  <p className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-400 mb-1">Total Bs</p>
+                  <p className="text-xl font-black text-slate-800 dark:text-white truncate">
                     {totals.totalBs.toLocaleString('es-VE', { maximumFractionDigits: 0 })}
                   </p>
                 </div>

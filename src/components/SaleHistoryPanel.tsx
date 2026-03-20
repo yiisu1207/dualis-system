@@ -7,6 +7,7 @@ import { db } from '../firebase/config';
 import {
   X, RotateCcw, Clock, CheckCircle2, AlertTriangle, Loader2,
   ChevronDown, ChevronUp, Monitor, User, CreditCard, Package,
+  Calendar, DollarSign, Timer, Hash,
 } from 'lucide-react';
 import HelpTooltip from './HelpTooltip';
 
@@ -67,6 +68,24 @@ function fmtDuration(start?: string, end?: string): string | null {
   const mins = Math.floor(ms / 60000);
   const secs = Math.floor((ms % 60000) / 1000);
   return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+}
+
+const DAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const MONTHS_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+function fmtDateGroup(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const isToday = d.toDateString() === today.toDateString();
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+  if (isToday) return 'Hoy';
+  if (isYesterday) return 'Ayer';
+  return `${DAYS_ES[d.getDay()]} ${d.getDate()} de ${MONTHS_ES[d.getMonth()]}`;
+}
+
+function getDateKey(iso: string): string {
+  return new Date(iso).toDateString();
 }
 
 const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
@@ -180,6 +199,29 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
           </div>
         )}
 
+        {/* Summary bar */}
+        {!loading && sales.length > 0 && (
+          <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-100 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
+            <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-500">
+              <Hash size={10} />
+              <span>{sales.filter(s => !s.anulada).length} ventas</span>
+            </div>
+            <div className="w-px h-4 bg-slate-200 dark:bg-white/10" />
+            {!readOnly && (
+              <div className="flex items-center gap-1.5 text-[10px] font-black text-emerald-600 dark:text-emerald-400">
+                <DollarSign size={10} />
+                <span>${sales.filter(s => !s.anulada).reduce((s, v) => s + (v.amountInUSD || 0), 0).toFixed(2)}</span>
+              </div>
+            )}
+            {sales.some(s => s.anulada) && (
+              <>
+                <div className="w-px h-4 bg-slate-200 dark:bg-white/10" />
+                <span className="text-[10px] font-black text-rose-400">{sales.filter(s => s.anulada).length} anuladas</span>
+              </>
+            )}
+          </div>
+        )}
+
         {/* List */}
         <div className="flex-1 overflow-y-auto custom-scroll px-4 py-3 space-y-2">
           {loading ? (
@@ -189,14 +231,24 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
           ) : sales.length === 0 ? (
             <p className="text-center text-xs text-slate-400 py-12 font-bold">No hay ventas registradas.</p>
           ) : (
-            sales.map(sale => {
+            sales.map((sale, idx) => {
               const isExpanded = expanded.has(sale.id);
               const duration = fmtDuration(sale.startedAt, sale.createdAt);
               const bsTotal = sale.originalAmount || (sale.amountInUSD && sale.rateUsed ? sale.amountInUSD * sale.rateUsed : null);
+              const dateKey = getDateKey(sale.createdAt);
+              const prevDateKey = idx > 0 ? getDateKey(sales[idx - 1].createdAt) : null;
+              const showDateHeader = dateKey !== prevDateKey;
 
               return (
+                <React.Fragment key={sale.id}>
+                {showDateHeader && (
+                  <div className="flex items-center gap-2 pt-2 pb-1 px-1">
+                    <Calendar size={10} className="text-indigo-400" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">{fmtDateGroup(sale.createdAt)}</span>
+                    <div className="flex-1 h-px bg-indigo-400/20" />
+                  </div>
+                )}
                 <div
-                  key={sale.id}
                   className={`rounded-2xl border transition-all ${sale.anulada
                     ? 'bg-slate-50 dark:bg-white/[0.02] border-slate-100 dark:border-white/[0.05] opacity-60'
                     : 'bg-white dark:bg-white/[0.04] border-slate-100 dark:border-white/[0.07] hover:border-slate-200 dark:hover:border-white/[0.15] shadow-sm'
@@ -292,6 +344,27 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
                   {/* ── Expanded detail ── */}
                   {isExpanded && (
                     <div className="px-4 pb-4 border-t border-slate-50 dark:border-white/[0.05] pt-3 space-y-3">
+
+                      {/* Timing detail */}
+                      <div className="bg-indigo-50 dark:bg-indigo-500/[0.07] rounded-xl p-3 space-y-1.5">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-indigo-400 mb-2 flex items-center gap-1.5">
+                          <Timer size={10} /> Cronología
+                        </p>
+                        <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                          <span className="font-bold">Inicio (1er producto)</span>
+                          <span className="font-black text-slate-700 dark:text-slate-300">{sale.startedAt ? fmtTime(sale.startedAt) : '—'}</span>
+                        </div>
+                        <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                          <span className="font-bold">Cobro finalizado</span>
+                          <span className="font-black text-slate-700 dark:text-slate-300">{fmtTime(sale.createdAt)}</span>
+                        </div>
+                        {duration && (
+                          <div className="flex justify-between text-[10px] text-indigo-500">
+                            <span className="font-bold">Duración de atención</span>
+                            <span className="font-black">{duration}</span>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Items table */}
                       {sale.items && sale.items.length > 0 && (
@@ -423,6 +496,7 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
                     </div>
                   )}
                 </div>
+                </React.Fragment>
               );
             })
           )}

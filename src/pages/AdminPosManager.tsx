@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useRates } from '../context/RatesContext';
 import {
-  collection, onSnapshot, query, where, addDoc, doc, updateDoc,
+  collection, onSnapshot, query, where, addDoc, doc, updateDoc, getDocs,
   serverTimestamp, orderBy, limit, setDoc, getDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -11,7 +11,7 @@ import {
   Activity, X, ExternalLink, Loader2, Save, Download,
   Calendar, User, Eye, Copy, CheckCircle2, BarChart3,
   AlertTriangle, Share2, MessageCircle, Shield, History,
-  TrendingUp, FileText, ChevronRight, Printer,
+  TrendingUp, FileText, ChevronRight, Printer, Clock, DollarSign, Package, ChevronDown, CreditCard,
 } from 'lucide-react';
 
 import { useToast } from '../context/ToastContext';
@@ -142,6 +142,9 @@ export default function AdminPosManager() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedArqueo, setSelectedArqueo] = useState<any | null>(null);
   const [historyFilter, setHistoryFilter] = useState<'all' | 'detal' | 'mayor'>('all');
+  const [shiftMovements, setShiftMovements] = useState<any[]>([]);
+  const [loadingShiftMov, setLoadingShiftMov] = useState(false);
+  const [expandedShiftSale, setExpandedShiftSale] = useState<string | null>(null);
 
   // Live clock
   const [now, setNow] = useState(new Date());
@@ -216,6 +219,41 @@ export default function AdminPosManager() {
     historyFilter === 'all' ? arqueoHistory : arqueoHistory.filter(a => a.terminalType === historyFilter),
     [arqueoHistory, historyFilter]
   );
+
+  // Load individual movements when a shift is selected
+  useEffect(() => {
+    if (!selectedArqueo || !businessId) { setShiftMovements([]); return; }
+    setLoadingShiftMov(true);
+    setExpandedShiftSale(null);
+    const loadMov = async () => {
+      try {
+        const q = query(
+          collection(db, 'movements'),
+          where('businessId', '==', businessId),
+          where('cajaId', '==', selectedArqueo.terminalId || selectedArqueo.cajaId),
+          where('movementType', '==', 'FACTURA'),
+          orderBy('createdAt', 'desc'),
+        );
+        const snap = await getDocs(q);
+        const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Filter to this shift's time range
+        const shiftStart = selectedArqueo.apertura || null;
+        const shiftEnd = selectedArqueo.cierreAt || null;
+        const filtered = all.filter((m: any) => {
+          const ts = m.createdAt;
+          if (!ts) return false;
+          if (shiftStart && ts < shiftStart) return false;
+          if (shiftEnd && ts > shiftEnd) return false;
+          return true;
+        });
+        setShiftMovements(filtered);
+      } catch (err) {
+        console.error('[AdminPosManager] Error loading shift movements:', err);
+        setShiftMovements([]);
+      } finally { setLoadingShiftMov(false); }
+    };
+    loadMov();
+  }, [selectedArqueo, businessId]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreateTerminal = async (e: React.FormEvent) => {
@@ -855,7 +893,7 @@ export default function AdminPosManager() {
       {/* ══ ARQUEO DETAIL MODAL ════════════════════════════════════════════════ */}
       {selectedArqueo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" onClick={() => setSelectedArqueo(null)}>
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.08] shadow-2xl shadow-black/40" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.08] shadow-2xl shadow-black/40" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/[0.07]">
               <div className="flex items-center gap-3">
@@ -933,10 +971,142 @@ export default function AdminPosManager() {
                   <p className="text-xs text-amber-700 dark:text-amber-300">{selectedArqueo.note}</p>
                 </div>
               )}
+              {/* ── MOVIMIENTOS INDIVIDUALES DEL TURNO ── */}
+              <div className="rounded-xl border border-slate-100 dark:border-white/[0.07] overflow-hidden">
+                <div className="px-4 py-3 bg-slate-50 dark:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Receipt size={13} className="text-indigo-500" />
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Movimientos del Turno</p>
+                  </div>
+                  <span className="text-[10px] font-black text-slate-400">{shiftMovements.length} ventas</span>
+                </div>
+                {loadingShiftMov ? (
+                  <div className="py-8 flex justify-center text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
+                ) : shiftMovements.length === 0 ? (
+                  <p className="py-6 text-center text-[10px] font-bold text-slate-400">Sin ventas en este turno</p>
+                ) : (
+                  <div className="divide-y divide-slate-50 dark:divide-white/[0.04] max-h-[300px] overflow-y-auto">
+                    {shiftMovements.map((mv: any) => {
+                      const isExp = expandedShiftSale === mv.id;
+                      const hora = mv.createdAt ? new Date(mv.createdAt).toLocaleTimeString('es-VE', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '—';
+                      const horaInicio = mv.startedAt ? new Date(mv.startedAt).toLocaleTimeString('es-VE', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) : null;
+                      const totalBs = mv.originalAmount || (mv.amountInUSD && mv.rateUsed ? mv.amountInUSD * mv.rateUsed : null);
+                      const cliente = mv.entityId === 'CONSUMIDOR_FINAL' ? 'Cons. Final' : (mv.entityId || '—');
+                      return (
+                        <div key={mv.id} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
+                          <button onClick={() => setExpandedShiftSale(isExp ? null : mv.id)} className="w-full text-left px-4 py-3 flex items-center gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                  <Clock size={9} /> {horaInicio || hora}{horaInicio ? ` → ${hora}` : ''}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-400">·</span>
+                                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                  <CreditCard size={9} /> {mv.metodoPago || 'N/A'}
+                                </span>
+                                {mv.nroControl && (
+                                  <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/[0.06] text-[8px] font-mono font-black text-slate-400 rounded">#{mv.nroControl}</span>
+                                )}
+                                {mv.anulada && (
+                                  <span className="px-1.5 py-0.5 bg-rose-100 dark:bg-rose-500/10 text-[8px] font-black text-rose-500 rounded uppercase">Anulada</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[10px] text-slate-400">{cliente}</span>
+                                {mv.items && <span className="text-[10px] text-slate-300">· {mv.items.length} prod.</span>}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className={`text-sm font-black ${mv.anulada ? 'text-slate-400 line-through' : 'text-slate-900 dark:text-white'}`}>${(mv.amountInUSD||0).toFixed(2)}</p>
+                              {totalBs && <p className="text-[9px] font-bold text-slate-400">{totalBs.toLocaleString('es-VE',{maximumFractionDigits:0})} Bs</p>}
+                            </div>
+                            <ChevronDown size={12} className={`text-slate-300 shrink-0 transition-transform ${isExp ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {/* Expanded detail */}
+                          {isExp && (
+                            <div className="px-4 pb-3 space-y-2">
+                              {/* Rate + timing */}
+                              <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                <div className="bg-indigo-50 dark:bg-indigo-500/[0.06] rounded-lg p-2">
+                                  <p className="font-bold text-indigo-400 mb-0.5">Tasa usada</p>
+                                  <p className="font-black text-indigo-600 dark:text-indigo-300">{mv.rateUsed ? `${mv.rateUsed.toFixed(2)} Bs` : '—'}</p>
+                                </div>
+                                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-lg p-2">
+                                  <p className="font-bold text-slate-400 mb-0.5">Vendedor</p>
+                                  <p className="font-black text-slate-700 dark:text-slate-300 truncate">{mv.vendedorNombre || '—'}</p>
+                                </div>
+                                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-lg p-2">
+                                  <p className="font-bold text-slate-400 mb-0.5">Referencia</p>
+                                  <p className="font-black text-slate-700 dark:text-slate-300 truncate">{mv.referencia || '—'}</p>
+                                </div>
+                              </div>
+
+                              {/* Financial breakdown */}
+                              <div className="bg-slate-50 dark:bg-white/[0.03] rounded-lg p-2.5 space-y-1 text-[10px]">
+                                {mv.subtotalUSD != null && (
+                                  <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-black text-slate-700 dark:text-slate-300">${mv.subtotalUSD.toFixed(2)}</span></div>
+                                )}
+                                {mv.ivaAmount != null && mv.ivaAmount > 0 && (
+                                  <div className="flex justify-between"><span className="text-sky-500">IVA</span><span className="font-black text-sky-600 dark:text-sky-400">+${mv.ivaAmount.toFixed(2)}</span></div>
+                                )}
+                                {mv.igtfAmount != null && mv.igtfAmount > 0 && (
+                                  <div className="flex justify-between"><span className="text-yellow-500">IGTF</span><span className="font-black text-yellow-600 dark:text-yellow-400">+${mv.igtfAmount.toFixed(2)}</span></div>
+                                )}
+                                {mv.discountAmount != null && mv.discountAmount > 0 && (
+                                  <div className="flex justify-between"><span className="text-emerald-500">Descuento</span><span className="font-black text-emerald-600">-${mv.discountAmount.toFixed(2)}</span></div>
+                                )}
+                                {mv.cashGiven > 0 && (
+                                  <div className="flex justify-between"><span className="text-slate-500">Entregado</span><span className="font-black">${mv.cashGiven.toFixed(2)}</span></div>
+                                )}
+                                {mv.changeUsd > 0 && (
+                                  <div className="flex justify-between"><span className="text-emerald-500">Cambio</span><span className="font-black text-emerald-600">${mv.changeUsd.toFixed(2)}</span></div>
+                                )}
+                                {mv.mixCash > 0 && (
+                                  <div className="flex justify-between"><span className="text-slate-500">Efectivo (mixto)</span><span className="font-black">${mv.mixCash.toFixed(2)}</span></div>
+                                )}
+                                {mv.mixTransfer > 0 && (
+                                  <div className="flex justify-between"><span className="text-slate-500">Transf. (mixto)</span><span className="font-black">${mv.mixTransfer.toFixed(2)}</span></div>
+                                )}
+                              </div>
+
+                              {/* Items */}
+                              {mv.items && mv.items.length > 0 && (
+                                <div className="rounded-lg overflow-hidden border border-slate-100 dark:border-white/[0.06]">
+                                  <table className="w-full text-[9px]">
+                                    <thead>
+                                      <tr className="bg-slate-50 dark:bg-white/[0.03]">
+                                        <th className="px-2 py-1.5 text-left font-black text-slate-400 uppercase">Producto</th>
+                                        <th className="px-2 py-1.5 text-center font-black text-slate-400 uppercase">Cant</th>
+                                        <th className="px-2 py-1.5 text-right font-black text-slate-400 uppercase">P/U</th>
+                                        <th className="px-2 py-1.5 text-right font-black text-slate-400 uppercase">Total</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {mv.items.map((it: any, ii: number) => (
+                                        <tr key={ii} className="border-t border-slate-50 dark:border-white/[0.04]">
+                                          <td className="px-2 py-1.5 font-bold text-slate-600 dark:text-slate-300 max-w-[120px] truncate">{it.nombre}</td>
+                                          <td className="px-2 py-1.5 text-center font-black text-slate-500">{it.qty}</td>
+                                          <td className="px-2 py-1.5 text-right font-bold text-slate-500">${(it.price||0).toFixed(2)}</td>
+                                          <td className="px-2 py-1.5 text-right font-black text-slate-800 dark:text-slate-200">${(it.subtotal||0).toFixed(2)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* Reprint Z */}
               <button
                 onClick={() => {
-                  // Reprint using stored data
                   const w = window.open('', '_blank', 'width=380,height=620,toolbar=0,menubar=0');
                   if (!w) return;
                   const methods = Object.entries(selectedArqueo.paymentBreakdown||{}).map(([m,v])=>`<tr><td>${m}</td><td align="right">$${(v as number).toFixed(2)}</td></tr>`).join('');
