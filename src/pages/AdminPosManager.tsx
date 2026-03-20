@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRates } from '../context/RatesContext';
 import {
   collection, onSnapshot, query, where, addDoc, doc, updateDoc,
-  serverTimestamp, orderBy, limit, setDoc,
+  serverTimestamp, orderBy, limit, setDoc, getDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import {
@@ -287,8 +287,22 @@ export default function AdminPosManager() {
     } finally { setIsOpeningShift(false); }
   };
 
-  const handleEnterTerminal = (terminal: Terminal) => {
-    const url = terminal.sessionToken ? `/caja/${terminal.sessionToken}` : `/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}`;
+  const handleEnterTerminal = async (terminal: Terminal) => {
+    if (!businessId) return;
+    let token = terminal.sessionToken;
+    // Ensure terminalTokens doc exists (may be missing for sessions opened before this feature)
+    if (token) {
+      const tokenSnap = await getDoc(doc(db, 'terminalTokens', token));
+      if (!tokenSnap.exists()) {
+        await setDoc(doc(db, 'terminalTokens', token), {
+          businessId,
+          cajaId: terminal.id,
+          tipo: terminal.tipo,
+          createdAt: serverTimestamp(),
+        });
+      }
+    }
+    const url = token ? `/caja/${token}` : `/${businessId}/pos/${terminal.tipo}?cajaId=${terminal.id}`;
     const newTab = window.open(url, '_blank');
     if (!newTab) warning('El navegador bloqueó la pestaña. Permite popups para este sitio.');
   };
