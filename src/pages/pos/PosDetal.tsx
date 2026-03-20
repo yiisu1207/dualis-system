@@ -1233,6 +1233,13 @@ const PosContent = () => {
 // ─── EXPORT ───────────────────────────────────────────────────────────────────
 export default function PosDetal() {
   const { empresa_id } = useParams();
+  const kioskCtx = useContext(PosKioskContext);
+
+  // Kiosk mode: KioskGate already provides TenantProvider + CartProvider + PosKioskContext
+  if (kioskCtx) {
+    return <PosContent />;
+  }
+
   if (!empresa_id) {
     return <div className="h-screen flex items-center justify-center text-slate-400 font-black uppercase tracking-widest text-xs">Error: empresa no identificada.</div>;
   }
