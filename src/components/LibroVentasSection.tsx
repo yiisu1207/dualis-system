@@ -253,9 +253,9 @@ export default function LibroVentasSection() {
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">Reporte completo de facturación — doble moneda</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-xs font-bold text-slate-600 dark:text-white/60 hover:bg-slate-50 dark:hover:bg-white/[0.1] transition-all">
-            <Download size={13} /> CSV
+            <Download size={13} /> <span className="hidden sm:inline">CSV</span>
           </button>
           <button onClick={() => setShowFilters(p => !p)} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${showFilters ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white dark:bg-white/[0.06] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-white/60 hover:bg-slate-50 dark:hover:bg-white/[0.1]'}`}>
             <Filter size={13} /> Filtros
@@ -269,7 +269,7 @@ export default function LibroVentasSection() {
 
       {/* ── Filters ─────────────────────────────────────────────────────── */}
       {showFilters && (
-        <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] p-5 shadow-lg shadow-black/5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] p-3 sm:p-5 shadow-lg shadow-black/5 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3">
           <div>
             <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25 mb-1">Desde</label>
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -296,7 +296,7 @@ export default function LibroVentasSection() {
               <option value="anulada">Anuladas</option>
             </select>
           </div>
-          <div>
+          <div className="col-span-2 lg:col-span-1">
             <label className="block text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25 mb-1">Buscar</label>
             <div className="relative">
               <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -309,7 +309,7 @@ export default function LibroVentasSection() {
       )}
 
       {/* ── KPI Summary Cards ───────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
         <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] p-4 shadow-sm">
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25">Operaciones</p>
           <p className="text-xl font-black text-slate-800 dark:text-white mt-1">{totals.count}</p>
@@ -327,11 +327,11 @@ export default function LibroVentasSection() {
           <p className="text-[9px] font-black uppercase tracking-widest text-sky-500/60">IVA</p>
           <p className="text-xl font-black text-sky-600 dark:text-sky-400 mt-1">${totals.totalIva.toFixed(2)}</p>
         </div>
-        <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-amber-100 dark:border-amber-500/20 p-4 shadow-sm">
+        <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-amber-100 dark:border-amber-500/20 p-4 shadow-sm hidden sm:block">
           <p className="text-[9px] font-black uppercase tracking-widest text-amber-500/60">IGTF</p>
           <p className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">${totals.totalIgtf.toFixed(2)}</p>
         </div>
-        <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] p-4 shadow-sm">
+        <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] p-4 shadow-sm hidden sm:block">
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25">Tasa Prom.</p>
           <p className="text-xl font-black text-slate-800 dark:text-white mt-1">{totals.avgRate > 0 ? totals.avgRate.toFixed(2) : '—'}</p>
         </div>
@@ -350,7 +350,7 @@ export default function LibroVentasSection() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-xs hidden md:table">
               <thead>
                 <tr className="bg-slate-50/80 dark:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.06]">
                   <th className="px-4 py-3 text-left font-black text-slate-400 dark:text-white/30 uppercase tracking-widest text-[9px]">#</th>
@@ -629,16 +629,79 @@ export default function LibroVentasSection() {
                 })}
               </tbody>
             </table>
+
+            {/* ── Mobile Card View ─────────────────────────────────────── */}
+            <div className="md:hidden divide-y divide-slate-100 dark:divide-white/[0.06]">
+              {filtered.map((m, idx) => {
+                const bsTotal = m.originalAmount || (m.amountInUSD && m.rateUsed ? m.amountInUSD * m.rateUsed : 0);
+                const isExp = expanded.has(m.id);
+                return (
+                  <div key={m.id} className={`p-3.5 ${m.anulada ? 'opacity-50' : ''}`}>
+                    <button onClick={() => toggleExpanded(m.id)} className="w-full text-left">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-mono text-slate-400 dark:text-white/20">{idx + 1}</span>
+                            <p className="text-xs font-black text-slate-700 dark:text-white/80 truncate">
+                              {m.entityId === 'CONSUMIDOR_FINAL' ? 'Cons. Final' : m.entityId}
+                            </p>
+                            {m.anulada && <span className="px-1.5 py-0.5 bg-rose-100 dark:bg-rose-500/10 text-rose-500 text-[8px] font-black rounded uppercase">Anulada</span>}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 dark:text-white/30">
+                            <span>{fmtDate(m.createdAt)}</span>
+                            <span>{fmtTime(m.createdAt)}</span>
+                            <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 rounded text-[8px] font-black">{m.metodoPago || 'N/A'}</span>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${(m.amountInUSD || 0).toFixed(2)}</p>
+                          {bsTotal > 0 && <p className="text-[10px] font-bold text-violet-500 dark:text-violet-400">Bs {fmtBs(bsTotal)}</p>}
+                          <span className="text-slate-300 dark:text-white/15 mt-0.5 inline-block">{isExp ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</span>
+                        </div>
+                      </div>
+                    </button>
+                    {isExp && (
+                      <div className="mt-3 space-y-2">
+                        {/* Items */}
+                        {m.items && m.items.length > 0 && (
+                          <div className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.06] p-2.5 space-y-1">
+                            {m.items.map(item => (
+                              <div key={item.id} className="flex justify-between text-[10px]">
+                                <span className="text-slate-600 dark:text-white/60 truncate flex-1">{item.qty}× {item.nombre}</span>
+                                <span className="font-black text-slate-700 dark:text-white/70 ml-2">${item.subtotal.toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Financial */}
+                        <div className="rounded-xl bg-white dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.06] p-2.5 space-y-1">
+                          {(m.subtotalUSD || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-slate-400">Subtotal</span><span className="font-black text-slate-600 dark:text-white/60">${(m.subtotalUSD || 0).toFixed(2)}</span></div>}
+                          {(m.ivaAmount || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-sky-500">IVA</span><span className="font-black text-sky-500">+${(m.ivaAmount || 0).toFixed(2)}</span></div>}
+                          {(m.igtfAmount || 0) > 0 && <div className="flex justify-between text-[10px]"><span className="text-amber-500">IGTF</span><span className="font-black text-amber-500">+${(m.igtfAmount || 0).toFixed(2)}</span></div>}
+                          {m.rateUsed && <div className="flex justify-between text-[9px] text-slate-400 dark:text-white/20"><span>Tasa</span><span className="font-mono">1$ = Bs {m.rateUsed.toFixed(2)}</span></div>}
+                        </div>
+                        {/* Meta */}
+                        <div className="flex items-center gap-3 text-[9px] text-slate-400 dark:text-white/20 flex-wrap">
+                          {m.vendedorNombre && <span className="flex items-center gap-1"><User size={8} /> {m.vendedorNombre}</span>}
+                          {m.cajaId && <span className="flex items-center gap-1"><Monitor size={8} /> {m.cajaId}</span>}
+                          {m.nroControl && <span className="font-mono">#{m.nroControl}</span>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
         {/* ── Table Footer Totals ───────────────────────────────────────── */}
         {!loading && filtered.length > 0 && (
-          <div className="border-t border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-white/[0.03] px-4 py-3 flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-400 dark:text-white/25">
-              {filtered.length} registro{filtered.length !== 1 ? 's' : ''} · {totals.count} válida{totals.count !== 1 ? 's' : ''}
+          <div className="border-t border-slate-200 dark:border-white/[0.08] bg-slate-50/80 dark:bg-white/[0.03] px-3 sm:px-4 py-3 flex items-center justify-between">
+            <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 dark:text-white/25">
+              {filtered.length} reg. · {totals.count} válidas
             </span>
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3 sm:gap-6">
               <div className="text-right">
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25">Total USD</p>
                 <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${totals.totalUsd.toFixed(2)}</p>

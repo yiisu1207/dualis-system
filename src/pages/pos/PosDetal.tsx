@@ -613,7 +613,7 @@ const PosContent = () => {
       const changeUsd = method === 'efectivo_usd' ? Math.max(0, cashGiven - grandTotal)   : 0;
       const changeBs  = method === 'efectivo_bs'  ? Math.max(0, cashGiven - totals.totalBs) : 0;
 
-      const { formatted: nroControl } = await getNextNroControl(empresa_id);
+      const { formatted: nroControl } = await getNextNroControl(empresa_id, cajaId || undefined);
 
       // Build pagos breakdown for audit
       const pagos: Record<string, number> = {};
@@ -822,14 +822,6 @@ const PosContent = () => {
             <p className="text-sm font-black text-slate-900 dark:text-white">{rates.tasaBCV.toFixed(2)} Bs</p>
           </div>
 
-          <div className="w-px h-8 bg-slate-100 dark:bg-white/[0.07] hidden sm:block" />
-
-          <button
-            onClick={() => auth.signOut()}
-            className="h-9 w-9 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all border border-rose-100"
-            title="Cerrar Sesión">
-            <LogOut size={16} />
-          </button>
         </div>
       </header>
 
@@ -873,7 +865,7 @@ const PosContent = () => {
                 <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Sin resultados</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 xl:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                 {displayProducts.map(product => (
                   <button key={product.id} onClick={() => handleAddProduct(product)}
                     className={`group bg-white dark:bg-white/[0.05] p-3 rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between ${product.stock === 0 ? 'border-amber-200 dark:border-amber-500/25' : 'border-slate-100 dark:border-white/[0.1] hover:border-slate-300 dark:hover:border-white/20'}`}>
@@ -905,32 +897,35 @@ const PosContent = () => {
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 bg-white dark:bg-slate-900 z-10 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 shadow-sm">
                 <tr>
-                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07]">Producto</th>
-                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-center">Cant.</th>
-                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right">P/U</th>
-                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right">Total</th>
-                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07]" />
+                  <th className="px-3 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07]">Producto</th>
+                  <th className="px-2 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-center">Cant.</th>
+                  <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right hidden sm:table-cell">P/U</th>
+                  <th className="px-3 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right">Total</th>
+                  <th className="px-2 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] w-8 sm:w-auto" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-5 py-24 text-center pointer-events-none select-none">
-                      <div className="inline-flex h-16 w-16 rounded-3xl bg-slate-50 dark:bg-slate-800/50 items-center justify-center mb-4">
-                        <ShoppingCart size={28} className="text-slate-300" />
+                    <td colSpan={5} className="px-5 py-16 sm:py-24 text-center pointer-events-none select-none">
+                      <div className="inline-flex h-14 w-14 sm:h-16 sm:w-16 rounded-3xl bg-slate-50 dark:bg-slate-800/50 items-center justify-center mb-3 sm:mb-4">
+                        <ShoppingCart size={24} className="text-slate-300 sm:hidden" />
+                        <ShoppingCart size={28} className="text-slate-300 hidden sm:block" />
                       </div>
-                      <h3 className="text-base font-black text-slate-300 dark:text-white/20 uppercase tracking-widest mb-1">Carrito Vacío</h3>
-                      <p className="text-xs text-slate-300 dark:text-white/15 font-medium">Escanea un código o selecciona un producto</p>
+                      <h3 className="text-sm sm:text-base font-black text-slate-300 dark:text-white/20 uppercase tracking-widest mb-1">Carrito Vacío</h3>
+                      <p className="text-[10px] sm:text-xs text-slate-300 dark:text-white/15 font-medium">Escanea un código o selecciona un producto</p>
                     </td>
                   </tr>
                 ) : items.map(item => (
                   <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.04] group transition-colors">
-                    <td className="px-5 py-3.5">
-                      <p className="text-sm font-black text-slate-800 dark:text-slate-200 leading-none">{item.nombre}</p>
-                      <p className="text-[10px] font-mono text-slate-400 dark:text-white/30 mt-0.5">{item.codigo}</p>
+                    <td className="px-3 sm:px-5 py-2.5 sm:py-3.5">
+                      <p className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 leading-none line-clamp-1">{item.nombre}</p>
+                      <p className="text-[9px] sm:text-[10px] font-mono text-slate-400 dark:text-white/30 mt-0.5">
+                        <span className="sm:hidden">${item.priceUsd.toFixed(2)} · </span>{item.codigo}
+                      </p>
                     </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center justify-center gap-2">
+                    <td className="px-2 sm:px-5 py-2.5 sm:py-3.5">
+                      <div className="flex items-center justify-center gap-1 sm:gap-2">
                         <button onClick={() => updateQty(item.id, item.qty - 1)}
                           className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors">
                           <Minus size={12} strokeWidth={3} />
@@ -942,15 +937,15 @@ const PosContent = () => {
                         </button>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500 dark:text-white/50">
+                    <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500 dark:text-white/50 hidden sm:table-cell">
                       ${item.priceUsd.toFixed(2)}
                     </td>
-                    <td className="px-5 py-3.5 text-right text-base font-black text-slate-900 dark:text-white">
+                    <td className="px-3 sm:px-5 py-2.5 sm:py-3.5 text-right text-sm sm:text-base font-black text-slate-900 dark:text-white">
                       ${(item.qty * item.priceUsd).toFixed(2)}
                     </td>
-                    <td className="px-5 py-3.5 text-center">
+                    <td className="px-2 sm:px-5 py-2.5 sm:py-3.5 text-center">
                       <button onClick={() => removeItem(item.id)}
-                        className="h-7 w-7 rounded-lg bg-rose-50 text-rose-400 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                        className="h-7 w-7 rounded-lg bg-rose-50 text-rose-400 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center sm:opacity-0 sm:group-hover:opacity-100">
                         <Trash2 size={12} />
                       </button>
                     </td>
@@ -1040,7 +1035,7 @@ const PosContent = () => {
             </div>
 
             {/* Total + pay button */}
-            <div className="w-full sm:w-[38%] bg-slate-900 rounded-[1.8rem] p-4 sm:p-6 flex flex-col justify-between shadow-2xl text-white relative overflow-hidden shrink-0">
+            <div className="w-full sm:w-[38%] bg-slate-900 rounded-2xl sm:rounded-[1.8rem] p-4 sm:p-6 flex flex-col justify-between shadow-2xl text-white relative overflow-hidden shrink-0">
               <div className="absolute -right-8 -top-8 h-36 w-36 bg-white dark:bg-slate-900/5 rounded-full blur-2xl pointer-events-none" />
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Total a Pagar</p>
@@ -1091,14 +1086,14 @@ const PosContent = () => {
                   </div>
                 )}
 
-                <div className="text-4xl font-black tracking-tight flex items-start gap-1 mt-1">
-                  <span className="text-xl mt-0.5 opacity-40">$</span>
+                <div className="text-2xl sm:text-4xl font-black tracking-tight flex items-start gap-1 mt-1">
+                  <span className="text-base sm:text-xl mt-0.5 opacity-40">$</span>
                   {totals.totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </div>
                 <div className="mt-2 pt-2 border-t border-white/10 flex items-baseline justify-between">
                   <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Total Bs</span>
-                  <span className="text-2xl font-black text-white/80 tracking-tight">
-                    {totals.totalBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} <span className="text-base text-white/40">Bs</span>
+                  <span className="text-lg sm:text-2xl font-black text-white/80 tracking-tight">
+                    {totals.totalBs.toLocaleString('es-VE', { maximumFractionDigits: 2 })} <span className="text-sm sm:text-base text-white/40">Bs</span>
                   </span>
                 </div>
               </div>

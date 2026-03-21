@@ -1168,39 +1168,44 @@ export default function Inventario() {
                             {isSelected && <CheckSquare size={12} className="text-white" />}
                           </button>
                         </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${isSelected ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/40 group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:to-violet-600 group-hover:text-white'}`}>
-                              <Package size={16} />
+                        <td className="px-2.5 sm:px-5 py-3 sm:py-4">
+                          <div className="flex items-center gap-2 sm:gap-3">
+                            <div className={`h-8 w-8 sm:h-9 sm:w-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${isSelected ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/40 group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:to-violet-600 group-hover:text-white'}`}>
+                              <Package size={14} className="sm:hidden" /><Package size={16} className="hidden sm:block" />
                             </div>
-                            <div>
-                              <p className="text-sm font-black text-slate-900 dark:text-white tracking-tight">{p.nombre}</p>
-                              <p className="text-[10px] font-mono text-slate-400 font-bold bg-slate-50 dark:bg-white/[0.04] px-2 py-0.5 rounded-lg w-fit mt-1 border border-slate-100 dark:border-white/[0.07]">{p.codigo}</p>
+                            <div className="min-w-0">
+                              <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight truncate">{p.nombre}</p>
+                              <p className="text-[9px] sm:text-[10px] font-mono text-slate-400 font-bold bg-slate-50 dark:bg-white/[0.04] px-1.5 sm:px-2 py-0.5 rounded-lg w-fit mt-0.5 sm:mt-1 border border-slate-100 dark:border-white/[0.07]">{p.codigo}</p>
+                              {/* Mobile-only: show price + stock inline */}
+                              <div className="flex items-center gap-2 mt-1 sm:hidden">
+                                <span className="text-[10px] font-black text-emerald-600">${p.precioDetal.toFixed(2)}</span>
+                                <span className={`text-[10px] font-black ${p.stock < p.stockMinimo ? 'text-rose-500' : 'text-slate-400'}`}>Stock: {p.stock}</span>
+                              </div>
                             </div>
                           </div>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-5 py-4 hidden sm:table-cell">
                           <span className="px-3 py-1 bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/50 rounded-lg text-[9px] font-black uppercase tracking-widest border border-slate-200 dark:border-white/[0.08]">{p.categoria}</span>
                         </td>
-                        <td className="px-5 py-4 text-right">
+                        <td className="px-5 py-4 text-right hidden md:table-cell">
                           <p className="text-sm font-black text-slate-700 dark:text-slate-200">${p.costoUSD.toFixed(2)}</p>
                         </td>
-                        <td className="px-5 py-4 text-right">
-                          <p className="text-sm font-black text-emerald-600">${p.precioDetal.toFixed(2)}</p>
-                          <p className="text-[9px] text-slate-400 dark:text-white/30 uppercase tracking-widest">Bs {(p.precioDetal * rates.tasaBCV).toFixed(2)}</p>
+                        <td className="px-2.5 sm:px-5 py-3 sm:py-4 text-right">
+                          <p className="text-xs sm:text-sm font-black text-emerald-600">${p.precioDetal.toFixed(2)}</p>
+                          <p className="text-[8px] sm:text-[9px] text-slate-400 dark:text-white/30 uppercase tracking-widest">Bs {(p.precioDetal * rates.tasaBCV).toFixed(2)}</p>
                         </td>
-                        <td className="px-5 py-4 text-right">
+                        <td className="px-5 py-4 text-right hidden md:table-cell">
                           <p className="text-sm font-black text-violet-600">${p.precioMayor.toFixed(2)}</p>
                           <p className="text-[9px] text-slate-400 dark:text-white/30 uppercase tracking-widest">Bs {(p.precioMayor * rates.tasaBCV).toFixed(2)}</p>
                         </td>
-                        <td className="px-5 py-4 text-center">
-                          <div className={`inline-flex flex-col items-center px-4 py-1.5 rounded-xl border ${p.stock < p.stockMinimo ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20' : 'bg-slate-50 dark:bg-white/[0.04] border-slate-100 dark:border-white/[0.07]'}`}>
+                        <td className="px-2.5 sm:px-5 py-3 sm:py-4 text-center hidden sm:table-cell">
+                          <div className={`inline-flex flex-col items-center px-3 sm:px-4 py-1.5 rounded-xl border ${p.stock < p.stockMinimo ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20' : 'bg-slate-50 dark:bg-white/[0.04] border-slate-100 dark:border-white/[0.07]'}`}>
                             <span className={`text-base font-black ${p.stock < p.stockMinimo ? 'text-rose-600' : 'text-slate-900 dark:text-white'}`}>{p.stock}</span>
                             <span className="text-[8px] font-black uppercase text-slate-400 tracking-tighter">UND</span>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+                        <td className="px-2 sm:px-4 py-3 sm:py-4">
+                          <div className="flex justify-end items-center gap-1 sm:gap-1.5 sm:opacity-0 sm:group-hover:opacity-100 transition-all sm:translate-x-2 sm:group-hover:translate-x-0">
                             {/* IVA badge — quick toggle */}
                             <button
                               title={`IVA: ${p.ivaTipo || 'GENERAL'} ${p.iva ?? 16}%`}
