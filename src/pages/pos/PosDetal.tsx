@@ -25,6 +25,7 @@ import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import SaleHistoryPanel from '../../components/SaleHistoryPanel';
 import HelpTooltip from '../../components/HelpTooltip';
 import { auth } from '../../firebase/config';
+// Dynamic pricing imports removed — detal uses simple product.price
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type QuickProduct = {
@@ -34,6 +35,9 @@ type QuickProduct = {
   stock: number;
   codigo: string;
   marca?: string;
+  tipoTasa?: string;
+  costoUSD?: number;
+  margenDetal?: number;
 };
 
 type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'transferencia' | 'pago_movil' | 'punto' | 'mixto';
@@ -227,7 +231,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
             <div className="grid grid-cols-3 gap-2">
               {(Object.keys(METHOD_LABELS) as PaymentMethod[]).map(m => (
                 <button key={m} onClick={() => { setMethod(m); setCashInput(''); setReference(''); }}
-                  className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl border-2 text-[9px] font-black uppercase tracking-widest transition-all text-center ${method === m ? 'border-slate-900 dark:border-indigo-500 bg-slate-900 dark:bg-indigo-600 text-white' : 'border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.04] text-slate-400 hover:border-slate-200 dark:hover:border-white/[0.15]'}`}>
+                  className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl border-2 text-[9px] font-black uppercase tracking-widest transition-all text-center ${method === m ? 'border-slate-900 dark:border-indigo-500 bg-slate-900 dark:bg-indigo-600 text-white' : 'border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-slate-800/50 text-slate-400 hover:border-slate-200 dark:hover:border-white/[0.15]'}`}>
                   {METHOD_ICONS[m]}
                   <span className="leading-tight">{METHOD_LABELS[m]}</span>
                 </button>
@@ -380,13 +384,13 @@ const AccessDenied = () => (
 // ─── POS CONTENT ──────────────────────────────────────────────────────────────
 const PosContent = () => {
   const [searchParams] = useSearchParams();
-  const params = useParams();
   const kioskCtx = useContext(PosKioskContext);
+  const params = useParams();
   const empresa_id = kioskCtx?.businessId ?? params.empresa_id ?? '';
   const cajaId = kioskCtx?.cajaId ?? searchParams.get('cajaId');
   const urlToken = kioskCtx?.token ?? searchParams.get('token');
   const { userProfile } = useAuth();
-  const { rates } = useRates();
+  const { rates, customRates, zoherEnabled } = useRates();
 
   const { items, addProductByCode, updateQty, removeItem, totals, rateValue, setRateValue, clearCart, discountType, discountValue, setDiscount, startedAt, loadCart } = useCart();
 
@@ -497,6 +501,9 @@ const PosContent = () => {
             stock: Number(data.stock || 0),
             codigo: data.codigo || d.id,
             marca: data.marca || '',
+            tipoTasa: data.tipoTasa || 'BCV',
+            costoUSD: Number(data.costoUSD || 0),
+            margenDetal: Number(data.margenDetal || 0),
           };
         }));
 
@@ -537,7 +544,7 @@ const PosContent = () => {
     const ok = await addProductByCode(product.codigo, 'detal');
     if (!ok) {
       setError(`Producto no encontrado: ${product.name}`);
-      setTimeout(() => setError(''), 2000);
+      setTimeout(() => setError(''), 3000);
     }
   }, [addProductByCode]);
 
@@ -762,7 +769,7 @@ const PosContent = () => {
               onChange={e => setSearchQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan(); } }}
               placeholder="Buscar por nombre, código o escanear..."
-              className="w-full pl-11 pr-4 py-2.5 bg-slate-100 dark:bg-white/[0.07] border-none rounded-2xl text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-slate-900 focus:bg-white dark:bg-slate-800 transition-all shadow-inner"
+              className="w-full pl-11 pr-4 py-2.5 bg-slate-100 dark:bg-white/[0.07] border-none rounded-2xl text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-slate-900 focus:bg-white dark:bg-slate-900 transition-all shadow-inner"
             />
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
           </div>
@@ -816,10 +823,18 @@ const PosContent = () => {
             <p className="text-sm font-black text-slate-700 dark:text-slate-300">{formatLiveTime(now)}</p>
           </div>
 
-          {/* Rate */}
-          <div className="text-right hidden sm:block">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">BCV</p>
-            <p className="text-sm font-black text-slate-900 dark:text-white">{rates.tasaBCV.toFixed(2)} Bs</p>
+          {/* Rate cards */}
+          <div className="hidden sm:flex items-center gap-1.5">
+            <div className="px-2.5 py-1 rounded-lg border bg-sky-500/10 border-sky-500/30 text-center">
+              <p className="text-[7px] font-black uppercase text-sky-400">BCV</p>
+              <p className="text-[11px] font-black font-mono text-slate-900 dark:text-white">{rates.tasaBCV.toFixed(2)}</p>
+            </div>
+            {zoherEnabled && customRates.filter(r => r.enabled && r.value > 0).map(r => (
+              <div key={r.id} className="px-2.5 py-1 rounded-lg border bg-white/[0.03] border-white/[0.07] text-center">
+                <p className="text-[7px] font-black uppercase text-amber-400">{r.name || r.id}</p>
+                <p className="text-[11px] font-black font-mono text-slate-900 dark:text-white">{r.value.toFixed(2)}</p>
+              </div>
+            ))}
           </div>
 
         </div>
@@ -835,7 +850,7 @@ const PosContent = () => {
                 value={productFilter}
                 onChange={e => setProductFilter(e.target.value)}
                 placeholder="Filtrar productos..."
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 border border-slate-100 dark:border-white/[0.07] focus:ring-2 focus:ring-slate-900 focus:bg-white dark:bg-slate-800 outline-none transition-all"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 border border-slate-100 dark:border-white/[0.07] focus:ring-2 focus:ring-slate-900 focus:bg-white dark:bg-slate-900 outline-none transition-all"
               />
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 h-3.5 w-3.5" />
               {productFilter && (
@@ -849,7 +864,7 @@ const PosContent = () => {
               <div className="flex items-center gap-1">
                 {(['all', 'inStock', 'noStock'] as const).map(f => (
                   <button key={f} onClick={() => setStockFilter(f)}
-                    className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${stockFilter === f ? 'bg-slate-900 dark:bg-white/[0.15] text-white' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06]'}`}>
+                    className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${stockFilter === f ? 'bg-slate-900 dark:bg-white/[0.15] text-white' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
                     {f === 'all' ? 'Todos' : f === 'inStock' ? 'Con Stock' : `Sin Stock (${noStockCount})`}
                   </button>
                 ))}
@@ -867,22 +882,24 @@ const PosContent = () => {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                 {displayProducts.map(product => (
-                  <button key={product.id} onClick={() => handleAddProduct(product)}
-                    className={`group bg-white dark:bg-white/[0.05] p-3 rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between ${product.stock === 0 ? 'border-amber-200 dark:border-amber-500/25' : 'border-slate-100 dark:border-white/[0.1] hover:border-slate-300 dark:hover:border-white/20'}`}>
-                    <div>
-                      <div className="flex justify-between items-start mb-1.5">
-                        <div className="h-7 w-7 rounded-lg bg-slate-50 dark:bg-white/[0.08] text-slate-400 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white transition-colors">
-                          <Package size={12} />
+                    <button key={product.id} onClick={() => handleAddProduct(product)}
+                      className={`group bg-white dark:bg-white/[0.05] p-3 rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between ${product.stock === 0 ? 'border-amber-200 dark:border-amber-500/25' : 'border-slate-100 dark:border-white/[0.1] hover:border-slate-300 dark:hover:border-white/20'}`}>
+                      <div>
+                        <div className="flex justify-between items-start mb-1.5">
+                          <div className="h-7 w-7 rounded-lg bg-slate-50 dark:bg-white/[0.08] text-slate-400 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white transition-colors">
+                            <Package size={12} />
+                          </div>
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${product.stock === 0 ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15' : 'text-slate-500 dark:text-slate-300 bg-slate-50 dark:bg-white/[0.08]'}`}>
+                            {product.stock === 0 ? 'AGOTADO' : product.stock}
+                          </span>
                         </div>
-                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${product.stock === 0 ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15' : 'text-slate-500 dark:text-slate-300 bg-slate-50 dark:bg-white/[0.08]'}`}>
-                          {product.stock === 0 ? 'AGOTADO' : product.stock}
-                        </span>
+                        <p className="text-xs font-black text-slate-700 dark:text-white/90 line-clamp-2 leading-tight">{product.name}</p>
+                        {product.marca && <p className="text-[9px] font-black text-indigo-400 dark:text-indigo-300 uppercase mt-0.5">{product.marca}</p>}
                       </div>
-                      <p className="text-xs font-black text-slate-700 dark:text-white/90 line-clamp-2 leading-tight">{product.name}</p>
-                      {product.marca && <p className="text-[9px] font-black text-indigo-400 dark:text-indigo-300 uppercase mt-0.5">{product.marca}</p>}
-                    </div>
-                    <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">${product.price.toFixed(2)}</p>
-                  </button>
+                      <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                        ${product.price.toFixed(2)}
+                      </p>
+                    </button>
                 ))}
               </div>
             )}
@@ -956,7 +973,7 @@ const PosContent = () => {
           </div>
 
           {/* ── CHECKOUT PANEL ─────────────────────────────────────────────── */}
-          <div className="border-t border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-[#0d1424] p-3 sm:p-5 flex flex-col sm:flex-row gap-3 sm:gap-5">
+          <div className="border-t border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-slate-900 p-3 sm:p-5 flex flex-col sm:flex-row gap-3 sm:gap-5">
 
             {/* Client section */}
             <div className="flex-1 space-y-3 min-w-0">
@@ -1190,7 +1207,7 @@ const PosContent = () => {
       {showHeld && (
         <div className="fixed inset-0 z-[200] flex">
           <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={() => setShowHeld(false)} />
-          <div className="w-full max-w-sm bg-white dark:bg-[#0d1424] h-full flex flex-col shadow-2xl shadow-black/30 animate-in slide-in-from-right duration-300">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 h-full flex flex-col shadow-2xl shadow-black/30 animate-in slide-in-from-right duration-300">
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-white/[0.07]">
               <div>
                 <h2 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2">
@@ -1206,7 +1223,7 @@ const PosContent = () => {
               {heldCarts.length === 0 ? (
                 <p className="text-center text-xs text-slate-400 py-12 font-bold">No hay ventas en espera.</p>
               ) : heldCarts.map(held => (
-                <div key={held.id} className="bg-white dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07] rounded-2xl p-4">
+                <div key={held.id} className="bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-2xl p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-black text-slate-800 dark:text-slate-200">
@@ -1258,7 +1275,6 @@ const PosContent = () => {
 
 // ─── EXPORT ───────────────────────────────────────────────────────────────────
 export default function PosDetal() {
-  const { empresa_id } = useParams();
   const kioskCtx = useContext(PosKioskContext);
 
   // Kiosk mode: KioskGate already provides TenantProvider + CartProvider + PosKioskContext
@@ -1266,14 +1282,6 @@ export default function PosDetal() {
     return <PosContent />;
   }
 
-  if (!empresa_id) {
-    return <div className="h-screen flex items-center justify-center text-slate-400 font-black uppercase tracking-widest text-xs">Error: empresa no identificada.</div>;
-  }
-  return (
-    <TenantProvider tenantId={empresa_id}>
-      <CartProvider>
-        <PosContent />
-      </CartProvider>
-    </TenantProvider>
-  );
+  // Normal mode: TenantGuard already provides TenantProvider, PosLayout provides CartProvider
+  return <CartProvider><PosContent /></CartProvider>;
 }

@@ -531,7 +531,7 @@ export default function AdminPosManager() {
                 <h2 className="text-sm font-black text-slate-900 dark:text-white">Historial de Turnos</h2>
                 <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Todos los cierres de caja registrados · últimos 60</p>
               </div>
-              <div className="flex gap-1.5 p-1 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/[0.06]">
+              <div className="flex gap-1.5 p-1 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-white/[0.06]">
                 {(['all','detal','mayor'] as const).map(f => (
                   <button key={f} onClick={() => setHistoryFilter(f)}
                     className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${historyFilter === f ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm' : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}>
@@ -654,7 +654,7 @@ export default function AdminPosManager() {
                 {/* Card body */}
                 <div className="p-6 space-y-3 flex-1">
                   {/* Cajero */}
-                  <div className="flex items-center justify-between py-2.5 px-4 bg-slate-50 dark:bg-white/[0.04] rounded-xl">
+                  <div className="flex items-center justify-between py-2.5 px-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
                     <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
                       <User size={13} />
                       <span className="text-[10px] font-black uppercase tracking-widest">Cajero</span>
@@ -676,11 +676,11 @@ export default function AdminPosManager() {
 
                   {/* Revenue stats */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-slate-50 dark:bg-white/[0.04] rounded-xl">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
                       <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Facturado (USD)</p>
                       <p className="text-lg font-black text-slate-900 dark:text-white">${(t.totalFacturado || 0).toFixed(2)}</p>
                     </div>
-                    <div className="p-3 bg-slate-50 dark:bg-white/[0.04] rounded-xl">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
                       <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Ventas</p>
                       <p className="text-lg font-black text-slate-900 dark:text-white">{t.movimientos || 0}</p>
                     </div>
@@ -695,7 +695,7 @@ export default function AdminPosManager() {
                       </div>
                       <div className="flex gap-1.5">
                         <button onClick={() => handleCopyUrl(t)}
-                          className="flex-1 flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-white/[0.03] border border-dashed border-slate-200 dark:border-white/[0.08] rounded-xl text-[9px] font-bold text-slate-400 dark:text-slate-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-500/30 transition-all">
+                          className="flex-1 flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-white/[0.08] rounded-xl text-[9px] font-bold text-slate-400 dark:text-slate-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-500/30 transition-all">
                           <span className="font-mono text-[8px] truncate flex-1 mr-2 text-left">
                             Copiar enlace kiosco
                           </span>
@@ -858,7 +858,7 @@ export default function AdminPosManager() {
                 <div className="grid grid-cols-2 gap-3">
                   {(['detal', 'mayor'] as const).map(tipo => (
                     <button key={tipo} type="button" onClick={() => setNewTerminal({ ...newTerminal, tipo })}
-                      className={`py-5 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${newTerminal.tipo === tipo ? 'border-slate-900 dark:border-white bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xl' : 'border-slate-100 dark:border-white/10 bg-slate-50 dark:bg-white/[0.04] text-slate-400 dark:text-slate-500 hover:border-slate-200 dark:hover:border-white/20'}`}>
+                      className={`py-5 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${newTerminal.tipo === tipo ? 'border-slate-900 dark:border-white bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xl' : 'border-slate-100 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 hover:border-slate-200 dark:hover:border-white/20'}`}>
                       {tipo === 'detal' ? <Store size={22} /> : <Factory size={22} />}
                       <span className="text-[9px] font-black uppercase tracking-widest">{tipo === 'detal' ? 'Detal' : 'Al Mayor'}</span>
                     </button>
@@ -896,7 +896,7 @@ export default function AdminPosManager() {
       {/* ══ ARQUEO DETAIL MODAL ════════════════════════════════════════════════ */}
       {selectedArqueo && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" onClick={() => setSelectedArqueo(null)}>
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.08] shadow-2xl shadow-black/40" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/[0.08] shadow-2xl shadow-black/40" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/[0.07]">
               <div className="flex items-center gap-3">
@@ -915,11 +915,11 @@ export default function AdminPosManager() {
             <div className="p-6 space-y-5">
               {/* Times */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07]">
                   <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30 mb-1">Apertura</p>
                   <p className="text-xs font-black text-slate-900 dark:text-white">{selectedArqueo.apertura ? new Date(selectedArqueo.apertura).toLocaleString('es-VE') : '—'}</p>
                 </div>
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07]">
                   <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30 mb-1">Cierre</p>
                   <p className="text-xs font-black text-slate-900 dark:text-white">{selectedArqueo.cierreAt ? new Date(selectedArqueo.cierreAt).toLocaleString('es-VE') : '—'}</p>
                 </div>
@@ -954,16 +954,16 @@ export default function AdminPosManager() {
                 </div>
               )}
               {/* Cash counted */}
-              <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+              <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07]">
                 <span className="text-xs text-slate-500 dark:text-slate-400">Efectivo esperado</span>
                 <span className="text-sm font-black text-slate-900 dark:text-white">${(selectedArqueo.expectedCashUsd||0).toFixed(2)}</span>
               </div>
-              <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+              <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07]">
                 <span className="text-xs text-slate-500 dark:text-slate-400">Efectivo contado USD</span>
                 <span className="text-sm font-black text-slate-900 dark:text-white">${(selectedArqueo.totalCountedUsd||0).toFixed(2)}</span>
               </div>
               {selectedArqueo.totalCountedBs > 0 && (
-                <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.07]">
+                <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07]">
                   <span className="text-xs text-slate-500 dark:text-slate-400">Efectivo contado Bs</span>
                   <span className="text-sm font-black text-slate-900 dark:text-white">Bs.{(selectedArqueo.totalCountedBs||0).toFixed(2)}</span>
                 </div>
@@ -976,7 +976,7 @@ export default function AdminPosManager() {
               )}
               {/* ── MOVIMIENTOS INDIVIDUALES DEL TURNO ── */}
               <div className="rounded-xl border border-slate-100 dark:border-white/[0.07] overflow-hidden">
-                <div className="px-4 py-3 bg-slate-50 dark:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between">
+                <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Receipt size={13} className="text-indigo-500" />
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Movimientos del Turno</p>
@@ -1035,18 +1035,18 @@ export default function AdminPosManager() {
                                   <p className="font-bold text-indigo-400 mb-0.5">Tasa usada</p>
                                   <p className="font-black text-indigo-600 dark:text-indigo-300">{mv.rateUsed ? `${mv.rateUsed.toFixed(2)} Bs` : '—'}</p>
                                 </div>
-                                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-lg p-2">
+                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2">
                                   <p className="font-bold text-slate-400 mb-0.5">Vendedor</p>
                                   <p className="font-black text-slate-700 dark:text-slate-300 truncate">{mv.vendedorNombre || '—'}</p>
                                 </div>
-                                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-lg p-2">
+                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2">
                                   <p className="font-bold text-slate-400 mb-0.5">Referencia</p>
                                   <p className="font-black text-slate-700 dark:text-slate-300 truncate">{mv.referencia || '—'}</p>
                                 </div>
                               </div>
 
                               {/* Financial breakdown */}
-                              <div className="bg-slate-50 dark:bg-white/[0.03] rounded-lg p-2.5 space-y-1 text-[10px]">
+                              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2.5 space-y-1 text-[10px]">
                                 {mv.subtotalUSD != null && (
                                   <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-black text-slate-700 dark:text-slate-300">${mv.subtotalUSD.toFixed(2)}</span></div>
                                 )}
@@ -1078,7 +1078,7 @@ export default function AdminPosManager() {
                                 <div className="rounded-lg overflow-hidden border border-slate-100 dark:border-white/[0.06]">
                                   <table className="w-full text-[9px]">
                                     <thead>
-                                      <tr className="bg-slate-50 dark:bg-white/[0.03]">
+                                      <tr className="bg-slate-50 dark:bg-slate-800/50">
                                         <th className="px-2 py-1.5 text-left font-black text-slate-400 uppercase">Producto</th>
                                         <th className="px-2 py-1.5 text-center font-black text-slate-400 uppercase">Cant</th>
                                         <th className="px-2 py-1.5 text-right font-black text-slate-400 uppercase">P/U</th>
@@ -1152,13 +1152,13 @@ export default function AdminPosManager() {
 
               {/* Summary row */}
               <div className="grid grid-cols-4 gap-3">
-                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3">
+                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
                   <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Estado</p>
                   <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${selectedAudit.estado === 'abierta' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' : 'bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400'}`}>
                     {selectedAudit.estado}
                   </span>
                 </div>
-                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3">
+                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
                   <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Cajero</p>
                   <p className="text-xs font-black text-slate-700 dark:text-slate-300 truncate">{selectedAudit.cajeroNombre}</p>
                 </div>
@@ -1166,7 +1166,7 @@ export default function AdminPosManager() {
                   <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Total (USD)</p>
                   <p className="text-sm font-black text-emerald-700 dark:text-emerald-400">${auditTotalUsd.toFixed(2)}</p>
                 </div>
-                <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3">
+                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
                   <p className="text-[9px] font-black uppercase text-slate-300 dark:text-slate-600 mb-1">Transacciones</p>
                   <p className="text-sm font-black text-slate-700 dark:text-slate-300">{auditMovements.length}</p>
                 </div>
@@ -1200,7 +1200,7 @@ export default function AdminPosManager() {
                 const ts = formatAuditTimestamp(m.createdAt);
                 const amtUsd = Number(m.amountInUSD || m.amount || 0);
                 return (
-                  <div key={m.id} className="p-4 rounded-2xl border border-slate-100 dark:border-white/[0.06] bg-white dark:bg-white/[0.03] shadow-sm hover:shadow-md dark:hover:shadow-black/20 transition-all">
+                  <div key={m.id} className="p-4 rounded-2xl border border-slate-100 dark:border-white/[0.06] bg-white dark:bg-slate-800/50 shadow-sm hover:shadow-md dark:hover:shadow-black/20 transition-all">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex items-center gap-3">
                         <div className="h-9 w-9 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-black text-xs shrink-0">

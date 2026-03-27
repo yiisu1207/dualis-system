@@ -28,6 +28,7 @@ import {
   Star,
   Activity,
   Clock,
+  Info,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -41,6 +42,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
+import { isDynamicProduct, computeDynamicPrices, findCustomRate } from '../../utils/dynamicPricing';
 
 type Period = 'today' | '7d' | '30d';
 
@@ -87,7 +89,7 @@ function fmtDayLabel(dateStr: string, period: Period): string {
 const AreaTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-white/10 rounded-2xl shadow-xl dark:shadow-black/40 p-3 text-xs">
+    <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/10 rounded-2xl shadow-xl dark:shadow-black/40 p-3 text-xs">
       <p className="font-black text-slate-400 dark:text-slate-500 mb-2 uppercase tracking-widest text-[10px]">{label}</p>
       {payload.map((p: any) => (
         <div key={p.dataKey} className="flex items-center gap-2 mb-1 last:mb-0">
@@ -117,7 +119,7 @@ const KpiCard: React.FC<KpiCardProps> = ({
 }) => (
   <div
     onClick={onClick}
-    className={`bg-white/90 dark:bg-white/[0.04] backdrop-blur-sm border border-slate-100/80 dark:border-white/[0.07] rounded-2xl md:rounded-3xl p-3 md:p-5 flex flex-col gap-2 md:gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-50/60 dark:hover:shadow-black/30 hover:border-indigo-100/60 dark:hover:border-white/[0.14] ${onClick ? 'cursor-pointer' : ''}`}
+    className={`bg-white/90 dark:bg-slate-800/50 backdrop-blur-sm border border-slate-100/80 dark:border-white/[0.07] rounded-2xl md:rounded-3xl p-3 md:p-5 flex flex-col gap-2 md:gap-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-50/60 dark:hover:shadow-black/30 hover:border-indigo-100/60 dark:hover:border-white/[0.14] ${onClick ? 'cursor-pointer' : ''}`}
   >
     <div className="flex items-start justify-between gap-2">
       <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl md:rounded-2xl ${iconBg} flex items-center justify-center shrink-0 [&>svg]:w-[14px] [&>svg]:h-[14px] md:[&>svg]:w-[18px] md:[&>svg]:h-[18px]`}>
@@ -152,7 +154,7 @@ export default function AdminDashboard({
   onTabChange?: (tab: string) => void;
 }) {
   const { tenantId } = useTenant();
-  const { rates } = useRates();
+  const { rates, customRates, zoherEnabled } = useRates();
   const { userProfile } = useAuth();
 
   const [movements, setMovements] = useState<Movement[]>([]);
@@ -326,9 +328,22 @@ export default function AdminDashboard({
     const grouped: Record<string, number> = {};
     products.forEach(p => {
       const cat = (p as any).categoria || (p as any).category || 'Sin Categoría';
-      const costo = (p as any).costoUSD || (p as any).costPrice || (p as any).costo || 0;
+      const tipoTasa = (p as any).tipoTasa || 'BCV';
       const stock = (p as any).stock || (p as any).quantity || 0;
-      grouped[cat] = (grouped[cat] || 0) + (costo * stock);
+      let valorUnit = 0;
+      if (isDynamicProduct(tipoTasa) && zoherEnabled) {
+        const cr = findCustomRate(customRates, tipoTasa);
+        const costoUSD = (p as any).costoUSD || 0;
+        const margenMayor = (p as any).margenMayor || 0;
+        if (cr && costoUSD > 0) {
+          valorUnit = costoUSD * (1 + margenMayor / 100);
+        } else {
+          valorUnit = costoUSD || (p as any).costPrice || (p as any).costo || 0;
+        }
+      } else {
+        valorUnit = (p as any).costoUSD || (p as any).costPrice || (p as any).costo || 0;
+      }
+      grouped[cat] = (grouped[cat] || 0) + (valorUnit * stock);
     });
     return Object.entries(grouped)
       .map(([name, value], i) => ({
@@ -338,7 +353,7 @@ export default function AdminDashboard({
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 7);
-  }, [products]);
+  }, [products, customRates, zoherEnabled]);
 
   const totalInversion = useMemo(
     () => inversionPorCategoria.reduce((s, c) => s + c.value, 0),
@@ -481,8 +496,14 @@ export default function AdminDashboard({
       </div>
 
       {/* ── SECTION LABEL ── */}
-      <div className="font-mono text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-600 -mb-4">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-600 -mb-4 flex items-center gap-2">
         Métricas · {periodLabel}
+        <span className="relative group cursor-help">
+          <Info size={11} className="text-slate-400 dark:text-slate-600" />
+          <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-52 px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-900 text-[10px] text-white/80 font-medium shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 text-center leading-relaxed">
+            Resumen financiero del período seleccionado. Haz clic en cualquier tarjeta para ir al detalle.
+          </span>
+        </span>
       </div>
 
       {/* ── KPI GRID (6 tarjetas) ── */}
@@ -561,7 +582,7 @@ export default function AdminDashboard({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
         {/* Area Chart */}
-        <div className="lg:col-span-8 bg-white dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex flex-col">
+        <div className="lg:col-span-8 bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex flex-col">
           <div className="px-6 py-5 border-b border-slate-50 dark:border-white/[0.05] flex items-center justify-between">
             <div>
               <h3 className="font-syne font-bold text-slate-900 dark:text-white text-[15px]">Facturado vs Cobrado</h3>
@@ -651,7 +672,7 @@ export default function AdminDashboard({
         <div className="lg:col-span-4 flex flex-col gap-5">
 
           {/* Pie chart */}
-          <div className="bg-white dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex-1">
+          <div className="bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex-1">
             <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.05]">
               <h3 className="font-syne font-bold text-slate-900 dark:text-white text-[14px]">Distribución</h3>
               <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{periodLabel} · Por tipo</p>
@@ -708,8 +729,8 @@ export default function AdminDashboard({
             </div>
           </div>
 
-          {/* Exchange rates */}
-          <div className="bg-white dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.07] rounded-3xl p-5">
+          {/* Exchange rates — dynamic custom rates */}
+          <div className="bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-3xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-syne font-bold text-slate-900 dark:text-white text-[13px]">Tasas de Cambio</h3>
               <div className="flex items-center gap-1.5 text-[9px] font-black text-emerald-500 uppercase tracking-widest">
@@ -717,26 +738,29 @@ export default function AdminDashboard({
               </div>
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-white/[0.04] rounded-2xl">
+              <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
                 <div className="flex items-center gap-2">
-                  <span className="text-base">🇺🇸</span>
+                  <span className="text-base">{'\u{1F1FA}\u{1F1F8}'}</span>
                   <span className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">BCV</span>
                 </div>
                 <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-[13px]">
                   Bs. {rates.tasaBCV.toFixed(2)}
                 </span>
               </div>
-              {rates.tasaGrupo > 0 && (
-                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-white/[0.04] rounded-2xl">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">💹</span>
-                    <span className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Grupo</span>
+              {customRates.filter(r => r.enabled && r.value > 0).map((cr, i) => {
+                const colors = ['violet', 'emerald', 'amber'];
+                const c = colors[i % colors.length];
+                return (
+                  <div key={cr.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[11px] font-black text-${c}-600 dark:text-${c}-400 uppercase tracking-widest`}>{cr.name}</span>
+                    </div>
+                    <span className={`font-mono font-bold text-${c}-600 dark:text-${c}-400 text-[13px]`}>
+                      Bs. {cr.value.toFixed(2)}
+                    </span>
                   </div>
-                  <span className="font-mono font-bold text-violet-600 dark:text-violet-400 text-[13px]">
-                    Bs. {rates.tasaGrupo.toFixed(2)}
-                  </span>
-                </div>
-              )}
+                );
+              })}
             </div>
             <button
               onClick={() => onTabChange?.('tasas')}
@@ -752,7 +776,7 @@ export default function AdminDashboard({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pb-4">
 
         {/* Recent transactions */}
-        <div className="lg:col-span-7 bg-white dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex flex-col">
+        <div className="lg:col-span-7 bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex flex-col">
           <div className="px-6 py-5 border-b border-slate-50 dark:border-white/[0.05] flex items-center justify-between">
             <div>
               <h3 className="font-syne font-bold text-slate-900 dark:text-white text-[14px]">Últimas Transacciones</h3>
@@ -814,7 +838,7 @@ export default function AdminDashboard({
         <div className="lg:col-span-5 flex flex-col gap-5">
 
           {/* Quick access grid */}
-          <div className="bg-white dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.07] rounded-3xl p-5">
+          <div className="bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-3xl p-5">
             <div className="font-mono text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-600 mb-4">
               Acceso Rápido
             </div>
@@ -840,7 +864,7 @@ export default function AdminDashboard({
           </div>
 
           {/* Stock crítico */}
-          <div className="bg-white dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex-1">
+          <div className="bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex-1">
             <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.05] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <h3 className="font-syne font-bold text-slate-900 dark:text-white text-[13px]">Stock Crítico</h3>
@@ -904,15 +928,21 @@ export default function AdminDashboard({
       <div className="font-mono text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-600 mb-4 flex items-center gap-2">
         <Activity size={11} /> Inteligencia de Negocio · {periodLabel}
         <span className="ml-2 px-2 py-0.5 bg-violet-100 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-lg text-[9px] font-black">BI</span>
+        <span className="relative group cursor-help ml-1">
+          <Info size={11} className="text-slate-400 dark:text-slate-600" />
+          <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-60 px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-900 text-[10px] text-white/80 font-medium shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 text-center leading-relaxed">
+            Analisis avanzado: capital invertido por categoria, producto mas vendido, salud del inventario y alertas predictivas de reposicion.
+          </span>
+        </span>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pb-8">
 
         {/* Inversión por Categoría */}
-        <div className="lg:col-span-5 bg-white dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden">
+        <div className="lg:col-span-5 bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden">
           <div className="px-6 py-5 border-b border-slate-50 dark:border-white/[0.05] flex items-center justify-between">
             <div>
               <h3 className="font-syne font-bold text-slate-900 dark:text-white text-[14px]">Inversión por Categoría</h3>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Capital en stock · {fmtUSD(totalInversion)}</p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Capital en stock · {fmtUSD(totalInversion)}{zoherEnabled && customRates.length > 0 ? ' · Incluye precios dinámicos' : ''}</p>
             </div>
             <button
               onClick={() => onTabChange?.('inventario')}
@@ -1006,7 +1036,7 @@ export default function AdminDashboard({
             </div>
 
             {/* Salud del Inventario */}
-            <div className="bg-white dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.07] rounded-3xl p-5">
+            <div className="bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-3xl p-5">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                   <Activity size={14} />
@@ -1042,7 +1072,7 @@ export default function AdminDashboard({
           </div>
 
           {/* Alerta Predictiva de Reposición */}
-          <div className="bg-white dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex-1">
+          <div className="bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.07] rounded-3xl overflow-hidden flex-1">
             <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.05] flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400 flex items-center justify-center">
@@ -1070,7 +1100,7 @@ export default function AdminDashboard({
                     <div key={i} className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${
                       item.urgente
                         ? 'bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20'
-                        : 'bg-slate-50 dark:bg-white/[0.03]'
+                        : 'bg-slate-50 dark:bg-slate-800/50'
                     }`}>
                       <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center shrink-0 ${
                         item.urgente

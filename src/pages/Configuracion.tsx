@@ -57,13 +57,16 @@ import {
   Trash2,
   UserPlus,
   CheckCircle2,
+  Database,
+  AlertTriangle,
 } from 'lucide-react';
 import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { acceptRequest, rejectRequest } from '../firebase/api';
+import { seedTestData } from '../utils/seedTestData';
 
-type SectionType = 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones';
+type SectionType = 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'devtest';
 
 interface ConfigData {
   companyName: string;
@@ -148,6 +151,10 @@ const Configuracion: React.FC = () => {
   const [uiPrefs, setUiPrefs] = useState<UiPrefs>(DEFAULT_UI_PREFS);
   const [savingPrefs, setSavingPrefs] = useState(false);
 
+  // Seed test data
+  const [seedProgress, setSeedProgress] = useState<{ msg: string; pct: number } | null>(null);
+  const [seedResult, setSeedResult] = useState<{ products: number; customers: number; suppliers: number; movements: number; terminals: number } | null>(null);
+
   // Invite modal
   const [inviteModal, setInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -196,6 +203,7 @@ const Configuracion: React.FC = () => {
   });
 
   const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'owner';
+  const isOwner = userProfile?.role === 'owner';
   const businessId = userProfile?.businessId;
 
   useEffect(() => {
@@ -487,6 +495,7 @@ const Configuracion: React.FC = () => {
     { id: 'seguridad',  label: 'Seguridad',              icon: ShieldCheck },
     { id: 'suscripcion',label: 'Suscripción',            icon: CreditCard },
     { id: 'apariencia', label: 'Apariencia',             icon: Palette },
+    { id: 'devtest',    label: 'Dev / Test',              icon: Database },
   ];
 
   const inputClasses =
@@ -740,7 +749,7 @@ const Configuracion: React.FC = () => {
                     <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Gestión de Equipo</h3>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mt-0.5">Control de Roles y Autorizaciones</p>
                   </div>
-                  {isAdmin && (
+                  {isOwner && (
                     <button
                       onClick={() => setInviteModal(true)}
                       className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md shadow-emerald-500/25 hover:shadow-lg hover:shadow-emerald-500/30 transition-all active:scale-95"
@@ -1199,8 +1208,9 @@ const Configuracion: React.FC = () => {
                   <h4 className="text-base font-black text-slate-900 dark:text-white mb-1 tracking-tight">Acceso a la Organización</h4>
                   <p className="text-xs text-slate-400 dark:text-white/30 font-medium mb-5">Usa este identificador para conectar sucursales o invitar personal.</p>
                   <div className="bg-slate-50 dark:bg-white/[0.03] border border-dashed border-slate-200 dark:border-white/[0.08] rounded-2xl p-6 text-center">
-                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-white/30 mb-3">CÓDIGO DE ESPACIO ÚNICO</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-white/30 mb-3">IDENTIFICADOR DE EMPRESA</p>
                     <p className="text-xl font-mono font-black text-slate-900 dark:text-white break-all select-all tracking-wider">{businessId}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-white/20 mt-2">Identificador interno — tus usuarios ya no lo necesitan para iniciar sesión.</p>
                     <button
                       onClick={() => handleCopyToClipboard(businessId || '')}
                       className="mt-4 flex items-center gap-2 mx-auto px-5 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-white/[0.10] hover:text-indigo-600 dark:hover:text-white transition-all active:scale-95"
@@ -1473,6 +1483,109 @@ const Configuracion: React.FC = () => {
                   </button>
                 </div>
 
+              </div>
+            )}
+
+            {/* ── SECTION: DEV / TEST ── */}
+            {activeSection === 'devtest' && (
+              <div className="space-y-6 animate-in fade-in">
+                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 space-y-6">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800 dark:text-white">Datos de Prueba</h3>
+                    <p className="text-xs text-slate-400 dark:text-white/30 mt-1">
+                      Carga datos ficticios para probar todas las funciones: productos, clientes, proveedores, ventas, gastos, terminales, arqueos.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-50 dark:bg-amber-500/[0.08] p-4 flex items-start gap-3">
+                    <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-800 dark:text-amber-400">Advertencia</p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400/70 mt-1">
+                        Esto creará datos ficticios en tu negocio. Ideal para testing y demos.
+                      </p>
+                    </div>
+                  </div>
+
+                  {seedResult && (
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/[0.08] p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={16} className="text-emerald-500" />
+                        <p className="text-sm font-black text-emerald-700 dark:text-emerald-400">Datos cargados exitosamente</p>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-2">
+                        {[
+                          { label: 'Productos', count: seedResult.products },
+                          { label: 'Clientes', count: seedResult.customers },
+                          { label: 'Proveedores', count: seedResult.suppliers },
+                          { label: 'Movimientos', count: seedResult.movements },
+                          { label: 'Terminales', count: seedResult.terminals },
+                        ].map(s => (
+                          <div key={s.label} className="text-center p-2 rounded-lg bg-emerald-100 dark:bg-emerald-500/10">
+                            <p className="text-lg font-black text-emerald-700 dark:text-emerald-400">{s.count}</p>
+                            <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">{s.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {seedProgress && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 size={14} className="text-indigo-500 animate-spin" />
+                        <p className="text-xs font-bold text-slate-600 dark:text-slate-300">{seedProgress.msg}</p>
+                      </div>
+                      <div className="w-full h-2 bg-slate-100 dark:bg-white/[0.07] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-500"
+                          style={{ width: `${seedProgress.pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={async () => {
+                      const bid = userProfile?.businessId;
+                      if (!bid) { toast.error('No se encontró el businessId'); return; }
+                      const uid = userProfile?.uid || 'test-owner';
+                      setSeedResult(null);
+                      setSeedProgress({ msg: 'Iniciando...', pct: 0 });
+                      try {
+                        const result = await seedTestData(bid, uid, (msg, pct) => {
+                          setSeedProgress({ msg, pct });
+                        });
+                        setSeedResult(result);
+                        setSeedProgress(null);
+                        toast.success(`Datos cargados: ${result.products} productos, ${result.movements} movimientos`);
+                      } catch (e: any) {
+                        console.error('[Seed]', e);
+                        toast.error('Error al cargar datos: ' + (e.message || 'Error desconocido'));
+                        setSeedProgress(null);
+                      }
+                    }}
+                    disabled={!!seedProgress}
+                    className="flex items-center gap-2 px-8 py-3 rounded-xl text-sm font-black text-white transition-all hover:scale-105 disabled:opacity-40 disabled:hover:scale-100 bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-500/25"
+                  >
+                    {seedProgress ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
+                    Cargar datos de prueba
+                  </button>
+
+                  <div className="border-t border-slate-200 dark:border-white/[0.07] pt-4">
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-white/25 uppercase tracking-widest mb-2">Lo que se creará:</p>
+                    <ul className="text-xs text-slate-500 dark:text-white/40 space-y-1 list-disc list-inside">
+                      <li>30 productos con precios, márgenes, stock y categorías variadas</li>
+                      <li>8 clientes con datos completos y límites de crédito</li>
+                      <li>5 proveedores con RIF y categoría</li>
+                      <li>120 ventas distribuidas en los últimos 30 días</li>
+                      <li>15 abonos de clientes (pagos parciales)</li>
+                      <li>20 gastos/compras (CxP) con categorías variadas</li>
+                      <li>3 terminales POS (2 detal + 1 mayor)</li>
+                      <li>5 arqueos históricos con conteo USD/Bs</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             )}
 

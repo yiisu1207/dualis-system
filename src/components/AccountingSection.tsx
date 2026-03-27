@@ -12,13 +12,18 @@ import {
   AccountType,
   PaymentCurrency,
 } from '../../types';
+import { useAuth } from '../context/AuthContext';
 import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
-import { AlertTriangle, BarChart3, Clock, Copy, Receipt } from 'lucide-react';
+import { AlertTriangle, BarChart3, Clock, Copy, Receipt, Info } from 'lucide-react';
 import { buildClientStatus } from '../utils/clientStatus';
 import ClientStatusBadge from './ClientStatusBadge';
 import WhatsAppTemplateModal, { TemplateContext } from './WhatsAppTemplateModal';
 import { DEFAULT_CONFIG } from '../utils/configDefaults';
 import { useToast } from '../context/ToastContext';
+import { useRates } from '../context/RatesContext';
+import { useSubscription } from '../hooks/useSubscription';
+import CxCClientProfile from './cxc/CxCClientProfile';
+import CxCLedgerTable from './cxc/CxCLedgerTable';
 
 interface AccountingSectionProps {
   movements: Movement[];
@@ -34,7 +39,7 @@ interface AccountingSectionProps {
   openEntityId?: string | null;
 }
 
-type ViewMode = 'DIRECTORY' | 'DETAIL';
+type ViewMode = 'DIRECTORY' | 'PROFILE' | 'DETAIL';
 type TabFilter = 'ALL' | AccountType;
 type EntityTypeFilter = 'ALL' | 'CLIENTE' | 'PROVEEDOR' | 'NÓMINA' | 'CATALOGO';
 
@@ -52,6 +57,11 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
   openEntityId,
 }) => {
   const { success, error, warning, info } = useToast();
+  const { user } = useAuth();
+  const { customRates } = useRates();
+  const derivedBusinessId = movements[0]?.businessId || '';
+  const { canAccess } = useSubscription(derivedBusinessId);
+  const hasDynamicPricing = canAccess('precios_dinamicos');
   // --- STATE ---
   const [viewMode, setViewMode] = useState<ViewMode>('DIRECTORY');
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
@@ -78,6 +88,15 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       ? config.messageTemplates
       : DEFAULT_CONFIG.messageTemplates || [];
 
+  // Abono directo modal
+  const [showAbonoModal, setShowAbonoModal] = useState(false);
+  const [abonoAmount, setAbonoAmount] = useState('');
+  const [abonoAccount, setAbonoAccount] = useState<AccountType>(AccountType.BCV);
+  const [abonoMethod, setAbonoMethod] = useState('Transferencia');
+  const [abonoRef, setAbonoRef] = useState('');
+  const [abonoNote, setAbonoNote] = useState('');
+  const [abonoLoading, setAbonoLoading] = useState(false);
+
   useEffect(() => {
     if (entityFilter !== 'CLIENTE') {
       setReceivableOnly(false);
@@ -88,8 +107,9 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
   useEffect(() => {
     if (!openEntityId) return;
     setSelectedEntityId(openEntityId);
-    setViewMode('DETAIL');
-  }, [openEntityId]);
+    const isClient = customers.some((c) => c.id === openEntityId);
+    setViewMode(isClient ? 'PROFILE' : 'DETAIL');
+  }, [openEntityId, customers]);
 
   useEffect(() => {
     if (viewMode !== 'DETAIL' || !selectedEntityId) return;
@@ -385,7 +405,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       case AccountType.DIVISA:
         return { border: 'border-emerald-700', bg: 'bg-emerald-50', text: 'text-emerald-800' };
       default:
-        return { border: 'border-slate-800', bg: 'bg-slate-50 dark:bg-white/[0.03]', text: 'text-slate-800 dark:text-slate-200' };
+        return { border: 'border-slate-800', bg: 'bg-slate-50 dark:bg-slate-800/50', text: 'text-slate-800 dark:text-slate-200' };
     }
   };
   const contextColors = getContextColors(activeTab);
@@ -1232,7 +1252,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           <div className="app-panel p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div
-                className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4 cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20"
+                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4 cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20"
                 onClick={() => {
                   if (onNavigateToCustomers) {
                     onNavigateToCustomers();
@@ -1257,7 +1277,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                 </div>
               </div>
               <div
-                className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4 cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20"
+                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4 cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20"
                 onClick={() => {
                   if (onNavigateToSuppliers) {
                     onNavigateToSuppliers();
@@ -1277,7 +1297,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                   </div>
                 </div>
               </div>
-              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 flex items-center justify-center text-lg">
                   ⚖️
                 </div>
@@ -1297,7 +1317,14 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           <div className="app-panel p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="app-section-header">
               <p className="app-subtitle">Saldos por Entidad</p>
-              <h2 className="app-title">Directorio Contable</h2>
+              <h2 className="app-title flex items-center gap-2">Directorio Contable
+                <span className="relative group cursor-help">
+                  <Info size={13} className="text-slate-400 dark:text-slate-600" />
+                  <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-900 text-[10px] text-white/80 font-medium shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 text-center leading-relaxed">
+                    Saldos de clientes y proveedores. Los movimientos se registran automaticamente desde ventas POS y pagos.
+                  </span>
+                </span>
+              </h2>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -1326,23 +1353,23 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {(
-                  [
-                    { id: 'ALL', label: 'Todos', color: 'bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-slate-400' },
-                    { id: AccountType.BCV, label: 'BCV', color: 'bg-blue-50 text-blue-700' },
-                    { id: AccountType.GRUPO, label: 'Grupo', color: 'bg-orange-50 text-orange-700' },
-                    { id: AccountType.DIVISA, label: 'Divisa', color: 'bg-emerald-50 text-emerald-700' },
-                  ] as const
-                ).map((chip) => {
+                {[
+                  { id: 'ALL', label: 'Todos', color: 'bg-slate-100 dark:bg-white/[0.07] text-slate-600 dark:text-slate-400' },
+                  { id: AccountType.BCV, label: 'BCV', color: 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400' },
+                  ...(hasDynamicPricing ? customRates.filter(r => r.enabled).map((r, i) => ({
+                    id: r.id as string,
+                    label: r.name,
+                    color: i % 2 === 0 ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400' : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+                  })) : []),
+                ].map((chip) => {
                   const isActive = receivableAccountFilter === chip.id;
-                  const value =
-                    chip.id === AccountType.BCV
-                      ? formatCurrency(summaryTotals.bcvReceivable * (rates.bcv || 1), 'Bs')
-                      : chip.id === AccountType.GRUPO
-                      ? formatCurrency(summaryTotals.grupoReceivable, '$')
-                      : chip.id === AccountType.DIVISA
-                      ? formatCurrency(summaryTotals.divisaReceivable, '$')
-                      : formatCurrency(summaryTotals.receivable, '$');
+                  const chipValue = chip.id === 'ALL'
+                    ? formatCurrency(summaryTotals.receivable, '$')
+                    : chip.id === AccountType.BCV
+                    ? formatCurrency(summaryTotals.bcvReceivable * (rates.bcv || 1), 'Bs')
+                    : formatCurrency(
+                        (summaryTotals as any)[`${chip.id.toLowerCase()}Receivable`] || 0, '$'
+                      );
                   return (
                     <button
                       key={chip.id}
@@ -1353,11 +1380,11 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                         setReceivableAccountFilter(chip.id as 'ALL' | AccountType);
                       }}
                       className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${chip.color} ${
-                        isActive ? 'ring-2 ring-slate-300' : 'hover:opacity-80'
+                        isActive ? 'ring-2 ring-slate-300 dark:ring-white/30' : 'hover:opacity-80'
                       }`}
                       title="Filtrar por cuenta"
                     >
-                      {chip.label} {value}
+                      {chip.label} {chipValue}
                     </button>
                   );
                 })}
@@ -1377,7 +1404,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               <select
                 value={sortByBalance}
                 onChange={(e) => setSortByBalance(e.target.value as 'none' | 'debt-desc')}
-                className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-[10px] font-black uppercase text-slate-600 dark:text-slate-300"
+                className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-[10px] font-black uppercase text-slate-600 dark:text-slate-300"
               >
                 <option value="none">Orden: Default</option>
                 <option value="debt-desc">Mayor Deuda</option>
@@ -1388,18 +1415,19 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           <div className="app-panel overflow-hidden flex-1">
             <div className="overflow-y-auto custom-scroll h-full">
               <table className="w-full text-sm text-left">
-                <thead className="bg-slate-50 dark:bg-white/[0.03] text-slate-400 dark:text-slate-500 text-[10px] uppercase font-black tracking-widest sticky top-0 z-10 border-b border-slate-200 dark:border-white/10">
+                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 text-[10px] uppercase font-black tracking-widest sticky top-0 z-10 border-b border-slate-200 dark:border-white/10">
                   <tr>
                     <th className="px-8 py-4">Tipo</th>
                     <th className="px-8 py-4">Entidad / Nombre</th>
                     <th className="px-8 py-4">Saldos por Cuenta</th>
+                    <th className="px-8 py-4 text-center hidden lg:table-cell">Crédito</th>
                     <th className="px-8 py-4 text-center">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-white/[0.07]">
                   {directoryData.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="py-20 text-center text-slate-400 italic">
+                      <td colSpan={5} className="py-20 text-center text-slate-400 italic">
                         No hay registros para este filtro.
                       </td>
                     </tr>
@@ -1428,7 +1456,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                           className="hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors group cursor-pointer"
                           onClick={() => {
                             setSelectedEntityId(entity.id);
-                            setViewMode('DETAIL');
+                            setViewMode(entity.type === 'CLIENTE' ? 'PROFILE' : 'DETAIL');
                           }}
                         >
                           <td className="px-8 py-4">
@@ -1502,6 +1530,24 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                               )}
                             </div>
                           </td>
+                          <td className="px-8 py-4 text-center hidden lg:table-cell">
+                            {entity.type === 'CLIENTE' && (() => {
+                              const cust = customers.find(c => c.id === entity.id);
+                              const limit = cust?.creditLimit ?? 0;
+                              if (limit <= 0) return <span className="text-[10px] text-slate-300 dark:text-slate-600">—</span>;
+                              const pct = entity.globalBalance > 0 ? (entity.globalBalance / limit) * 100 : 0;
+                              return (
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-[10px] font-black text-slate-600 dark:text-slate-300">${limit.toFixed(0)}</span>
+                                  <div className="w-16 h-1.5 bg-slate-100 dark:bg-white/[0.07] rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full transition-all ${pct > 90 ? 'bg-rose-500' : pct > 60 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, pct)}%` }} />
+                                  </div>
+                                  <span className={`text-[8px] font-black ${pct > 90 ? 'text-rose-500' : pct > 60 ? 'text-amber-500' : 'text-emerald-500'}`}>{pct.toFixed(0)}%</span>
+                                </div>
+                              );
+                            })()}
+                            {entity.type !== 'CLIENTE' && <span className="text-[10px] text-slate-300 dark:text-slate-600">—</span>}
+                          </td>
                           <td className="px-8 py-4 text-center">
                             <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
@@ -1531,7 +1577,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   setSelectedEntityId(entity.id);
-                                  setViewMode('DETAIL');
+                                  setViewMode(entity.type === 'CLIENTE' ? 'PROFILE' : 'DETAIL');
                                 }}
                                 className="w-9 h-9 rounded-full bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-600 hover:text-slate-900 dark:text-white transition-all shadow-sm dark:shadow-black/20"
                                 title="Ver Expediente"
@@ -1551,6 +1597,28 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
         </>
       )}
 
+      {/* LEVEL 1.5: CLIENT PROFILE VIEW */}
+      {viewMode === 'PROFILE' && selectedEntityId && currentEntityInfo && (
+        <CxCClientProfile
+          entityId={selectedEntityId}
+          businessId={derivedBusinessId}
+          userId={user?.uid || ''}
+          customer={currentCustomer}
+          movements={movements}
+          rates={rates}
+          config={config}
+          onBack={() => setViewMode('DIRECTORY')}
+          onViewLedger={() => setViewMode('DETAIL')}
+          onRegisterAbono={() => { setViewMode('DETAIL'); setShowAbonoModal(true); }}
+          onShareWhatsApp={() => {
+            openWhatsAppPreview(
+              buildWhatsAppContext(selectedEntityId, currentEntityInfo.globalBalance, currentEntityInfo.lastMov)
+            );
+          }}
+          onExportPdf={() => handleExportPdfDetailed()}
+        />
+      )}
+
       {/* LEVEL 2: DETAILED VIEW */}
       {viewMode === 'DETAIL' && selectedEntityId && currentEntityInfo && (
         <div className="flex flex-col h-full gap-6 animate-in slide-in-from-right-4">
@@ -1565,7 +1633,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               <div className="space-y-6">
                 <div className="flex items-center gap-6">
                   <button
-                    onClick={() => setViewMode('DIRECTORY')}
+                    onClick={() => setViewMode(currentEntityInfo?.type === 'CLIENTE' ? 'PROFILE' : 'DIRECTORY')}
                     className="w-12 h-12 rounded-2xl app-btn app-btn-ghost flex items-center justify-center"
                   >
                     <i className="fa-solid fa-arrow-left"></i>
@@ -1587,7 +1655,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                         : 'Hoja de Vida Financiera'}
                     </p>
                     {currentEntityInfo.type === 'CLIENTE' && currentCustomer && (
-                      <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-500">
+                      <><div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-500">
                         <div>
                           <span className="font-semibold text-slate-600 dark:text-slate-400">CI/RIF:</span>{' '}
                           {getEntityField(currentCustomer.cedula)}
@@ -1610,7 +1678,23 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                           {getEntityField(currentCustomer.direccion)}
                         </div>
                       </div>
-                    )}
+                      {(currentCustomer.creditLimit ?? 0) > 0 && (
+                        <div className="mt-2 flex items-center gap-3">
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-violet-500 dark:text-violet-400">Límite de crédito</span>
+                            <span className="text-sm font-black text-violet-700 dark:text-violet-300">${(currentCustomer.creditLimit || 0).toFixed(2)}</span>
+                          </div>
+                          {currentEntityInfo.globalBalance > 0 && (
+                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${currentEntityInfo.globalBalance > (currentCustomer.creditLimit || 0) ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/20' : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20'}`}>
+                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Usado</span>
+                              <span className={`text-sm font-black ${currentEntityInfo.globalBalance > (currentCustomer.creditLimit || 0) ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                {((currentEntityInfo.globalBalance / (currentCustomer.creditLimit || 1)) * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>)}
                   </div>
                 </div>
 
@@ -1622,6 +1706,16 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                       className="px-6 py-2.5 app-btn app-btn-primary flex items-center gap-2"
                     >
                       <i className="fa-solid fa-file-invoice-dollar"></i> Generar Recibo
+                    </button>
+                  )}
+
+                  {/* REGISTRAR ABONO BUTTON (Solo para Clientes con saldo) */}
+                  {currentEntityInfo.type === 'CLIENTE' && currentEntityInfo.globalBalance > 0.01 && (
+                    <button
+                      onClick={() => setShowAbonoModal(true)}
+                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:from-emerald-600 hover:to-teal-700 shadow-md shadow-emerald-500/25 transition-all"
+                    >
+                      <Receipt size={14} /> Registrar Abono
                     </button>
                   )}
 
@@ -1748,7 +1842,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                         </ResponsiveContainer>
                         {trendIsSparse && (
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="text-[11px] font-bold text-slate-400 bg-white dark:bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/10">
+                            <div className="text-[11px] font-bold text-slate-400 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/10">
                               Generando tendencia...
                             </div>
                           </div>
@@ -1788,49 +1882,31 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                   </div>
                 </div>
 
-                {/* TABS DE FILTRO DE ALTO CONTRASTE */}
+                {/* TABS DE FILTRO — DINÁMICO */}
                 <div className="flex app-chip p-1.5 rounded-xl gap-1">
-                  {(['ALL', AccountType.BCV, AccountType.GRUPO, AccountType.DIVISA] as const).map(
+                  {([
+                    { id: 'ALL', label: 'Global' },
+                    { id: AccountType.BCV, label: 'BCV' },
+                    ...(hasDynamicPricing ? customRates.filter(r => r.enabled).map(r => ({ id: r.id, label: r.name })) : []),
+                  ] as { id: string; label: string }[]).map(
                     (tab) => {
-                      // Logic for High Contrast Colors based on prompt
-                      let activeClasses = '';
-                      const inactiveClasses = 'text-slate-400 hover:bg-slate-200';
-
-                      if (activeTab === tab) {
-                        switch (tab) {
-                          case 'ALL':
-                            activeClasses = 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-lg';
-                            break;
-                          case AccountType.BCV:
-                            activeClasses =
-                              'bg-blue-800 text-slate-900 dark:text-white shadow-lg shadow-blue-200';
-                            break;
-                          case AccountType.GRUPO:
-                            activeClasses =
-                              'bg-orange-600 text-slate-900 dark:text-white shadow-lg shadow-orange-200';
-                            break;
-                          case AccountType.DIVISA:
-                            activeClasses =
-                              'bg-emerald-700 text-slate-900 dark:text-white shadow-lg shadow-emerald-200';
-                            break;
-                        }
-                      }
+                      const isActive = activeTab === tab.id;
+                      const activeClasses = tab.id === 'ALL'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-lg'
+                        : tab.id === AccountType.BCV
+                        ? 'bg-blue-800 text-white shadow-lg shadow-blue-200/20'
+                        : 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-500/20';
+                      const inactiveClasses = 'text-slate-400 dark:text-white/30 hover:bg-slate-200 dark:hover:bg-slate-800';
 
                       return (
                         <button
-                          key={tab}
-                          onClick={() => setActiveTab(tab)}
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id as any)}
                           className={`px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${
-                            activeTab === tab ? activeClasses : inactiveClasses
+                            isActive ? activeClasses : inactiveClasses
                           }`}
                         >
-                          {tab === 'ALL'
-                            ? 'Global'
-                            : tab === AccountType.BCV
-                            ? 'BCV (Azul)'
-                            : tab === AccountType.GRUPO
-                            ? 'Grupo (Naranja)'
-                            : 'Divisa (Verde)'}
+                          {tab.label}
                         </button>
                       );
                     }
@@ -1838,7 +1914,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/90 p-5 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -1861,8 +1937,9 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                     >
                       <option value="ALL">Global</option>
                       <option value={AccountType.BCV}>BCV</option>
-                      <option value={AccountType.GRUPO}>GRUPO</option>
-                      <option value={AccountType.DIVISA}>DIVISA</option>
+                      {hasDynamicPricing && customRates.filter(r => r.enabled).map(r => (
+                        <option key={r.id} value={r.id}>{r.name.toUpperCase()}</option>
+                      ))}
                     </select>
                     <p className="text-[10px] text-slate-500 mt-2">
                       El estado respeta el rango actual; la cuenta sale segun este selector.
@@ -1965,124 +2042,18 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
             </div>
           </div>
 
-          {/* DETAILED TABLE WITH CONTEXT BORDER */}
-          <div
-            className={`app-panel overflow-hidden flex-1 flex flex-col border-t-[6px] ${contextColors.border}`}
-          >
-            {/* Scrollable table wrapper */}
-            <div className="overflow-auto custom-scroll flex-1 flex flex-col" ref={detailTableRef}>
-            {/* Table Header */}
-            <div
-              className={`px-4 sm:px-8 py-4 ${contextColors.bg} border-b border-slate-200 dark:border-white/10 grid grid-cols-10 text-[10px] font-black uppercase tracking-widest ${contextColors.text} min-w-[700px]`}
-            >
-              <div className="col-span-2">Fecha / Hora</div>
-              <div className="col-span-2">Concepto</div>
-              <div className="col-span-1 text-center">Referencia</div>
-              <div className="col-span-1 text-center">Cuenta</div>
-              <div className="col-span-1 text-center">Tasa</div>
-              <div className="col-span-1 text-right text-rose-600">
-                {currentEntityInfo.type === 'NÓMINA' ? 'Devengado (+)' : 'Cargo ($)'}
-              </div>
-              <div className="col-span-1 text-right text-emerald-600">
-                {currentEntityInfo.type === 'NÓMINA' ? 'Deducción (-)' : 'Abono ($)'}
-              </div>
-              <div className="col-span-1 text-center">Acción</div>
-            </div>
-
-            <div className="flex-1" >
-              {detailData.length === 0 ? (
-                <div className="py-16 text-center text-slate-300 font-black uppercase">
-                  <div className="text-sm">Sin movimientos registrados</div>
-                  <div className="text-[10px] font-semibold text-slate-400 mt-2">
-                    Hoja de vida activa, sin operaciones en {activeTab}.
-                  </div>
-                </div>
-              ) : (
-                detailData.map((mov) => (
-                  <div
-                    key={mov.id}
-                    className="px-4 sm:px-8 py-4 border-b border-slate-100 dark:border-white/[0.07] grid grid-cols-10 items-center hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors text-xs group min-w-[700px]"
-                  >
-                    <div className="col-span-2 font-bold text-slate-500">
-                      {formatDateTime((mov as any).displayDate || mov.date)}
-                    </div>
-                    <div
-                      className="col-span-2 font-medium text-slate-700 dark:text-slate-300 truncate pr-4"
-                      title={mov.concept}
-                    >
-                      {mov.concept}
-                    </div>
-                    <div className="col-span-1 text-center font-mono text-slate-400 text-[10px]">
-                      {mov.reference || '-'}
-                    </div>
-                    <div className="col-span-1 text-center text-[10px] font-black text-slate-500">
-                      {mov.accountType}
-                    </div>
-                    <div className="col-span-1 text-center font-mono text-slate-400 text-[10px]">
-                      {mov.rateUsed > 1 ? `Bs ${mov.rateUsed}` : '1:1'}
-                    </div>
-                    <div className="col-span-1 text-right font-black font-mono text-rose-600">
-                      {mov.debe > 0 ? formatCurrency(mov.debe) : '-'}
-                    </div>
-                    <div className="col-span-1 text-right font-black font-mono text-emerald-600">
-                      {mov.haber > 0 ? formatCurrency(mov.haber) : '-'}
-                    </div>
-
-                    {/* EDIT BUTTON */}
-                    <div className="col-span-1 text-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => handleEditClick(mov)}
-                        className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/[0.07] hover:bg-[var(--ui-accent)] hover:text-slate-900 dark:text-white text-slate-500 transition-all flex items-center justify-center"
-                      >
-                        <i className="fa-solid fa-pencil text-[10px]"></i>
-                      </button>
-                    </div>
-
-                    {/* Row Footer with Running Balance */}
-                    <div className="col-span-10 mt-2 pt-2 border-t border-dashed border-slate-100 dark:border-white/[0.07] flex flex-wrap justify-between items-center gap-2 opacity-60">
-                      <div className="text-[9px] uppercase font-bold text-slate-400 flex flex-wrap gap-3">
-                        <span>Cuenta: {mov.accountType}</span>
-                        <span>Moneda: {mov.currency}</span>
-                        <span>
-                          Monto: {mov.currency === 'BS' ? 'Bs' : '$'}
-                          {` ${Number(mov.originalAmount ?? mov.amount ?? 0).toFixed(2)}`}
-                        </span>
-                        <span>Tasa: {mov.rateUsed > 1 ? mov.rateUsed : '1:1'}</span>
-                        <span>
-                          Días desde último: {(mov as any).daysSinceLast ?? '-'}
-                        </span>
-                      </div>
-                      <span className="text-[9px] uppercase font-bold text-slate-400">
-                        {currentEntityInfo.type === 'NÓMINA'
-                          ? 'Saldo Acumulado:'
-                          : 'Saldo tras operación:'}
-                      </span>
-
-                      {/* LOGICA DE COLOR PARA SALDO INDIVIDUAL */}
-                      {currentEntityInfo.type === 'NÓMINA' ? (
-                        <span
-                          className={`font-mono font-black ${
-                            mov.runningBalance >= 0 ? 'text-indigo-500' : 'text-rose-500'
-                          }`}
-                        >
-                          {formatCurrency(mov.runningBalance)}
-                        </span>
-                      ) : (
-                        <span
-                          className={`font-mono font-black ${
-                            mov.runningBalance > 0 ? 'text-rose-400' : 'text-emerald-400'
-                          }`}
-                        >
-                          {formatCurrency(mov.runningBalance)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            </div>
-          </div>
+          {/* DETAILED TABLE WITH DUAL VIEW (DUALIS / EXCEL) */}
+          <CxCLedgerTable
+            movements={movements}
+            rates={rates}
+            entityId={selectedEntityId}
+            accountTab={activeTab}
+            rangeFilter={detailRangeFilter as any}
+            rangeFrom={detailRangeFrom}
+            rangeTo={detailRangeTo}
+            isPayroll={currentEntityInfo.type === 'NÓMINA'}
+            onEditClick={handleEditClick}
+          />
         </div>
       )}
 
@@ -2093,7 +2064,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
             onSubmit={handleSaveEdit}
             className="app-panel w-full max-w-2xl p-0 overflow-hidden animate-in zoom-in duration-300"
           >
-            <div className="bg-slate-50 dark:bg-white/[0.03] border-b border-slate-200 dark:border-white/10 px-8 py-6 flex items-center justify-between">
+            <div className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-white/10 px-8 py-6 flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Detalles de la Operacion
@@ -2227,6 +2198,135 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
         context={whatsAppContext}
         onSend={handleSendWhatsApp}
       />
+
+      {/* ABONO DIRECTO MODAL */}
+      {showAbonoModal && selectedEntityId && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl shadow-black/40 max-w-md w-full overflow-hidden">
+            <div className="p-6 bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+              <h3 className="text-sm font-black uppercase tracking-widest">Registrar Abono</h3>
+              <p className="text-xs font-bold text-emerald-100/70 mt-0.5">{selectedEntityId}</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Tipo de Cuenta</label>
+                <div className="flex gap-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl p-1 border border-slate-200 dark:border-white/[0.08]">
+                  {([AccountType.BCV, AccountType.GRUPO, AccountType.DIVISA] as AccountType[]).map(acct => (
+                    <button key={acct} onClick={() => setAbonoAccount(acct)}
+                      className={`flex-1 px-2 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all text-center ${abonoAccount === acct ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {acct}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Monto (USD)</label>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-black text-slate-400">$</span>
+                  <input type="number" min="0" step="0.01" value={abonoAmount} onChange={e => setAbonoAmount(e.target.value)} placeholder="0.00"
+                    className="flex-1 px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-lg font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Método de Pago</label>
+                <select value={abonoMethod} onChange={e => setAbonoMethod(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-800 dark:text-white">
+                  <option>Transferencia</option>
+                  <option>Pago Móvil</option>
+                  <option>Efectivo USD</option>
+                  <option>Efectivo Bs</option>
+                  <option>Punto de Venta</option>
+                  <option>Zelle</option>
+                  <option>Binance</option>
+                  <option>PayPal</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Referencia</label>
+                <input value={abonoRef} onChange={e => setAbonoRef(e.target.value)} placeholder="Nro. referencia o comprobante"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none" />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Nota (opcional)</label>
+                <input value={abonoNote} onChange={e => setAbonoNote(e.target.value)} placeholder="Descripción del pago"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none" />
+              </div>
+
+              {/* Early payment discount preview */}
+              {(() => {
+                const cp = config.creditPolicy;
+                if (!cp?.enabled || !cp.earlyPaymentTiers?.length) return null;
+                const amt = parseFloat(abonoAmount || '0');
+                if (amt <= 0) return null;
+                const sortedTiers = [...cp.earlyPaymentTiers].sort((a, b) => a.maxDays - b.maxDays);
+                return (
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-2">Descuento por Pronto Pago</p>
+                    <div className="flex flex-wrap gap-2">
+                      {sortedTiers.map((t, i) => {
+                        const disc = amt * (t.discountPercent / 100);
+                        return (
+                          <span key={i} className="px-2.5 py-1.5 bg-white dark:bg-slate-900 rounded-lg text-[10px] font-black text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
+                            ≤{t.maxDays}d: -{t.discountPercent}% (${disc.toFixed(2)})
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => { setShowAbonoModal(false); setAbonoAmount(''); setAbonoRef(''); setAbonoNote(''); }}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-black text-slate-500 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all">
+                  Cancelar
+                </button>
+                <button
+                  disabled={!abonoAmount || parseFloat(abonoAmount) <= 0 || abonoLoading}
+                  onClick={async () => {
+                    setAbonoLoading(true);
+                    try {
+                      const amt = parseFloat(abonoAmount);
+                      const now = new Date();
+                      const rateForAccount = abonoAccount === AccountType.BCV ? rates.bcv : abonoAccount === AccountType.GRUPO ? rates.grupo : rates.divisa;
+                      const isDivisaAcct = abonoAccount === AccountType.DIVISA;
+                      const newMov: Partial<Movement> = {
+                        entityId: selectedEntityId!,
+                        concept: `Abono — ${abonoMethod}${abonoNote ? ` — ${abonoNote}` : ''}`,
+                        amount: amt,
+                        amountInUSD: amt,
+                        currency: 'USD' as any,
+                        date: now.toISOString().split('T')[0],
+                        createdAt: now.toISOString(),
+                        movementType: MovementType.ABONO,
+                        accountType: abonoAccount,
+                        rateUsed: isDivisaAcct ? 0 : rateForAccount,
+                        reference: abonoRef || undefined,
+                      };
+                      const { addDoc, collection } = await import('firebase/firestore');
+                      const { db } = await import('../firebase/config');
+                      const businessId = config.companyName ? movements.find(m => m.businessId)?.businessId : movements[0]?.businessId;
+                      await addDoc(collection(db, 'movements'), { ...newMov, businessId });
+                      success('Abono registrado correctamente');
+                      setShowAbonoModal(false);
+                      setAbonoAmount('');
+                      setAbonoRef('');
+                      setAbonoNote('');
+                    } catch (err) {
+                      console.error(err);
+                      error('Error al registrar el abono');
+                    } finally {
+                      setAbonoLoading(false);
+                    }
+                  }}
+                  className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${parseFloat(abonoAmount || '0') > 0 && !abonoLoading ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/25 hover:from-emerald-600 hover:to-teal-700' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-300 cursor-not-allowed'}`}>
+                  {abonoLoading ? 'Procesando...' : <><Receipt size={14} /> Registrar Abono</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

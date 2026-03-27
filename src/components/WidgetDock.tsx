@@ -14,22 +14,10 @@ const WidgetDock: React.FC = () => {
       icon: 'fa-solid fa-calculator',
     },
     {
-      key: 'notes',
-      label: t('widgets.notes'),
-      tooltip: t('tooltips.notes'),
-      icon: 'fa-regular fa-note-sticky',
-    },
-    {
       key: 'converter',
       label: t('widgets.fx'),
       tooltip: t('tooltips.fx'),
       icon: 'fa-solid fa-arrows-rotate',
-    },
-    {
-      key: 'timer',
-      label: t('widgets.timer'),
-      tooltip: t('tooltips.timer'),
-      icon: 'fa-regular fa-clock',
     },
     {
       key: 'priceChecker',
@@ -38,22 +26,10 @@ const WidgetDock: React.FC = () => {
       icon: 'fa-solid fa-tag',
     },
     {
-      key: 'todo',
-      label: t('widgets.todo'),
-      tooltip: t('tooltips.todo'),
-      icon: 'fa-regular fa-circle-check',
-    },
-    {
       key: 'speedDial',
       label: t('widgets.quick'),
       tooltip: t('tooltips.quick'),
       icon: 'fa-solid fa-bolt',
-    },
-    {
-      key: 'chat',
-      label: t('widgets.chat'),
-      tooltip: t('tooltips.chat'),
-      icon: 'fa-regular fa-comments',
     },
   ] as const;
 

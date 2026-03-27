@@ -6,67 +6,37 @@ import {
   ArrowRight, Loader2, ShieldCheck, Building2, Users,
   Eye, EyeOff, Mail, Lock, CheckCircle2, Shield, AlertTriangle,
   RotateCcw, Zap, Star, Crown, Clock, MessageCircle, Copy, Check, Upload, ImageIcon,
+  Phone, ChevronDown, ArrowLeft,
 } from 'lucide-react';
 import ReCAPTCHA from 'react-google-recaptcha';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSubdomain } from '../context/SubdomainContext';
 import { logAudit, sendWorkspaceRequest, consumeInvitation } from '../firebase/api';
+import { registerTenantSlug, isSlugAvailable, generateAutoSlug } from '../utils/tenantResolver';
 import ModeToggle from './ModeToggle';
 import { generateOTP, sendOTPEmail, sendWelcomeEmail } from '../utils/emailService';
+import { PLANS as PLAN_DEFS, PLAN_PRICES, PERIOD_CONFIG, computePeriodPrice, PAYMENT_INFO, type SubscriptionPeriod } from '../utils/planConfig';
 
 /* ── Constants ────────────────────────────────────────── */
-const COUNTRIES = ['Venezuela', 'Colombia', 'Panama', 'Republica Dominicana', 'USA'];
 const WA_NUMBER = '584125343141';
 
-// ⚠ Actualiza estos datos con tu info de pago real
-const PAYMENT_INFO = {
-  binanceId:   'yisus_xd77@hotmail.com',
-  pagoMovil:   { banco: 'Banesco', telefono: '0412-534-3141', cedula: 'V-XXXXXXXX' },
-  zinli:       'yisus_xd77@hotmail.com',
-  paypal:      'svillarroel154@gmail.com',
-};
+const PHONE_CODES = [
+  { code: '+58', flag: '🇻🇪', country: 'VE' },
+  { code: '+57', flag: '🇨🇴', country: 'CO' },
+  { code: '+507', flag: '🇵🇦', country: 'PA' },
+  { code: '+1', flag: '🇺🇸', country: 'US' },
+  { code: '+34', flag: '🇪🇸', country: 'ES' },
+];
 
-const PLANS = [
-  {
-    id: 'starter',
-    name: 'Starter',
-    price: 24,
-    icon: Zap,
-    color: 'indigo',
-    gradient: 'from-indigo-500 to-blue-600',
-    border: 'border-indigo-500/30',
-    bg: 'bg-indigo-500/[0.08]',
-    badge: null,
-    features: ['3 usuarios', '500 productos', '1 sucursal', 'POS Detal + Mayor', 'Soporte básico'],
-  },
-  {
-    id: 'negocio',
-    name: 'Negocio',
-    price: 49,
-    icon: Star,
-    color: 'violet',
-    gradient: 'from-violet-500 to-purple-600',
-    border: 'border-violet-500/40',
-    bg: 'bg-violet-500/[0.10]',
-    badge: 'MÁS POPULAR',
-    features: ['10 usuarios', '2,000 productos', '3 sucursales', 'Todo Starter +', 'CxC / CxP / RRHH', 'Reportes avanzados'],
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    price: 89,
-    icon: Crown,
-    color: 'amber',
-    gradient: 'from-amber-500 to-orange-500',
-    border: 'border-amber-500/30',
-    bg: 'bg-amber-500/[0.08]',
-    badge: null,
-    features: ['Usuarios ilimitados', 'Productos ilimitados', 'Sucursales ilimitadas', 'Todo Negocio +', 'VisionLab IA', 'Soporte prioritario'],
-  },
-] as const;
+const REG_PLANS = [
+  { ...PLAN_DEFS[0], icon: Zap,   gradient: 'from-indigo-500 to-blue-600', border: 'border-indigo-500/30', bg: 'bg-indigo-500/[0.08]' },
+  { ...PLAN_DEFS[1], icon: Star,  gradient: 'from-violet-500 to-purple-600', border: 'border-violet-500/40', bg: 'bg-violet-500/[0.10]' },
+  { ...PLAN_DEFS[2], icon: Crown, gradient: 'from-amber-500 to-orange-500', border: 'border-amber-500/30', bg: 'bg-amber-500/[0.08]' },
+];
 
 type PlanId = 'starter' | 'negocio' | 'enterprise';
-type Step   = 'form' | 'otp' | 'success';
+type Step   = 'form' | 'otp' | 'plan' | 'success';
 
 /* ── Helpers ──────────────────────────────────────────── */
 function pwStrength(p: string) {
@@ -119,10 +89,13 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
   const [mode,    setMode]    = useState<'create' | 'join'>(hasInvite ? 'join' : 'create');
   const [form,    setForm]    = useState({
     workspaceCode: inviteData?.businessId || '',
-    fullName: '', displayName: '',
-    email: inviteData?.email || '', password: '',
-    nationalId: '', country: '',
+    businessName: '', fullName: '',
+    email: inviteData?.email || '', password: '', confirmPassword: '',
+    phoneCode: '+58', phone: '',
+    slug: '',
   });
+  const [slugStatus, setSlugStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+  const slugTimer = React.useRef<ReturnType<typeof setTimeout>>();
   const [showPass,  setShowPass]  = useState(false);
   const [terms,     setTerms]     = useState(false);
   const [loading,   setLoading]   = useState(false);
@@ -138,7 +111,9 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
   const [cooldown,    setCooldown]    = useState(0);
 
   // Plan + account creation
+  const [period, setPeriod] = useState<SubscriptionPeriod>('triplePlay');
   const [selectedPlan,   setSelectedPlan]   = useState<PlanId | 'trial' | null>(null);
+  const [expandedFeatures, setExpandedFeatures] = useState<string | null>(null);
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [successBid,     setSuccessBid]     = useState('');
   const [copiedField,    setCopiedField]    = useState<string | null>(null);
@@ -148,6 +123,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
   const [proofUploading, setProofUploading] = useState(false);
   const [proofUploaded,  setProofUploaded]  = useState(false);
   const [successUid,     setSuccessUid]     = useState('');
+  const [successSlug,    setSuccessSlug]    = useState('');
 
   const otpRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null, null, null]);
   const nav       = useNavigate();
@@ -164,7 +140,48 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
     return () => clearTimeout(t);
   }, [cooldown]);
 
-  const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
+  const subdomain = useSubdomain();
+
+  // Si se accede desde un subdominio en modo join, pre-llenar workspace code
+  React.useEffect(() => {
+    if (subdomain.slug && subdomain.businessId && !isCreate) {
+      setForm(p => ({ ...p, workspaceCode: subdomain.businessId! }));
+    }
+  }, [subdomain.slug, subdomain.businessId, isCreate]);
+
+  const set = (k: keyof typeof form, v: string) => {
+    setForm(p => ({ ...p, [k]: v }));
+    // Auto-generate slug from business name
+    if (k === 'businessName' && isCreate) {
+      const normalized = v.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+      setForm(p => ({ ...p, slug: normalized }));
+      setSlugStatus('idle');
+      clearTimeout(slugTimer.current);
+      if (normalized.length >= 3) {
+        setSlugStatus('checking');
+        slugTimer.current = setTimeout(() => {
+          isSlugAvailable(normalized).then(available => {
+            setSlugStatus(available ? 'available' : 'taken');
+          });
+        }, 500);
+      }
+    }
+    if (k === 'slug') {
+      setSlugStatus('idle');
+      clearTimeout(slugTimer.current);
+      const normalized = v.toLowerCase().replace(/[^a-z0-9-]/g, '');
+      if (normalized.length >= 3) {
+        setSlugStatus('checking');
+        slugTimer.current = setTimeout(() => {
+          isSlugAvailable(normalized).then(available => {
+            setSlugStatus(available ? 'available' : 'taken');
+          });
+        }, 500);
+      }
+    }
+  };
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard?.writeText(text);
@@ -198,16 +215,17 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
     e.preventDefault();
     if (!terms)                 { setError('Acepta los términos para continuar.'); return; }
     if (captchaKey && !captcha) { setError('Completa el captcha.'); return; }
+    if (form.password !== form.confirmPassword) { setError('Las contraseñas no coinciden.'); return; }
+    if (form.password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres.'); return; }
+    if (isCreate && !form.businessName.trim()) { setError('Ingresa el nombre de tu negocio.'); return; }
     setLoading(true); setError('');
     try {
-      if (!isCreate) {
-        if (!form.workspaceCode) throw new Error('Debes ingresar el código del espacio.');
-        if (!(await getDoc(doc(db, 'businesses', form.workspaceCode))).exists())
-          throw new Error('El código del espacio no es válido.');
+      if (!isCreate && !hasInvite && !subdomain.businessId) {
+        throw new Error('Necesitas una invitación o URL personalizada para unirte a una empresa.');
       }
       const code = generateOTP();
       setOtp(code);
-      await sendOTPEmail(form.email, form.displayName || form.fullName, code);
+      await sendOTPEmail(form.email, form.businessName || form.fullName || 'Usuario', code);
       setStep('otp');
       setCooldown(60);
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
@@ -224,19 +242,24 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
     try {
       const code = generateOTP();
       setOtp(code);
-      await sendOTPEmail(form.email, form.displayName || form.fullName, code);
+      await sendOTPEmail(form.email, form.businessName || form.fullName || 'Usuario', code);
       setCooldown(60);
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
     } catch { setOtpError('Error al reenviar. Intenta de nuevo.'); }
   };
 
-  /* ── Step 2: Verify OTP → create account with trial ── */
+  /* ── Step 2: Verify OTP → go to plan selection (create) or create account (join) ── */
   const handleVerifyOTP = () => {
     const entered = otpDigits.join('');
     if (entered.length < 6) { setOtpError('Ingresa los 6 dígitos del código.'); return; }
     if (entered !== otp)    { setOtpError('Código incorrecto. Verifica e intenta de nuevo.'); return; }
-    // Always go straight to account creation with trial — plan selection happens in SubscriptionWall
-    handleCreateAccount('trial');
+    if (isCreate) {
+      // Go to plan selection step
+      setStep('plan');
+    } else {
+      // Join mode — create account immediately with trial
+      handleCreateAccount('trial');
+    }
   };
 
   /* ── Step 3: Create account with selected plan ─────── */
@@ -247,6 +270,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
       const cred = await createUserWithEmailAndPassword(auth, form.email, form.password);
       const uid  = cred.user.uid;
       let   bid  = form.workspaceCode;
+      let   generatedSlug: string | null = null;
 
       if (isCreate) {
         let attempts = 0, gid = genId();
@@ -257,7 +281,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
         bid = gid;
         const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         await setDoc(doc(db, 'businesses', bid), {
-          name: form.fullName || 'Mi Negocio', ownerId: uid,
+          name: form.businessName || form.fullName || 'Mi Negocio', ownerId: uid,
           createdAt: new Date().toISOString(),
           plan: 'trial',
           subscription: {
@@ -268,6 +292,20 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
           },
         });
         try { await logAudit(uid, 'create_workspace', { businessId: bid, plan }); } catch {}
+
+        // Register subdomain slug — auto-generate if not provided
+        try {
+          if (form.slug && form.slug.length >= 3) {
+            const result = await registerTenantSlug(form.slug, bid, form.businessName || form.fullName || 'Mi Negocio');
+            if (result.ok) generatedSlug = form.slug;
+          }
+          if (!generatedSlug) {
+            const autoName = form.businessName || form.fullName || form.displayName || 'mi-negocio';
+            generatedSlug = await generateAutoSlug(autoName, bid);
+          }
+        } catch (e) {
+          console.warn('Failed to register tenant slug:', e);
+        }
       }
 
       const isTrial  = plan === 'trial' || !isCreate;
@@ -278,11 +316,13 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
         ? (hasInvite ? 'ACTIVE' : 'PENDING_APPROVAL')
         : (isTrial ? 'PENDING_SETUP' : 'PENDING_APPROVAL');
 
+      const displayName = isCreate ? form.businessName : form.fullName;
       await setDoc(doc(db, 'users', uid), {
-        uid, email: form.email, fullName: form.fullName,
-        displayName: form.displayName, businessId: bid, role, status,
-        nationalId: form.nationalId, country: form.country, uiVersion: 'editorial',
+        uid, email: form.email, fullName: form.fullName || displayName,
+        displayName, businessId: bid, role, status,
+        uiVersion: 'editorial',
         emailVerified: true, selectedPlan: plan, createdAt: new Date().toISOString(),
+        ...(form.phone ? { phone: `${form.phoneCode}${form.phone}`, phoneCountryCode: form.phoneCode } : {}),
         ...(hasInvite ? { invitedBy: inviteData!.inviterName, inviteToken } : {}),
       });
 
@@ -290,8 +330,8 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
         // Owner: escribir en la subcolección members (tiene permisos de admin sobre su propio negocio)
         try {
           await setDoc(doc(db, 'businesses', bid, 'members', uid), {
-            uid, email: form.email, fullName: form.fullName,
-            displayName: form.displayName, role: 'owner', status, joinedAt: new Date().toISOString(),
+            uid, email: form.email, fullName: form.fullName || displayName,
+            displayName, role: 'owner', status, joinedAt: new Date().toISOString(),
           }, { merge: true });
         } catch {}
       } else if (hasInvite) {
@@ -302,24 +342,16 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
           console.warn('Failed to consume invitation:', e);
         }
         // No need for workspace request — user is auto-approved
-      } else {
-        // Manual join mode: crear workspaceRequest para que el owner apruebe
-        try {
-          await sendWorkspaceRequest({
-            senderId:    uid,
-            senderEmail: form.email,
-            senderName:  form.displayName || form.fullName,
-            workspaceId: bid,
-          });
-        } catch {}
       }
 
       try { await logAudit(uid, 'create_user', { businessId: bid, email: form.email, plan }); } catch {}
 
-      sendWelcomeEmail(form.email, form.displayName || form.fullName, bid).catch(err => console.error('[WelcomeEmail] Error:', err));
+      const customUrl = generatedSlug ? `${generatedSlug}.dualis.app` : undefined;
+      sendWelcomeEmail(form.email, displayName || form.fullName, bid, customUrl).catch(err => console.error('[WelcomeEmail] Error:', err));
 
       setSuccessBid(bid);
       setSuccessUid(uid);
+      if (generatedSlug) setSuccessSlug(generatedSlug);
       setStep('success');
     } catch (err: any) {
       const msg = err?.code === 'auth/email-already-in-use'
@@ -403,7 +435,6 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 <div className="w-full bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 mb-6 text-left space-y-2">
                   <p className="text-[9px] font-black uppercase tracking-[0.35em] text-white/20">Tu cuenta</p>
                   <p className="text-sm font-bold text-white/70 truncate">{form.email}</p>
-                  <p className="text-[10px] text-white/25">Espacio: <span className="font-mono text-white/40">{form.workspaceCode}</span></p>
                 </div>
 
                 <div className="flex items-center gap-2.5 p-3.5 bg-white/[0.04] border border-white/[0.07] rounded-2xl mb-6 w-full">
@@ -432,7 +463,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
   ══════════════════════════════════════════════════════ */
   if (step === 'success') {
     const isPaid = selectedPlan && selectedPlan !== 'trial';
-    const planInfo = isPaid ? PLANS.find(p => p.id === selectedPlan) : null;
+    const planInfo = isPaid ? REG_PLANS.find(p => p.id === selectedPlan) : null;
     const waText = encodeURIComponent(
       `Hola, acabo de registrarme en Dualis ERP con el plan ${planInfo?.name ?? ''} ($${planInfo?.price}/mes).\nMi correo: ${form.email}\nBusiness ID: ${successBid}\n\nAdjunto comprobante de pago.`
     );
@@ -477,49 +508,52 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                   <div className="bg-amber-500/[0.06] border border-amber-500/20 rounded-2xl p-4">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-amber-400">Binance Pay</p>
-                      <button onClick={() => copyToClipboard(PAYMENT_INFO.binanceId, 'binance')}
+                      <button onClick={() => copyToClipboard(PAYMENT_INFO.binance.id, 'binance')}
                         className="text-amber-400/50 hover:text-amber-400 transition-colors">
                         {copiedField === 'binance' ? <Check size={12} /> : <Copy size={12} />}
                       </button>
                     </div>
-                    <p className="text-sm font-mono text-white/70">{PAYMENT_INFO.binanceId}</p>
+                    <p className="text-sm font-mono text-white/70">{PAYMENT_INFO.binance.id}</p>
+                    <p className="text-[10px] text-amber-400/40 mt-1">{PAYMENT_INFO.binance.note}</p>
                   </div>
 
                   {/* Pago Móvil */}
                   <div className="bg-indigo-500/[0.06] border border-indigo-500/20 rounded-2xl p-4">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Pago Móvil</p>
-                      <button onClick={() => copyToClipboard(PAYMENT_INFO.pagoMovil.telefono, 'pagomovil')}
+                      <button onClick={() => copyToClipboard(PAYMENT_INFO.pago_movil.telefono, 'pagomovil')}
                         className="text-indigo-400/50 hover:text-indigo-400 transition-colors">
                         {copiedField === 'pagomovil' ? <Check size={12} /> : <Copy size={12} />}
                       </button>
                     </div>
-                    <p className="text-sm text-white/70">{PAYMENT_INFO.pagoMovil.banco} · {PAYMENT_INFO.pagoMovil.telefono} · {PAYMENT_INFO.pagoMovil.cedula}</p>
+                    <p className="text-sm text-white/70">{PAYMENT_INFO.pago_movil.banco} · {PAYMENT_INFO.pago_movil.telefono} · {PAYMENT_INFO.pago_movil.cedula}</p>
                   </div>
 
-                  {/* Zinli */}
+                  {/* Transferencia */}
                   <div className="bg-emerald-500/[0.06] border border-emerald-500/20 rounded-2xl p-4">
                     <div className="flex items-center justify-between mb-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Zinli / Reserve</p>
-                      <button onClick={() => copyToClipboard(PAYMENT_INFO.zinli, 'zinli')}
+                      <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Transferencia</p>
+                      <button onClick={() => copyToClipboard(PAYMENT_INFO.transferencia.cuenta, 'transferencia')}
                         className="text-emerald-400/50 hover:text-emerald-400 transition-colors">
-                        {copiedField === 'zinli' ? <Check size={12} /> : <Copy size={12} />}
+                        {copiedField === 'transferencia' ? <Check size={12} /> : <Copy size={12} />}
                       </button>
                     </div>
-                    <p className="text-sm font-mono text-white/70">{PAYMENT_INFO.zinli}</p>
-                    <p className="text-[10px] text-emerald-400/40 mt-1">Pide el QR por WhatsApp</p>
+                    <p className="text-sm text-white/70">{PAYMENT_INFO.transferencia.banco}</p>
+                    <p className="text-[10px] font-mono text-white/50 mt-1">{PAYMENT_INFO.transferencia.cuenta}</p>
+                    <p className="text-[10px] text-emerald-400/40 mt-1">{PAYMENT_INFO.transferencia.nombre} · {PAYMENT_INFO.transferencia.cedula}</p>
                   </div>
 
                   {/* PayPal */}
                   <div className="bg-blue-500/[0.06] border border-blue-500/20 rounded-2xl p-4">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">PayPal</p>
-                      <button onClick={() => copyToClipboard(PAYMENT_INFO.paypal, 'paypal')}
+                      <button onClick={() => copyToClipboard(PAYMENT_INFO.paypal.email, 'paypal')}
                         className="text-blue-400/50 hover:text-blue-400 transition-colors">
                         {copiedField === 'paypal' ? <Check size={12} /> : <Copy size={12} />}
                       </button>
                     </div>
-                    <p className="text-sm font-mono text-white/70">{PAYMENT_INFO.paypal}</p>
+                    <p className="text-sm font-mono text-white/70">{PAYMENT_INFO.paypal.email}</p>
+                    <p className="text-[10px] text-blue-400/40 mt-1">{PAYMENT_INFO.paypal.note}</p>
                   </div>
                 </div>
 
@@ -603,11 +637,11 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                   )}
                 </div>
 
-                {/* Workspace ID */}
+                {/* Account info */}
                 <div className="w-full bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 mb-4">
-                  <p className="text-[9px] font-black uppercase tracking-[0.35em] text-white/20 mb-2">Tu código de espacio</p>
-                  <p className="text-xs font-mono font-bold text-white/50 break-all">{successBid}</p>
-                  <p className="text-[9px] text-white/15 mt-1">Guárdalo — lo necesitarás al iniciar sesión</p>
+                  <p className="text-[9px] font-black uppercase tracking-[0.35em] text-white/20 mb-2">Tu cuenta</p>
+                  <p className="text-xs font-bold text-white/50">{form.email}</p>
+                  <p className="text-[9px] text-white/15 mt-1">Usa tu correo y contraseña para iniciar sesión</p>
                 </div>
 
                 {/* WA button */}
@@ -630,26 +664,29 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-full mb-4">
                   ✦ 30 días gratis — Acceso inmediato
                 </div>
-                <h2 className="text-2xl font-black text-white tracking-tight mb-2">¡Guarda tu llave!</h2>
+                <h2 className="text-2xl font-black text-white tracking-tight mb-2">¡Cuenta creada!</h2>
                 <p className="text-white/35 text-sm mb-1">Correo de bienvenida enviado a <strong className="text-white/60">{form.email}</strong></p>
                 <p className="text-white/40 text-sm leading-relaxed mb-6 max-w-sm">
-                  Este código es tu <span className="text-white/70 font-bold">llave privada</span>. Sin él, no podrás entrar. Nadie te lo pedirá jamás.
+                  Tu empresa está lista. Inicia sesión con tu <span className="text-white/70 font-bold">correo y contraseña</span> para acceder al sistema.
                 </p>
 
-                <div
-                  className="w-full bg-white/[0.04] border-2 border-dashed border-indigo-500/40 rounded-3xl p-7 mb-4 cursor-pointer hover:border-indigo-500/70 transition-colors group"
-                  onClick={() => copyToClipboard(successBid, 'bid')}
+                {successSlug && (
+                <div className="w-full bg-white/[0.04] border-2 border-dashed border-indigo-500/40 rounded-3xl p-7 mb-4 cursor-pointer hover:border-indigo-500/70 transition-colors group"
+                  onClick={() => copyToClipboard(`https://${successSlug}.dualis.app`, 'url')}
                 >
-                  <p className="text-[9px] font-black uppercase tracking-[0.4em] text-indigo-400 mb-3">Código de Espacio Único</p>
-                  <div className="text-[1rem] font-mono font-black text-white break-all select-all leading-relaxed">{successBid}</div>
+                  <p className="text-[9px] font-black uppercase tracking-[0.4em] text-indigo-400 mb-3">Tu URL personalizada</p>
+                  <div className="text-[1rem] font-mono font-black text-white break-all select-all leading-relaxed">{successSlug}.dualis.app</div>
                   <p className="text-[9px] font-bold text-white/20 uppercase mt-2.5 group-hover:text-indigo-400 transition-colors">
-                    {copiedField === 'bid' ? '✓ Copiado' : 'Haz clic para copiar'}
+                    {copiedField === 'url' ? '✓ Copiado' : 'Haz clic para copiar'}
                   </p>
                 </div>
+                )}
 
-                <div className="w-full bg-red-500/10 border border-red-500/20 rounded-2xl p-4 mb-6">
-                  <p className="text-xs font-bold text-red-300 leading-relaxed">
-                    ⚠ CUÍDALO CON TU VIDA. Si lo pierdes, no podemos recuperarlo. Nunca lo compartas.
+                <div className="w-full bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 mb-6">
+                  <p className="text-xs font-bold text-emerald-300 leading-relaxed">
+                    {successSlug
+                      ? `Comparte ${successSlug}.dualis.app con tu equipo para que se unan. También te enviamos esta URL a tu correo.`
+                      : 'Puedes configurar tu URL personalizada después en Configuración > Empresa.'}
                   </p>
                 </div>
 
@@ -662,6 +699,152 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
               </>
             )}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════
+     PLAN SELECTION SCREEN (Step 2 — Fina-style)
+  ══════════════════════════════════════════════════════ */
+  if (step === 'plan') {
+    const periods: SubscriptionPeriod[] = ['triplePlay', 'mensual', 'semestral', 'anual'];
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden bg-[#060b1a]">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-[20%] left-[10%] w-[60%] h-[60%] rounded-full bg-indigo-600/15 blur-[120px]" />
+          <div className="absolute -bottom-[15%] right-[5%] w-[50%] h-[50%] rounded-full bg-violet-600/10 blur-[100px]" />
+        </div>
+        <div className="absolute inset-0 opacity-[0.03]"
+          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
+
+        <div className="relative z-10 w-full max-w-3xl">
+          <button onClick={() => setStep('otp')} className="flex items-center gap-1.5 text-white/30 hover:text-white/60 text-xs font-bold mb-4 transition-colors">
+            <ArrowLeft size={14} /> Atrás
+          </button>
+
+          <h1 className="text-3xl font-black text-white text-center tracking-tight mb-2">Escoge tu plan</h1>
+
+          {/* Period tabs */}
+          <div className="flex items-center justify-center gap-1 mt-6 mb-2">
+            {periods.map(p => {
+              const cfg = PERIOD_CONFIG[p];
+              const active = period === p;
+              return (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2
+                    ${active
+                      ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25'
+                      : 'bg-white/[0.04] text-white/40 hover:text-white/60 border border-white/[0.06]'
+                    }`}
+                >
+                  {cfg.label}
+                  {cfg.badge && (
+                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black ${active ? 'bg-white/20 text-white' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                      {cfg.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Promo banner */}
+          {period === 'triplePlay' && (
+            <div className="mt-4 mb-2 mx-auto max-w-xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20 rounded-2xl px-5 py-3 text-center">
+              <p className="text-xs text-white/60 leading-relaxed">
+                <strong className="text-indigo-400">PROMO POR TIEMPO LIMITADO:</strong> Pagas el equivalente a dos meses y te regalamos el tercero completamente <strong className="text-white">GRATIS</strong>.
+              </p>
+            </div>
+          )}
+
+          {/* Plan cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+            {REG_PLANS.map(plan => {
+              const pricing = computePeriodPrice(plan.price, period);
+              const Icon = plan.icon;
+              return (
+                <div key={plan.id} className={`relative bg-white/[0.03] border rounded-2xl overflow-hidden transition-all hover:border-white/20
+                  ${plan.popular ? 'border-violet-500/40 shadow-lg shadow-violet-500/10' : 'border-white/[0.08]'}`}>
+                  {plan.popular && (
+                    <div className="bg-gradient-to-r from-violet-600 to-purple-600 text-white text-[8px] font-black uppercase tracking-widest text-center py-1.5">
+                      Más Popular
+                    </div>
+                  )}
+                  <div className="p-5">
+                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${plan.gradient} flex items-center justify-center mb-3`}>
+                      <Icon size={18} className="text-white" />
+                    </div>
+                    <h3 className="text-lg font-black text-white">{plan.name}</h3>
+                    <p className="text-[10px] text-white/30 mb-3">{plan.tagline}</p>
+
+                    <div className="flex items-baseline gap-1 mb-1">
+                      <span className="text-3xl font-black text-white">${pricing.perMonth}</span>
+                      <span className="text-xs text-white/30">/mes</span>
+                    </div>
+                    {period !== 'mensual' && (
+                      <p className="text-[10px] text-emerald-400 font-bold mb-3">
+                        {period === 'triplePlay' ? `Pagas $${pricing.total} por 3 meses` : `Total: $${pricing.total} — Ahorras $${pricing.savings}`}
+                      </p>
+                    )}
+
+                    {/* Expandable features */}
+                    <button
+                      onClick={() => setExpandedFeatures(expandedFeatures === plan.id ? null : plan.id)}
+                      className="w-full flex items-center justify-between px-3 py-2 bg-white/[0.04] rounded-xl text-[10px] text-white/40 font-bold hover:bg-white/[0.06] transition-colors mt-2 mb-3"
+                    >
+                      Ver beneficios
+                      <ChevronDown size={12} className={`transition-transform ${expandedFeatures === plan.id ? 'rotate-180' : ''}`} />
+                    </button>
+                    {expandedFeatures === plan.id && (
+                      <ul className="space-y-1.5 mb-3">
+                        {plan.features.map((f, i) => (
+                          <li key={i} className="flex items-start gap-2 text-[11px] text-white/50">
+                            <Check size={11} className="text-emerald-400 shrink-0 mt-0.5" /> {f}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <button
+                      onClick={() => handleCreateAccount(plan.id as PlanId)}
+                      disabled={creatingAccount}
+                      className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-40
+                        ${plan.popular
+                          ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-500/25 hover:from-violet-500 hover:to-purple-500'
+                          : 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1] border border-white/[0.08]'
+                        }`}
+                    >
+                      {creatingAccount && selectedPlan === plan.id ? <Loader2 size={14} className="animate-spin" /> : null}
+                      Seleccionar plan
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Trial CTA */}
+          <div className="text-center mt-6">
+            <button
+              onClick={() => handleCreateAccount('trial')}
+              disabled={creatingAccount}
+              className="text-sm font-bold text-white/30 hover:text-indigo-400 transition-colors disabled:opacity-40"
+            >
+              {creatingAccount && selectedPlan === 'trial' ? <Loader2 size={14} className="animate-spin inline mr-2" /> : null}
+              O prueba gratis por 30 días →
+            </button>
+          </div>
+
+          {otpError && (
+            <div className="mt-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium px-4 py-3 rounded-xl flex items-center gap-2">
+              <AlertTriangle size={13} className="shrink-0" /> {otpError}
+            </div>
+          )}
+
+          <p className="text-center text-[9px] font-black uppercase tracking-[0.4em] text-white/10 mt-6">Dualis ERP © 2026</p>
         </div>
       </div>
     );
@@ -801,24 +984,14 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 </p>
               </div>
             ) : (
-              /* Normal mode — create/join toggle */
+              /* Normal mode — always create */
               <>
-                <div className="flex bg-black/20 rounded-2xl p-1 gap-1 mb-6 w-fit">
-                  <button type="button" onClick={() => { setMode('create'); setError(''); }}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isCreate ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white/80'}`}>
-                    <Building2 size={12} /> Crear empresa
-                  </button>
-                  <button type="button" onClick={() => { setMode('join'); setError(''); }}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${!isCreate ? 'bg-white text-slate-900 shadow-lg' : 'text-white/50 hover:text-white/80'}`}>
-                    <Users size={12} /> Unirme
-                  </button>
-                </div>
-                <div className="animate-in fade-in-0 slide-in-from-left-2 duration-300" key={mode}>
+                <div className="animate-in fade-in-0 slide-in-from-left-2 duration-300">
                   <h1 className="text-2xl font-black text-white tracking-tight">
-                    {isCreate ? 'Funda tu empresa digital' : '¡Únete a tu equipo!'}
+                    Funda tu empresa digital
                   </h1>
                   <p className="text-white/55 text-sm mt-1.5">
-                    {isCreate ? 'Crea tu espacio de trabajo privado en minutos.' : 'Pega el código que te compartió tu administrador.'}
+                    Crea tu espacio de trabajo privado en minutos. Tu equipo se unirá mediante invitación.
                   </p>
                 </div>
               </>
@@ -827,35 +1000,81 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
 
           <div className="p-8">
             <form onSubmit={handleSubmit} className="space-y-4">
-              {!isCreate && !hasInvite && (
-                <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-5">
-                  <p className="text-[9px] font-black uppercase tracking-[0.35em] text-amber-400 mb-3">Código del Espacio de Trabajo</p>
-                  <input required type="text" placeholder="key_XXXXXXXXX..." autoComplete="off" spellCheck={false}
-                    className={`${inp} font-mono text-sm text-amber-200`}
-                    value={form.workspaceCode} onChange={e => set('workspaceCode', e.target.value)} />
+              {!isCreate && subdomain.businessId && (
+                <div className="flex items-center gap-3 px-4 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
+                  <Building2 size={16} className="text-indigo-400 shrink-0" />
+                  <div>
+                    <p className="text-xs font-black text-white">{subdomain.businessName}</p>
+                    <p className="text-[9px] text-white/30 font-bold">{subdomain.slug}.dualis.app</p>
+                  </div>
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Business Name — create mode only */}
+              {isCreate && (
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">Nombre del negocio</label>
+                  <p className="text-[9px] text-white/15 ml-1 -mt-1 mb-2">Este será el enlace para ingresar a su cuenta</p>
+                  <input required type="text" placeholder="Mi Tienda Express" className={inp}
+                    value={form.businessName} onChange={e => set('businessName', e.target.value)} />
+                  {form.slug && form.slug.length >= 3 && (
+                    <p className={`text-[10px] font-mono ml-1 mt-1.5 ${
+                      slugStatus === 'available' ? 'text-emerald-400' :
+                      slugStatus === 'taken' ? 'text-red-400' : 'text-white/20'
+                    }`}>
+                      {slugStatus === 'checking' ? '⟳ ' : slugStatus === 'available' ? '● ' : slugStatus === 'taken' ? '✕ ' : ''}
+                      {form.slug}.dualis.app
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Full Name — join mode */}
+              {!isCreate && (
                 <div>
                   <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">Nombre Completo</label>
                   <input required type="text" placeholder="Jesús Salazar" className={inp}
                     value={form.fullName} onChange={e => set('fullName', e.target.value)} />
                 </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">Nombre Público</label>
-                  <input required type="text" placeholder="Jesús" className={inp}
-                    value={form.displayName} onChange={e => set('displayName', e.target.value)} />
-                </div>
-              </div>
+              )}
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">Correo Electrónico</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">Email</label>
                 <div className="relative">
                   <Mail size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/20" />
                   <input required type="email" placeholder="jesus@empresa.com"
                     className={`${inp} pl-10`}
                     value={form.email} onChange={e => set('email', e.target.value)} />
+                </div>
+              </div>
+
+              {/* Phone with country code */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">
+                  Número de teléfono del dueño del negocio
+                </label>
+                {isCreate && (
+                  <p className="text-[9px] text-white/15 ml-1 -mt-1 mb-2">IMPORTANTE: no puede ser el teléfono de ningún empleado ni del negocio.</p>
+                )}
+                <div className="flex gap-2">
+                  <select
+                    className={`${inp} w-[110px] shrink-0`}
+                    value={form.phoneCode}
+                    onChange={e => set('phoneCode', e.target.value)}
+                  >
+                    {PHONE_CODES.map(pc => (
+                      <option key={pc.code} value={pc.code} className="bg-slate-900">
+                        {pc.flag} {pc.code}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="tel" placeholder="4125343141"
+                    className={inp}
+                    value={form.phone}
+                    onChange={e => set('phone', e.target.value.replace(/\D/g, ''))}
+                    maxLength={12}
+                  />
                 </div>
               </div>
 
@@ -883,19 +1102,27 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">Cédula / RIF</label>
-                  <input required type="text" placeholder="V-12345678" className={inp}
-                    value={form.nationalId} onChange={e => set('nationalId', e.target.value)} />
+              {/* Confirm password */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">Confirmar contraseña</label>
+                <div className="relative">
+                  <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/20" />
+                  <input required type={showPass ? 'text' : 'password'} placeholder="••••••••"
+                    className={`${inp} pl-10`}
+                    value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} />
                 </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">País</label>
-                  <select required className={inp} value={form.country} onChange={e => set('country', e.target.value)}>
-                    <option value="" className="bg-slate-900">Seleccionar</option>
-                    {COUNTRIES.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                  </select>
-                </div>
+                {form.password && form.confirmPassword && (
+                  <div className="mt-1.5 ml-1 flex items-center gap-1.5">
+                    {form.password === form.confirmPassword ? (
+                      <><CheckCircle2 size={10} className="text-emerald-400" /><span className="text-[9px] text-emerald-400 font-bold">Las contraseñas coinciden</span></>
+                    ) : (
+                      <><AlertTriangle size={10} className="text-red-400" /><span className="text-[9px] text-red-400 font-bold">Las contraseñas no coinciden</span></>
+                    )}
+                  </div>
+                )}
+                {form.password.length >= 8 && !form.confirmPassword && (
+                  <p className="mt-1.5 ml-1 text-[9px] text-emerald-400/60 flex items-center gap-1"><CheckCircle2 size={10} /> Contraseña con al menos 8 caracteres</p>
+                )}
               </div>
 
               <div className="flex items-start gap-3 pt-1">
@@ -925,7 +1152,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
 
               <button
                 type="submit"
-                disabled={loading || !terms || (captchaKey ? !captcha : false)}
+                disabled={loading || !terms || (captchaKey ? !captcha : false) || form.password !== form.confirmPassword || form.password.length < 8}
                 className={`w-full py-4 bg-gradient-to-r ${gradFrom} ${gradTo} hover:opacity-90 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 disabled:opacity-40 transition-all`}
               >
                 {loading

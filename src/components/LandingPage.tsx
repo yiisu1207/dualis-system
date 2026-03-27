@@ -18,6 +18,7 @@ import { collection, getCountFromServer, addDoc, serverTimestamp } from 'firebas
 import { db } from '../firebase/config';
 import { uploadToCloudinary } from '../utils/cloudinary';
 import Logo from './ui/Logo';
+import { PLANS as PLAN_CONFIG, COMPARE_ROWS, PLAN_PRICES, ANNUAL_DISCOUNT, ADDON_PRICES } from '../utils/planConfig';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    DATA
@@ -28,20 +29,23 @@ const HERO_WORDS = ['tu inventario.', 'tus ventas.', 'tu nomina.', 'tus finanzas
 const MODULES = [
   { icon: ShoppingCart, label: 'POS Detal', desc: 'Ventas al contado, escaner, modo offline, ticket digital.', color: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/20' },
   { icon: Building2, label: 'POS Mayor', desc: 'Terminal mayorista con credito 15/30/45 dias.', color: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/20' },
+  { icon: BadgeDollarSign, label: 'Precios Dinamicos', desc: 'Precios que se recalculan automaticamente segun las tasas de cambio.', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
   { icon: FileText, label: 'CxC / Clientes', desc: 'Cuentas por cobrar, historial y deudas USD/Bs.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
   { icon: Layers, label: 'CxP / Proveedores', desc: 'Cuentas por pagar y proveedores.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
   { icon: BookOpen, label: 'Contabilidad', desc: 'Libro diario, mayor y balance automatico.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
   { icon: Landmark, label: 'Conciliacion', desc: 'Conciliacion bancaria con CSV.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
-  { icon: Package, label: 'Inventario Pro', desc: 'Kardex, alertas stock y Smart Advisor.', color: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/20' },
+  { icon: Globe, label: 'Portal Clientes', desc: 'Tus clientes consultan su estado de cuenta y registran pagos.', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+  { icon: Package, label: 'Inventario Pro', desc: 'Kardex, alertas stock, margenes y Smart Advisor.', color: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/20' },
   { icon: Monitor, label: 'Cajas / Arqueo', desc: 'Turnos, arqueo y reporte Z.', color: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/20' },
   { icon: Users, label: 'RRHH & Nomina', desc: 'Empleados, nomina, adelantos y recibos.', color: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/20' },
   { icon: Sparkles, label: 'VisionLab IA', desc: 'Gemini analiza tu negocio en tiempo real.', color: 'text-violet-400', bg: 'bg-violet-500/10', border: 'border-violet-500/20' },
-  { icon: BarChart3, label: 'Reportes', desc: 'KPIs, comisiones, P&L y export Excel/PDF.', color: 'text-violet-400', bg: 'bg-violet-500/10', border: 'border-violet-500/20' },
+  { icon: BarChart3, label: 'Dashboard BI', desc: 'KPIs, producto estrella, alertas predictivas y P&L.', color: 'text-violet-400', bg: 'bg-violet-500/10', border: 'border-violet-500/20' },
   { icon: History, label: 'Rate History', desc: 'Historial de tasas con OCR y CSV masivo.', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-  { icon: TrendingUp, label: 'Tasas BCV Live', desc: 'Tasa oficial + propagacion instantanea.', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+  { icon: TrendingUp, label: 'Tasas Custom', desc: 'BCV + hasta 3 tasas extra configurables con precios automaticos.', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
   { icon: ShieldCheck, label: 'Audit Logs', desc: 'Auditoria inmutable. Export PDF/CSV/Excel.', color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/20' },
-  { icon: HelpCircle, label: 'Centro de Ayuda', desc: 'Wiki integrada con instrucciones.', color: 'text-teal-400', bg: 'bg-teal-500/10', border: 'border-teal-500/20' },
-  { icon: Sliders, label: 'Config. Avanzada', desc: 'IVA, IGTF, roles y permisos.', color: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/20' },
+  { icon: Receipt, label: 'Libro de Ventas', desc: 'Reporte fiscal con filtros, dual currency y export CSV.', color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/20' },
+  { icon: HelpCircle, label: 'Centro de Ayuda', desc: 'Wiki integrada con tooltips contextuales en cada seccion.', color: 'text-teal-400', bg: 'bg-teal-500/10', border: 'border-teal-500/20' },
+  { icon: Sliders, label: 'Config. Avanzada', desc: 'IVA, IGTF, roles, permisos y tasas personalizadas.', color: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/20' },
 ];
 
 const FAQ_ITEMS = [
@@ -53,13 +57,16 @@ const FAQ_ITEMS = [
   { q: 'Necesito tarjeta para la prueba?', a: 'No. Los 30 dias de prueba son completamente gratis y sin tarjeta.' },
   { q: 'Que pasa al terminar los 30 dias?', a: 'Puedes elegir un plan de pago. Tus datos se conservan 30 dias adicionales.' },
   { q: 'Hay soporte en espanol?', a: 'Si. Soporte completo en espanol via WhatsApp y email.' },
+  { q: 'Que son los precios dinamicos?', a: 'Los productos clasificados bajo una tasa custom (ej. Zoher, Grupo) se recalculan automaticamente al cambiar la tasa. Defines costo + margen y el sistema calcula todo.' },
+  { q: 'Mis clientes pueden ver su estado de cuenta?', a: 'Si. Con el Portal de Clientes, tus deudores acceden a su balance, registran pagos y ven sus facturas pendientes.' },
 ];
 
 const TICKER_ITEMS = [
   'POS Detal Cloud', 'POS Mayorista', 'Tasas BCV Live', 'RRHH & Nomina',
   'Inventario Pro', 'VisionLab IA', 'CxC & CxP', 'Conciliacion Bancaria',
   'Multi-moneda USD/VES', 'Roles & Permisos', 'Audit Logs', 'Exportar Excel/PDF',
-  'Modo Offline POS', 'Arqueo de Caja', 'Reporte Z',
+  'Modo Offline POS', 'Precios Dinamicos', 'Portal Clientes',
+  'Dashboard BI', 'Tasas Custom', 'Libro de Ventas', 'Tooltips de Ayuda',
 ];
 
 const DEMO_PRODUCTS = [
@@ -71,25 +78,7 @@ const DEMO_PRODUCTS = [
   { id: 6, name: 'Jabon Caja', price: 1.75, emoji: '\u{1F9FC}' },
 ];
 
-const COMPARE_ROWS = [
-  { cat: 'Ventas', label: 'POS Detal (contado)', s: true, n: true, e: true },
-  { cat: 'Ventas', label: 'POS Mayor (credito 15/30/45d)', s: false, n: true, e: true },
-  { cat: 'Ventas', label: 'IGTF e IVA automatico', s: true, n: true, e: true },
-  { cat: 'Ventas', label: 'Ticket 80mm / WhatsApp', s: true, n: true, e: true },
-  { cat: 'Finanzas', label: 'CxC — Cuentas por cobrar', s: 'basica', n: true, e: true },
-  { cat: 'Finanzas', label: 'CxP — Proveedores', s: false, n: true, e: true },
-  { cat: 'Finanzas', label: 'Contabilidad (libro + balance)', s: false, n: true, e: true },
-  { cat: 'Finanzas', label: 'Conciliacion Bancaria', s: false, n: false, e: true },
-  { cat: 'Inventario', label: 'Inventario + Kardex', s: '500 prod', n: 'ilimitado', e: 'ilimitado' },
-  { cat: 'Inventario', label: 'Smart Advisor de margen', s: false, n: true, e: true },
-  { cat: 'Equipo', label: 'Usuarios', s: '2', n: '5', e: 'Ilimitados' },
-  { cat: 'Equipo', label: 'Sucursales', s: '1', n: '2', e: '5' },
-  { cat: 'Equipo', label: 'RRHH & Nomina', s: false, n: true, e: true },
-  { cat: 'IA & Reportes', label: 'VisionLab IA (Gemini)', s: false, n: '+$19/mes', e: true },
-  { cat: 'IA & Reportes', label: 'Reportes KPI + P&L', s: 'basico', n: true, e: true },
-  { cat: 'Seguridad', label: 'Audit Logs', s: false, n: 'basico', e: 'inmutable' },
-  { cat: 'Soporte', label: 'Canal de soporte', s: 'Email', n: 'WhatsApp', e: 'Prioritario' },
-];
+// COMPARE_ROWS imported from planConfig.ts
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    COMPONENT
@@ -101,6 +90,7 @@ export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [pricingAnnual, setPricingAnnual] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
+  const [showAddons, setShowAddons] = useState(false);
   const [activeCat, setActiveCat] = useState('Todos');
   const [betaCount, setBetaCount] = useState<number | null>(null);
   const [previewTab, setPreviewTab] = useState<'dashboard' | 'pos' | 'inventario'>('dashboard');
@@ -176,7 +166,7 @@ export default function LandingPage() {
     return () => clearTimeout(timeout);
   }, [charIdx, deleting, wordIdx]);
 
-  const price = (monthly: number) => pricingAnnual ? Math.round(monthly * 0.8) : monthly;
+  const price = (monthly: number) => pricingAnnual ? Math.round(monthly * (1 - ANNUAL_DISCOUNT)) : monthly;
 
   /* ── Demo POS ───────────────────────────────────────── */
   const demoSubtotal = DEMO_PRODUCTS.reduce((s, p) => s + p.price * (demoCart[p.id] ?? 0), 0);
@@ -320,7 +310,7 @@ export default function LandingPage() {
                 El sistema administrativo pensado 100% para el negocio venezolano.
               </p>
               <p className="text-sm text-white/20 leading-relaxed mb-10" style={{ animation: 'fade-up .6s ease .25s both' }}>
-                POS + Inventario + Finanzas + RRHH + IA. En bolivares y dolares. Con tasas BCV en vivo.
+                POS + Inventario + Finanzas + RRHH + IA + Portal Clientes. Con precios dinamicos, tasas custom y BCV en vivo.
                 <span className="text-indigo-400/50 font-bold"> Hecho en Venezuela, para Venezuela.</span>
               </p>
 
@@ -332,7 +322,7 @@ export default function LandingPage() {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ animation: 'fade-up .6s ease .4s both' }}>
-                {[{ val: '16+', label: 'Modulos' }, { val: '100%', label: 'Cloud' }, { val: '2', label: 'Terminales POS' }, { val: '30d', label: 'Prueba gratis' }].map(s => (
+                {[{ val: '19+', label: 'Modulos' }, { val: '100%', label: 'Cloud' }, { val: '2', label: 'Terminales POS' }, { val: '30d', label: 'Prueba gratis' }].map(s => (
                   <div key={s.label} className="px-4 py-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] text-center hover:bg-white/[0.04] hover:border-white/[0.1] transition-all duration-300">
                     <div className="text-2xl font-black text-white">{s.val}</div>
                     <div className="text-[9px] font-bold text-white/20 uppercase tracking-widest mt-0.5">{s.label}</div>
@@ -545,9 +535,9 @@ export default function LandingPage() {
               </div>
               <div className="h-11 w-11 rounded-xl bg-indigo-500/15 flex items-center justify-center mb-5 border border-indigo-500/20"><ShoppingCart size={20} className="text-indigo-400" /></div>
               <h3 className="text-3xl font-black text-white mb-3 tracking-tight">POS Detal + Mayor</h3>
-              <p className="text-white/30 text-sm leading-relaxed max-w-md">Terminal de venta al contado y al credito. Escaner de camara, modo offline, multi-pago, IGTF automatico y ticket 80mm.</p>
+              <p className="text-white/30 text-sm leading-relaxed max-w-md">Terminal de venta al contado y al credito. Escaner de camara, precios dinamicos por tasa, multi-pago, IGTF automatico y ticket 80mm.</p>
               <div className="mt-6 flex flex-wrap gap-2">
-                {['Modo Offline', 'Escaner Camara', 'Multi-pago', 'Ticket 80mm', 'Credito 15/30/45d'].map(t => (
+                {['Modo Offline', 'Escaner Camara', 'Precios Dinamicos', 'Multi-pago', 'Ticket 80mm', 'Credito 15/30/45d'].map(t => (
                   <span key={t} className="px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/15 text-[9px] font-black uppercase tracking-widest text-indigo-400">{t}</span>
                 ))}
               </div>
@@ -572,10 +562,10 @@ export default function LandingPage() {
               <div>
                 <div className="h-11 w-11 rounded-xl bg-emerald-500/15 flex items-center justify-center mb-5 border border-emerald-500/20"><Package size={20} className="text-emerald-400" /></div>
                 <h3 className="text-2xl font-black text-white mb-3 tracking-tight">Inventario Pro</h3>
-                <p className="text-white/30 text-sm leading-relaxed">Kardex en tiempo real, multi-precio, alertas de stock y Smart Advisor de margen.</p>
+                <p className="text-white/30 text-sm leading-relaxed">Kardex en tiempo real, multi-precio, margenes por tasa, alertas de stock y clasificacion BCV/custom.</p>
               </div>
               <div className="mt-6 flex flex-wrap gap-2">
-                {['Kardex', 'Multi-precio', 'Alertas', 'Smart Advisor'].map(t => (
+                {['Kardex', 'Multi-precio', 'Margenes', 'Alertas', 'BCV/Custom'].map(t => (
                   <span key={t} className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/15 text-[9px] font-black uppercase tracking-widest text-emerald-400">{t}</span>
                 ))}
               </div>
@@ -613,10 +603,10 @@ export default function LandingPage() {
             <div data-reveal className="md:col-span-8 rounded-2xl bg-gradient-to-br from-amber-950/30 to-[#020710] border border-amber-500/20 p-8 flex flex-col md:flex-row gap-6 items-center group hover:border-amber-500/35 transition-all">
               <div className="flex-1">
                 <div className="h-11 w-11 rounded-xl bg-amber-500/15 flex items-center justify-center mb-5 border border-amber-500/20"><TrendingUp size={20} className="text-amber-400" /></div>
-                <h3 className="text-2xl font-black text-white mb-3 tracking-tight">Tasas BCV en Vivo</h3>
-                <p className="text-white/30 text-sm leading-relaxed max-w-md">Fetch automatico del BCV. Historial con OCR e importacion CSV masiva.</p>
+                <h3 className="text-2xl font-black text-white mb-3 tracking-tight">Tasas BCV + Custom</h3>
+                <p className="text-white/30 text-sm leading-relaxed max-w-md">BCV oficial en vivo + hasta 3 tasas custom configurables. Los precios se recalculan automaticamente al cambiar las tasas.</p>
                 <div className="mt-5 flex flex-wrap gap-2">
-                  {['Fetch BCV Auto', 'OCR imagenes', 'CSV masivo'].map(t => (
+                  {['Fetch BCV Auto', 'Tasas Custom', 'Precios Dinamicos', 'OCR imagenes'].map(t => (
                     <span key={t} className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/15 text-[9px] font-black uppercase tracking-widest text-amber-400">{t}</span>
                   ))}
                 </div>
@@ -652,7 +642,7 @@ export default function LandingPage() {
                 <p className="text-sm font-black text-emerald-400">Con Dualis</p>
               </div>
               <ul className="space-y-3">
-                {['POS profesional con ticket y escaner', 'IVA + IGTF calculados automaticamente', 'Tasa BCV oficial en vivo', 'Inventario en tiempo real con alertas', 'Audit log inmutable — todo registrado'].map(t => (
+                {['POS profesional con ticket y escaner', 'IVA + IGTF calculados automaticamente', 'Tasas BCV + custom con precios dinamicos', 'Inventario en tiempo real con alertas', 'Portal de clientes con estado de cuenta', 'Dashboard BI con alertas predictivas'].map(t => (
                   <li key={t} className="flex items-start gap-2.5"><CheckCircle2 size={11} className="text-emerald-400 shrink-0 mt-0.5" /><span className="text-[11px] text-white/50">{t}</span></li>
                 ))}
               </ul>
@@ -782,7 +772,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-10" data-reveal>
             <span className="text-[10px] font-black uppercase tracking-[0.3em] text-sky-400 block mb-3">Modulos del Sistema</span>
-            <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] text-white">16 modulos. <span className="text-white/[0.18]">Un solo login.</span></h2>
+            <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] text-white">19 modulos. <span className="text-white/[0.18]">Un solo login.</span></h2>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {MODULES.map((m, i) => {
@@ -814,7 +804,7 @@ export default function LandingPage() {
                 <h3 className="text-base font-black text-emerald-400">Listo y funcionando</h3>
               </div>
               <ul className="space-y-2.5">
-                {['POS Detal + Mayor', 'Inventario con Kardex', 'CxC y CxP completo', 'RRHH & Nomina', 'Tasas BCV en vivo', 'VisionLab IA (Gemini)', 'Reportes y P&L', 'Contabilidad', 'Audit Logs', 'Roles y permisos', 'IVA 16% + IGTF 3%', 'Centro de Ayuda'].map(t => (
+                {['POS Detal + Mayor', 'Multi-cuenta (BCV + custom)', 'Precios dinamicos por tasa', 'Tasas custom configurables (hasta 3)', 'Inventario con Kardex y margenes', 'CxC y CxP completo', 'Portal de clientes', 'Limite de credito por cliente', 'Solicitudes de abono', 'Pronto pago (descuento)', 'RRHH & Nomina', 'Tasas BCV en vivo', 'VisionLab IA (Gemini)', 'Dashboard BI con alertas predictivas', 'Reportes y P&L', 'Libro de Ventas', 'Contabilidad', 'Audit Logs', 'Roles y permisos', 'IVA 16% + IGTF 3%', 'URL personalizada', 'Centro de Ayuda con tooltips', 'Tooltips contextuales en cada seccion'].map(t => (
                   <li key={t} className="flex items-center gap-2"><Check size={12} className="text-emerald-400 shrink-0" /><span className="text-[11px] text-white/45">{t}</span></li>
                 ))}
               </ul>
@@ -828,9 +818,9 @@ export default function LandingPage() {
               <ul className="space-y-2.5">
                 {[
                   { label: 'Factura Legal SENIAT', p: 'CRITICO' }, { label: 'Arqueo de Caja + Reporte Z', p: 'CRITICO' },
-                  { label: 'Libro de Ventas SENIAT', p: 'CRITICO' }, { label: 'Limite de credito por cliente', p: 'ALTO' },
-                  { label: 'Conciliacion bancaria CSV', p: 'MEDIO' }, { label: 'Notificaciones push', p: 'MEDIO' },
-                  { label: 'App movil nativa', p: 'FUTURO' },
+                  { label: 'Cotizaciones y presupuestos', p: 'ALTO' }, { label: 'Historial completo por cliente', p: 'ALTO' },
+                  { label: 'Conciliación bancaria CSV', p: 'MEDIO' }, { label: 'Notificaciones push', p: 'MEDIO' },
+                  { label: 'App móvil nativa', p: 'FUTURO' },
                 ].map(t => (
                   <li key={t.label} className="flex items-center gap-2">
                     <div className={`shrink-0 h-1.5 w-1.5 rounded-full ${t.p === 'CRITICO' ? 'bg-rose-400' : t.p === 'ALTO' ? 'bg-amber-400' : t.p === 'MEDIO' ? 'bg-sky-400' : 'bg-white/20'}`} />
@@ -914,15 +904,22 @@ export default function LandingPage() {
             <div data-reveal className="rounded-2xl border border-sky-500/20 bg-gradient-to-b from-sky-950/20 to-[#020710] p-7 flex flex-col">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/20 flex items-center justify-center"><Zap size={16} className="text-sky-400" /></div>
-                <div><p className="text-[9px] font-black text-sky-400 uppercase tracking-[0.2em]">Starter</p><p className="text-[10px] text-white/25">Para comenzar</p></div>
+                <div><p className="text-[9px] font-black text-sky-400 uppercase tracking-[0.2em]">{PLAN_CONFIG[0].name}</p><p className="text-[10px] text-white/25">{PLAN_CONFIG[0].tagline}</p></div>
               </div>
-              <div className="flex items-end gap-2 mb-5"><span className="text-5xl font-black text-white">${price(24)}</span><span className="text-white/20 text-[9px] font-bold mb-1">/mes</span></div>
+              <div className="flex items-end gap-2 mb-1"><span className="text-5xl font-black text-white">${price(PLAN_CONFIG[0].price)}</span><span className="text-white/20 text-[9px] font-bold mb-1">/mes</span></div>
+              {bcvRate && <p className="text-[10px] text-white/15 font-bold mb-4">Bs. {(price(PLAN_CONFIG[0].price) * parseFloat(bcvRate)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + IVA</p>}
               <button onClick={() => navigate('/register')} className="w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:-translate-y-0.5 mb-6" style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.3)', color: '#38bdf8' }}>Empezar gratis 30d</button>
               <ul className="space-y-2.5">
-                {[{ ok: true, l: 'POS Detal completo' }, { ok: true, l: '500 productos' }, { ok: true, l: 'CxC basico' }, { ok: true, l: '2 usuarios' }, { ok: true, l: 'Ticket digital' }, { ok: false, l: 'POS Mayor' }, { ok: false, l: 'RRHH' }, { ok: false, l: 'VisionLab IA' }].map(f => (
-                  <li key={f.l} className="flex items-center gap-2">
-                    {f.ok ? <Check size={11} className="text-emerald-400 shrink-0" /> : <Minus size={11} className="text-white/[0.12] shrink-0" />}
-                    <span className={`text-[11px] ${f.ok ? 'text-white/45' : 'text-white/15'}`}>{f.l}</span>
+                {PLAN_CONFIG[0].features.map(f => (
+                  <li key={f} className="flex items-center gap-2">
+                    <Check size={11} className="text-emerald-400 shrink-0" />
+                    <span className="text-[11px] text-white/45">{f}</span>
+                  </li>
+                ))}
+                {['POS Mayor', 'Precios dinamicos', 'RRHH', 'VisionLab IA'].map(f => (
+                  <li key={f} className="flex items-center gap-2">
+                    <Minus size={11} className="text-white/[0.12] shrink-0" />
+                    <span className="text-[11px] text-white/15">{f}</span>
                   </li>
                 ))}
               </ul>
@@ -931,17 +928,18 @@ export default function LandingPage() {
             {/* Negocio */}
             <div data-reveal className="relative rounded-2xl p-7 flex flex-col plan-card-popular" style={{ background: 'linear-gradient(160deg, rgba(79,70,229,0.12) 0%, rgba(13,20,36,1) 50%, rgba(2,7,16,1) 100%)', border: '1px solid rgba(99,102,241,0.4)' }}>
               <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                <div className="px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest text-white" style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}>Mas Popular</div>
+                <div className="px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest text-white" style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}>Más Popular</div>
               </div>
               <div className="flex items-center gap-3 mb-4 mt-2">
                 <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center"><Building2 size={16} className="text-indigo-400" /></div>
-                <div><p className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em]">Negocio</p><p className="text-[10px] text-white/25">Para crecer</p></div>
+                <div><p className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em]">{PLAN_CONFIG[1].name}</p><p className="text-[10px] text-white/25">{PLAN_CONFIG[1].tagline}</p></div>
               </div>
-              <div className="flex items-end gap-2 mb-5"><span className="text-5xl font-black text-white">${price(49)}</span><span className="text-white/20 text-[9px] font-bold mb-1">/mes</span></div>
+              <div className="flex items-end gap-2 mb-1"><span className="text-5xl font-black text-white">${price(PLAN_CONFIG[1].price)}</span><span className="text-white/20 text-[9px] font-bold mb-1">/mes</span></div>
+              {bcvRate && <p className="text-[10px] text-white/15 font-bold mb-4">Bs. {(price(PLAN_CONFIG[1].price) * parseFloat(bcvRate)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + IVA</p>}
               <button onClick={() => navigate('/register')} className="w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5 mb-6" style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}>Activar gratis 30d</button>
               <ul className="space-y-2.5">
-                {[{ ok: true, l: 'Todo lo del Starter' }, { ok: true, l: 'POS Mayor (credito)' }, { ok: true, l: 'Inventario ilimitado' }, { ok: true, l: 'CxC + CxP completo' }, { ok: true, l: 'RRHH & Nomina' }, { ok: true, l: 'Contabilidad' }, { ok: true, l: 'Tasas BCV auto' }, { ok: true, l: '5 usuarios' }, { ok: true, l: 'Soporte WhatsApp' }].map(f => (
-                  <li key={f.l} className="flex items-center gap-2"><Check size={11} className="text-emerald-400 shrink-0" /><span className="text-[11px] text-white/55">{f.l}</span></li>
+                {PLAN_CONFIG[1].features.map(f => (
+                  <li key={f} className="flex items-center gap-2"><Check size={11} className="text-emerald-400 shrink-0" /><span className="text-[11px] text-white/55">{f}</span></li>
                 ))}
               </ul>
             </div>
@@ -950,13 +948,14 @@ export default function LandingPage() {
             <div data-reveal className="rounded-2xl border border-violet-500/20 bg-gradient-to-b from-violet-950/20 to-[#020710] p-7 flex flex-col">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-9 h-9 rounded-xl bg-violet-500/15 border border-violet-500/20 flex items-center justify-center"><Crown size={16} className="text-violet-400" /></div>
-                <div><p className="text-[9px] font-black text-violet-400 uppercase tracking-[0.2em]">Enterprise</p><p className="text-[10px] text-white/25">Operacion completa</p></div>
+                <div><p className="text-[9px] font-black text-violet-400 uppercase tracking-[0.2em]">{PLAN_CONFIG[2].name}</p><p className="text-[10px] text-white/25">{PLAN_CONFIG[2].tagline}</p></div>
               </div>
-              <div className="flex items-end gap-2 mb-5"><span className="text-5xl font-black text-white">${price(89)}</span><span className="text-white/20 text-[9px] font-bold mb-1">/mes</span></div>
+              <div className="flex items-end gap-2 mb-1"><span className="text-5xl font-black text-white">${price(PLAN_CONFIG[2].price)}</span><span className="text-white/20 text-[9px] font-bold mb-1">/mes</span></div>
+              {bcvRate && <p className="text-[10px] text-white/15 font-bold mb-4">Bs. {(price(PLAN_CONFIG[2].price) * parseFloat(bcvRate)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + IVA</p>}
               <button onClick={() => navigate('/register')} className="w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:-translate-y-0.5 mb-6" style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)', color: '#a78bfa' }}>Activar gratis 30d</button>
               <ul className="space-y-2.5">
-                {[{ l: 'Todo lo del Negocio' }, { l: 'VisionLab IA incluido' }, { l: 'Conciliacion bancaria' }, { l: 'Audit Logs inmutables' }, { l: 'Usuarios ilimitados' }, { l: 'Soporte prioritario' }].map(f => (
-                  <li key={f.l} className="flex items-center gap-2"><Check size={11} className="text-emerald-400 shrink-0" /><span className="text-[11px] text-white/50">{f.l}</span></li>
+                {PLAN_CONFIG[2].features.map(f => (
+                  <li key={f} className="flex items-center gap-2"><Check size={11} className="text-emerald-400 shrink-0" /><span className="text-[11px] text-white/50">{f}</span></li>
                 ))}
               </ul>
             </div>
@@ -998,6 +997,66 @@ export default function LandingPage() {
               Todos incluyen <span className="text-white font-black">30 dias gratis</span> &middot; Sin tarjeta &middot; <span className="text-emerald-400 font-black">Tus datos siempre son tuyos</span>
             </p>
           </div>
+
+          {/* ── Ver más: Add-ons & Extras ─────────────────────────── */}
+          <div className="text-center mt-6" data-reveal>
+            <button onClick={() => setShowAddons(p => !p)} className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-white/[0.08] bg-white/[0.03] text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-white hover:border-white/20 transition-all">
+              <Package size={12} /> {showAddons ? 'Ocultar' : 'Ver más'}: Extras y complementos <ChevronDown size={12} className={`transition-transform ${showAddons ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+
+          {showAddons && (
+            <div data-reveal className="mt-6 space-y-4">
+              <div className="text-center mb-2">
+                <h3 className="text-2xl font-black text-white mb-1">Complementos disponibles</h3>
+                <p className="text-sm text-white/25">Potencia tu plan con módulos adicionales</p>
+              </div>
+
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {[
+                  { label: 'Usuarios extra', price: ADDON_PRICES.extraUsers, unit: '/usuario/mes', desc: 'Agrega usuarios ilimitados a cualquier plan.', border: 'border-sky-500/20 hover:border-sky-500/40', bg: 'bg-sky-500/[0.04]', accent: 'text-sky-400' },
+                  { label: 'Productos extra', price: ADDON_PRICES.extraProducts, unit: '/1,000 prod/mes', desc: 'Expande tu catálogo sin límites.', border: 'border-emerald-500/20 hover:border-emerald-500/40', bg: 'bg-emerald-500/[0.04]', accent: 'text-emerald-400' },
+                  { label: 'Sucursal extra', price: ADDON_PRICES.extraSucursales, unit: '/sucursal/mes', desc: 'Gestiona más puntos de venta.', border: 'border-amber-500/20 hover:border-amber-500/40', bg: 'bg-amber-500/[0.04]', accent: 'text-amber-400' },
+                  { label: 'VisionLab IA', price: ADDON_PRICES.visionLab, unit: '/mes', desc: 'Inteligencia artificial con Gemini para tu negocio.', border: 'border-violet-500/20 hover:border-violet-500/40', bg: 'bg-violet-500/[0.04]', accent: 'text-violet-400' },
+                  { label: 'Conciliación bancaria', price: ADDON_PRICES.conciliacion, unit: '/mes', desc: 'Importa CSV bancario y concilia automáticamente.', border: 'border-indigo-500/20 hover:border-indigo-500/40', bg: 'bg-indigo-500/[0.04]', accent: 'text-indigo-400' },
+                  { label: 'RRHH Pro', price: ADDON_PRICES.rrhhPro, unit: '/mes', desc: 'Nomina avanzada, prestamos y reportes.', border: 'border-rose-500/20 hover:border-rose-500/40', bg: 'bg-rose-500/[0.04]', accent: 'text-rose-400' },
+                  { label: 'Precios Dinamicos', price: ADDON_PRICES.preciosDinamicos, unit: '/mes', desc: 'Tasas custom + precios que se recalculan automaticamente. Incluido en Enterprise.', border: 'border-amber-500/20 hover:border-amber-500/40', bg: 'bg-amber-500/[0.04]', accent: 'text-amber-400' },
+                ].map(addon => (
+                  <div key={addon.label} className={`rounded-xl border ${addon.border} ${addon.bg} p-5 transition-all`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-black text-white">{addon.label}</h4>
+                      <span className={`${addon.accent} font-black text-sm`}>+${addon.price}</span>
+                    </div>
+                    <p className="text-[10px] text-white/25 font-bold uppercase tracking-widest mb-2">{addon.unit}</p>
+                    <p className="text-[11px] text-white/35 leading-relaxed">{addon.desc}</p>
+                    {bcvRate && <p className="text-[9px] text-white/15 font-bold mt-2">Bs. {(addon.price * parseFloat(bcvRate)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Payment methods */}
+              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 mt-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/25 mb-4 text-center">Métodos de pago aceptados</p>
+                <div className="flex flex-wrap items-center justify-center gap-4">
+                  {[
+                    { name: 'Binance Pay', detail: 'USDT' },
+                    { name: 'Pago Móvil', detail: 'Bancamiga' },
+                    { name: 'Transferencia', detail: 'Bancamiga' },
+                    { name: 'PayPal', detail: 'USD' },
+                  ].map(m => (
+                    <div key={m.name} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.04] border border-white/[0.07]">
+                      <Banknote size={13} className="text-emerald-400/60" />
+                      <div>
+                        <p className="text-[11px] font-black text-white/50">{m.name}</p>
+                        <p className="text-[8px] text-white/20 font-bold">{m.detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-center text-[10px] text-white/15 mt-4">Verificación manual en menos de 24 horas · Sin tarjeta de crédito requerida</p>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

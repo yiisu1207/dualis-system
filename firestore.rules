@@ -39,6 +39,10 @@ service cloud.firestore {
       return isMember(bid) && (role == 'admin' || role == 'owner');
     }
 
+    function isOwner(bid) {
+      return isMember(bid) && myRole() == 'owner';
+    }
+
     // Verificar si un documento pertenece a la empresa del usuario
     function belongsToMe(data) {
       let me = myBID();
@@ -164,6 +168,32 @@ service cloud.firestore {
         allow delete: if isAdmin(bid);
       }
 
+      // Solicitudes de abono: vendedor crea, admin aprueba/rechaza
+      match /paymentRequests/{reqId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isAdmin(bid);
+        allow delete: if isAdmin(bid);
+      }
+
+      // Portal de Clientes — acceso público por token
+      match /portalAccess/{tokenId} {
+        // Público: clientes validan su token + PIN sin auth
+        allow get: if true;
+        // Solo admin puede gestionar accesos
+        allow list, create, update, delete: if isAdmin(bid);
+      }
+
+      // Pagos enviados desde el Portal de Clientes
+      match /portalPayments/{payId} {
+        // Público: clientes crean pagos (validación por token en app)
+        allow create: if true;
+        // Miembros pueden leer; admin puede aprobar/rechazar
+        allow read: if isMember(bid);
+        allow update: if isAdmin(bid);
+        allow delete: if isAdmin(bid);
+      }
+
       // Catch-all: cualquier subcollection NO listada arriba
       // Miembros pueden leer y crear/actualizar; solo admin puede borrar
       match /{allSubcollections=**} {
@@ -217,8 +247,8 @@ service cloud.firestore {
     match /invitations/{token} {
       // Cualquier usuario puede leer una invitación por token (para validar en /join)
       allow get: if true;
-      // Solo admins del negocio pueden crear/actualizar
-      allow create: if isSignedIn() && isAdmin(request.resource.data.businessId);
+      // Solo el owner del negocio puede crear invitaciones
+      allow create: if isSignedIn() && isOwner(request.resource.data.businessId);
       // Consumir invitación: cualquier usuario autenticado (al registrarse)
       allow update: if isSignedIn();
       allow delete: if false;
@@ -253,6 +283,19 @@ service cloud.firestore {
     match /bookCompareNotes/{docId} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn() && belongsToMe(request.resource.data);
+    }
+
+    // TENANTS (subdomain multi-tenancy: slug → businessId)
+    match /tenants/{slug} {
+      // Público: cualquier persona puede resolver un slug para login
+      allow get: if true;
+      // Solo listar si es super-admin (para auditoría)
+      allow list: if isSuperAdmin();
+      // Solo admin/owner del negocio puede crear/actualizar su slug
+      allow create: if isSignedIn() && isAdmin(request.resource.data.businessId);
+      allow update: if isSignedIn() && isAdmin(resource.data.businessId);
+      // Solo super-admin puede eliminar
+      allow delete: if isSuperAdmin();
     }
 
     // SOLICITUDES

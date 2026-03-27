@@ -10,6 +10,7 @@ import {
 import ReCAPTCHA from 'react-google-recaptcha';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSubdomain } from '../context/SubdomainContext';
 import ModeToggle from './ModeToggle';
 
 const FEATURES = [
@@ -29,7 +30,6 @@ const readRL    = () => { try { const r = localStorage.getItem(RATE_KEY); return
 const writeRL   = (v: object) => localStorage.setItem(RATE_KEY, JSON.stringify(v));
 
 export default function Login() {
-  const [code,      setCode]      = useState('');
   const [email,     setEmail]     = useState('');
   const [pass,      setPass]      = useState('');
   const [showPass,  setShowPass]  = useState(false);
@@ -47,7 +47,10 @@ export default function Login() {
 
   const nav                     = useNavigate();
   const { user, loading: aLoad } = useAuth();
+  const subdomain                = useSubdomain();
   const captchaKey              = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined;
+
+  const isSubdomain = !!(subdomain.slug && subdomain.businessId);
 
   React.useEffect(() => { if (user && !aLoad) nav('/'); }, [user, aLoad, nav]);
 
@@ -56,7 +59,6 @@ export default function Login() {
     e.preventDefault();
     setLoading(true); setError('');
 
-    if (!code) { setError('El Código de Espacio es obligatorio.'); setLoading(false); return; }
     if (captchaKey && !captcha) { setError('Completa el captcha.'); setLoading(false); return; }
 
     const now = Date.now(), rl = readRL();
@@ -74,9 +76,11 @@ export default function Login() {
 
       const ud  = userDoc.data();
       const bid = ud.businessId || ud.empresa_id;
-      if (bid && bid !== code.trim()) {
+
+      // If on a subdomain, validate user belongs to this business
+      if (isSubdomain && subdomain.businessId && bid && bid !== subdomain.businessId) {
         await auth.signOut();
-        setError('Acceso Denegado: El Código de Espacio no coincide con esta cuenta.');
+        setError('Esta cuenta no pertenece a esta empresa. Verifica tu URL o correo.');
         setLoading(false); return;
       }
 
@@ -86,11 +90,10 @@ export default function Login() {
       localStorage.removeItem(RATE_KEY);
       setCaptcha(null);
 
-      const eff = bid || code.trim();
-      if (ud.status === 'PENDING_APPROVAL' && eff) {
-        nav(`/${eff}/pending`, { replace: true });
-      } else if ((ud.status || 'ACTIVE') === 'ACTIVE' && eff) {
-        nav(`/${eff}/admin/dashboard`, { replace: true });
+      if (ud.status === 'PENDING_APPROVAL' && bid) {
+        nav(`/${bid}/pending`, { replace: true });
+      } else if ((ud.status || 'ACTIVE') === 'ACTIVE' && bid) {
+        nav(`/${bid}/admin/dashboard`, { replace: true });
       } else {
         nav('/onboarding', { replace: true });
       }
@@ -100,7 +103,7 @@ export default function Login() {
       const nc    = nw.count + 1;
       const lock  = nc >= MAX_ATT;
       writeRL({ count: nc, firstAttempt: nw.firstAttempt, lockedUntil: lock ? now + LOCK_MS : undefined });
-      setError(lock ? 'Demasiados intentos. Intenta en 10 min.' : (err.message || 'Correo, contraseña o código incorrectos.'));
+      setError(lock ? 'Demasiados intentos. Intenta en 10 min.' : 'Correo o contraseña incorrectos.');
       setLoading(false);
     }
   };
@@ -132,7 +135,7 @@ export default function Login() {
   };
 
   /* ── SHARED INPUT CLASS ──────────────────────────────── */
-  const inp = 'w-full pl-11 pr-4 py-4 bg-white dark:bg-slate-800/[0.06] border border-white/[0.1] text-white rounded-xl placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500/40 text-sm font-medium transition-all';
+  const inp = 'w-full pl-11 pr-4 py-4 bg-white dark:bg-slate-900/[0.06] border border-white/[0.1] text-white rounded-xl placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500/40 text-sm font-medium transition-all';
 
   /* ═══════════════════════════════════════════════════════
      RENDER
@@ -161,9 +164,7 @@ export default function Login() {
 
         {/* Logo */}
         <div className="relative z-10 flex items-center gap-3">
-          <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-xl shadow-indigo-600/30">
-            <span className="text-white font-black text-xl">D</span>
-          </div>
+          <img src="/logo.png" alt="Dualis" className="h-11 w-auto drop-shadow-lg" />
           <div>
             <p className="text-white font-black text-xl tracking-tight">Dualis ERP</p>
             <p className="text-white/25 text-[9px] font-bold uppercase tracking-widest">Sistema Empresarial</p>
@@ -267,34 +268,28 @@ export default function Login() {
             <div className="animate-in fade-in-0 duration-500">
               {/* Mobile logo */}
               <div className="lg:hidden flex items-center gap-3 mb-8">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
-                  <span className="text-white font-black">D</span>
-                </div>
+                <img src="/logo.png" alt="Dualis" className="h-9 w-auto" />
                 <span className="text-white font-black text-lg">Dualis ERP</span>
               </div>
 
               <div className="mb-9">
                 <h1 className="text-4xl font-black text-white tracking-tight leading-tight">
-                  Bienvenido<br />de vuelta
+                  {isSubdomain ? <>Bienvenido a<br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">{subdomain.businessName}</span></> : <>Bienvenido<br />de vuelta</>}
                 </h1>
-                <p className="text-white/35 text-sm mt-2">Ingresa a tu panel de control empresarial.</p>
+                <p className="text-white/35 text-sm mt-2">{isSubdomain ? 'Ingresa con tu cuenta para acceder.' : 'Ingresa a tu panel de control empresarial.'}</p>
               </div>
 
               <form onSubmit={handleLogin} className="space-y-4">
-                {/* Workspace Code */}
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-1 mb-2 block">
-                    Código de Espacio
-                  </label>
-                  <div className="relative">
-                    <Building2 size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" />
-                    <input
-                      type="text" required placeholder="key_..."
-                      value={code} onChange={e => setCode(e.target.value)}
-                      className={`${inp} font-mono text-emerald-300 placeholder:text-white/20`}
-                    />
+                {/* Subdomain badge — when accessed via custom URL */}
+                {isSubdomain && (
+                  <div className="flex items-center gap-3 px-4 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
+                    <Building2 size={16} className="text-indigo-400 shrink-0" />
+                    <div>
+                      <p className="text-xs font-black text-white">{subdomain.businessName}</p>
+                      <p className="text-[9px] text-white/30 font-bold">{subdomain.slug}.dualis.app</p>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Email */}
                 <div>
@@ -371,7 +366,8 @@ export default function Login() {
                 </button>
               </form>
 
-              {/* Register link */}
+              {/* Register link — hidden on subdomain (invite-only) */}
+              {!isSubdomain && (
               <div className="mt-8 pt-6 border-t border-white/[0.06] text-center">
                 <p className="text-xs text-white/25">
                   ¿Nuevo en Dualis?{' '}
@@ -380,6 +376,14 @@ export default function Login() {
                   </button>
                 </p>
               </div>
+              )}
+              {isSubdomain && (
+              <div className="mt-8 pt-6 border-t border-white/[0.06] text-center">
+                <p className="text-[10px] text-white/20">
+                  ¿No tienes cuenta? Contacta al administrador de tu empresa para recibir una invitaci&oacute;n.
+                </p>
+              </div>
+              )}
             </div>
           )}
         </div>

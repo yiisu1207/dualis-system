@@ -28,10 +28,8 @@ import RecursosHumanos from './pages/RecursosHumanos';
 import Inventario from './pages/Inventario';
 import VisionLab from './components/VisionLab';
 import BooksComparePanel from './components/BooksComparePanel';
-import AIChat from './components/AIChat';
 import UserProfileModalComp from './components/UserProfileModal';
 import CustomerViewer from './components/CustomerViewer';
-import RateHistoryWall from './components/RateHistoryWall';
 import DataImporter from './components/DataImporter';
 import SmartCalculatorWidget from './components/SmartCalculatorWidget';
 import HelpCenter from './components/HelpCenter';
@@ -42,16 +40,13 @@ import TrialBanner from './components/TrialBanner';
 import NotificationCenter from './components/NotificationCenter';
 import ReportesSection from './components/ReportesSection';
 import ReconciliationSection from './components/ReconciliationSection';
-import FiscalSection from './pages/FiscalSection';
 import LibroVentasSection from './components/LibroVentasSection';
+import PaymentRequestsPanel from './components/PaymentRequestsPanel';
+import ExchangeRatesSection from './components/ExchangeRatesSection';
 
 // WIDGETS
-import StickyNotesWidget from './components/StickyNotesWidget';
 import RateConverterWidget from './components/RateConverterWidget';
-import TimerWidget from './components/TimerWidget';
 import PriceCheckerWidget from './components/PriceCheckerWidget';
-import TodoListWidget from './components/TodoListWidget';
-import TeamChatWidget from './components/TeamChatWidget';
 import SpeedDialWidget from './components/SpeedDialWidget';
 
 // FIREBASE
@@ -563,7 +558,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     });
   }, [notifications]);
 
-  const legacyRates = { bcv: rates.tasaBCV, grupo: rates.tasaGrupo, lastUpdated: rates.lastUpdated };
+  const legacyRates = { bcv: rates.tasaBCV, grupo: rates.tasaGrupo, divisa: rates.tasaDivisa || rates.tasaGrupo - 1, lastUpdated: rates.lastUpdated };
 
   const tabTitles: Record<string, string> = {
     resumen: 'Resumen', clientes: 'Clientes', contabilidad: 'Contabilidad',
@@ -626,8 +621,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             {activeTab === 'inventario' && (canView('inventario') ? <Inventario /> : <NoAccess />)}
             {activeTab === 'config'     && (canView('config')     ? <Configuracion /> : <NoAccess />)}
             {activeTab === 'help'       && <HelpCenter />}
-            {activeTab === 'tasas'      && (canView('tasas') ? <RateHistoryWall rates={legacyRates as any} /> : <NoAccess />)}
-
+            {activeTab === 'tasas' && <ExchangeRatesSection />}
+            {activeTab === 'historial' && (canView('reportes') ? <LibroVentasSection /> : <NoAccess />)}
             {activeTab === 'cajas' && (
               !canView('cajas') ? <NoAccess /> :
               canAccess('cajas')
@@ -658,8 +653,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                 ? <ReconciliationSection movements={movements} businessId={businessId} ownerId={userProfile?.uid || ''} rates={legacyRates as any} />
                 : <LockedModule moduleName="Conciliación Bancaria" requiredPlan="negocio" isAddon />
             )}
-            {activeTab === 'fiscal'  && (canView('fiscal')  ? <FiscalSection /> : <NoAccess />)}
-            {activeTab === 'libroventas' && (canView('reportes') ? <LibroVentasSection /> : <NoAccess />)}
             {activeTab === 'vision' && (
               !canView('vision') ? <NoAccess /> :
               canAccess('vision')
@@ -740,6 +733,16 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               ) : <LockedModule moduleName="Proveedores / CxP" requiredPlan="negocio" />
             )}
 
+            {activeTab === 'solicitudes' && (
+              <PaymentRequestsPanel
+                businessId={businessId}
+                userRole={user?.role || 'member'}
+                userId={firebaseUser?.uid || ''}
+                userName={user?.name || 'Vendedor'}
+                rates={legacyRates as any}
+              />
+            )}
+
             <Outlet />
           </div>
         </main>
@@ -784,15 +787,10 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
       {/* WIDGETS */}
       <SmartCalculatorWidget rates={legacyRates as any} isOpen={widgetManager.widgets.calculator.isOpen} isMinimized={widgetManager.widgets.calculator.isMinimized} position={widgetManager.widgets.calculator.position} onClose={() => widgetManager.closeWidget('calculator')} onMinimize={() => widgetManager.setMinimized('calculator', !widgetManager.widgets.calculator.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('calculator', pos)} />
-      {widgetManager.widgets.notes.isOpen && <StickyNotesWidget isOpen={true} isMinimized={widgetManager.widgets.notes.isMinimized} position={widgetManager.widgets.notes.position} onClose={() => widgetManager.closeWidget('notes')} onMinimize={() => widgetManager.setMinimized('notes', !widgetManager.widgets.notes.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('notes', pos)} />}
       {widgetManager.widgets.converter.isOpen && <RateConverterWidget rates={legacyRates as any} isOpen={true} isMinimized={widgetManager.widgets.converter.isMinimized} position={widgetManager.widgets.converter.position} onClose={() => widgetManager.closeWidget('converter')} onMinimize={() => widgetManager.setMinimized('converter', !widgetManager.widgets.converter.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('converter', pos)} />}
-      {widgetManager.widgets.timer.isOpen && <TimerWidget isOpen={true} isMinimized={widgetManager.widgets.timer.isMinimized} position={widgetManager.widgets.timer.position} onClose={() => widgetManager.closeWidget('timer')} onMinimize={() => widgetManager.setMinimized('timer', !widgetManager.widgets.timer.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('timer', pos)} />}
       {widgetManager.widgets.priceChecker.isOpen && <PriceCheckerWidget inventory={inventoryItems as any} rates={legacyRates as any} isOpen={true} isMinimized={widgetManager.widgets.priceChecker.isMinimized} position={widgetManager.widgets.priceChecker.position} onClose={() => widgetManager.closeWidget('priceChecker')} onMinimize={() => widgetManager.setMinimized('priceChecker', !widgetManager.widgets.priceChecker.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('priceChecker', pos)} />}
-      {widgetManager.widgets.todo.isOpen && <TodoListWidget isOpen={true} isMinimized={widgetManager.widgets.todo.isMinimized} position={widgetManager.widgets.todo.position} onClose={() => widgetManager.closeWidget('todo')} onMinimize={() => widgetManager.setMinimized('todo', !widgetManager.widgets.todo.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('todo', pos)} />}
-      {widgetManager.widgets.chat.isOpen && <TeamChatWidget businessId={businessId} currentUserId={uid} currentUserName={user?.name} isOpen={true} isMinimized={widgetManager.widgets.chat.isMinimized} position={widgetManager.widgets.chat.position} onClose={() => widgetManager.closeWidget('chat')} onMinimize={() => widgetManager.setMinimized('chat', !widgetManager.widgets.chat.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('chat', pos)} />}
       {widgetManager.widgets.speedDial.isOpen && <SpeedDialWidget isOpen={true} isMinimized={widgetManager.widgets.speedDial.isMinimized} position={widgetManager.widgets.speedDial.position} onClose={() => widgetManager.closeWidget('speedDial')} onMinimize={() => widgetManager.setMinimized('speedDial', !widgetManager.widgets.speedDial.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('speedDial', pos)} />}
 
-      <AIChat config={{} as any} customers={customers} employees={employees} rates={legacyRates as any} movements={movements} payrollRate={rates.tasaBCV} onRegisterMovement={handleRegisterMovement} onAddCustomer={handleRegisterCustomer} onUpdateRates={(newRates) => updateRates({ tasaBCV: newRates.bcv, tasaGrupo: newRates.grupo })} onRegisterAdvance={handleRegisterAdvance} />
     </div>
   );
 };

@@ -5,20 +5,23 @@ import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { RatesProvider } from './context/RatesContext';
 import { ToastProvider } from './context/ToastContext';
+import { SubdomainProvider } from './context/SubdomainContext';
 import AppRouter from './routes/AppRouter';
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <RatesProvider>
-          <ToastProvider>
-            <BrowserRouter>
-              <AppRouter />
-            </BrowserRouter>
-          </ToastProvider>
-        </RatesProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <SubdomainProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <RatesProvider>
+            <ToastProvider>
+              <BrowserRouter>
+                <AppRouter />
+              </BrowserRouter>
+            </ToastProvider>
+          </RatesProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </SubdomainProvider>
   );
 }

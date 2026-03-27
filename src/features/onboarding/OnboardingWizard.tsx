@@ -211,7 +211,7 @@ export default function OnboardingWizard() {
     }
   };
 
-  const inputClasses = "w-full px-5 py-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-2xl text-sm font-bold focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-white/10 focus:border-slate-900 dark:focus:border-white/30 transition-all outline-none shadow-inner dark:shadow-none placeholder:text-slate-400 dark:placeholder:text-white/20";
+  const inputClasses = "w-full px-5 py-4 bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-2xl text-sm font-bold focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-white/10 focus:border-slate-900 dark:focus:border-white/30 transition-all outline-none shadow-inner dark:shadow-none placeholder:text-slate-400 dark:placeholder:text-white/20";
 
   const pinBoxClass = (entered: boolean, valid: boolean) =>
     `h-14 w-12 rounded-2xl border-2 flex items-center justify-center text-2xl font-black transition-all ${
@@ -219,7 +219,7 @@ export default function OnboardingWizard() {
         ? valid
           ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
           : 'border-rose-500 bg-rose-500/10 text-rose-400'
-        : 'border-white/10 bg-white dark:bg-slate-900/5 text-white/20'
+        : 'border-white/10 bg-white dark:bg-[#0d1424]/5 text-white/20'
     }`;
 
   return (
@@ -240,7 +240,7 @@ export default function OnboardingWizard() {
           </div>
         )}
 
-        <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-100 dark:border-white/[0.08] shadow-2xl dark:shadow-black/40 relative overflow-hidden p-10 md:p-12">
+        <div className="bg-white dark:bg-[#0d1424]rounded-[3rem] border border-slate-100 dark:border-white/[0.08] shadow-2xl dark:shadow-black/40 relative overflow-hidden p-10 md:p-12">
 
           {/* Error banner */}
           {error && (
@@ -444,7 +444,7 @@ export default function OnboardingWizard() {
                       onClick={() => f('igtfEnabled', !formData.igtfEnabled)}
                       className={`relative h-7 w-12 rounded-full transition-colors ${formData.igtfEnabled ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`}
                     >
-                      <span className={`absolute top-1 h-5 w-5 rounded-full bg-white dark:bg-slate-900 shadow-sm transition-all duration-200 ${formData.igtfEnabled ? 'left-6' : 'left-1'}`} />
+                      <span className={`absolute top-1 h-5 w-5 rounded-full bg-white dark:bg-[#0d1424]shadow-sm transition-all duration-200 ${formData.igtfEnabled ? 'left-6' : 'left-1'}`} />
                     </button>
                   </div>
                   {formData.igtfEnabled && (

@@ -1,73 +1,41 @@
 import React from 'react';
 import { useWidgetManager } from '../context/WidgetContext';
-import { 
-  Calculator, 
-  StickyNote, 
-  RefreshCw, 
-  Clock, 
-  Search, 
-  CheckSquare, 
-  Zap, 
-  MessageSquare,
+import {
+  Calculator,
+  RefreshCw,
+  Search,
+  Zap,
   LayoutGrid
 } from 'lucide-react';
 
 const WIDGET_DEFS = [
-  { 
-    id: 'calculator', 
-    name: 'Calculadora', 
-    desc: 'Cálculos rápidos con conversión de tasa.', 
-    icon: Calculator, 
-    color: 'bg-indigo-500' 
+  {
+    id: 'calculator',
+    name: 'Calculadora',
+    desc: 'Cálculos rápidos con conversión de tasa.',
+    icon: Calculator,
+    color: 'bg-indigo-500'
   },
-  { 
-    id: 'notes', 
-    name: 'Notas Adhesivas', 
-    desc: 'Recordatorios rápidos para tu jornada.', 
-    icon: StickyNote, 
-    color: 'bg-amber-500' 
+  {
+    id: 'converter',
+    name: 'Conversor Divisas',
+    desc: 'Cambio instantáneo BCV vs Paralelo.',
+    icon: RefreshCw,
+    color: 'bg-emerald-500'
   },
-  { 
-    id: 'converter', 
-    name: 'Conversor Divisas', 
-    desc: 'Cambio instantáneo BCV vs Paralelo.', 
-    icon: RefreshCw, 
-    color: 'bg-emerald-500' 
+  {
+    id: 'priceChecker',
+    name: 'Verificador',
+    desc: 'Consulta precios de inventario al instante.',
+    icon: Search,
+    color: 'bg-sky-500'
   },
-  { 
-    id: 'timer', 
-    name: 'Cronómetro', 
-    desc: 'Control de tiempo para tareas críticas.', 
-    icon: Clock, 
-    color: 'bg-rose-500' 
-  },
-  { 
-    id: 'priceChecker', 
-    name: 'Verificador', 
-    desc: 'Consulta precios de inventario al instante.', 
-    icon: Search, 
-    color: 'bg-sky-500' 
-  },
-  { 
-    id: 'todo', 
-    name: 'Lista de Tareas', 
-    desc: 'Tu agenda operativa personal.', 
-    icon: CheckSquare, 
-    color: 'bg-violet-500' 
-  },
-  { 
-    id: 'chat', 
-    name: 'Chat de Equipo', 
-    desc: 'Comunicación interna en tiempo real.', 
-    icon: MessageSquare, 
-    color: 'bg-blue-600' 
-  },
-  { 
-    id: 'speedDial', 
-    name: 'Acceso Rápido', 
-    desc: 'Botones tácticos configurables.', 
-    icon: Zap, 
-    color: 'bg-orange-500' 
+  {
+    id: 'speedDial',
+    name: 'Acceso Rápido',
+    desc: 'Botones tácticos configurables.',
+    icon: Zap,
+    color: 'bg-orange-500'
   },
 ];
 
@@ -163,7 +131,7 @@ export default function WidgetLaunchpad() {
                 <h3 className="text-2xl font-black mb-2 tracking-tight">Potencia tu flujo de trabajo</h3>
                 <p className="text-slate-400 text-sm font-medium max-w-xl leading-relaxed">
                   Los widgets son herramientas flotantes que puedes usar sin salir de tu vista actual. 
-                  Úsalos para realizar conversiones rápidas, anotar pendientes o chatear con tu equipo 
+                  Úsalos para realizar conversiones rápidas, consultar precios y acceder a acciones frecuentes 
                   mientras facturas o gestionas tu inventario.
                 </p>
               </div>

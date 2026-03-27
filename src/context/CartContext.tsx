@@ -3,7 +3,7 @@ import { collection, getDocs, getDoc, doc, query, where } from 'firebase/firesto
 import { db } from '../firebase/config';
 import { useTenant } from './TenantContext';
 
-type PriceTier = 'detal' | 'mayor' | 'granMayor';
+type PriceTier = 'detal' | 'mayor' | 'granMayor' | 'bcv' | 'grupo' | 'divisa';
 
 export type DiscountType = 'none' | 'percent' | 'fixed';
 
@@ -15,6 +15,7 @@ export type CartItem = {
   priceUsd: number;
   ivaRate: number;
   stock: number;
+  tipoTasa?: string; // 'BCV' | customRate.id
 };
 
 type CartTotals = {
@@ -33,9 +34,11 @@ type CartContextValue = {
   totals: CartTotals;
   discountType: DiscountType;
   discountValue: number;
+  cartTipoTasa: string | null; // tipo de tasa del carrito actual (null = vacío)
   setDiscount: (type: DiscountType, value: number) => void;
-  addProductByCode: (code: string, priceTier?: PriceTier) => Promise<boolean>;
+  addProductByCode: (code: string, priceTier?: PriceTier, priceOverride?: number) => Promise<boolean>;
   updateQty: (id: string, qty: number) => void;
+  updateItemPrices: (priceMap: Record<string, number>) => void;
   removeItem: (id: string) => void;
   clearCart: () => void;
   loadCart: (items: CartItem[], discountType: DiscountType, discountValue: number) => void;
@@ -51,6 +54,21 @@ function resolvePrice(data: Record<string, unknown>, priceTier: PriceTier) {
   if (priceTier === 'granMayor') {
     const granMayor = Number(data.precioGranMayor ?? data.precioPromo);
     return Number.isFinite(granMayor) && granMayor > 0 ? granMayor : 0;
+  }
+  if (priceTier === 'bcv') {
+    const bcv = Number(data.precioBCV);
+    const fallback = Number(data.precioMayor);
+    return Number.isFinite(bcv) && bcv > 0 ? bcv : (Number.isFinite(fallback) && fallback > 0 ? fallback : 0);
+  }
+  if (priceTier === 'grupo') {
+    const grupo = Number(data.precioGrupo);
+    const fallback = Number(data.precioMayor);
+    return Number.isFinite(grupo) && grupo > 0 ? grupo : (Number.isFinite(fallback) && fallback > 0 ? fallback : 0);
+  }
+  if (priceTier === 'divisa') {
+    const divisa = Number(data.precioDivisa);
+    const fallback = Number(data.precioMayor);
+    return Number.isFinite(divisa) && divisa > 0 ? divisa : (Number.isFinite(fallback) && fallback > 0 ? fallback : 0);
   }
   const detal = Number(data.precioDetal ?? data.marketPrice ?? data.precioVenta ?? data.salePrice ?? data.price);
   return Number.isFinite(detal) && detal > 0 ? detal : 0;
@@ -69,6 +87,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [discountType, setDiscountType] = useState<DiscountType>('none');
   const [discountValue, setDiscountValue] = useState(0);
   const [startedAt, setStartedAt] = useState<Date | null>(null);
+  const [cartTipoTasa, setCartTipoTasa] = useState<string | null>(null);
   const itemsRef = useRef<CartItem[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
@@ -78,7 +97,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addProductByCode = useCallback(
-    async (code: string, priceTier: PriceTier = 'detal') => {
+    async (code: string, priceTier: PriceTier = 'detal', priceOverride?: number) => {
       if (!tenantId) return false;
       const normalized = code.trim();
       if (!normalized) return false;
@@ -109,7 +128,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (!foundId || !foundData) return false;
 
       const data = foundData;
-      const priceUsd = resolvePrice(data, priceTier);
+      const productTipoTasa = String(data.tipoTasa || 'BCV');
+
+      const priceUsd = priceOverride != null ? priceOverride : resolvePrice(data, priceTier);
 
       const nextItem: CartItem = {
         id: foundId,
@@ -119,9 +140,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         priceUsd,
         ivaRate: resolveIvaRate(data),
         stock: Number(data.stock || 0),
+        tipoTasa: productTipoTasa,
       };
 
-      if (itemsRef.current.length === 0) setStartedAt(new Date());
+      if (itemsRef.current.length === 0) {
+        setStartedAt(new Date());
+        setCartTipoTasa(productTipoTasa);
+      }
       setItems((prev) => {
         const existing = prev.find((item) => item.id === nextItem.id);
         if (!existing) return [...prev, nextItem];
@@ -132,7 +157,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
       return true;
     },
-    [tenantId]
+    [tenantId, cartTipoTasa]
   );
 
   const updateQty = useCallback((id: string, qty: number) => {
@@ -144,11 +169,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
+  const updateItemPrices = useCallback((priceMap: Record<string, number>) => {
+    setItems(prev => prev.map(item => {
+      const newPrice = priceMap[item.id];
+      if (newPrice != null && newPrice > 0) return { ...item, priceUsd: newPrice };
+      return item;
+    }));
+  }, []);
+
   const clearCart = useCallback(() => {
     setItems([]);
     setDiscountType('none');
     setDiscountValue(0);
     setStartedAt(null);
+    setCartTipoTasa(null);
   }, []);
 
   const loadCart = useCallback((newItems: CartItem[], dType: DiscountType, dValue: number) => {
@@ -185,14 +219,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       totals,
       discountType,
       discountValue,
+      cartTipoTasa,
       setDiscount,
       addProductByCode,
       updateQty,
+      updateItemPrices,
       removeItem,
       clearCart,
       loadCart,
     }),
-    [items, startedAt, rateValue, totals, discountType, discountValue, setDiscount, addProductByCode, updateQty, removeItem, clearCart, loadCart]
+    [items, startedAt, rateValue, totals, discountType, discountValue, cartTipoTasa, setDiscount, addProductByCode, updateQty, updateItemPrices, removeItem, clearCart, loadCart]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

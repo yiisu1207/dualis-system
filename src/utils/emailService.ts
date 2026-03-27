@@ -4,6 +4,7 @@ const SVC  = import.meta.env.VITE_EMAILJS_SERVICE_ID       ?? '';
 const PUB  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY       ?? '';
 const OTP_TPL     = import.meta.env.VITE_EMAILJS_OTP_TEMPLATE     ?? '';
 const WELCOME_TPL = import.meta.env.VITE_EMAILJS_WELCOME_TEMPLATE ?? '';
+const INVITE_TPL  = import.meta.env.VITE_EMAILJS_INVITE_TEMPLATE  ?? '';
 
 const DEV = !SVC || !PUB;
 
@@ -15,174 +16,81 @@ export function generateOTP(): string {
   return (n % 1_000_000).toString().padStart(6, '0');
 }
 
-/* ── OTP email HTML ───────────────────────────────────────────────────── */
-function buildOTPHtml(name: string, otp: string): string {
-  const digits = otp.split('');
-  const digitBoxes = digits
-    .map(d => `<span style="display:inline-block;width:52px;height:64px;line-height:64px;text-align:center;font-size:32px;font-weight:900;font-family:monospace;background:#111827;border:2px solid #4f46e5;border-radius:12px;color:#a5b4fc;margin:0 4px;">${d}</span>`)
-    .join('');
+/* ── Shared styles ────────────────────────────────────────────────────── */
+const BRAND = {
+  bg: '#070b14',
+  card: '#0d1424',
+  border: 'rgba(255,255,255,0.07)',
+  gradientPrimary: 'linear-gradient(135deg,#4f46e5,#7c3aed)',
+  gradientGreen: 'linear-gradient(135deg,#059669,#0d9488)',
+  textPrimary: '#e2e8f0',
+  textSecondary: 'rgba(255,255,255,0.55)',
+  textMuted: 'rgba(255,255,255,0.30)',
+  accent: '#a5b4fc',
+  accentGreen: '#6ee7b7',
+};
 
+function emailShell(headerGradient: string, headerTitle: string, headerSubtitle: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#070b14;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#070b14;padding:40px 16px;">
+<body style="margin:0;padding:0;background:${BRAND.bg};font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.bg};padding:48px 16px;">
     <tr><td align="center">
-      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#0d1424;border:1px solid rgba(255,255,255,0.07);border-radius:24px;overflow:hidden;">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:28px;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,0.4);">
 
         <!-- Header -->
         <tr>
-          <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:36px 40px;text-align:center;">
-            <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,0.15);margin-bottom:16px;">
-              <span style="font-size:28px;font-weight:900;color:#fff;letter-spacing:-1px;">D</span>
-            </div>
-            <h1 style="margin:0;font-size:22px;font-weight:900;color:#fff;letter-spacing:-0.5px;">Dualis ERP</h1>
-            <p style="margin:6px 0 0;font-size:12px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:3px;">Verificación de correo</p>
+          <td style="background:${headerGradient};padding:44px 48px;text-align:center;">
+            <img src="https://dualis.app/logo.png" alt="Dualis" width="80" height="80" style="display:block;margin:0 auto 16px;border-radius:16px;" />
+            <h1 style="margin:0 0 4px;font-size:28px;font-weight:900;color:#fff;letter-spacing:-0.5px;">Dualis ERP</h1>
+            <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.65);text-transform:uppercase;letter-spacing:4px;font-weight:700;">${headerSubtitle}</p>
           </td>
         </tr>
 
         <!-- Body -->
         <tr>
-          <td style="padding:40px;">
-            <p style="margin:0 0 8px;font-size:16px;color:rgba(255,255,255,0.5);">Hola, <strong style="color:#e2e8f0;">${name}</strong></p>
-            <p style="margin:0 0 32px;font-size:14px;color:rgba(255,255,255,0.35);line-height:1.6;">
-              Recibimos una solicitud para crear tu cuenta en Dualis ERP. Usa el siguiente código para verificar tu correo electrónico.
-            </p>
-
-            <!-- OTP Digits -->
-            <div style="text-align:center;margin:0 0 32px;">
-              <p style="margin:0 0 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:4px;color:rgba(255,255,255,0.25);">Tu código de verificación</p>
-              <div style="display:inline-block;">${digitBoxes}</div>
-              <p style="margin:16px 0 0;font-size:11px;color:rgba(255,255,255,0.2);">Válido por <strong style="color:rgba(255,255,255,0.4);">10 minutos</strong></p>
-            </div>
-
-            <!-- WARNING BOX -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(239,68,68,0.08);border:1.5px solid rgba(239,68,68,0.3);border-radius:16px;margin:0 0 32px;">
-              <tr>
-                <td style="padding:20px 24px;">
-                  <p style="margin:0 0 8px;font-size:13px;font-weight:900;color:#f87171;text-transform:uppercase;letter-spacing:1px;">&#9888; Advertencia de seguridad</p>
-                  <p style="margin:0;font-size:13px;color:rgba(248,113,113,0.8);line-height:1.6;">
-                    Este código es <strong style="color:#f87171;">estrictamente confidencial</strong>. Nunca lo compartas con nadie, ni siquiera con soporte de Dualis.<br><br>
-                    <strong style="color:#f87171;">Cuídalo con tu vida.</strong> Si alguien te lo solicita, es un intento de fraude. Repórtalo inmediatamente.
-                  </p>
-                </td>
-              </tr>
-            </table>
-
-            <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.2);line-height:1.6;">
-              Si no solicitaste esta verificación, ignora este correo. Tu cuenta permanecerá segura.
-            </p>
+          <td style="padding:44px 48px 0;">
+            ${bodyHtml}
           </td>
         </tr>
 
-        <!-- Footer -->
+        <!-- Support Contact -->
         <tr>
-          <td style="padding:24px 40px;border-top:1px solid rgba(255,255,255,0.05);">
-            <table width="100%" cellpadding="0" cellspacing="0">
+          <td style="padding:0 48px 44px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:20px;margin-top:32px;">
               <tr>
-                <td>
-                  <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:rgba(255,255,255,0.3);">Dualis ERP</p>
-                  <p style="margin:0;font-size:10px;color:rgba(255,255,255,0.15);">Soporte: soporte@dualis.app &nbsp;|&nbsp; WhatsApp: 0412-534-3141</p>
-                </td>
-                <td align="right">
-                  <span style="font-size:10px;color:rgba(255,255,255,0.1);">&copy; 2026 Dualis</span>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-}
-
-/* ── Welcome email HTML ───────────────────────────────────────────────── */
-function buildWelcomeHtml(name: string, businessId: string): string {
-  return `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#070b14;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#070b14;padding:40px 16px;">
-    <tr><td align="center">
-      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#0d1424;border:1px solid rgba(255,255,255,0.07);border-radius:24px;overflow:hidden;">
-
-        <!-- Header -->
-        <tr>
-          <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:40px;text-align:center;">
-            <div style="display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;border-radius:20px;background:rgba(255,255,255,0.15);margin-bottom:20px;">
-              <span style="font-size:36px;font-weight:900;color:#fff;">D</span>
-            </div>
-            <h1 style="margin:0;font-size:26px;font-weight:900;color:#fff;letter-spacing:-0.5px;">Dualis ERP</h1>
-            <p style="margin:8px 0 0;font-size:12px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:3px;">Sistema Empresarial Inteligente</p>
-          </td>
-        </tr>
-
-        <!-- Welcome message -->
-        <tr>
-          <td style="padding:40px 40px 0;">
-            <h2 style="margin:0 0 16px;font-size:24px;font-weight:900;color:#e2e8f0;">&#127881; ¡Bienvenido, ${name}!</h2>
-            <p style="margin:0 0 24px;font-size:15px;color:rgba(255,255,255,0.5);line-height:1.7;">
-              Tu cuenta en <strong style="color:#a5b4fc;">Dualis ERP</strong> ha sido creada exitosamente. Estamos encantados de tenerte con nosotros.<br><br>
-              Tu solicitud está siendo revisada por nuestro equipo. Te notificaremos en menos de <strong style="color:#e2e8f0;">24 horas</strong> cuando tu cuenta esté activa.
-            </p>
-
-            <!-- Business ID box -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:#111827;border:2px dashed rgba(79,70,229,0.4);border-radius:16px;margin:0 0 24px;">
-              <tr>
-                <td style="padding:24px;">
-                  <p style="margin:0 0 8px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:4px;color:#6366f1;">Codigo de espacio unico</p>
-                  <p style="margin:0 0 12px;font-size:13px;font-family:monospace;font-weight:900;color:#e2e8f0;word-break:break-all;letter-spacing:1px;">${businessId}</p>
-                  <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.25);">Guarda este codigo — es tu llave de acceso al sistema</p>
-                </td>
-              </tr>
-            </table>
-
-            <!-- CRITICAL WARNING -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(245,158,11,0.08);border:1.5px solid rgba(245,158,11,0.3);border-radius:16px;margin:0 0 32px;">
-              <tr>
-                <td style="padding:20px 24px;">
-                  <p style="margin:0 0 8px;font-size:13px;font-weight:900;color:#fbbf24;text-transform:uppercase;letter-spacing:1px;">&#9888; Guarda tu codigo con tu vida</p>
-                  <p style="margin:0;font-size:13px;color:rgba(251,191,36,0.8);line-height:1.6;">
-                    Este codigo es <strong style="color:#fbbf24;">tu unica llave de acceso</strong>. Sin el, no podras iniciar sesion ni recuperar tu espacio de trabajo.<br><br>
-                    Guardalo en un lugar <strong style="color:#fbbf24;">seguro y privado</strong>. Nunca lo compartas. Nuestro equipo jamas te lo solicitara.
-                  </p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- Contact / Owner info -->
-        <tr>
-          <td style="padding:0 40px 40px;">
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:16px;">
-              <tr>
-                <td style="padding:24px;">
-                  <p style="margin:0 0 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,0.25);">Tu equipo de soporte</p>
+                <td style="padding:28px 32px;">
+                  <p style="margin:0 0 16px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,0.22);">Soporte Dualis</p>
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
-                      <td style="width:44px;vertical-align:top;">
-                        <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#4f46e5,#7c3aed);display:flex;align-items:center;justify-content:center;text-align:center;line-height:40px;">
-                          <span style="font-size:16px;font-weight:900;color:#fff;">JS</span>
-                        </div>
+                      <td style="width:48px;vertical-align:top;">
+                        <table cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td style="width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,#4f46e5,#7c3aed);text-align:center;vertical-align:middle;">
+                              <span style="font-size:17px;font-weight:900;color:#fff;line-height:44px;">JS</span>
+                            </td>
+                          </tr>
+                        </table>
                       </td>
-                      <td style="padding-left:14px;">
-                        <p style="margin:0 0 2px;font-size:14px;font-weight:700;color:#e2e8f0;">Jesus Salazar</p>
-                        <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.3);">Fundador &amp; Soporte Dualis ERP</p>
+                      <td style="padding-left:16px;">
+                        <p style="margin:0 0 3px;font-size:15px;font-weight:800;color:${BRAND.textPrimary};">Jesus Salazar</p>
+                        <p style="margin:0;font-size:13px;color:${BRAND.textMuted};">Fundador &amp; CEO, Dualis ERP</p>
                       </td>
                     </tr>
                   </table>
-                  <div style="margin:16px 0 0;padding-top:16px;border-top:1px solid rgba(255,255,255,0.05);">
-                    <p style="margin:0 0 6px;font-size:12px;color:rgba(255,255,255,0.3);">
-                      &#128241; <strong style="color:rgba(255,255,255,0.5);">WhatsApp:</strong> 0412-534-3141
-                    </p>
-                    <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.3);">
-                      &#128231; <strong style="color:rgba(255,255,255,0.5);">Correo:</strong> soporte@dualis.app
-                    </p>
-                  </div>
+                  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;border-top:1px solid rgba(255,255,255,0.06);padding-top:20px;">
+                    <tr>
+                      <td style="width:50%;font-size:13px;color:${BRAND.textMuted};line-height:1.8;">
+                        <strong style="color:${BRAND.textSecondary};">WhatsApp</strong><br>
+                        <a href="https://wa.me/584125343141" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">+58 412-534-3141</a>
+                      </td>
+                      <td style="width:50%;font-size:13px;color:${BRAND.textMuted};line-height:1.8;">
+                        <strong style="color:${BRAND.textSecondary};">Correo</strong><br>
+                        <a href="mailto:soporte@dualis.app" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">soporte@dualis.app</a>
+                      </td>
+                    </tr>
+                  </table>
                 </td>
               </tr>
             </table>
@@ -191,18 +99,9 @@ function buildWelcomeHtml(name: string, businessId: string): string {
 
         <!-- Footer -->
         <tr>
-          <td style="padding:24px 40px;border-top:1px solid rgba(255,255,255,0.05);">
-            <table width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td>
-                  <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:rgba(255,255,255,0.3);">Dualis ERP</p>
-                  <p style="margin:0;font-size:10px;color:rgba(255,255,255,0.15);">Sistema Empresarial para Venezuela y Latinoamerica</p>
-                </td>
-                <td align="right">
-                  <span style="font-size:10px;color:rgba(255,255,255,0.1);">&copy; 2026 Dualis</span>
-                </td>
-              </tr>
-            </table>
+          <td style="padding:24px 48px;border-top:1px solid rgba(255,255,255,0.05);text-align:center;">
+            <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:rgba(255,255,255,0.25);">Dualis ERP &mdash; Sistema Empresarial Inteligente</p>
+            <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.12);">Venezuela &amp; Latinoam&eacute;rica &nbsp;&bull;&nbsp; &copy; ${new Date().getFullYear()} Dualis</p>
           </td>
         </tr>
 
@@ -213,95 +112,175 @@ function buildWelcomeHtml(name: string, businessId: string): string {
 </html>`;
 }
 
-/* ── Invite email HTML ────────────────────────────────────────────────── */
+/* ── OTP email ────────────────────────────────────────────────────────── */
+function buildOTPHtml(name: string, otp: string): string {
+  const digitBoxes = otp.split('')
+    .map(d => `<td style="width:54px;height:68px;text-align:center;font-size:34px;font-weight:900;font-family:'Courier New',monospace;background:#111827;border:2px solid #4f46e5;border-radius:14px;color:#a5b4fc;">${d}</td>`)
+    .join('<td style="width:8px;"></td>');
+
+  return emailShell(BRAND.gradientPrimary, 'Dualis ERP', 'Verificaci&oacute;n de correo', `
+    <h2 style="margin:0 0 12px;font-size:26px;font-weight:900;color:${BRAND.textPrimary};letter-spacing:-0.5px;">
+      Hola, ${name}
+    </h2>
+    <p style="margin:0 0 36px;font-size:16px;color:${BRAND.textSecondary};line-height:1.7;">
+      Recibimos una solicitud para verificar tu correo electr&oacute;nico. Ingresa el siguiente c&oacute;digo en la app para continuar.
+    </p>
+
+    <!-- OTP Digits -->
+    <table cellpadding="0" cellspacing="0" style="margin:0 auto 12px;">
+      <tr>${digitBoxes}</tr>
+    </table>
+    <p style="margin:0 0 36px;font-size:13px;color:${BRAND.textMuted};text-align:center;">
+      V&aacute;lido por <strong style="color:${BRAND.textSecondary};">10 minutos</strong>
+    </p>
+
+    <!-- Warning -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(239,68,68,0.07);border:1.5px solid rgba(239,68,68,0.25);border-radius:18px;">
+      <tr>
+        <td style="padding:22px 28px;">
+          <p style="margin:0 0 8px;font-size:14px;font-weight:900;color:#f87171;">&#9888; Advertencia de seguridad</p>
+          <p style="margin:0;font-size:14px;color:rgba(248,113,113,0.75);line-height:1.7;">
+            Este c&oacute;digo es <strong style="color:#f87171;">confidencial</strong>. Nunca lo compartas con nadie. Nuestro equipo jam&aacute;s te lo solicitar&aacute;.
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:28px 0 0;font-size:13px;color:${BRAND.textMuted};line-height:1.7;">
+      Si no solicitaste esta verificaci&oacute;n, ignora este correo.
+    </p>
+  `);
+}
+
+/* ── Welcome email ────────────────────────────────────────────────────── */
+function buildWelcomeHtml(name: string, _businessId: string, customUrl?: string): string {
+  const urlDisplay = customUrl || 'dualis.app';
+  const urlHref = customUrl ? `https://${customUrl}` : 'https://dualis.app';
+
+  return emailShell(BRAND.gradientPrimary, 'Dualis ERP', 'Bienvenido', `
+    <h2 style="margin:0 0 12px;font-size:28px;font-weight:900;color:${BRAND.textPrimary};letter-spacing:-0.5px;">
+      &#127881; &iexcl;Bienvenido, ${name}!
+    </h2>
+    <p style="margin:0 0 28px;font-size:16px;color:${BRAND.textSecondary};line-height:1.8;">
+      Tu cuenta en <strong style="color:${BRAND.accent};">Dualis ERP</strong> ha sido creada exitosamente.
+      Estamos encantados de tenerte con nosotros.
+    </p>
+
+    <!-- URL personalizada -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#111827;border:2px solid rgba(79,70,229,0.35);border-radius:20px;margin:0 0 20px;">
+      <tr>
+        <td style="padding:28px 32px;text-align:center;">
+          <p style="margin:0 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:4px;color:#6366f1;">Tu URL personalizada</p>
+          <a href="${urlHref}" style="display:inline-block;padding:16px 36px;background:rgba(79,70,229,0.15);border:2px solid rgba(79,70,229,0.4);border-radius:16px;text-decoration:none;margin:8px 0 12px;">
+            <span style="font-size:22px;font-weight:900;color:${BRAND.accent};font-family:'Courier New',monospace;letter-spacing:0.5px;">${urlDisplay}</span>
+          </a>
+          <p style="margin:0;font-size:13px;color:${BRAND.textMuted};line-height:1.7;">
+            Comparte esta URL con tu equipo para que se unan a tu empresa.
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Acceso -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;">
+      <tr>
+        <td style="padding:28px 32px;">
+          <p style="margin:0 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:4px;color:rgba(255,255,255,0.22);">C&oacute;mo acceder</p>
+          <p style="margin:0 0 8px;font-size:16px;font-weight:800;color:${BRAND.textPrimary};">
+            Inicia sesi&oacute;n con tu correo y contrase&ntilde;a
+          </p>
+          <p style="margin:0;font-size:14px;color:${BRAND.textMuted};">
+            Accede desde tu URL personalizada <a href="${urlHref}" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">${urlDisplay}</a> o desde <a href="https://dualis.app" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">dualis.app</a>.
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:28px 0 0;font-size:14px;color:${BRAND.textMuted};line-height:1.7;">
+      Si tienes alguna pregunta, no dudes en contactarnos. Estamos aqu&iacute; para ayudarte.
+    </p>
+  `);
+}
+
+/* ── Invite email ─────────────────────────────────────────────────────── */
 function buildInviteHtml(inviterName: string, businessName: string, role: string, inviteUrl: string, expiresAt: string): string {
   const roleLabels: Record<string, string> = {
-    admin: 'Administrador', ventas: 'Ventas', auditor: 'Auditor', staff: 'Staff', member: 'Miembro',
+    owner: 'Propietario', admin: 'Administrador', ventas: 'Ventas',
+    auditor: 'Auditor', staff: 'Staff', member: 'Miembro',
   };
   const roleLabel = roleLabels[role] || role;
-  const expiresDate = new Date(expiresAt).toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const expiresDate = new Date(expiresAt).toLocaleDateString('es-VE', {
+    day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
 
-  return `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#070b14;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#070b14;padding:40px 16px;">
-    <tr><td align="center">
-      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#0d1424;border:1px solid rgba(255,255,255,0.07);border-radius:24px;overflow:hidden;">
+  return emailShell(BRAND.gradientGreen, 'Dualis ERP', 'Invitaci&oacute;n al equipo', `
+    <h2 style="margin:0 0 12px;font-size:28px;font-weight:900;color:${BRAND.textPrimary};letter-spacing:-0.5px;">
+      &#128075; &iexcl;Te han invitado!
+    </h2>
+    <p style="margin:0 0 32px;font-size:17px;color:${BRAND.textSecondary};line-height:1.8;">
+      <strong style="color:${BRAND.textPrimary};">${inviterName}</strong> te ha invitado a unirte a
+      <strong style="color:${BRAND.accentGreen};">${businessName}</strong> como
+      <strong style="color:${BRAND.accentGreen};">${roleLabel}</strong>.
+    </p>
 
-        <!-- Header -->
-        <tr>
-          <td style="background:linear-gradient(135deg,#059669,#0d9488);padding:36px 40px;text-align:center;">
-            <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,0.15);margin-bottom:16px;">
-              <span style="font-size:28px;font-weight:900;color:#fff;letter-spacing:-1px;">D</span>
-            </div>
-            <h1 style="margin:0;font-size:22px;font-weight:900;color:#fff;letter-spacing:-0.5px;">Dualis ERP</h1>
-            <p style="margin:6px 0 0;font-size:12px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:3px;">Invitaci&oacute;n al equipo</p>
-          </td>
-        </tr>
+    <!-- CTA Button -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
+      <tr>
+        <td align="center">
+          <a href="${inviteUrl}" style="display:inline-block;padding:18px 56px;background:${BRAND.gradientGreen};color:#fff;font-size:15px;font-weight:900;text-decoration:none;border-radius:16px;text-transform:uppercase;letter-spacing:2px;box-shadow:0 8px 24px rgba(5,150,105,0.35);">
+            Aceptar Invitaci&oacute;n
+          </a>
+        </td>
+      </tr>
+    </table>
 
-        <!-- Body -->
-        <tr>
-          <td style="padding:40px;">
-            <p style="margin:0 0 8px;font-size:16px;color:rgba(255,255,255,0.5);">&#128075; &iexcl;Hola!</p>
-            <p style="margin:0 0 24px;font-size:15px;color:rgba(255,255,255,0.4);line-height:1.7;">
-              <strong style="color:#e2e8f0;">${inviterName}</strong> te ha invitado a unirte a
-              <strong style="color:#6ee7b7;">${businessName}</strong> en Dualis ERP con el rol de
-              <strong style="color:#6ee7b7;">${roleLabel}</strong>.
-            </p>
+    <!-- Details -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;margin:0 0 28px;">
+      <tr>
+        <td style="padding:28px 32px;">
+          <p style="margin:0 0 16px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,0.22);">Detalles</p>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:8px 0;font-size:15px;color:${BRAND.textMuted};border-bottom:1px solid rgba(255,255,255,0.04);">
+                <strong style="color:${BRAND.textSecondary};">Empresa</strong>
+              </td>
+              <td style="padding:8px 0;font-size:15px;color:${BRAND.textPrimary};text-align:right;border-bottom:1px solid rgba(255,255,255,0.04);font-weight:700;">
+                ${businessName}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;font-size:15px;color:${BRAND.textMuted};border-bottom:1px solid rgba(255,255,255,0.04);">
+                <strong style="color:${BRAND.textSecondary};">Rol asignado</strong>
+              </td>
+              <td style="padding:8px 0;font-size:15px;color:${BRAND.accentGreen};text-align:right;border-bottom:1px solid rgba(255,255,255,0.04);font-weight:700;">
+                ${roleLabel}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 0;font-size:15px;color:${BRAND.textMuted};">
+                <strong style="color:${BRAND.textSecondary};">Expira</strong>
+              </td>
+              <td style="padding:8px 0;font-size:15px;color:${BRAND.textPrimary};text-align:right;font-weight:700;">
+                ${expiresDate}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
 
-            <!-- CTA Button -->
-            <div style="text-align:center;margin:32px 0;">
-              <a href="${inviteUrl}" style="display:inline-block;padding:16px 48px;background:linear-gradient(135deg,#059669,#0d9488);color:#fff;font-size:14px;font-weight:900;text-decoration:none;border-radius:16px;text-transform:uppercase;letter-spacing:2px;">
-                Aceptar Invitaci&oacute;n
-              </a>
-            </div>
+    <!-- Fallback link -->
+    <p style="margin:0 0 4px;font-size:13px;color:${BRAND.textMuted};text-align:center;">
+      Si el bot&oacute;n no funciona, copia este enlace:
+    </p>
+    <p style="margin:0;font-size:12px;color:${BRAND.accent};text-align:center;word-break:break-all;">
+      <a href="${inviteUrl}" style="color:${BRAND.accent};text-decoration:underline;">${inviteUrl}</a>
+    </p>
 
-            <p style="margin:0 0 24px;font-size:12px;color:rgba(255,255,255,0.25);text-align:center;">
-              O copia y pega este enlace en tu navegador:<br>
-              <span style="color:rgba(255,255,255,0.4);word-break:break-all;font-size:11px;">${inviteUrl}</span>
-            </p>
-
-            <!-- Info box -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:16px;margin:0 0 24px;">
-              <tr>
-                <td style="padding:20px 24px;">
-                  <p style="margin:0 0 8px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:3px;color:rgba(255,255,255,0.25);">Detalles de la invitaci&oacute;n</p>
-                  <p style="margin:0 0 4px;font-size:13px;color:rgba(255,255,255,0.4);">&#127970; <strong style="color:rgba(255,255,255,0.6);">Empresa:</strong> ${businessName}</p>
-                  <p style="margin:0 0 4px;font-size:13px;color:rgba(255,255,255,0.4);">&#128100; <strong style="color:rgba(255,255,255,0.6);">Rol:</strong> ${roleLabel}</p>
-                  <p style="margin:0;font-size:13px;color:rgba(255,255,255,0.4);">&#9200; <strong style="color:rgba(255,255,255,0.6);">Expira:</strong> ${expiresDate}</p>
-                </td>
-              </tr>
-            </table>
-
-            <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.2);line-height:1.6;">
-              Si no esperabas esta invitaci&oacute;n, puedes ignorar este correo de forma segura.
-            </p>
-          </td>
-        </tr>
-
-        <!-- Footer -->
-        <tr>
-          <td style="padding:24px 40px;border-top:1px solid rgba(255,255,255,0.05);">
-            <table width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td>
-                  <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:rgba(255,255,255,0.3);">Dualis ERP</p>
-                  <p style="margin:0;font-size:10px;color:rgba(255,255,255,0.15);">Soporte: soporte@dualis.app &nbsp;|&nbsp; WhatsApp: 0412-534-3141</p>
-                </td>
-                <td align="right">
-                  <span style="font-size:10px;color:rgba(255,255,255,0.1);">&copy; 2026 Dualis</span>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
+    <p style="margin:28px 0 0;font-size:13px;color:${BRAND.textMuted};line-height:1.7;">
+      Si no esperabas esta invitaci&oacute;n, puedes ignorar este correo de forma segura.
+    </p>
+  `);
 }
 
 /* ── Public API ───────────────────────────────────────────────────────── */
@@ -313,25 +292,23 @@ export async function sendOTPEmail(toEmail: string, toName: string, otp: string)
   await emailjs.send(SVC, OTP_TPL, {
     to_email:  toEmail,
     to_name:   toName,
-    subject:   'Tu código de verificación — Dualis ERP',
+    subject:   'Tu codigo de verificacion — Dualis ERP',
     html_body: buildOTPHtml(toName, otp),
   }, PUB);
 }
 
-export async function sendWelcomeEmail(toEmail: string, toName: string, businessId: string): Promise<void> {
+export async function sendWelcomeEmail(toEmail: string, toName: string, businessId: string, customUrl?: string): Promise<void> {
   if (DEV || !WELCOME_TPL) {
-    console.info(`%c[EmailService] Bienvenida enviada a ${toEmail} (${businessId})`, 'color:#10b981;font-weight:bold');
+    console.info(`%c[EmailService] Bienvenida enviada a ${toEmail} (${businessId}) — URL: ${customUrl || 'dualis.app'}`, 'color:#10b981;font-weight:bold');
     return;
   }
   await emailjs.send(SVC, WELCOME_TPL, {
     to_email:  toEmail,
     to_name:   toName,
-    subject:   '¡Bienvenido a Dualis ERP! — Guarda tu llave',
-    html_body: buildWelcomeHtml(toName, businessId),
+    subject:   'Bienvenido a Dualis ERP — Tu URL personalizada',
+    html_body: buildWelcomeHtml(toName, businessId, customUrl),
   }, PUB);
 }
-
-const INVITE_TPL = import.meta.env.VITE_EMAILJS_INVITE_TEMPLATE ?? '';
 
 export async function sendInviteEmail(payload: {
   toEmail: string;
@@ -343,14 +320,14 @@ export async function sendInviteEmail(payload: {
 }): Promise<void> {
   const { toEmail, inviterName, businessName, role, inviteUrl, expiresAt } = payload;
   if (DEV || (!INVITE_TPL && !WELCOME_TPL)) {
-    console.info(`%c[EmailService] Invitación enviada a ${toEmail} → ${inviteUrl}`, 'color:#059669;font-weight:bold;font-size:14px');
+    console.info(`%c[EmailService] Invitacion enviada a ${toEmail} → ${inviteUrl}`, 'color:#059669;font-weight:bold;font-size:14px');
     return;
   }
   const tpl = INVITE_TPL || WELCOME_TPL;
   await emailjs.send(SVC, tpl, {
     to_email:  toEmail,
     to_name:   toEmail,
-    subject:   `${inviterName} te invitó a ${businessName} — Dualis ERP`,
+    subject:   `${inviterName} te invito a ${businessName} — Dualis ERP`,
     html_body: buildInviteHtml(inviterName, businessName, role, inviteUrl, expiresAt),
   }, PUB);
 }

@@ -3,7 +3,9 @@ export interface User {
   username: string;
   role: 'owner' | 'admin' | 'ventas' | 'auditor' | 'pending' | 'staff' | 'member';
   name: string;
-  pin?: string; // Nuevo para acceso rápido
+  pin?: string;
+  phone?: string;
+  phoneCountryCode?: string;
 }
 
 export enum AccountType {
@@ -27,6 +29,7 @@ export type DeviceMode = 'pc' | 'tablet' | 'mobile';
 export interface ExchangeRates {
   bcv: number;
   grupo: number;
+  divisa: number;
   lastUpdated?: string;
 }
 
@@ -39,6 +42,8 @@ export interface Customer {
   createdAt?: string;
   businessId?: string;
   ownerId?: string;
+  creditLimit?: number;
+  defaultAccountType?: AccountType;
 }
 
 export interface Supplier {
@@ -134,7 +139,9 @@ export interface AppConfig {
     igtfRate: number;       // porcentaje, ej: 3 para 3%
     ivaEnabled: boolean;
     scannerEnabled: boolean;
+    zoherEnabled?: boolean; // Extensión de tasas personalizadas con precios dinámicos
   };
+  creditPolicy?: CreditPolicy;
   operation?: {
     isolationMode: 'individual' | 'shared';  // individual = libros aislados, shared = libro compartido
   };
@@ -146,6 +153,40 @@ export interface MessageTemplate {
   id: string;
   name: string;
   body: string;
+}
+
+export interface EarlyPaymentTier {
+  maxDays: number;
+  discountPercent: number;
+  label: string;
+}
+
+export interface CreditPolicy {
+  enabled: boolean;
+  defaultCreditLimit: number;
+  earlyPaymentTiers: EarlyPaymentTier[];
+  gracePeriodDays: number;
+  requireAbonoApproval: boolean;
+}
+
+export interface PaymentRequest {
+  id: string;
+  businessId: string;
+  customerId: string;
+  customerName: string;
+  accountType: AccountType;
+  amount: number;
+  currency: 'USD' | 'BS';
+  metodoPago: string;
+  referencia: string;
+  nota?: string;
+  vendedorId: string;
+  vendedorNombre: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNote?: string;
 }
 
 export interface OperationalRecord {
@@ -236,4 +277,45 @@ export interface AuditLog {
   action: 'CREAR' | 'EDITAR' | 'ELIMINAR' | 'LOGIN' | 'AJUSTE';
   module: string;
   detail: string;
+}
+
+// ── Tasas Personalizadas (Precios Dinámicos) ────────────────────────────────
+
+export interface CustomRate {
+  id: string;          // 'GRUPO', 'DIVISA', o generado como 'RATE_xxx'
+  name: string;        // nombre display: 'Zoher', 'Divisa', 'Paralela'
+  value: number;       // valor actual de la tasa
+  enabled: boolean;
+}
+
+// ── Portal de Clientes ──────────────────────────────────────────────────────
+
+export interface PortalAccessToken {
+  id?: string;
+  customerId: string;
+  customerName: string;
+  pin: string;
+  createdAt: string;
+  expiresAt?: string;
+  createdBy: string;
+  active: boolean;
+  lastAccessAt?: string;
+}
+
+export interface PortalPayment {
+  id?: string;
+  businessId: string;
+  customerId: string;
+  customerName: string;
+  invoiceIds: string[];
+  accountType: AccountType;
+  amount: number;
+  metodoPago: string;
+  referencia: string;
+  nota?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNote?: string;
 }

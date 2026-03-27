@@ -17,6 +17,7 @@ import {
 import { printVoucherSheet, printPayslip, printPayrollRunPDF, exportNominaCSV, accrueVacationDays, fmtHR } from '../utils/hrUtils';
 import { logAudit } from '../utils/auditLogger';
 import { listUsers } from '../firebase/api';
+import { useRates } from '../context/RatesContext';
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const DEPARTMENTS = ['Administración','Ventas','Almacén','Caja','Operaciones','Gerencia','Servicios','Logística','RRHH','Otro'];
@@ -30,7 +31,7 @@ interface Employee {
   role: string; department: string;
   status: 'Activo'|'Inactivo'|'Vacaciones'|'Suspendido';
   payFrequency: 'semanal'|'quincenal'|'mensual';
-  paymentCurrency: 'USD'|'BS'|'MIXTO';
+  paymentCurrency: 'USD'|'BS';
   salaryUSD: number; salaryBs: number;
   bonusUSD: number; bonusUSDCurrency: 'USD'|'BS';
   bonusBs: number;
@@ -46,6 +47,7 @@ interface Voucher {
   reason: string; status: 'PENDIENTE'|'DESCONTADO'|'CORREGIDO';
   createdAt: any; settledAt?: any;
   voucherDate?: string;
+  deferToNextPeriod?: boolean;
   registeredBy?: string; registeredByName?: string;
   correctedFrom?: string; originalAmount?: number; correctionNote?: string; correctedAt?: any;
 }
@@ -71,6 +73,12 @@ interface TimeEntry {
   status: 'PENDIENTE' | 'APLICADO';
   registeredBy?: string; registeredByName?: string;
   createdAt: any;
+}
+interface Abono {
+  id: string; employeeId: string; employeeName: string;
+  amount: number; currency: 'USD'|'BS'; amountUSD: number; rateUsed?: number;
+  concept: string; date: string; status: 'PENDIENTE'|'APLICADO';
+  registeredBy?: string; registeredByName?: string; createdAt: any;
 }
 interface PayrollDetail {
   employeeId: string; name: string; department: string;
@@ -103,6 +111,8 @@ const EMPTY_EMP: Omit<Employee,'id'> = {
   ivssEnabled:false, ivssRate:4, paroEnabled:false, paroRate:2,
   vacationDaysPerYear:15, vacationDaysUsed:0, startDate:'',
 };
+
+const getCurrencyLabel = (c: 'USD'|'BS') => c === 'USD' ? 'Tasa Interna' : 'BCV';
 
 function periodSal(emp: Employee, cur: 'USD'|'BS') {
   const base  = cur==='USD' ? (emp.salaryUSD||0) : (emp.salaryBs||0);
@@ -259,7 +269,7 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
               { l:'Cédula', v: emp.cedula||'—' },
               { l:'Teléfono', v: emp.phone||'—' },
               { l:'Frecuencia', v: FREQ_LABEL[emp.payFrequency] },
-              { l:'Moneda', v: emp.paymentCurrency },
+              { l:'Moneda', v: getCurrencyLabel(emp.paymentCurrency) },
               { l:'Inicio', v: emp.startDate||'—' },
               { l:'Estatus', v: emp.status },
             ].map(({l,v})=>(
@@ -419,6 +429,7 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
 export default function RecursosHumanos() {
   const { userProfile } = useAuth();
   const toast           = useToast();
+  const { tasaBCV }     = useRates();
   const bid             = userProfile?.businessId || '';
 
   // ── Isolation mode (individual vs shared) ──────────────────────────────────
@@ -469,11 +480,11 @@ export default function RecursosHumanos() {
   const [procLoading, setProcLoading] = useState(false);
 
   // Vouchers tab quick form
-  const [qv, setQv] = useState({ empId:'', date: new Date().toISOString().slice(0,10), amount:'', currency:'USD' as 'USD'|'BS', reason:'Adelanto' });
+  const [qv, setQv] = useState({ empId:'', date: new Date().toISOString().slice(0,10), amount:'', currency:'USD' as 'USD'|'BS', reason:'Adelanto', defer: false });
   const amtRef = useRef<HTMLInputElement>(null);
 
   // Voucher correction
-  const [correcting, setCorrecting] = useState<{v:Voucher; newAmt:string; note:string}|null>(null);
+  const [correcting, setCorrecting] = useState<{v:Voucher; newAmt:string; newDate:string; newCurrency:'USD'|'BS'; note:string}|null>(null);
 
   // Time entries quick form
   const [te, setTe] = useState({ empId:'', date: new Date().toISOString().slice(0,10), type:'overtime' as TimeEntry['type'], hours:'', days:'', reason:'' });
@@ -486,6 +497,42 @@ export default function RecursosHumanos() {
   const [rateNotes, setRateNotes] = useState('');
   const [rateDate, setRateDate]   = useState(() => new Date().toISOString().slice(0,10));
   const [savingRate, setSavingRate] = useState(false);
+
+  // Editable rate history
+  const [editingRate, setEditingRate] = useState<{id:string;rate:string;effectiveDate:string;notes:string}|null>(null);
+
+  // Dismissible hints (J)
+  const [hintVales, setHintVales] = useState(() => !localStorage.getItem('dualis_hint_vales'));
+  const [hintTe, setHintTe] = useState(() => !localStorage.getItem('dualis_hint_te'));
+  const dismissHintVales = () => { localStorage.setItem('dualis_hint_vales','1'); setHintVales(false); };
+  const dismissHintTe    = () => { localStorage.setItem('dualis_hint_te','1');    setHintTe(false); };
+
+  // Abonos (L)
+  const [abonos, setAbonos] = useState<Abono[]>([]);
+  const [qa, setQa] = useState({ empId:'', date: new Date().toISOString().slice(0,10), amount:'', currency:'USD' as 'USD'|'BS', concept:'Abono en efectivo' });
+  const [savingAbono, setSavingAbono] = useState(false);
+
+  // Emp dropdown state (G)
+  const [empDropOpen, setEmpDropOpen] = useState(false);
+  const [empSearch, setEmpSearch] = useState('');
+  const [teDropOpen, setTeDropOpen] = useState(false);
+  const [teSearch, setTeSearch] = useState('');
+  const [abonoDropOpen, setAbonoDropOpen] = useState(false);
+  const [abonoSearch, setAbonoSearch] = useState('');
+  const empDropRef = useRef<HTMLDivElement>(null);
+  const teDropRef  = useRef<HTMLDivElement>(null);
+  const abonoDropRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (empDropRef.current && !empDropRef.current.contains(e.target as Node)) setEmpDropOpen(false);
+      if (teDropRef.current  && !teDropRef.current.contains(e.target as Node))  setTeDropOpen(false);
+      if (abonoDropRef.current && !abonoDropRef.current.contains(e.target as Node)) setAbonoDropOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // Comparar tab
   const [compareUsers, setCompareUsers] = useState<{id:string;fullName?:string;email?:string}[]>([]);
@@ -522,7 +569,9 @@ export default function RecursosHumanos() {
       s=>setPayrollHistory(s.docs.map(d=>({id:d.id,...d.data()} as PayrollRun))), ()=>{});
     const u6 = onSnapshot(query(collection(db,`businesses/${bid}/time_entries`)),
       s=>setTimeEntries(s.docs.map(d=>({id:d.id,...d.data()} as TimeEntry)).sort((a,b)=>(b.date||'').localeCompare(a.date||''))), ()=>{});
-    return ()=>{u1();u2();u3();u4();u5();u6();};
+    const u7 = onSnapshot(query(collection(db,`businesses/${bid}/abonos`),orderBy('createdAt','desc')),
+      s=>setAbonos(s.docs.map(d=>({id:d.id,...d.data()} as Abono))), ()=>{});
+    return ()=>{u1();u2();u3();u4();u5();u6();u7();};
   }, [bid]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -557,7 +606,23 @@ export default function RecursosHumanos() {
     return withDates[withDates.length - 1]?.rate || currentRate;
   }, [voucherRates, currentRate]);
   const pendingVouchers = useMemo(()=>visibleVouchers.filter(v=>v.status==='PENDIENTE'),[visibleVouchers]);
+  // For nómina: exclude deferred vales (they apply next period)
+  const currentPeriodVouchers = useMemo(()=>pendingVouchers.filter(v=>!v.deferToNextPeriod),[pendingVouchers]);
   const activeLoans     = useMemo(()=>loans.filter(l=>l.status==='ACTIVO'),[loans]);
+
+  // Dynamic currency options for vale form (C)
+  const valeMonedaOpts = useMemo(()=>{
+    const emp = employees.find(e=>e.id===qv.empId);
+    if (!emp) return [{ value:'USD' as const, label:'Tasa Interna ($)' },{ value:'BS' as const, label:'Bs (Tasa Interna)' }];
+    if (emp.paymentCurrency==='BS') return [
+      { value:'USD' as const, label:'USD ($)' },
+      { value:'BS' as const, label:'Bs (BCV)' },
+    ];
+    return [
+      { value:'USD' as const, label:'Tasa Interna ($)' },
+      { value:'BS' as const, label:'Bs (Tasa Interna)' },
+    ];
+  },[employees, qv.empId]);
 
   const pendingTotalUSD = useMemo(()=>pendingVouchers.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0),[pendingVouchers]);
   const pendingTotalBs  = useMemo(()=>pendingVouchers.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0),[pendingVouchers]);
@@ -567,36 +632,39 @@ export default function RecursosHumanos() {
   const nominaRows = useMemo(():NominaRow[] => {
     const filtered = employees.filter(e=>e.status==='Activo' && (freqFilter==='all'||e.payFrequency===freqFilter));
     return filtered.map(emp=>{
-      const ev   = pendingVouchers.filter(v=>v.employeeId===emp.id);
+      const ev   = currentPeriodVouchers.filter(v=>v.employeeId===emp.id);
       const vDedUSD = ev.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
       const vDedBs  = ev.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0);
+      // Subtract abonos from voucher deductions (L)
+      const empAbonosUSD = abonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
+        .reduce((s,a)=>s+(a.currency==='USD'?a.amount:(a.amountUSD||0)),0);
+      const netVDedUSD = Math.max(0, vDedUSD - empAbonosUSD);
       const ivssUSD = emp.ivssEnabled?(emp.salaryUSD||0)*(emp.ivssRate||4)/100:0;
       const paroUSD = emp.paroEnabled?(emp.salaryUSD||0)*(emp.paroRate||2)/100:0;
       const loanDed = activeLoans.filter(l=>l.employeeId===emp.id)
         .reduce((s,l)=>s+(l.currency==='USD'?l.installmentAmount:(currentRate>0?l.installmentAmount/currentRate:0)),0);
 
-      // Time entries: overtime adds to gross, absences/missing days subtract
       const empTimeEntries = pendingTimeEntries.filter(t => t.employeeId === emp.id);
       const overtimeUSD = empTimeEntries.filter(t => t.type === 'overtime').reduce((s, t) => s + (t.amountUSD || 0), 0);
       const absenceDeductionUSD = Math.abs(empTimeEntries.filter(t => t.type !== 'overtime').reduce((s, t) => s + (t.amountUSD || 0), 0));
 
       const grossUSD   = (emp.salaryUSD||0)+(emp.bonusUSD||0)+overtimeUSD;
       const grossBs    = (emp.salaryBs||0)+(emp.bonusBs||0);
-      const totalDed   = vDedUSD+ivssUSD+paroUSD+loanDed+absenceDeductionUSD;
+      const totalDed   = netVDedUSD+ivssUSD+paroUSD+loanDed+absenceDeductionUSD;
       const pSal       = periodSal(emp,'USD');
       return {
         emp, grossUSD, grossBs,
-        voucherDedUSD:vDedUSD, voucherDedBs:vDedBs,
+        voucherDedUSD:netVDedUSD, voucherDedBs:vDedBs,
         ivssUSD, paroUSD, loanDedUSD:loanDed,
         overtimeUSD, absenceDeductionUSD,
         totalDedUSD:totalDed,
         netUSD:Math.max(0,grossUSD-totalDed),
         netBs:Math.max(0,grossBs-vDedBs),
         vCount:ev.length,
-        isOverdraft:emp.salaryUSD>0 && vDedUSD>pSal,
+        isOverdraft:emp.salaryUSD>0 && netVDedUSD>pSal,
       };
     });
-  },[employees,pendingVouchers,activeLoans,pendingTimeEntries,freqFilter,currentRate]);
+  },[employees,currentPeriodVouchers,abonos,activeLoans,pendingTimeEntries,freqFilter,currentRate]);
 
   const nominaTotals = useMemo(()=>({
     grossUSD:nominaRows.reduce((s,n)=>s+n.grossUSD,0),
@@ -607,9 +675,9 @@ export default function RecursosHumanos() {
   }),[nominaRows]);
 
   const overdraftList = useMemo(()=>employees.filter(emp=>{
-    const pv = pendingVouchers.filter(v=>v.employeeId===emp.id).reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
+    const pv = currentPeriodVouchers.filter(v=>v.employeeId===emp.id).reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
     return emp.salaryUSD>0 && pv>periodSal(emp,'USD');
-  }),[employees,pendingVouchers]);
+  }),[employees,currentPeriodVouchers]);
 
   const filteredEmps = useMemo(()=>employees.filter(e=>{
     if(deptFilter!=='all'&&e.department!==deptFilter) return false;
@@ -685,7 +753,9 @@ export default function RecursosHumanos() {
     setSaving(true);
     const emp = employees.find(x=>x.id===qv.empId);
     const amt = Number(qv.amount);
-    const rateForDate = qv.currency==='BS' ? getRateForDate(qv.date) : 0;
+    // D: BCV employees use tasaBCV for BS vales; Tasa Interna employees use getRateForDate
+    const isBcvEmp = emp?.paymentCurrency === 'BS';
+    const rateForDate = qv.currency==='BS' ? (isBcvEmp ? tasaBCV : getRateForDate(qv.date)) : 0;
     try {
       await handleAddVoucher({
         employeeId:qv.empId, employeeName:emp?.fullName||'',
@@ -694,8 +764,10 @@ export default function RecursosHumanos() {
         ...(qv.currency==='BS' && rateForDate > 0 ? { rateUsed: rateForDate } : {}),
         reason:qv.reason, status:'PENDIENTE',
         voucherDate: qv.date,
+        ...(qv.defer ? { deferToNextPeriod: true } : {}),
       });
-      setQv(f=>({...f,empId:'',amount:'',date:new Date().toISOString().slice(0,10)}));
+      // I: Only reset empId and amount — keep date, currency, reason
+      setQv(f=>({...f, empId:'', amount:'', defer: false}));
       setTimeout(()=>amtRef.current?.focus(),100);
     } catch { /* error ya mostrado por handleAddVoucher */ }
     finally { setSaving(false); }
@@ -748,7 +820,7 @@ export default function RecursosHumanos() {
 
   const handleCorrectVoucher = async () => {
     if(!correcting||!bid) return;
-    const {v,newAmt,note} = correcting;
+    const {v, newAmt, newDate, newCurrency, note} = correcting;
     const newAmount = Number(newAmt);
     if(!newAmount||newAmount<=0) return;
     setSaving(true);
@@ -757,35 +829,43 @@ export default function RecursosHumanos() {
         status:'CORREGIDO', correctedAt:serverTimestamp(),
         correctionNote:note, correctedToAmount:newAmount,
       });
-      const rateForDate = v.currency==='BS'&&v.rateUsed ? v.rateUsed : (v.currency==='BS'?currentRate:0);
+      const emp = employees.find(x=>x.id===v.employeeId);
+      const isBcvEmp = emp?.paymentCurrency === 'BS';
+      const rateForDate = newCurrency==='BS'
+        ? (isBcvEmp ? tasaBCV : getRateForDate(newDate || v.voucherDate || new Date().toISOString().slice(0,10)))
+        : 0;
       await addDoc(collection(db,`businesses/${bid}/vouchers`),{
         employeeId:v.employeeId, employeeName:v.employeeName,
-        amount:newAmount, currency:v.currency,
-        amountUSD:v.currency==='USD'?newAmount:(rateForDate>0?newAmount/rateForDate:0),
-        ...(v.currency==='BS' && rateForDate > 0 ? { rateUsed: rateForDate } : {}),
+        amount:newAmount, currency:newCurrency,
+        amountUSD:newCurrency==='USD'?newAmount:(rateForDate>0?newAmount/rateForDate:0),
+        ...(newCurrency==='BS' && rateForDate > 0 ? { rateUsed: rateForDate } : {}),
         reason:v.reason, status:'PENDIENTE',
         correctedFrom:v.id, originalAmount:v.amount, correctionNote:note,
-        voucherDate:v.voucherDate,
+        voucherDate: newDate || v.voucherDate,
         registeredBy: userProfile?.uid || '',
         registeredByName: userProfile?.fullName || userProfile?.email || 'Usuario',
         createdAt:serverTimestamp(),
       });
-      toast.success(`Vale corregido: ${v.currency==='USD'?'$':'Bs '}${fmtHR(v.amount)} → ${v.currency==='USD'?'$':'Bs '}${fmtHR(newAmount)}`);
+      toast.success(`Vale corregido: ${v.currency==='USD'?'$':'Bs '}${fmtHR(v.amount)} → ${newCurrency==='USD'?'$':'Bs '}${fmtHR(newAmount)}`);
       setCorrecting(null);
     } catch { toast.error('Error al corregir el vale'); }
     finally { setSaving(false); }
   };
 
   const handleCorte = () => {
-    if(!pendingVouchers.length){toast.info('Sin vales pendientes');return;}
+    const toSettle = pendingVouchers.filter(v=>!v.deferToNextPeriod);
+    const deferred = pendingVouchers.filter(v=>v.deferToNextPeriod);
+    if(!toSettle.length){toast.info('Sin vales para este corte');return;}
     setConfirm({
       msg:'¿Ejecutar Corte de Vales?',
-      detail:`${pendingVouchers.length} vales — $${fmtHR(pendingTotalUSD)} USD + Bs ${fmtHR(pendingTotalBs)}`,
+      detail:`${toSettle.length} vales — $${fmtHR(pendingTotalUSD)} USD + Bs ${fmtHR(pendingTotalBs)}${deferred.length?` · ${deferred.length} diferidos al próximo corte`:''}`,
       onConfirm:async()=>{
         const batch=writeBatch(db);
-        pendingVouchers.forEach(v=>batch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{status:'DESCONTADO',settledAt:serverTimestamp()}));
+        toSettle.forEach(v=>batch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{status:'DESCONTADO',settledAt:serverTimestamp()}));
+        // Clear deferToNextPeriod on deferred vales so they apply next corte
+        deferred.forEach(v=>batch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{deferToNextPeriod:false}));
         await batch.commit();
-        toast.success('Corte ejecutado');
+        toast.success(`Corte ejecutado${deferred.length?` · ${deferred.length} vales pasan al próximo período`:''}`);
       },
     });
   };
@@ -859,6 +939,51 @@ export default function RecursosHumanos() {
       toast.success('Tasa actualizada');
     } catch { toast.error('Error al guardar la tasa'); }
     finally { setSavingRate(false); }
+  };
+
+  // F: Edit existing rate entry
+  const handleEditRate = async () => {
+    if (!editingRate || !bid) return;
+    const newRate = Number(editingRate.rate);
+    if (!newRate || newRate <= 0) return;
+    setSavingRate(true);
+    try {
+      await updateDoc(doc(db, `businesses/${bid}/voucher_rates`, editingRate.id), {
+        rate: newRate,
+        effectiveDate: editingRate.effectiveDate,
+        notes: editingRate.notes,
+      });
+      setEditingRate(null);
+      toast.success('Tasa actualizada');
+    } catch { toast.error('Error al editar la tasa'); }
+    finally { setSavingRate(false); }
+  };
+
+  // L: Register abono
+  const handleAddAbono = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bid || !qa.empId || !qa.amount) return;
+    setSavingAbono(true);
+    const emp = employees.find(x => x.id === qa.empId);
+    const amt = Number(qa.amount);
+    const isBcvEmp = emp?.paymentCurrency === 'BS';
+    const rate = qa.currency === 'BS' ? (isBcvEmp ? tasaBCV : currentRate) : 0;
+    try {
+      await addDoc(collection(db, `businesses/${bid}/abonos`), {
+        employeeId: qa.empId, employeeName: emp?.fullName || '',
+        amount: amt, currency: qa.currency,
+        amountUSD: qa.currency === 'USD' ? amt : (rate > 0 ? amt / rate : 0),
+        ...(qa.currency === 'BS' && rate > 0 ? { rateUsed: rate } : {}),
+        concept: qa.concept, date: qa.date, status: 'PENDIENTE',
+        registeredBy: userProfile?.uid || '',
+        registeredByName: userProfile?.fullName || userProfile?.email || 'Usuario',
+        createdAt: serverTimestamp(),
+      });
+      setQa(f => ({ ...f, empId: '', amount: '' }));
+      toast.success(`Abono registrado — ${emp?.fullName}`);
+    } catch (err: any) {
+      toast.error(err?.code === 'permission-denied' ? 'Sin permisos' : `Error: ${err?.message}`);
+    } finally { setSavingAbono(false); }
   };
 
   const handleDeleteEmployee = (emp:Employee) => setConfirm({
@@ -1003,7 +1128,7 @@ export default function RecursosHumanos() {
           <div className="flex gap-1.5 p-1.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-2xl shadow-sm overflow-x-auto">
             {(['directory','vouchers','nomina','tasas','comparar'] as SubTab[]).map(t=>(
               <button key={t} onClick={()=>setActiveTab(t)} className={`${tabCls(t)} whitespace-nowrap shrink-0`}>
-                {t==='directory'?'Directorio':t==='vouchers'?'Vales':t==='nomina'?'Nómina':t==='tasas'?'Tasas':'Comparar'}
+                {t==='directory'?'Directorio':t==='vouchers'?'Vales':t==='nomina'?'Nómina':t==='tasas'?'Tasa Interna':'Comparar'}
               </button>
             ))}
           </div>
@@ -1174,58 +1299,101 @@ export default function RecursosHumanos() {
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Control de Vales</h3>
                   {currentRate>0&&<span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase rounded-full border border-indigo-100 dark:border-indigo-500/25">Tasa: Bs {fmtHR(currentRate)}</span>}
                 </div>
+                {/* Hint banner (J) */}
+                {hintVales && (
+                  <div className="flex items-start gap-3 p-3 mb-3 bg-amber-50 dark:bg-amber-500/[0.08] border border-amber-200 dark:border-amber-500/25 rounded-xl">
+                    <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5"/>
+                    <p className="text-[10px] text-amber-700 dark:text-amber-300 flex-1">
+                      <strong>Recuerda:</strong> Verifica la fecha del vale antes de registrar. El sistema usa la tasa vigente de esa fecha.
+                    </p>
+                    <button onClick={dismissHintVales} className="text-amber-400 hover:text-amber-600 dark:hover:text-amber-200 transition-all shrink-0"><X size={13}/></button>
+                  </div>
+                )}
                 {/* Quick form */}
                 <form onSubmit={handleQuickVoucher} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
-                  <div>
+                  {/* G: Custom colored employee dropdown */}
+                  <div ref={empDropRef} className="relative">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
-                    <select required value={qv.empId} onChange={e=>{
-                      const empId = e.target.value;
-                      const emp = employees.find(x=>x.id===empId);
-                      // Auto-detect currency from employee's payment config
-                      const autoCurrency = emp?.paymentCurrency === 'BS' ? 'BS' : 'USD';
-                      setQv(f=>({...f, empId, currency: autoCurrency}));
-                    }}
-                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-indigo-500">
-                      <option value="">Seleccionar...</option>
-                      {employees.filter(e=>e.status==='Activo').map(e=><option key={e.id} value={e.id}>{e.fullName} ({e.department})</option>)}
-                    </select>
+                    <button type="button" tabIndex={1} onClick={()=>{setEmpDropOpen(o=>!o);setEmpSearch('');}}
+                      className={`w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border rounded-xl text-xs font-bold dark:text-white outline-none text-left flex items-center justify-between gap-1 transition-all ${empDropOpen?'border-indigo-500 ring-2 ring-indigo-500/20':'border-slate-200 dark:border-white/[0.08]'}`}>
+                      {qv.empId ? (()=>{
+                        const e = employees.find(x=>x.id===qv.empId);
+                        return <span className={`font-black ${e?.paymentCurrency==='USD'?'text-emerald-700 dark:text-emerald-400':'text-sky-700 dark:text-sky-400'}`}>{e?.fullName}</span>;
+                      })() : <span className="text-slate-400 dark:text-white/30">Seleccionar...</span>}
+                      <ChevronDown size={12} className={`text-slate-400 transition-transform shrink-0 ${empDropOpen?'rotate-180':''}`}/>
+                    </button>
+                    {empDropOpen && (
+                      <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[220px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
+                        <div className="p-2 border-b border-slate-100 dark:border-white/[0.06]">
+                          <input autoFocus value={empSearch} onChange={e=>setEmpSearch(e.target.value)} placeholder="Buscar empleado..."
+                            className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg dark:text-white outline-none"/>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto">
+                          {employees.filter(e=>e.status==='Activo'&&(!empSearch||e.fullName.toLowerCase().includes(empSearch.toLowerCase()))).map(e=>(
+                            <button key={e.id} type="button" onClick={()=>{
+                              const autoCurrency = e.paymentCurrency === 'BS' ? 'BS' : 'USD';
+                              setQv(f=>({...f, empId: e.id, currency: autoCurrency}));
+                              setEmpDropOpen(false);
+                            }}
+                              className={`w-full px-3 py-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all flex items-center gap-2 ${qv.empId===e.id?'bg-indigo-50 dark:bg-indigo-500/[0.08]':''}`}>
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${e.paymentCurrency==='USD'?'bg-emerald-500':'bg-sky-500'}`}/>
+                              <span className={`font-bold flex-1 ${e.paymentCurrency==='USD'?'text-emerald-700 dark:text-emerald-400':'text-sky-700 dark:text-sky-400'}`}>{e.fullName}</span>
+                              <span className="text-[9px] text-slate-400 dark:text-white/30 uppercase">{e.department}</span>
+                              <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${e.paymentCurrency==='USD'?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20':'bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-500/20'}`}>
+                                {getCurrencyLabel(e.paymentCurrency)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Fecha del Vale</label>
-                    <input type="date" required value={qv.date} onChange={e=>setQv(f=>({...f,date:e.target.value}))}
+                    <input type="date" required tabIndex={2} value={qv.date} onChange={e=>setQv(f=>({...f,date:e.target.value}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"/>
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Moneda</label>
-                    <select value={qv.currency} onChange={e=>setQv(f=>({...f,currency:e.target.value as any}))}
+                    <select tabIndex={3} value={qv.currency} onChange={e=>setQv(f=>({...f,currency:e.target.value as any}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-indigo-500">
-                      <option value="USD">USD ($)</option><option value="BS">Bs (BCV)</option>
+                      {valeMonedaOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">
                       Monto{' '}
                       {qv.currency==='BS'&&qv.date&&(()=>{
-                        const rate = getRateForDate(qv.date);
+                        const selEmp = employees.find(e=>e.id===qv.empId);
+                        const isBcv = selEmp?.paymentCurrency==='BS';
+                        const rate = isBcv ? tasaBCV : getRateForDate(qv.date);
                         const amt = Number(qv.amount);
                         return <>
-                          <span className="text-[8px] text-indigo-400 normal-case">(Tasa {qv.date}: Bs {fmtHR(rate)})</span>
+                          <span className="text-[8px] text-indigo-400 normal-case">(Tasa: Bs {fmtHR(rate)})</span>
                           {amt > 0 && <span className="text-emerald-400 text-[9px] ml-1">≈ ${fmtHR(amt / rate)}</span>}
                         </>;
                       })()}
                     </label>
-                    <input ref={amtRef} required type="number" step="0.01" value={qv.amount} onChange={e=>setQv(f=>({...f,amount:e.target.value}))}
+                    <input ref={amtRef} required tabIndex={4} type="number" step="0.01" value={qv.amount} onChange={e=>setQv(f=>({...f,amount:e.target.value}))}
                       placeholder="0.00"
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"/>
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Concepto</label>
-                    <input value={qv.reason} onChange={e=>setQv(f=>({...f,reason:e.target.value}))}
+                    <input tabIndex={5} value={qv.reason} onChange={e=>setQv(f=>({...f,reason:e.target.value}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"/>
                   </div>
-                  <button disabled={saving} className="h-[42px] bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 disabled:opacity-50 hover:from-indigo-500 hover:to-violet-500 transition-all">
-                    {saving?<Loader2 size={13} className="animate-spin"/>:<><Plus size={13}/>Registrar</>}
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    {/* N: Defer toggle */}
+                    <button type="button" onClick={()=>setQv(f=>({...f,defer:!f.defer}))}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all ${qv.defer?'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-400':'border-slate-200 dark:border-white/[0.08] text-slate-400 dark:text-white/30 hover:border-amber-300 hover:text-amber-600'}`}>
+                      <span className={`w-2 h-2 rounded-full ${qv.defer?'bg-amber-500':'bg-slate-300 dark:bg-white/20'}`}/>
+                      {qv.defer ? 'Próx. corte' : 'Este corte'}
+                    </button>
+                    <button tabIndex={6} disabled={saving} className="h-[42px] bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 disabled:opacity-50 hover:from-indigo-500 hover:to-violet-500 transition-all">
+                      {saving?<Loader2 size={13} className="animate-spin"/>:<><Plus size={13}/>Registrar</>}
+                    </button>
+                  </div>
                 </form>
               </div>
               <div className="overflow-x-auto">
@@ -1245,9 +1413,10 @@ export default function RecursosHumanos() {
                       <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${v.status==='CORREGIDO'?'opacity-50':''}`}>
                         <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{v.voucherDate || (v.createdAt?.toDate ? v.createdAt.toDate().toLocaleDateString('es-VE') : '—')}</td>
                         <td className="px-5 py-3">
-                          <p className="font-black text-slate-900 dark:text-white text-sm">
+                          <p className="font-black text-slate-900 dark:text-white text-sm flex items-center gap-1.5 flex-wrap">
                             {v.employeeName}
-                            {v.correctedFrom&&<span className="ml-2 text-[8px] bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-black uppercase">Corrección</span>}
+                            {v.correctedFrom&&<span className="text-[8px] bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-black uppercase">Corrección</span>}
+                            {v.deferToNextPeriod&&<span className="text-[8px] bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 text-violet-700 dark:text-violet-400 px-1.5 py-0.5 rounded font-black uppercase">Próx. corte</span>}
                           </p>
                           {v.registeredByName && <p className="text-[9px] text-slate-400 dark:text-white/25 mt-0.5">por {v.registeredByName}</p>}
                         </td>
@@ -1263,7 +1432,7 @@ export default function RecursosHumanos() {
                           <div className="flex items-center justify-end gap-1.5">
                             <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${v.status==='PENDIENTE'?'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/30':v.status==='CORREGIDO'?'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/30':'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30'}`}>{v.status}</span>
                             {v.status==='PENDIENTE'&&(
-                              <button onClick={()=>setCorrecting({v,newAmt:String(v.amount),note:''})}
+                              <button onClick={()=>setCorrecting({v, newAmt:String(v.amount), newDate: v.voucherDate||new Date().toISOString().slice(0,10), newCurrency: v.currency, note:''})}
                                 className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-100 transition-all" title="Corregir vale">
                                 <Pencil size={11}/>
                               </button>
@@ -1282,8 +1451,16 @@ export default function RecursosHumanos() {
                               </div>
                               <input type="number" step="0.01" min="0.01" placeholder="Nuevo monto"
                                 value={correcting.newAmt} onChange={e=>setCorrecting(c=>c?{...c,newAmt:e.target.value}:null)}
-                                className="px-3 py-1.5 text-xs font-black bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500 w-32"/>
-                              <input placeholder="Motivo de la corrección (opcional)"
+                                className="px-3 py-1.5 text-xs font-black bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500 w-28"/>
+                              <input type="date" value={correcting.newDate}
+                                onChange={e=>setCorrecting(c=>c?{...c,newDate:e.target.value}:null)}
+                                className="px-3 py-1.5 text-xs bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500 w-36"/>
+                              <select value={correcting.newCurrency}
+                                onChange={e=>setCorrecting(c=>c?{...c,newCurrency:e.target.value as 'USD'|'BS'}:null)}
+                                className="px-3 py-1.5 text-xs bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
+                                <option value="USD">USD</option><option value="BS">Bs</option>
+                              </select>
+                              <input placeholder="Motivo (opcional)"
                                 value={correcting.note} onChange={e=>setCorrecting(c=>c?{...c,note:e.target.value}:null)}
                                 className="px-3 py-1.5 text-xs bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500 flex-1 min-w-0"/>
                               <div className="flex gap-1.5 shrink-0">
@@ -1305,24 +1482,141 @@ export default function RecursosHumanos() {
                 </table>
               </div>
 
+              {/* ── ABONOS (L) ── */}
+              <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-t border-slate-100 dark:border-white/[0.06]">
+                <div className="flex items-center gap-2 mb-3">
+                  <ArrowLeftRight size={16} className="text-emerald-500"/>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Abonos a Cuenta</h3>
+                  <span className="text-[9px] text-slate-400 dark:text-white/30 font-normal">Pagos del empleado que reducen su saldo de vales</span>
+                </div>
+                <form onSubmit={handleAddAbono} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
+                  {/* Abono employee dropdown */}
+                  <div ref={abonoDropRef} className="relative">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
+                    <button type="button" onClick={()=>{setAbonoDropOpen(o=>!o);setAbonoSearch('');}}
+                      className={`w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border rounded-xl text-xs font-bold dark:text-white outline-none text-left flex items-center justify-between gap-1 transition-all ${abonoDropOpen?'border-emerald-500 ring-2 ring-emerald-500/20':'border-slate-200 dark:border-white/[0.08]'}`}>
+                      {qa.empId ? (()=>{
+                        const e = employees.find(x=>x.id===qa.empId);
+                        return <span className="font-black text-emerald-700 dark:text-emerald-400">{e?.fullName}</span>;
+                      })() : <span className="text-slate-400 dark:text-white/30">Seleccionar...</span>}
+                      <ChevronDown size={12} className={`text-slate-400 transition-transform shrink-0 ${abonoDropOpen?'rotate-180':''}`}/>
+                    </button>
+                    {abonoDropOpen && (
+                      <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[220px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
+                        <div className="p-2 border-b border-slate-100 dark:border-white/[0.06]">
+                          <input autoFocus value={abonoSearch} onChange={e=>setAbonoSearch(e.target.value)} placeholder="Buscar..."
+                            className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg dark:text-white outline-none"/>
+                        </div>
+                        <div className="max-h-40 overflow-y-auto">
+                          {employees.filter(e=>e.status==='Activo'&&(!abonoSearch||e.fullName.toLowerCase().includes(abonoSearch.toLowerCase()))).map(e=>(
+                            <button key={e.id} type="button" onClick={()=>{setQa(f=>({...f,empId:e.id}));setAbonoDropOpen(false);}}
+                              className={`w-full px-3 py-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all flex items-center gap-2 ${qa.empId===e.id?'bg-emerald-50 dark:bg-emerald-500/[0.08]':''}`}>
+                              <span className="font-bold text-slate-800 dark:text-white flex-1">{e.fullName}</span>
+                              <span className="text-[9px] text-slate-400 dark:text-white/30 uppercase">{e.department}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Fecha</label>
+                    <input type="date" required value={qa.date} onChange={e=>setQa(f=>({...f,date:e.target.value}))}
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"/>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Monto</label>
+                    <div className="flex gap-1.5">
+                      <select value={qa.currency} onChange={e=>setQa(f=>({...f,currency:e.target.value as any}))}
+                        className="px-2 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                        <option value="USD">USD</option><option value="BS">Bs</option>
+                      </select>
+                      <input required type="number" step="0.01" min="0.01" value={qa.amount} onChange={e=>setQa(f=>({...f,amount:e.target.value}))}
+                        placeholder="0.00" className="flex-1 px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"/>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Concepto</label>
+                    <input value={qa.concept} onChange={e=>setQa(f=>({...f,concept:e.target.value}))}
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"/>
+                  </div>
+                  <button disabled={savingAbono||!qa.empId} className="h-[42px] bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 disabled:opacity-50 hover:from-emerald-500 hover:to-teal-500 transition-all">
+                    {savingAbono?<Loader2 size={13} className="animate-spin"/>:<><Plus size={13}/>Registrar Abono</>}
+                  </button>
+                </form>
+                {/* Abonos table */}
+                {abonos.filter(a=>a.status==='PENDIENTE').length>0&&(
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead><tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05]">
+                        <th className="px-4 py-2">Fecha</th><th className="px-4 py-2">Empleado</th>
+                        <th className="px-4 py-2 text-right">Monto</th><th className="px-4 py-2">Concepto</th>
+                      </tr></thead>
+                      <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
+                        {abonos.filter(a=>a.status==='PENDIENTE').map(a=>(
+                          <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+                            <td className="px-4 py-2.5 font-mono text-[10px] text-slate-400 dark:text-white/30">{a.date}</td>
+                            <td className="px-4 py-2.5 font-black text-slate-900 dark:text-white text-sm">{a.employeeName}</td>
+                            <td className="px-4 py-2.5 text-right font-black text-emerald-600 dark:text-emerald-400">+{a.currency==='USD'?'$':'Bs '}{fmtHR(a.amount)}</td>
+                            <td className="px-4 py-2.5 text-slate-400 dark:text-white/40 italic text-xs">{a.concept}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
               {/* ── TIME ENTRIES (Horas Extras / Ausencias / Días Faltantes) ── */}
               <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-t border-slate-100 dark:border-white/[0.06]">
                 <div className="flex items-center gap-2 mb-4">
                   <Clock size={18} className="text-violet-500"/>
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Horas Extras, Ausencias y Días Faltantes</h3>
                 </div>
+                {/* Hint banner (J) */}
+                {hintTe && (
+                  <div className="flex items-start gap-3 p-3 mb-3 bg-amber-50 dark:bg-amber-500/[0.08] border border-amber-200 dark:border-amber-500/25 rounded-xl">
+                    <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5"/>
+                    <p className="text-[10px] text-amber-700 dark:text-amber-300 flex-1">
+                      <strong>Recuerda:</strong> Verifica el tipo y la fecha antes de registrar. Las ausencias y días faltantes restan del pago del período.
+                    </p>
+                    <button onClick={dismissHintTe} className="text-amber-400 hover:text-amber-600 dark:hover:text-amber-200 transition-all shrink-0"><X size={13}/></button>
+                  </div>
+                )}
                 <form onSubmit={handleAddTimeEntry} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
-                  <div>
+                  {/* G: Custom colored employee dropdown */}
+                  <div ref={teDropRef} className="relative">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
-                    <select required value={te.empId} onChange={e=>setTe(f=>({...f,empId:e.target.value}))}
-                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
-                      <option value="">Seleccionar...</option>
-                      {employees.filter(e=>e.status==='Activo').map(e=><option key={e.id} value={e.id}>{e.fullName} ({e.department})</option>)}
-                    </select>
+                    <button type="button" tabIndex={1} onClick={()=>{setTeDropOpen(o=>!o);setTeSearch('');}}
+                      className={`w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border rounded-xl text-xs font-bold dark:text-white outline-none text-left flex items-center justify-between gap-1 transition-all ${teDropOpen?'border-violet-500 ring-2 ring-violet-500/20':'border-slate-200 dark:border-white/[0.08]'}`}>
+                      {te.empId ? (()=>{
+                        const e = employees.find(x=>x.id===te.empId);
+                        return <span className={`font-black ${e?.paymentCurrency==='USD'?'text-emerald-700 dark:text-emerald-400':'text-sky-700 dark:text-sky-400'}`}>{e?.fullName}</span>;
+                      })() : <span className="text-slate-400 dark:text-white/30">Seleccionar...</span>}
+                      <ChevronDown size={12} className={`text-slate-400 transition-transform shrink-0 ${teDropOpen?'rotate-180':''}`}/>
+                    </button>
+                    {teDropOpen && (
+                      <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[220px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
+                        <div className="p-2 border-b border-slate-100 dark:border-white/[0.06]">
+                          <input autoFocus value={teSearch} onChange={e=>setTeSearch(e.target.value)} placeholder="Buscar empleado..."
+                            className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg dark:text-white outline-none"/>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto">
+                          {employees.filter(e=>e.status==='Activo'&&(!teSearch||e.fullName.toLowerCase().includes(teSearch.toLowerCase()))).map(e=>(
+                            <button key={e.id} type="button" onClick={()=>{setTe(f=>({...f,empId:e.id}));setTeDropOpen(false);}}
+                              className={`w-full px-3 py-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all flex items-center gap-2 ${te.empId===e.id?'bg-violet-50 dark:bg-violet-500/[0.08]':''}`}>
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${e.paymentCurrency==='USD'?'bg-emerald-500':'bg-sky-500'}`}/>
+                              <span className={`font-bold flex-1 ${e.paymentCurrency==='USD'?'text-emerald-700 dark:text-emerald-400':'text-sky-700 dark:text-sky-400'}`}>{e.fullName}</span>
+                              <span className="text-[9px] text-slate-400 dark:text-white/30 uppercase">{e.department}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Tipo</label>
-                    <select value={te.type} onChange={e=>setTe(f=>({...f,type:e.target.value as TimeEntry['type']}))}
+                    <select tabIndex={2} value={te.type} onChange={e=>setTe(f=>({...f,type:e.target.value as TimeEntry['type']}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
                       <option value="overtime">Horas Extras (+)</option>
                       <option value="absence">Horas Ausentes (−)</option>
@@ -1331,7 +1625,7 @@ export default function RecursosHumanos() {
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Fecha</label>
-                    <input type="date" required value={te.date} onChange={e=>setTe(f=>({...f,date:e.target.value}))}
+                    <input type="date" required tabIndex={3} value={te.date} onChange={e=>setTe(f=>({...f,date:e.target.value}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-violet-500"/>
                   </div>
                   <div>
@@ -1339,22 +1633,22 @@ export default function RecursosHumanos() {
                       {te.type==='missing_day'?'Días':'Horas'}
                     </label>
                     {te.type==='missing_day' ? (
-                      <input required type="number" step="1" min="1" value={te.days} onChange={e=>setTe(f=>({...f,days:e.target.value}))}
+                      <input required tabIndex={4} type="number" step="1" min="1" value={te.days} onChange={e=>setTe(f=>({...f,days:e.target.value}))}
                         placeholder="1"
                         className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-violet-500"/>
                     ) : (
-                      <input required type="number" step="0.5" min="0.5" value={te.hours} onChange={e=>setTe(f=>({...f,hours:e.target.value}))}
+                      <input required tabIndex={4} type="number" step="0.5" min="0.5" value={te.hours} onChange={e=>setTe(f=>({...f,hours:e.target.value}))}
                         placeholder="0.0"
                         className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-violet-500"/>
                     )}
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Razón</label>
-                    <input value={te.reason} onChange={e=>setTe(f=>({...f,reason:e.target.value}))}
+                    <input tabIndex={5} value={te.reason} onChange={e=>setTe(f=>({...f,reason:e.target.value}))}
                       placeholder={te.type==='overtime'?'Horas extras':te.type==='absence'?'Permiso/Ausencia':'Falta sin justificar'}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-violet-500"/>
                   </div>
-                  <button disabled={saving} className="h-[42px] bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 disabled:opacity-50 hover:from-violet-500 hover:to-purple-500 transition-all">
+                  <button tabIndex={6} disabled={saving} className="h-[42px] bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 disabled:opacity-50 hover:from-violet-500 hover:to-purple-500 transition-all">
                     {saving?<Loader2 size={13} className="animate-spin"/>:<><Plus size={13}/>Registrar</>}
                   </button>
                 </form>
@@ -1452,7 +1746,7 @@ export default function RecursosHumanos() {
                             <p className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
                               {n.emp.fullName}{n.isOverdraft&&<span className="text-[8px] px-1.5 py-0.5 bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 rounded border border-rose-100 dark:border-rose-500/25 font-black uppercase">sobregiro</span>}
                             </p>
-                            <p className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest mt-0.5">{n.emp.department} · {n.emp.paymentCurrency}</p>
+                            <p className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest mt-0.5">{n.emp.department} · {getCurrencyLabel(n.emp.paymentCurrency)}</p>
                           </td>
                           <td className="px-4 py-3.5 text-center text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">{FREQ_LABEL[n.emp.payFrequency]?.slice(0,5)}</td>
                           <td className="px-4 py-3.5 text-right font-black text-slate-700 dark:text-slate-300">{n.grossUSD>0?`$${fmtHR(n.grossUSD)}`:'—'}</td>
@@ -1526,7 +1820,7 @@ export default function RecursosHumanos() {
             <>
               <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.06]">
                 <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
-                  <RefreshCw size={16} className="text-indigo-500"/> Tasas de Vales
+                  <RefreshCw size={16} className="text-indigo-500"/> Tasa Interna
                 </h3>
                 <p className="text-[10px] text-slate-400 dark:text-white/40 mt-1">Tasa interna para convertir vales en Bs → USD al descontar de nómina.</p>
               </div>
@@ -1589,17 +1883,50 @@ export default function RecursosHumanos() {
                   <table className="w-full text-left">
                     <thead><tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05]">
                       <th className="px-5 py-3">Vigencia</th><th className="px-5 py-3">Registrada</th><th className="px-5 py-3 text-right">Tasa (Bs/USD)</th>
-                      <th className="px-5 py-3">Por</th><th className="px-5 py-3">Notas</th>
+                      <th className="px-5 py-3">Por</th><th className="px-5 py-3">Notas</th><th className="px-5 py-3"></th>
                     </tr></thead>
                     <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                       {voucherRates.slice(0,20).map((r,i)=>(
-                        <tr key={r.id} className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] ${i===0?'bg-indigo-50/30 dark:bg-indigo-500/[0.04]':''}`}>
+                        <React.Fragment key={r.id}>
+                        <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] ${i===0?'bg-indigo-50/30 dark:bg-indigo-500/[0.04]':''}`}>
                           <td className="px-5 py-3 font-mono text-[11px] font-bold text-indigo-600 dark:text-indigo-400">{r.effectiveDate?new Date(r.effectiveDate+'T12:00:00').toLocaleDateString('es-VE',{day:'2-digit',month:'short',year:'numeric'}):<span className="text-slate-400 dark:text-white/30 text-[10px]">—</span>}</td>
                           <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{r.createdAt?.toDate?r.createdAt.toDate().toLocaleString('es-VE'):'—'}</td>
                           <td className="px-5 py-3 text-right font-black text-slate-900 dark:text-white text-sm">Bs {fmtHR(r.rate)}{i===0&&<span className="ml-2 text-[8px] text-indigo-500 font-black uppercase">vigente</span>}</td>
                           <td className="px-5 py-3 text-slate-600 dark:text-slate-400 text-xs">{r.createdBy}</td>
                           <td className="px-5 py-3 text-slate-400 dark:text-white/30 italic text-xs">{r.notes||'—'}</td>
+                          <td className="px-5 py-3 text-right">
+                            <button onClick={()=>setEditingRate({id:r.id,rate:String(r.rate),effectiveDate:r.effectiveDate||'',notes:r.notes||''})}
+                              className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/40 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all">
+                              <Pencil size={11}/>
+                            </button>
+                          </td>
                         </tr>
+                        {editingRate?.id===r.id&&(
+                          <tr>
+                            <td colSpan={6} className="px-5 py-3 bg-indigo-50 dark:bg-indigo-500/[0.06] border-l-4 border-indigo-400">
+                              <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                                <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-black text-indigo-700 dark:text-indigo-400 uppercase tracking-widest"><Pencil size={11}/> Editar</div>
+                                <input type="number" step="0.01" min="1" placeholder="Tasa (Bs/USD)" value={editingRate.rate}
+                                  onChange={e=>setEditingRate(x=>x?{...x,rate:e.target.value}:null)}
+                                  className="px-3 py-1.5 text-xs font-black bg-white dark:bg-white/[0.08] border border-indigo-300 dark:border-indigo-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 w-32"/>
+                                <input type="date" value={editingRate.effectiveDate}
+                                  onChange={e=>setEditingRate(x=>x?{...x,effectiveDate:e.target.value}:null)}
+                                  className="px-3 py-1.5 text-xs bg-white dark:bg-white/[0.08] border border-indigo-300 dark:border-indigo-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 w-36"/>
+                                <input placeholder="Notas" value={editingRate.notes}
+                                  onChange={e=>setEditingRate(x=>x?{...x,notes:e.target.value}:null)}
+                                  className="px-3 py-1.5 text-xs bg-white dark:bg-white/[0.08] border border-indigo-300 dark:border-indigo-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 flex-1 min-w-0"/>
+                                <div className="flex gap-1.5 shrink-0">
+                                  <button onClick={handleEditRate} disabled={savingRate}
+                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-black text-[10px] uppercase tracking-widest disabled:opacity-50 flex items-center gap-1">
+                                    {savingRate?<Loader2 size={11} className="animate-spin"/>:<Save size={11}/>} Guardar
+                                  </button>
+                                  <button onClick={()=>setEditingRate(null)} className="px-3 py-1.5 border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 rounded-lg font-black text-[10px] uppercase hover:bg-slate-50 dark:hover:bg-white/[0.04]"><X size={11}/></button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -1919,38 +2246,50 @@ export default function RecursosHumanos() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-3">Configuración de Pago</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Frecuencia de Pago</label><select value={empForm.payFrequency} onChange={e=>setEmpForm(f=>({...f,payFrequency:e.target.value as any}))} className={inp}><option value="semanal">Semanal</option><option value="quincenal">Quincenal</option><option value="mensual">Mensual</option></select></div>
-                  <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Moneda de Pago</label><select value={empForm.paymentCurrency} onChange={e=>setEmpForm(f=>({...f,paymentCurrency:e.target.value as any}))} className={inp}><option value="USD">USD (Dólares)</option><option value="BS">Bs (Bolívares BCV)</option><option value="MIXTO">Mixto (USD + Bs)</option></select></div>
+                  <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Moneda de Pago</label><select value={empForm.paymentCurrency} onChange={e=>setEmpForm(f=>({...f,paymentCurrency:e.target.value as any}))} className={inp}><option value="USD">Tasa Interna</option><option value="BS">BCV (Bolívares)</option></select></div>
                 </div>
               </div>
 
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-3">Salario y Bonos (base mensual)</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {(empForm.paymentCurrency==='USD'||empForm.paymentCurrency==='MIXTO')&&<>
-                    <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Salario USD</label><input type="number" min="0" step="0.01" value={empForm.salaryUSD} onChange={e=>setEmpForm(f=>({...f,salaryUSD:Number(e.target.value)}))} className={inp}/></div>
+                {empForm.paymentCurrency==='USD' ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Salario (Tasa Interna)</label><input type="number" min="0" step="0.01" value={empForm.salaryUSD} onChange={e=>setEmpForm(f=>({...f,salaryUSD:Number(e.target.value)}))} className={inp}/></div>
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Bono (en USD)</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Bono</label>
                       <input type="number" min="0" step="0.01" value={empForm.bonusUSD} onChange={e=>setEmpForm(f=>({...f,bonusUSD:Number(e.target.value)}))} className={inp}/>
                       <div className="flex gap-1 mt-1">
                         {(['USD','BS'] as const).map(c=>(
                           <button key={c} type="button" onClick={()=>setEmpForm(f=>({...f,bonusUSDCurrency:c}))}
                             className={`flex-1 py-1 rounded-lg text-[9px] font-black uppercase transition-all border ${empForm.bonusUSDCurrency===c?'bg-indigo-600 text-white border-indigo-600':'border-slate-200 dark:border-white/[0.08] text-slate-400 dark:text-white/30 hover:border-indigo-400'}`}>
-                            {c==='USD'?'En USD':'En BCV (Bs)'}
+                            {c==='USD'?'Tasa Interna':'BCV (Bs)'}
                           </button>
                         ))}
                       </div>
                     </div>
-                  </>}
-                  {(empForm.paymentCurrency==='BS'||empForm.paymentCurrency==='MIXTO')&&<>
-                    <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Salario Bs (BCV)</label><input type="number" min="0" step="0.01" value={empForm.salaryBs} onChange={e=>setEmpForm(f=>({...f,salaryBs:Number(e.target.value)}))} className={inp}/></div>
-                    <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Bono Bs (BCV)</label><input type="number" min="0" step="0.01" value={empForm.bonusBs} onChange={e=>setEmpForm(f=>({...f,bonusBs:Number(e.target.value)}))} className={inp}/></div>
-                  </>}
-                </div>
+                  </div>
+                ) : (
+                  /* E: Simplified BCV form — one USD field + Bs preview */
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Sueldo base (USD equivalente)</label>
+                      <input type="number" min="0" step="0.01" value={empForm.salaryUSD} onChange={e=>setEmpForm(f=>({...f,salaryUSD:Number(e.target.value)}))} className={inp}/>
+                      {tasaBCV>0&&empForm.salaryUSD>0&&(
+                        <p className="text-[10px] text-sky-600 dark:text-sky-400 font-bold ml-1">≈ Bs {fmtHR(empForm.salaryUSD*tasaBCV)} al BCV actual</p>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Bono Bs (BCV)</label>
+                      <input type="number" min="0" step="0.01" value={empForm.bonusBs} onChange={e=>setEmpForm(f=>({...f,bonusBs:Number(e.target.value)}))} className={inp}/>
+                    </div>
+                  </div>
+                )}
                 {/* Pay preview */}
                 <div className="mt-3 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/[0.07] border border-indigo-100 dark:border-indigo-500/20">
                   <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-1">Pago por {FREQ_LABEL[empForm.payFrequency]}</p>
-                  {empForm.salaryUSD>0&&<p className="text-sm font-black text-indigo-700 dark:text-indigo-300">${fmtHR((empForm.salaryUSD+empForm.bonusUSD)/(FREQ_DIV[empForm.payFrequency]||1))} USD</p>}
-                  {empForm.salaryBs>0 &&<p className="text-sm font-black text-sky-700 dark:text-sky-300">Bs {fmtHR((empForm.salaryBs+empForm.bonusBs)/(FREQ_DIV[empForm.payFrequency]||1))}</p>}
+                  {empForm.salaryUSD>0&&<p className="text-sm font-black text-indigo-700 dark:text-indigo-300">${fmtHR((empForm.salaryUSD+(empForm.paymentCurrency==='USD'?empForm.bonusUSD:0))/(FREQ_DIV[empForm.payFrequency]||1))} USD</p>}
+                  {empForm.paymentCurrency==='BS'&&tasaBCV>0&&empForm.salaryUSD>0&&<p className="text-sm font-black text-sky-700 dark:text-sky-300">≈ Bs {fmtHR(empForm.salaryUSD*tasaBCV/(FREQ_DIV[empForm.payFrequency]||1))} al BCV actual</p>}
+                  {empForm.salaryBs>0&&empForm.paymentCurrency==='USD'&&<p className="text-sm font-black text-sky-700 dark:text-sky-300">Bs {fmtHR((empForm.salaryBs+empForm.bonusBs)/(FREQ_DIV[empForm.payFrequency]||1))}</p>}
                 </div>
               </div>
 

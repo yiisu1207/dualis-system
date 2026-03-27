@@ -57,10 +57,14 @@ function printTicket(movement: any, companyName: string) {
   ${movement.igtfAmount ? `<div class="row"><span>IGTF</span><span>+$${parseFloat(movement.igtfAmount).toFixed(2)}</span></div>` : ''}
   <div class="sep"></div>
   <div class="row big"><span>TOTAL USD</span><span>$${parseFloat(movement.amountInUSD ?? movement.amount ?? 0).toFixed(2)}</span></div>
-  ${movement.rateUsed > 1 ? `<div class="c" style="font-size:8px;margin-top:2px">Ref. BCV: Bs. ${movement.rateUsed}</div>` : ''}
+  ${movement.rateUsed > 1 ? `<div class="c" style="font-size:8px;margin-top:2px">Tasa Interna: Bs. ${movement.rateUsed}</div>` : ''}
   <div class="sep"></div>
   <div class="nf">DOCUMENTO NO FISCAL</div>
   <div class="c" style="font-size:8px">Gracias por su compra</div>
+  <div style="margin-top:10px;border-top:1px dashed #ccc;padding-top:7px;text-align:center;">
+    <img src="/logo.png" alt="Dualis" style="height:16px;width:auto;display:block;margin:0 auto 3px;" onerror="this.style.display='none'" />
+    <p style="font-size:7px;color:#aaa;margin:0;letter-spacing:1px;text-transform:uppercase;">Con tecnolog&#237;a Dualis &middot; dualis.app</p>
+  </div>
   <div class="noPrint"><button onclick="window.print()">Imprimir</button></div>
   </body></html>`;
 
@@ -208,7 +212,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
               </p>
               {movement.rateUsed > 1 && (
                 <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-                  Ref. BCV: Bs. {movement.rateUsed}
+                  Tasa Interna: Bs. {movement.rateUsed}
                 </p>
               )}
             </div>
@@ -219,6 +223,10 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
             <p className="text-[8px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-[0.15em]">
               Documento no fiscal — Solo para control interno
             </p>
+            <div className="flex items-center justify-center gap-1.5 mt-2 opacity-40">
+              <img src="/logo.png" className="h-3.5 w-auto" alt="Dualis" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              <span className="text-[9px] text-slate-500 dark:text-white/40 uppercase tracking-widest font-bold">Con tecnología Dualis</span>
+            </div>
           </div>
 
           {/* Ticket cut circles */}

@@ -218,7 +218,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       await createExchangeRateEntry(
         resolvedBusinessId,
         today,
-        { bcv: bcvPreview.rate, grupo: grupoNum, lastUpdated: today },
+        { bcv: bcvPreview.rate, grupo: grupoNum, divisa: grupoNum > 0 ? grupoNum - 1 : 0, lastUpdated: today },
         currentUser?.uid
           ? { uid: currentUser.uid, displayName: currentUser.displayName || null, photoURL: currentUser.photoURL || null }
           : undefined,
@@ -316,7 +316,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       await createExchangeRateEntry(
         resolvedBusinessId,
         manualDate,
-        { bcv, grupo, lastUpdated: manualDate },
+        { bcv, grupo, divisa: grupo > 0 ? grupo - 1 : 0, lastUpdated: manualDate },
         currentUser?.uid
           ? {
               uid: currentUser.uid,
@@ -353,7 +353,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
         await createExchangeRateEntry(
           resolvedBusinessId,
           draft.date,
-          { bcv: draft.bcv, grupo, lastUpdated: draft.date },
+          { bcv: draft.bcv, grupo, divisa: grupo > 0 ? grupo - 1 : 0, lastUpdated: draft.date },
           currentUser?.uid
             ? {
                 uid: currentUser.uid,
@@ -448,7 +448,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
         await createExchangeRateEntry(
           resolvedBusinessId,
           row.date,
-          { bcv: row.bcv, grupo: 0, lastUpdated: row.date },
+          { bcv: row.bcv, grupo: 0, divisa: 0, lastUpdated: row.date },
           currentUser?.uid
             ? { uid: currentUser.uid, displayName: currentUser.displayName || null, photoURL: currentUser.photoURL || null }
             : undefined,

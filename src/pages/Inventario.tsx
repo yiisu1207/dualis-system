@@ -52,11 +52,14 @@ import {
   ListChecks,
   FolderEdit,
   CheckCheck,
+  Info,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
+import { useSubscription } from '../hooks/useSubscription';
 import { useRates } from '../context/RatesContext';
+import { computeDynamicPrices, isDynamicProduct, findCustomRate } from '../utils/dynamicPricing';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Product = {
@@ -70,6 +73,10 @@ type Product = {
   costoUSD: number;
   precioDetal: number;
   precioMayor: number;
+  precioBCV: number;
+  precioGrupo: number;
+  precioDivisa: number;
+  preciosCuenta: Record<string, number>;
   stock: number;
   stockMinimo: number;
   iva: number;
@@ -77,6 +84,9 @@ type Product = {
   unidad: string;
   peso: number;
   descripcion: string;
+  tipoTasa?: string;       // 'BCV' | customRate.id — clasificación de tasa
+  margenMayor?: number;    // margen % para precio mayor (productos dinámicos)
+  margenDetal?: number;    // margen % para precio detal (productos dinámicos)
 };
 
 type StockMovement = {
@@ -102,6 +112,10 @@ const initialProduct: Omit<Product, 'id'> = {
   costoUSD: 0,
   precioDetal: 0,
   precioMayor: 0,
+  precioBCV: 0,
+  precioGrupo: 0,
+  precioDivisa: 0,
+  preciosCuenta: {},
   stock: 0,
   stockMinimo: 5,
   iva: 16,
@@ -109,10 +123,13 @@ const initialProduct: Omit<Product, 'id'> = {
   unidad: 'UND',
   peso: 0,
   descripcion: '',
+  tipoTasa: 'BCV',
+  margenMayor: 0,
+  margenDetal: 0,
 };
 
 // ─── IMPORT AUTO-DETECTION ────────────────────────────────────────────────────
-const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo'> | 'margen', string[]> = {
+const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuenta'> | 'margen', string[]> = {
   codigo:       ['código','codigo','code','sku','barcode','cod','upc','ean','referencia','ref'],
   nombre:       ['nombre','name','producto','descripción','descripcion','description','item','artículo','articulo','denominacion'],
   categoria:    ['categoría','categoria','category','grupo','tipo','type','familia','rubro'],
@@ -122,13 +139,19 @@ const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo'> | 'margen', st
   costoUSD:     ['costo','cost','precio_costo','costousd','precio base','base price','costo usd','costo $','precio compra'],
   precioDetal:  ['detal','retail','precio_detal','precio detal','venta','sale price','pvp','precio venta','precio minorista','minorista'],
   precioMayor:  ['mayor','wholesale','precio_mayor','precio mayor','wholesale price','precio mayorista','mayorista'],
+  precioBCV:    ['precio bcv','preciobcv','bcv','precio_bcv','bcv usd'],
+  precioGrupo:  ['precio grupo','preciogrupo','grupo','precio_grupo','group price'],
+  precioDivisa: ['precio divisa','preciodivisa','divisa','precio_divisa','foreign price','divisa usd'],
   stock:        ['stock','cantidad','quantity','existencia','inventario','qty','disponible','unidades'],
   stockMinimo:  ['mínimo','minimo','minimum','stock_minimo','stock minimo','min stock','alerta','stock alerta'],
   iva:          ['iva','tax','impuesto','vat','tasa iva','%iva'],
   unidad:       ['unidad','unit','um','measure','unidad medida','u/m'],
   peso:         ['peso','weight','kg','gramos'],
   descripcion:  ['descripcion','descripción','detalle','notes','notas','obs','observaciones'],
-  margen:       ['margen','margin','%margen','markup','ganancia','margen %','margen detal','utilidad'],
+  tipoTasa:     ['tipo tasa','tipotasa','rate type','tipo_tasa','tasa'],
+  margenMayor:  ['margen mayor','margenmayor','margin wholesale','margen_mayor'],
+  margenDetal:  ['margen detal','margendetal','margin retail','margen_detal'],
+  margen:       ['margen','margin','%margen','markup','ganancia','margen %','utilidad'],
 };
 
 function scoreMatch(header: string, aliases: string[]): number {
@@ -200,7 +223,7 @@ function parseRawText(text: string): string[][] {
 
 // ─── COMPONENTS ──────────────────────────────────────────────────────────────
 const KPICard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
-  <div className="bg-white dark:bg-[#0d1424] p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 flex items-center gap-3 sm:gap-4 hover:shadow-xl hover:shadow-black/15 transition-all group">
+  <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 flex items-center gap-3 sm:gap-4 hover:shadow-xl hover:shadow-black/15 transition-all group">
     <div className={`h-11 w-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 shrink-0 ${colorClass}`}>
       <Icon size={22} />
     </div>
@@ -215,8 +238,10 @@ const KPICard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export default function Inventario() {
   const { userProfile } = useAuth();
-  const { rates } = useRates();
+  const { rates, customRates, zoherEnabled } = useRates();
   const tenantId = userProfile?.businessId;
+  const { canAccess } = useSubscription(tenantId || '');
+  const hasDynamicPricing = canAccess('precios_dinamicos');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const codigoRef = useRef<HTMLInputElement>(null);
 
@@ -234,6 +259,7 @@ export default function Inventario() {
   const [quickMode, setQuickMode] = useState(true);
   const [mayorManual, setMayorManual] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showMayorPrices, setShowMayorPrices] = useState(false);
   const [stickyMargin, setStickyMargin] = useState<number>(() => {
     const saved = localStorage.getItem('dualis_last_margin');
     return saved ? parseFloat(saved) : 30;
@@ -244,6 +270,8 @@ export default function Inventario() {
   const [adjModalOpen, setAdjModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [adjData, setAdjData] = useState({ type: 'AJUSTE', quantity: 0, reason: '' });
+  const [adjUpdatePrices, setAdjUpdatePrices] = useState(false);
+  const [adjPrices, setAdjPrices] = useState<Record<string, number>>({ costoUSD: 0, precioDetal: 0, precioMayor: 0 });
 
   // Delete confirmation state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -368,7 +396,24 @@ export default function Inventario() {
     setLoading(true);
     const qProd = query(collection(db, `businesses/${tenantId}/products`));
     const unsubProd = onSnapshot(qProd, (snap) => {
-      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Product)));
+      setProducts(snap.docs.map(d => {
+        const data = d.data();
+        // Merge legacy price fields into preciosCuenta
+        const pc: Record<string, number> = data.preciosCuenta || {};
+        if (data.precioBCV && !pc.BCV) pc.BCV = data.precioBCV;
+        if (data.precioGrupo && !pc.GRUPO) pc.GRUPO = data.precioGrupo;
+        if (data.precioDivisa && !pc.DIVISA) pc.DIVISA = data.precioDivisa;
+        const merged = {
+          id: d.id,
+          precioBCV: 0,
+          precioGrupo: 0,
+          precioDivisa: 0,
+          preciosCuenta: {},
+          ...data,
+        };
+        merged.preciosCuenta = { ...pc, ...(data.preciosCuenta || {}) };
+        return merged as Product;
+      }));
       setLoading(false);
     });
     const qMov = query(collection(db, `businesses/${tenantId}/stock_movements`), orderBy('createdAt', 'desc'), limit(50));
@@ -391,7 +436,16 @@ export default function Inventario() {
   // 3. PRODUCT HANDLERS
   const handleSaveProduct = async () => {
     if (!tenantId || !form.codigo || !form.nombre) return;
-    const payload = { ...form, updatedAt: new Date().toISOString() };
+    // Sync preciosCuenta to legacy fields for backward compat
+    const pc = form.preciosCuenta || {};
+    const payload = {
+      ...form,
+      precioBCV: pc.BCV || form.precioBCV || 0,
+      precioGrupo: pc.GRUPO || form.precioGrupo || 0,
+      precioDivisa: pc.DIVISA || form.precioDivisa || 0,
+      preciosCuenta: pc,
+      updatedAt: new Date().toISOString(),
+    };
     if (editingId) {
       await setDoc(doc(db, `businesses/${tenantId}/products`, editingId), payload, { merge: true });
       setModalOpen(false);
@@ -547,19 +601,37 @@ export default function Inventario() {
   const handleAdjustStock = async () => {
     if (!tenantId || !selectedProduct) return;
     const newStock = selectedProduct.stock + Number(adjData.quantity);
-    await setDoc(doc(db, `businesses/${tenantId}/products`, selectedProduct.id), { stock: newStock }, { merge: true });
+    const updatePayload: Record<string, any> = { stock: newStock };
+    if (adjUpdatePrices && adjData.type === 'AJUSTE') {
+      updatePayload.costoUSD = Number(adjPrices.costoUSD) || 0;
+      updatePayload.precioDetal = Number(adjPrices.precioDetal) || 0;
+      updatePayload.precioMayor = Number(adjPrices.precioMayor) || 0;
+      // Dynamic account prices
+      const pc: Record<string, number> = {};
+      for (const rate of customRates) {
+        pc[rate.id] = Number(adjPrices[`cuenta_${rate.id}`]) || 0;
+      }
+      updatePayload.preciosCuenta = pc;
+      // Legacy compat
+      updatePayload.precioBCV = pc.BCV || 0;
+      updatePayload.precioGrupo = pc.GRUPO || 0;
+      updatePayload.precioDivisa = pc.DIVISA || 0;
+    }
+    await setDoc(doc(db, `businesses/${tenantId}/products`, selectedProduct.id), updatePayload, { merge: true });
     await addDoc(collection(db, `businesses/${tenantId}/stock_movements`), {
       productId: selectedProduct.id,
       productName: selectedProduct.nombre,
       type: adjData.type,
       quantity: Number(adjData.quantity),
       reason: adjData.reason,
+      ...(adjUpdatePrices && adjData.type === 'AJUSTE' ? { pricesUpdated: true, newPrices: { ...adjPrices } } : {}),
       userName: userProfile?.fullName || 'Admin',
       createdAt: serverTimestamp()
     });
     setAdjModalOpen(false);
     setSelectedProduct(null);
     setAdjData({ type: 'AJUSTE', quantity: 0, reason: '' });
+    setAdjUpdatePrices(false);
   };
 
   // 4. EXPORT HANDLER
@@ -770,6 +842,14 @@ export default function Inventario() {
         costoUSD,
         precioDetal,
         precioMayor,
+        precioBCV: num('precioBCV'),
+        precioGrupo: num('precioGrupo'),
+        precioDivisa: num('precioDivisa'),
+        preciosCuenta: {
+          ...(num('precioBCV') > 0 ? { BCV: num('precioBCV') } : {}),
+          ...(num('precioGrupo') > 0 ? { GRUPO: num('precioGrupo') } : {}),
+          ...(num('precioDivisa') > 0 ? { DIVISA: num('precioDivisa') } : {}),
+        },
         stock: num('stock'),
         stockMinimo: num('stockMinimo', 5),
         iva: num('iva', 16),
@@ -912,14 +992,22 @@ export default function Inventario() {
   };
 
   return (
-    <div className="min-h-full bg-slate-50 dark:bg-[#070b14] p-4 sm:p-6 pb-10 font-inter">
+    <div className="min-h-full bg-slate-50 dark:bg-slate-800/50 p-4 sm:p-6 pb-10 font-inter">
       <div className="max-w-7xl mx-auto space-y-6 sm:space-y-10">
 
         {/* DASHBOARD */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <KPICard title="Capital en Stock" value={`$${metrics.totalCapital.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} subtext={`${metrics.totalItems} unidades en bodega`} icon={BadgeDollarSign} colorClass="bg-emerald-50 text-emerald-600 shadow-emerald-100" />
+          <div className="relative">
+            <KPICard title="Capital en Stock" value={`$${metrics.totalCapital.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} subtext={`${metrics.totalItems} unidades en bodega`} icon={BadgeDollarSign} colorClass="bg-emerald-50 text-emerald-600 shadow-emerald-100" />
+            <span className="absolute top-3 right-3 relative group cursor-help">
+              <Info size={12} className="text-slate-400 dark:text-slate-600" />
+              <span className="absolute right-0 bottom-full mb-2 w-52 px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-900 text-[10px] text-white/80 font-medium shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 text-center leading-relaxed">
+                Valor total de tu inventario calculado con costo unitario x stock. Los productos dinamicos usan el costo + margen.
+              </span>
+            </span>
+          </div>
           <KPICard title="Alertas Críticas" value={metrics.lowStockCount} subtext="Revisiones de stock urgentes" icon={AlertTriangle} colorClass="bg-rose-50 text-rose-600 shadow-rose-100" />
-          <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 flex flex-col group h-full min-h-[140px]">
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 flex flex-col group h-full min-h-[140px]">
             <div className="flex justify-between items-center mb-4 px-2">
               <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.2em]">Inversión por Rama</p>
               <TrendingUp size={16} className="text-slate-300" />
@@ -939,26 +1027,26 @@ export default function Inventario() {
 
         {/* NAV */}
         <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-          <div className="flex gap-1 sm:gap-1.5 p-1 sm:p-1.5 bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.07] rounded-xl shadow-sm overflow-x-auto">
+          <div className="flex gap-1 sm:gap-1.5 p-1 sm:p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.07] rounded-xl shadow-sm overflow-x-auto">
             {[
               { id: 'catalog', label: 'Catálogo', icon: Package },
               { id: 'kardex', label: 'Kardex', icon: History },
               { id: 'tools', label: 'Herramientas', icon: Settings2 },
             ].map((tab) => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as TabType)}
-                className={`flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.06]'}`}>
+                className={`flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
                 <tab.icon size={13} /> {tab.label}
               </button>
             ))}
           </div>
-          <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setShowAdvanced(false); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
+          <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setShowAdvanced(false); setShowMayorPrices(false); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
             className="flex items-center justify-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
             <Plus size={16} /> Registrar Mercancía
           </button>
         </div>
 
         {/* CONTENT AREA */}
-        <div className="bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.07] rounded-2xl shadow-lg shadow-black/10 overflow-hidden min-h-[600px] animate-in fade-in slide-in-from-bottom-8 duration-700">
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.07] rounded-2xl shadow-lg shadow-black/10 overflow-hidden min-h-[600px] animate-in fade-in slide-in-from-bottom-8 duration-700">
 
           {/* TAB 1: CATALOG */}
           {activeTab === 'catalog' && (
@@ -1004,7 +1092,7 @@ export default function Inventario() {
                     <Percent size={11} /> Margen
                   </button>
                   {masterPanel === 'margin' && (
-                    <div className="absolute left-0 top-full mt-2 z-50 w-72 bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
+                    <div className="absolute left-0 top-full mt-2 z-50 w-72 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">
                         Aplicar Margen de Ganancia
                       </p>
@@ -1051,11 +1139,11 @@ export default function Inventario() {
                     <Tag size={11} /> IVA
                   </button>
                   {masterPanel === 'iva' && (
-                    <div className="absolute left-0 top-full mt-2 z-50 w-64 bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
+                    <div className="absolute left-0 top-full mt-2 z-50 w-64 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Tipo de IVA</p>
                       {([['GENERAL','16% General','16'],['REDUCIDO','8% Reducido','8'],['EXENTO','0% Exento','0']] as [string,string,string][]).map(([type,label,val]) => (
                         <button key={type} onClick={() => { setMasterIvaType(type as any); setMasterIvaValue(val); }}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[11px] font-black border transition-all ${masterIvaType === type ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 dark:bg-white/[0.04] text-slate-700 dark:text-white/70 border-slate-100 dark:border-white/[0.07] hover:border-emerald-400'}`}>
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[11px] font-black border transition-all ${masterIvaType === type ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-white/70 border-slate-100 dark:border-white/[0.07] hover:border-emerald-400'}`}>
                           <span>{label}</span>
                           {masterIvaType === type && <CheckCircle2 size={13} />}
                         </button>
@@ -1079,7 +1167,7 @@ export default function Inventario() {
                     <FolderEdit size={11} /> Categoría
                   </button>
                   {masterPanel === 'category' && (
-                    <div className="absolute left-0 top-full mt-2 z-50 w-60 bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
+                    <div className="absolute left-0 top-full mt-2 z-50 w-60 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Cambiar Categoría</p>
                       <input value={masterCategory} onChange={e => setMasterCategory(e.target.value)} placeholder="Nueva categoría..."
                         list="cat-list"
@@ -1174,8 +1262,15 @@ export default function Inventario() {
                               <Package size={14} className="sm:hidden" /><Package size={16} className="hidden sm:block" />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight truncate">{p.nombre}</p>
-                              <p className="text-[9px] sm:text-[10px] font-mono text-slate-400 font-bold bg-slate-50 dark:bg-white/[0.04] px-1.5 sm:px-2 py-0.5 rounded-lg w-fit mt-0.5 sm:mt-1 border border-slate-100 dark:border-white/[0.07]">{p.codigo}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight truncate">{p.nombre}</p>
+                                {isDynamicProduct(p.tipoTasa) && (
+                                  <span className="px-1.5 py-0.5 bg-amber-500/15 text-amber-500 text-[7px] font-black uppercase rounded shrink-0 border border-amber-500/20">
+                                    {customRates.find(r => r.id === p.tipoTasa)?.name?.charAt(0) || 'D'}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[9px] sm:text-[10px] font-mono text-slate-400 font-bold bg-slate-50 dark:bg-slate-800/50 px-1.5 sm:px-2 py-0.5 rounded-lg w-fit mt-0.5 sm:mt-1 border border-slate-100 dark:border-white/[0.07]">{p.codigo}</p>
                               {/* Mobile-only: show price + stock inline */}
                               <div className="flex items-center gap-2 mt-1 sm:hidden">
                                 <span className="text-[10px] font-black text-emerald-600">${p.precioDetal.toFixed(2)}</span>
@@ -1199,7 +1294,7 @@ export default function Inventario() {
                           <p className="text-[9px] text-slate-400 dark:text-white/30 uppercase tracking-widest">Bs {(p.precioMayor * rates.tasaBCV).toFixed(2)}</p>
                         </td>
                         <td className="px-2.5 sm:px-5 py-3 sm:py-4 text-center hidden sm:table-cell">
-                          <div className={`inline-flex flex-col items-center px-3 sm:px-4 py-1.5 rounded-xl border ${p.stock < p.stockMinimo ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20' : 'bg-slate-50 dark:bg-white/[0.04] border-slate-100 dark:border-white/[0.07]'}`}>
+                          <div className={`inline-flex flex-col items-center px-3 sm:px-4 py-1.5 rounded-xl border ${p.stock < p.stockMinimo ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-white/[0.07]'}`}>
                             <span className={`text-base font-black ${p.stock < p.stockMinimo ? 'text-rose-600' : 'text-slate-900 dark:text-white'}`}>{p.stock}</span>
                             <span className="text-[8px] font-black uppercase text-slate-400 tracking-tighter">UND</span>
                           </div>
@@ -1217,14 +1312,14 @@ export default function Inventario() {
                               {(p.ivaTipo === 'EXENTO' || p.iva === 0) ? 'Exento' : `IVA ${p.iva ?? 16}%`}
                             </button>
                             {/* Margin badge */}
-                            <span className={`px-2 py-1 rounded-lg text-[8px] font-black border ${marginDetal >= 30 ? 'bg-indigo-50 dark:bg-indigo-500/[0.08] text-indigo-500 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20' : 'bg-slate-50 dark:bg-white/[0.04] text-slate-400 dark:text-white/30 border-slate-100 dark:border-white/[0.07]'}`}
+                            <span className={`px-2 py-1 rounded-lg text-[8px] font-black border ${marginDetal >= 30 ? 'bg-indigo-50 dark:bg-indigo-500/[0.08] text-indigo-500 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-white/30 border-slate-100 dark:border-white/[0.07]'}`}
                               title="Margen detal">
                               +{marginDetal}%
                             </span>
                             {/* Stock adjust */}
                             <button onClick={() => { setSelectedProduct(p); setAdjModalOpen(true); }} className="p-1.5 rounded-xl bg-indigo-600 text-white hover:bg-emerald-500 transition-all shadow-md shadow-indigo-500/25" title="Ajuste de Stock"><TrendingUp size={13} /></button>
                             {/* Edit */}
-                            <button onClick={() => { setEditingId(p.id); setForm(p); setQuickMode(false); setMayorManual(true); setShowAdvanced(true); setModalOpen(true); }} className="p-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-900 hover:text-white dark:hover:bg-white/[0.12] transition-all"><Pencil size={13} /></button>
+                            <button onClick={() => { setEditingId(p.id); setForm(p); setQuickMode(false); setMayorManual(true); setShowAdvanced(true); setShowMayorPrices((p.precioBCV || 0) > 0 || (p.precioGrupo || 0) > 0 || (p.precioDivisa || 0) > 0); setModalOpen(true); }} className="p-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-900 hover:text-white dark:hover:bg-white/[0.12] transition-all"><Pencil size={13} /></button>
                             {/* Delete */}
                             {deleteConfirmId === p.id ? (
                               <div className="flex items-center gap-1">
@@ -1335,7 +1430,7 @@ export default function Inventario() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
                 {/* EXPORT */}
-                <div className="bg-white dark:bg-[#0d1424] border border-emerald-100 dark:border-emerald-500/20 rounded-2xl p-5 flex flex-col gap-4 hover:shadow-lg hover:shadow-emerald-500/10 transition-all group">
+                <div className="bg-white dark:bg-slate-900 border border-emerald-100 dark:border-emerald-500/20 rounded-2xl p-5 flex flex-col gap-4 hover:shadow-lg hover:shadow-emerald-500/10 transition-all group">
                   <div className="flex items-center justify-between">
                     <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center group-hover:rotate-6 transition-transform">
                       <Download className="text-emerald-600" size={20} />
@@ -1371,7 +1466,7 @@ export default function Inventario() {
                 </div>
 
                 {/* IMPORT */}
-                <div className="bg-white dark:bg-[#0d1424] border border-indigo-100 dark:border-indigo-500/20 rounded-2xl p-5 flex flex-col gap-4 hover:shadow-lg hover:shadow-indigo-500/10 transition-all group">
+                <div className="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-500/20 rounded-2xl p-5 flex flex-col gap-4 hover:shadow-lg hover:shadow-indigo-500/10 transition-all group">
                   <div className="flex items-center justify-between">
                     <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center group-hover:-rotate-6 transition-transform">
                       <Upload className="text-indigo-600" size={20} />
@@ -1383,15 +1478,15 @@ export default function Inventario() {
                     <p className="text-xs text-slate-500 dark:text-white/40 font-medium mt-1 leading-relaxed">Detección automática de columnas. Mapeo inteligente con cualquier formato de archivo.</p>
                   </div>
                   <div className="flex flex-col gap-1.5 text-[10px] font-bold text-slate-500 dark:text-white/40">
-                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/[0.06]">
+                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-white/[0.06]">
                       <Shuffle size={11} className="text-indigo-400" />
                       <span>Auto-detección de campos por nombre</span>
                     </div>
-                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/[0.06]">
+                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-white/[0.06]">
                       <Eye size={11} className="text-indigo-400" />
                       <span>Vista previa antes de importar</span>
                     </div>
-                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/[0.06]">
+                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-white/[0.06]">
                       <SlidersHorizontal size={11} className="text-indigo-400" />
                       <span>Modo estricto o flexible</span>
                     </div>
@@ -1403,7 +1498,7 @@ export default function Inventario() {
                 </div>
 
                 {/* BARCODE */}
-                <div className="bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.07] rounded-2xl p-5 flex flex-col gap-4 hover:shadow-lg hover:shadow-black/10 transition-all group">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.07] rounded-2xl p-5 flex flex-col gap-4 hover:shadow-lg hover:shadow-black/10 transition-all group">
                   <div className="flex items-center justify-between">
                     <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.06] flex items-center justify-center group-hover:scale-110 transition-transform">
                       <Printer className="text-slate-700 dark:text-white/70" size={20} />
@@ -1415,15 +1510,15 @@ export default function Inventario() {
                     <p className="text-xs text-slate-500 dark:text-white/40 font-medium mt-1 leading-relaxed">Genera etiquetas adhesivas con código de barras, nombre, precio y más. Exporta en PDF.</p>
                   </div>
                   <div className="flex flex-col gap-1.5 text-[10px] font-bold text-slate-500 dark:text-white/40">
-                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/[0.06]">
+                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-white/[0.06]">
                       <Layers size={11} className="text-slate-500 dark:text-white/40" />
                       <span>Múltiples etiquetas por página (A4)</span>
                     </div>
-                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/[0.06]">
+                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-white/[0.06]">
                       <Tag size={11} className="text-slate-500 dark:text-white/40" />
                       <span>Tamaño y contenido configurable</span>
                     </div>
-                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/[0.06]">
+                    <div className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-white/[0.06]">
                       <Barcode size={11} className="text-slate-500 dark:text-white/40" />
                       <span>Code128 — compatible con lectores</span>
                     </div>
@@ -1443,7 +1538,7 @@ export default function Inventario() {
       {/* ═══════════════ MODAL: PRODUCT ═══════════════ */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-3 sm:p-4">
-          <div className="bg-white dark:bg-[#0d1424] w-full max-w-lg rounded-2xl shadow-2xl shadow-black/40 border border-slate-100 dark:border-white/[0.07] overflow-hidden overflow-y-auto max-h-[95vh] animate-in fade-in zoom-in-95 duration-300">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl shadow-black/40 border border-slate-100 dark:border-white/[0.07] overflow-hidden overflow-y-auto max-h-[95vh] animate-in fade-in zoom-in-95 duration-300">
 
             {/* Header */}
             <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.07] flex items-center justify-between bg-slate-50/50 dark:bg-white/[0.02]">
@@ -1558,33 +1653,167 @@ export default function Inventario() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* ── SELECTOR TIPO DE TASA (solo si zoherEnabled) ── */}
+                {hasDynamicPricing && zoherEnabled && customRates.filter(r => r.enabled).length > 0 && (
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Costo ($)</label>
-                    <input type="number" step="0.01" min="0" value={form.costoUSD || ''}
-                      onChange={e => handleCostoChange(Number(e.target.value))}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2.5 bg-white/[0.06] border border-white/10 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-indigo-400 outline-none transition-all placeholder:text-white/20" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-emerald-400/70 mb-1.5 block">
-                      Detal ($) {form.costoUSD > 0 && form.precioDetal > 0 && (
-                        <span className="text-emerald-400 ml-1">{(((form.precioDetal - form.costoUSD) / form.costoUSD) * 100).toFixed(0)}%↑</span>
-                      )}
+                    <label className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1.5 flex items-center gap-1.5">
+                      Tipo de Tasa
+                      <span className="relative group cursor-help">
+                        <Info size={10} className="text-white/20" />
+                        <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-52 px-3 py-2 rounded-xl bg-slate-900 text-[10px] text-white/80 font-medium shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 text-center leading-relaxed normal-case tracking-normal">
+                          BCV = precio fijo. Tasa custom = precio se recalcula automaticamente al cambiar la tasa.
+                        </span>
+                      </span>
                     </label>
-                    <input type="number" step="0.01" min="0" value={form.precioDetal || ''}
-                      onChange={e => handleDetalChange(Number(e.target.value))}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder:text-white/20" />
+                    <div className="flex gap-1 bg-white/[0.04] rounded-xl p-1 border border-white/[0.07]">
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, tipoTasa: 'BCV' }))}
+                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                          (!form.tipoTasa || form.tipoTasa === 'BCV')
+                            ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                            : 'text-white/30 hover:text-white/50'
+                        }`}>
+                        BCV (Normal)
+                      </button>
+                      {customRates.filter(r => r.enabled).map(rate => (
+                        <button type="button" key={rate.id}
+                          onClick={() => setForm(f => ({ ...f, tipoTasa: rate.id }))}
+                          className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                            form.tipoTasa === rate.id
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                              : 'text-white/30 hover:text-white/50'
+                          }`}>
+                          {rate.name || rate.id}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-violet-400/70 mb-1.5 block">Mayor ($)</label>
-                    <input type="number" step="0.01" min="0" value={form.precioMayor || ''}
-                      onChange={e => { setMayorManual(true); setForm(f => ({ ...f, precioMayor: Number(e.target.value) })); }}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2.5 bg-violet-500/10 border border-violet-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder:text-white/20" />
-                  </div>
-                </div>
+                )}
+
+                {/* ── PRICING: DINÁMICO (margen) o ESTÁTICO (precios manuales) ── */}
+                {isDynamicProduct(form.tipoTasa) ? (
+                  <>
+                    {/* Costo + Márgenes */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">
+                          Costo ($) <span className="text-amber-400">ref. {customRates.find(r => r.id === form.tipoTasa)?.name || form.tipoTasa}</span>
+                        </label>
+                        <input type="number" step="0.01" min="0" value={form.costoUSD || ''}
+                          onChange={e => setForm(f => ({ ...f, costoUSD: Number(e.target.value) }))}
+                          placeholder="0.00"
+                          className="w-full px-3 py-2.5 bg-white/[0.06] border border-white/10 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-amber-400 outline-none transition-all placeholder:text-white/20" />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-emerald-400/70 mb-1.5 block">Margen Detal (%)</label>
+                        <input type="number" step="0.1" min="0" value={form.margenDetal || ''}
+                          onChange={e => setForm(f => ({ ...f, margenDetal: Number(e.target.value) }))}
+                          placeholder="0"
+                          className="w-full px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder:text-white/20" />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-violet-400/70 mb-1.5 block">Margen Mayor (%)</label>
+                        <input type="number" step="0.1" min="0" value={form.margenMayor || ''}
+                          onChange={e => setForm(f => ({ ...f, margenMayor: Number(e.target.value) }))}
+                          placeholder="0"
+                          className="w-full px-3 py-2.5 bg-violet-500/10 border border-violet-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder:text-white/20" />
+                      </div>
+                    </div>
+
+                    {/* Preview precios calculados */}
+                    {form.costoUSD > 0 && (form.margenMayor || 0) > 0 && (() => {
+                      const cr = findCustomRate(customRates, form.tipoTasa || '');
+                      if (!cr) return null;
+                      const dp = computeDynamicPrices(form.costoUSD, form.margenMayor || 0, form.margenDetal || 0, cr.value, rates.tasaBCV);
+                      return (
+                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div>
+                            <p className="text-[8px] font-black uppercase text-amber-400/60">Detal {cr.name}</p>
+                            <p className="text-sm font-black text-amber-400 font-mono">${dp.precioDetalCustom.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[8px] font-black uppercase text-amber-400/60">Mayor {cr.name}</p>
+                            <p className="text-sm font-black text-amber-400 font-mono">${dp.precioMayorCustom.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[8px] font-black uppercase text-sky-400/60">Equiv. BCV Detal</p>
+                            <p className="text-sm font-black text-sky-400 font-mono">${dp.precioBCV_Detal.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[8px] font-black uppercase text-sky-400/60">Equiv. BCV Mayor</p>
+                            <p className="text-sm font-black text-sky-400 font-mono">${dp.precioBCV_Mayor.toFixed(2)}</p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <>
+                    {/* Precios estáticos (flujo original) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Costo ($)</label>
+                        <input type="number" step="0.01" min="0" value={form.costoUSD || ''}
+                          onChange={e => handleCostoChange(Number(e.target.value))}
+                          placeholder="0.00"
+                          className="w-full px-3 py-2.5 bg-white/[0.06] border border-white/10 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-indigo-400 outline-none transition-all placeholder:text-white/20" />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-emerald-400/70 mb-1.5 block">
+                          Detal ($) {form.costoUSD > 0 && form.precioDetal > 0 && (
+                            <span className="text-emerald-400 ml-1">{(((form.precioDetal - form.costoUSD) / form.costoUSD) * 100).toFixed(0)}%↑</span>
+                          )}
+                        </label>
+                        <input type="number" step="0.01" min="0" value={form.precioDetal || ''}
+                          onChange={e => handleDetalChange(Number(e.target.value))}
+                          placeholder="0.00"
+                          className="w-full px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder:text-white/20" />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-violet-400/70 mb-1.5 block">Mayor ($)</label>
+                        <input type="number" step="0.01" min="0" value={form.precioMayor || ''}
+                          onChange={e => { setMayorManual(true); setForm(f => ({ ...f, precioMayor: Number(e.target.value) })); }}
+                          placeholder="0.00"
+                          className="w-full px-3 py-2.5 bg-violet-500/10 border border-violet-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder:text-white/20" />
+                      </div>
+                    </div>
+
+                    {/* ── PRECIOS POR CUENTA (MAYOR) — DINÁMICO ── */}
+                    {hasDynamicPricing && customRates.length > 0 && (
+                    <div className="rounded-xl border border-white/[0.07] overflow-hidden">
+                      <button type="button" onClick={() => setShowMayorPrices(v => !v)}
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 bg-white/[0.03] hover:bg-white/[0.05] transition-all">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-violet-400/70">Precios por Cuenta (Mayor)</span>
+                        <ChevronDown size={14} className={`text-white/40 transition-transform ${showMayorPrices ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showMayorPrices && (
+                        <div className="px-3.5 pb-3.5 pt-2 space-y-3">
+                          <div className={`grid gap-3 ${customRates.length <= 3 ? `grid-cols-${customRates.length}` : 'grid-cols-2 sm:grid-cols-3'}`}>
+                            {customRates.map(rate => (
+                              <div key={rate.id}>
+                                <label className="text-[9px] font-black uppercase tracking-widest text-violet-400/70 mb-1.5 block">
+                                  Precio {rate.name} ($)
+                                </label>
+                                <input type="number" step="0.01" min="0"
+                                  value={form.preciosCuenta[rate.id] || ''}
+                                  onChange={e => setForm(f => ({
+                                    ...f,
+                                    preciosCuenta: { ...f.preciosCuenta, [rate.id]: Number(e.target.value) },
+                                  }))}
+                                  placeholder="0.00"
+                                  className="w-full px-3 py-2.5 bg-violet-500/10 border border-violet-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder:text-white/20" />
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-[9px] text-white/30 leading-relaxed">
+                            Nota: si se dejan en 0, el POS Mayor usará el Precio Mayor como fallback
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    )}
+                  </>
+                )}
 
                 {/* ── SUGERENCIA DUALIS ── */}
                 {smartAdvisor && form.costoUSD > 0 && (
@@ -1662,7 +1891,7 @@ export default function Inventario() {
                         className={`h-9 px-2.5 rounded-lg text-[10px] font-black transition-all border ${
                           form.stock === n
                             ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-500/25'
-                            : 'border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 hover:border-indigo-400 hover:text-indigo-600 bg-slate-50 dark:bg-white/[0.04]'
+                            : 'border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 hover:border-indigo-400 hover:text-indigo-600 bg-slate-50 dark:bg-slate-800/50'
                         }`}>
                         {n}
                       </button>
@@ -1747,7 +1976,7 @@ export default function Inventario() {
             {/* Footer */}
             <div className="px-5 py-3.5 border-t border-slate-100 dark:border-white/[0.07] bg-slate-50/50 dark:bg-white/[0.02] flex items-center gap-3">
               <button type="button" onClick={() => setModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all">
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
                 Cerrar
               </button>
               <div className="flex-1" />
@@ -1769,7 +1998,7 @@ export default function Inventario() {
       {/* ═══════════════ MODAL: STOCK ADJUSTMENT ═══════════════ */}
       {adjModalOpen && selectedProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-[#0d1424] w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden overflow-y-auto max-h-[95vh] animate-in zoom-in-95 duration-500">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden overflow-y-auto max-h-[95vh] animate-in zoom-in-95 duration-500">
             <div className="p-6 sm:p-12 space-y-6 sm:space-y-10">
               <div className="text-center">
                 <div className="h-16 w-16 sm:h-20 sm:w-20 bg-slate-900 rounded-xl flex items-center justify-center mx-auto mb-4 sm:mb-6 shadow-2xl animate-pulse"><TrendingUp className="text-white" size={28} /></div>
@@ -1778,20 +2007,74 @@ export default function Inventario() {
               </div>
               <div className="space-y-5">
                 <div className="flex p-2 bg-slate-100 dark:bg-white/[0.07] rounded-xl shadow-inner">
-                  <button onClick={() => setAdjData({ ...adjData, type: 'AJUSTE' })} className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${adjData.type === 'AJUSTE' ? 'bg-white dark:bg-white/[0.1] text-slate-900 dark:text-white shadow-lg' : 'text-slate-400'}`}>Entrada / Ajuste</button>
-                  <button onClick={() => setAdjData({ ...adjData, type: 'MERMA' })} className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${adjData.type === 'MERMA' ? 'bg-white dark:bg-white/[0.1] text-rose-600 shadow-xl' : 'text-slate-400'}`}>Salida / Merma</button>
+                  <button onClick={() => { setAdjData({ ...adjData, type: 'AJUSTE' }); }} className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${adjData.type === 'AJUSTE' ? 'bg-white dark:bg-white/[0.1] text-slate-900 dark:text-white shadow-lg' : 'text-slate-400'}`}>Entrada / Ajuste</button>
+                  <button onClick={() => { setAdjData({ ...adjData, type: 'MERMA' }); setAdjUpdatePrices(false); }} className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${adjData.type === 'MERMA' ? 'bg-white dark:bg-white/[0.1] text-rose-600 shadow-xl' : 'text-slate-400'}`}>Salida / Merma</button>
                 </div>
                 <div className="space-y-3">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cantidad de Unidades</label>
                   <input type="number" value={adjData.quantity} onChange={e => setAdjData({ ...adjData, quantity: Number(e.target.value) })} className="w-full px-6 py-6 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-3xl font-black text-center focus:ring-4 focus:ring-slate-900 shadow-inner" placeholder="0" />
                 </div>
+                {adjData.type === 'AJUSTE' && (
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !adjUpdatePrices;
+                        setAdjUpdatePrices(next);
+                        if (next && selectedProduct) {
+                          const basePrices: Record<string, number> = {
+                            costoUSD: selectedProduct.costoUSD || 0,
+                            precioDetal: selectedProduct.precioDetal || 0,
+                            precioMayor: selectedProduct.precioMayor || 0,
+                          };
+                          // Add dynamic account prices
+                          if (hasDynamicPricing) {
+                            for (const rate of customRates) {
+                              basePrices[`cuenta_${rate.id}`] = selectedProduct.preciosCuenta?.[rate.id] || 0;
+                            }
+                          }
+                          setAdjPrices(basePrices);
+                        }
+                      }}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-all"
+                    >
+                      <div className="text-left">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300">Actualizar costos y precios</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Opcional: actualiza los precios del producto al recibir mercancía</p>
+                      </div>
+                      <ChevronDown size={14} className={`text-slate-400 transition-transform duration-300 ${adjUpdatePrices ? 'rotate-180' : ''}`} />
+                    </button>
+                    {adjUpdatePrices && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
+                        {([
+                          { key: 'costoUSD', label: 'Costo USD' },
+                          { key: 'precioDetal', label: 'Precio Detal' },
+                          { key: 'precioMayor', label: 'Precio Mayor' },
+                          ...(hasDynamicPricing ? customRates.map(r => ({ key: `cuenta_${r.id}`, label: `Precio ${r.name}` })) : []),
+                        ]).map(f => (
+                          <div key={f.key} className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">{f.label}</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={adjPrices[f.key] || 0}
+                              onChange={e => setAdjPrices(prev => ({ ...prev, [f.key]: Number(e.target.value) }))}
+                              className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                              placeholder="0.00"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-3">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Razón de la Auditoría</label>
                   <textarea rows={3} value={adjData.reason} onChange={e => setAdjData({ ...adjData, reason: e.target.value })} className="w-full px-6 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold focus:ring-2 focus:ring-slate-900 shadow-inner resize-none" placeholder="Explique el motivo del cambio..." />
                 </div>
               </div>
               <div className="flex gap-4">
-                <button onClick={() => setAdjModalOpen(false)} className="flex-1 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:text-slate-400 transition-colors">Cerrar</button>
+                <button onClick={() => { setAdjModalOpen(false); setAdjUpdatePrices(false); }} className="flex-1 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:text-slate-400 transition-colors">Cerrar</button>
                 <button onClick={handleAdjustStock} className="flex-[2] py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-md shadow-indigo-500/25 active:scale-95">Ejecutar Ajuste</button>
               </div>
             </div>
@@ -1802,7 +2085,7 @@ export default function Inventario() {
       {/* ═══════════════ MODAL: IMPORT WIZARD ═══════════════ */}
       {importModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-[#0d1424] w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-100 dark:border-white/[0.07] overflow-hidden animate-in fade-in zoom-in-95 duration-400 flex flex-col max-h-[90vh]">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-100 dark:border-white/[0.07] overflow-hidden animate-in fade-in zoom-in-95 duration-400 flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="px-5 sm:px-10 py-5 sm:py-8 border-b border-slate-100 dark:border-white/[0.07] bg-gradient-to-r from-indigo-50 to-violet-50 flex justify-between items-center shrink-0">
               <div>
@@ -1820,7 +2103,7 @@ export default function Inventario() {
                   ))}
                 </div>
               </div>
-              <button onClick={() => setImportModal(false)} className="p-3 hover:bg-white dark:hover:bg-white/[0.04] dark:bg-white/[0.04] rounded-2xl text-slate-400 transition-all"><X size={22} /></button>
+              <button onClick={() => setImportModal(false)} className="p-3 hover:bg-white dark:hover:bg-white/[0.04] dark:bg-slate-800/50 rounded-2xl text-slate-400 transition-all"><X size={22} /></button>
             </div>
 
             {/* Body */}
@@ -1932,7 +2215,7 @@ export default function Inventario() {
                         const conf = det?.confidence ?? 0;
                         const confColor = conf >= 85 ? 'text-emerald-600' : conf >= 60 ? 'text-amber-600' : 'text-slate-400';
                         return (
-                          <div key={h} className="grid grid-cols-3 gap-4 items-center px-5 py-3.5 border-t border-slate-50 hover:bg-slate-50 dark:hover:bg-white/[0.04] dark:bg-white/[0.03] transition-colors">
+                          <div key={h} className="grid grid-cols-3 gap-4 items-center px-5 py-3.5 border-t border-slate-50 hover:bg-slate-50 dark:hover:bg-white/[0.04] dark:bg-slate-800/50 transition-colors">
                             <div>
                               <p className="text-sm font-black text-slate-900 dark:text-white">{h}</p>
                               <p className="text-[9px] text-slate-400 font-mono mt-0.5">{(importRows[0]?.[importHeaders.indexOf(h)] || '—').slice(0, 24)}</p>
@@ -1949,7 +2232,7 @@ export default function Inventario() {
                             <select
                               value={userMap[h] ?? ''}
                               onChange={e => setUserMap(prev => ({ ...prev, [h]: e.target.value }))}
-                              className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-[10px] font-bold text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                              className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-[10px] font-bold text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
                             >
                               <option value="">— Ignorar —</option>
                               {Object.entries(FIELD_LABELS_DISPLAY).map(([k, v]) => (
@@ -1985,7 +2268,7 @@ export default function Inventario() {
                       </thead>
                       <tbody className="divide-y divide-slate-50">
                         {importRows.slice(0, 8).map((row, ri) => (
-                          <tr key={ri} className="hover:bg-slate-50 dark:hover:bg-white/[0.04] dark:bg-white/[0.03]">
+                          <tr key={ri} className="hover:bg-slate-50 dark:hover:bg-white/[0.04] dark:bg-slate-800/50">
                             {importHeaders.filter(h => userMap[h]).map((h) => (
                               <td key={h} className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap max-w-[150px] truncate">
                                 {row[importHeaders.indexOf(h)] || <span className="text-slate-300 italic">—</span>}
@@ -2072,7 +2355,7 @@ export default function Inventario() {
       {/* ═══════════════ MODAL: BARCODE PRINT ═══════════════ */}
       {barcodeModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-[#0d1424] w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-100 dark:border-white/[0.07] overflow-hidden animate-in fade-in zoom-in-95 duration-400 flex flex-col max-h-[92vh]">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-100 dark:border-white/[0.07] overflow-hidden animate-in fade-in zoom-in-95 duration-400 flex flex-col max-h-[92vh]">
             <div className="px-10 py-8 border-b border-slate-100 dark:border-white/[0.07] flex justify-between items-center shrink-0">
               <div>
                 <div className="flex items-center gap-3">
@@ -2100,7 +2383,7 @@ export default function Inventario() {
                       const s = new Set(prev);
                       s.has(p.id) ? s.delete(p.id) : s.add(p.id);
                       return s;
-                    })} className={`flex items-center gap-4 px-5 py-4 cursor-pointer transition-all ${barSelected.has(p.id) ? 'bg-slate-50 dark:bg-white/[0.06]' : 'hover:bg-slate-50 dark:hover:bg-white/[0.04] dark:bg-white/[0.03]'}`}>
+                    })} className={`flex items-center gap-4 px-5 py-4 cursor-pointer transition-all ${barSelected.has(p.id) ? 'bg-slate-50 dark:bg-white/[0.06]' : 'hover:bg-slate-50 dark:hover:bg-white/[0.04] dark:bg-slate-800/50'}`}>
                       <div className={`shrink-0 h-5 w-5 rounded-md border-2 flex items-center justify-center transition-all ${barSelected.has(p.id) ? 'bg-slate-900 border-slate-900' : 'border-slate-300 dark:border-white/15'}`}>
                         {barSelected.has(p.id) && <CheckSquare size={12} className="text-white" />}
                       </div>

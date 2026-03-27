@@ -78,7 +78,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
             { q: '¿Mis datos están seguros?', a: 'Sí. Dualis usa Firebase de Google para almacenar tus datos con cifrado. Nadie más puede verlos.' },
             { q: '¿Funciona sin internet?', a: 'No. Dualis requiere conexión a internet para funcionar, ya que los datos se guardan en la nube en tiempo real.' },
             { q: '¿Puedo usar Dualis en varios equipos?', a: 'Sí. Puedes iniciar sesión desde cualquier dispositivo con tu usuario y contraseña.' },
-            { q: '¿Cómo agrego a alguien de mi equipo?', a: 'Ve a Configuración → Equipo → comparte el código de espacio de trabajo con tu socio o empleado.' },
+            { q: '¿Cómo agrego a alguien de mi equipo?', a: 'Ve a Configuración → Equipo → envía una invitación o comparte tu URL personalizada (ej: tuempresa.dualis.app) para que se registren.' },
           ],
         },
       },
@@ -529,6 +529,51 @@ const HELP_CATEGORIES: HelpCategory[] = [
     ],
   },
   {
+    id: 'precios-dinamicos',
+    label: 'Precios Dinámicos',
+    icon: <TrendingUp size={14} />,
+    color: 'text-amber-400',
+    articles: [
+      {
+        id: 'precios-dinamicos-overview',
+        title: 'Precios Dinámicos por Tasa',
+        subtitle: 'Precios que se recalculan automáticamente',
+        emoji: '⚡',
+        content: {
+          purpose: 'Los precios dinámicos permiten que tus productos se recalculen automáticamente cuando cambian las tasas de cambio. Defines un costo en USD + un margen de ganancia, y el sistema calcula el precio final según la tasa vigente.',
+          buttons: [
+            { name: 'Activar (Config > Operación)', what: 'Activa el toggle "Precios Dinámicos por Tasa" en Configuración > pestaña OPERACIÓN. Esto habilita las tasas custom y la clasificación de productos.' },
+            { name: 'Crear tasas custom', what: 'En la misma sección, agrega hasta 3 tasas personalizadas (ej: Zoher, Grupo, Divisa). Cada una tiene nombre, valor y se puede activar/desactivar.' },
+            { name: 'Clasificar producto', what: 'Al crear o editar un producto en Inventario, elige si usa BCV (precio estático) o una tasa custom (precio dinámico). Los productos dinámicos piden Costo USD + Margen %.' },
+          ],
+          concepts: [
+            { term: 'Producto BCV', def: 'Producto con precio fijo. El precio no cambia automáticamente al cambiar las tasas. Es el comportamiento tradicional.' },
+            { term: 'Producto dinámico', def: 'Producto clasificado bajo una tasa custom. Su precio = CostoUSD × (1 + Margen/100). Se recalcula cada vez que la tasa cambia.' },
+            { term: 'Costo USD', def: 'El costo de adquisición del producto referenciado a la tasa custom que seleccionaste.' },
+            { term: 'Margen %', def: 'Porcentaje de ganancia sobre el costo. Se configura por separado para Detal y Mayor.' },
+            { term: 'Precio BCV equivalente', def: 'El sistema convierte el precio custom a BCV: (PrecioCustom × TasaCustom) / TasaBCV.' },
+            { term: 'Mezcla prohibida', def: 'En el POS no puedes mezclar productos BCV con productos de tasa custom en la misma venta.' },
+          ],
+          emptyState: {
+            why: 'No ves opciones de precios dinámicos porque la extensión no está activada.',
+            fix: 'Ve a Configuración > OPERACIÓN y activa "Precios Dinámicos por Tasa". Luego crea al menos una tasa custom para empezar.',
+          },
+          tips: [
+            'Actualiza las tasas custom CADA DÍA junto con la tasa BCV para que los precios reflejen el mercado actual.',
+            'En el POS, los productos de diferente tipo de tasa aparecen atenuados para evitar mezclas.',
+            'El Dashboard muestra el capital invertido considerando los precios dinámicos cuando la extensión está activa.',
+            'Puedes ver una vista previa de los 4 precios calculados al editar un producto dinámico en Inventario.',
+          ],
+          faq: [
+            { q: '¿Puedo mezclar productos BCV y custom en una venta?', a: 'No. El sistema lo impide automáticamente. Si el carrito ya tiene un producto BCV, no podrás agregar uno de tasa custom y viceversa.' },
+            { q: '¿Qué pasa si desactivo la extensión?', a: 'Los productos dinámicos siguen existiendo pero sus precios dejan de recalcularse. Se mostrarán con el último precio calculado.' },
+            { q: '¿Cuántas tasas custom puedo tener?', a: 'Hasta 3 tasas adicionales al BCV. Puedes activar/desactivar cada una individualmente.' },
+          ],
+        },
+      },
+    ],
+  },
+  {
     id: 'reportes',
     label: 'Estadísticas',
     icon: <BarChart3 size={14} />,
@@ -766,7 +811,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
             { term: 'Staff', def: 'Acceso básico: solo puede usar el POS. No ve ningún módulo financiero.' },
           ],
           buttons: [
-            { name: 'Código de Espacio', what: 'Código único de tu empresa. Compártelo con quien quieres invitar. Ellos lo usan al registrarse.' },
+            { name: 'URL Personalizada', what: 'URL única de tu empresa (ej: tuempresa.dualis.app). Compártela con quien quieres invitar. Se configura en Configuración > Empresa.' },
             { name: 'Aprobar solicitud', what: 'Alguien intentó unirse con tu código. Aprueba y asígnale un rol.' },
             { name: 'Rechazar solicitud', what: 'Deniega el acceso a alguien que no reconoces.' },
             { name: 'Cambiar rol (selector)', what: 'Cambia el rol de un miembro activo. Útil si un empleado asciende o cambia de función.' },
@@ -779,7 +824,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
             'Puedes personalizar exactamente qué ve cada rol usando los toggles de permisos.',
           ],
           faq: [
-            { q: '¿Cómo invito a mi empleado?', a: 'Dile que se registre en el sistema y que use tu "Código de Espacio" al momento de registrarse. Cuando lo haga, verás su solicitud aquí para aprobarla.' },
+            { q: '¿Cómo invito a mi empleado?', a: 'Envíale una invitación desde Configuración → Equipo, o comparte tu URL personalizada (ej: tuempresa.dualis.app). Al registrarse, verás su solicitud para aprobarla.' },
             { q: '¿Qué pasa si elimino a un miembro?', a: 'Pierde acceso inmediatamente. Su historial de ventas y movimientos permanece intacto en el sistema.' },
           ],
         },
@@ -812,7 +857,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
             { name: 'Toggle IVA', what: 'Activa o desactiva el cálculo automático del IVA (16%) en todas las ventas. Azul = activo.' },
             { name: 'Toggle IGTF', what: 'Activa el IGTF (3%) para pagos en divisas. Si tus clientes pagan en USD o EUR, actívalo.' },
             { name: 'Toggle Escáner Cámara', what: 'Habilita el botón de cámara en el POS para escanear códigos de barras. Requiere cámara en el dispositivo.' },
-            { name: 'Copiar código de espacio', what: 'Copia el código único de tu empresa para compartirlo con nuevos miembros al momento de registrarse.' },
+            { name: 'URL personalizada', what: 'Configura una URL única (ej: tuempresa.dualis.app) en Configuración > Empresa. Tus empleados pueden acceder directamente desde ahí.' },
             { name: 'Toggle (cualquier función)', what: 'Activa o desactiva esa función. Azul/morado = activo. Gris = desactivado. El cambio aplica inmediatamente para todos en la empresa.' },
             { name: 'Modo oscuro / claro', what: 'Cambia el tema de la interfaz. Oscuro = fondo negro (menos fatiga visual). Claro = fondo blanco. Se guarda automáticamente.' },
             { name: 'Selector de idioma', what: 'Cambia el idioma de la interfaz. Aplica inmediatamente, no necesita guardar.' },

@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
-import { NavLink, useLocation, useParams } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { User, AppConfig } from '../../types';
 import { type RolePermissions, type ModuleId } from '../hooks/useRolePermissions';
 import { useVendor } from '../context/VendorContext';
+import { useSubscription } from '../hooks/useSubscription';
 import {
   LayoutDashboard,
   BookOpen,
-  TrendingUp,
   Users,
   Package,
-  LayoutGrid,
   ArrowLeftRight,
   Settings2,
   HelpCircle,
@@ -23,8 +22,12 @@ import {
   Wallet,
   ClipboardList,
   MapPin,
-  Scale,
   FileText,
+  ClipboardCheck,
+  CreditCard,
+  Clock,
+  Zap,
+  TrendingUp,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -66,9 +69,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'inventario',   label: 'Inventario',      Icon: Package,         path: 'inventario'    },
       { id: 'cajas',        label: 'Ventas / Cajas',  Icon: ShoppingCart,    path: 'cajas'         },
-      { id: 'libroventas', label: 'Libro de Ventas', Icon: FileText,        path: 'libroventas'   },
-      { id: 'rrhh',         label: 'RRHH / Nómina',  Icon: Users,           path: 'rrhh'          },
-      { id: 'sucursales',   label: 'Sucursales',      Icon: MapPin,          path: 'sucursales'    },
+      { id: 'tasas',        label: 'Tasas Cambiarias', Icon: TrendingUp,     path: 'tasas'         },
+      { id: 'historial',    label: 'Historial',       Icon: FileText,        path: 'historial'     },
     ],
   },
   {
@@ -77,9 +79,15 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'clientes',     label: 'Deudores / CxC',  Icon: Wallet,          path: 'cobranzas'     },
       { id: 'proveedores',  label: 'Gastos / CxP',    Icon: Receipt,         path: 'cxp'           },
       { id: 'contabilidad', label: 'Contabilidad',    Icon: BookOpen,        path: 'contabilidad'  },
-      { id: 'fiscal',       label: 'Gestión Fiscal',  Icon: Scale,           path: 'fiscal'        },
-      { id: 'tasas',        label: 'Tasas de Cambio', Icon: TrendingUp,      path: 'tasas'         },
       { id: 'conciliacion', label: 'Conciliación',    Icon: Landmark,        path: 'conciliacion'  },
+      { id: 'solicitudes',  label: 'Solicitudes Abono', Icon: ClipboardCheck, path: 'solicitudes'   },
+    ],
+  },
+  {
+    label: 'Equipo',
+    items: [
+      { id: 'rrhh',         label: 'RRHH / Nómina',  Icon: Users,           path: 'rrhh'          },
+      { id: 'sucursales',   label: 'Sucursales',      Icon: MapPin,          path: 'sucursales'    },
     ],
   },
   {
@@ -88,12 +96,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'reportes',     label: 'Estadísticas',    Icon: BarChart3,       path: 'reportes'      },
       { id: 'vision',       label: 'Auditoría IA',    Icon: ClipboardList,   path: 'vision'        },
       { id: 'comparar',     label: 'Comparar Libros', Icon: ArrowLeftRight,  path: 'comparar'      },
-    ],
-  },
-  {
-    label: 'Herramientas',
-    items: [
-      { id: 'widgets',      label: 'Herramientas',    Icon: LayoutGrid,      path: 'widgets'       },
     ],
   },
   {
@@ -110,6 +112,7 @@ const moduleMap: Record<string, string> = {
   proveedores:  'cxp',
   contabilidad: 'ledger',
   conciliacion: 'reconciliation',
+  solicitudes:  'cxc',
   rrhh:         'nomina',
   vision:       'vision',
 };
@@ -148,7 +151,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const location  = useLocation();
   const { empresa_id } = useParams();
+  const navigate = useNavigate();
   const { moduleHidden, moduleForced } = useVendor();
+
+  // Subscription status for license badge
+  const businessId = (config as any)?.companyName || '';
+  const { subscription, trialDaysLeft, planDaysLeft, graceDaysLeft, inGracePeriod, isExpired } = useSubscription(businessId);
 
   // Persist collapsed state across sessions
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -203,8 +211,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     'text-indigo-400',   // Dashboard
     'text-sky-400',      // Operaciones
     'text-emerald-400',  // Finanzas
+    'text-sky-400',      // Equipo
     'text-violet-400',   // Inteligencia
-    'text-amber-400',    // Herramientas
     'text-slate-400',    // Sistema
   ];
 
@@ -244,9 +252,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         >
           <div className="flex items-center gap-3 min-w-0">
             {/* Logo mark */}
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center font-black text-[15px] text-white select-none shadow-[0_0_20px_rgba(99,102,241,0.45)] shrink-0">
-              D
-            </div>
+            <img src="/logo.png" alt="Dualis" className="w-8 h-8 rounded-xl object-contain shrink-0" />
             {/* Brand name (expanded only) */}
             {!collapsed && (
               <div className="min-w-0">
@@ -367,6 +373,94 @@ const Sidebar: React.FC<SidebarProps> = ({
               <ChevronRight size={15} />
             </button>
           )}
+
+          {/* License status badge */}
+          {subscription && (() => {
+            const isTrial = subscription.status === 'trial' && !inGracePeriod && !isExpired;
+            const isActivePaid = subscription.status === 'active' && !inGracePeriod && !isExpired;
+            const days = inGracePeriod ? graceDaysLeft
+              : isTrial ? trialDaysLeft
+              : planDaysLeft;
+            const planName = subscription.plan === 'trial' ? 'Trial' : subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1);
+            const billingPath = `/${empresa_id}/billing`;
+
+            // Determine color theme
+            const theme = isExpired || inGracePeriod ? 'rose'
+              : isTrial ? 'amber'
+              : 'emerald';
+
+            if (collapsed) {
+              return (
+                <button
+                  onClick={() => navigate(billingPath)}
+                  title={`${planName} — ${days != null ? `${days}d` : ''}`}
+                  className={`relative group w-11 h-11 flex items-center justify-center rounded-xl transition-all ${
+                    theme === 'rose' ? 'text-rose-400/60 hover:bg-rose-500/10'
+                    : theme === 'amber' ? 'text-amber-400/60 hover:bg-amber-500/10'
+                    : 'text-emerald-400/60 hover:bg-emerald-500/10'
+                  }`}
+                >
+                  <CreditCard size={14} strokeWidth={1.8} />
+                  {days != null && days <= 15 && (
+                    <span className={`absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[8px] font-black flex items-center justify-center ${
+                      theme === 'rose' ? 'bg-rose-500 text-white animate-pulse'
+                      : days <= 5 ? 'bg-rose-500 text-white'
+                      : 'bg-amber-500 text-black'
+                    }`}>
+                      {days}
+                    </span>
+                  )}
+                  <Tip>
+                    {inGracePeriod ? `Gracia · ${days}d` : `Licencia ${planName}`}
+                    {!inGracePeriod && days != null ? ` · ${days}d` : ''}
+                  </Tip>
+                </button>
+              );
+            }
+
+            return (
+              <button
+                onClick={() => navigate(billingPath)}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all ${
+                  theme === 'rose'
+                    ? 'bg-rose-500/[0.08] hover:bg-rose-500/[0.14] border border-rose-500/20'
+                    : theme === 'amber'
+                      ? 'bg-amber-500/[0.08] hover:bg-amber-500/[0.14] border border-amber-500/20'
+                      : 'bg-emerald-500/[0.08] hover:bg-emerald-500/[0.14] border border-emerald-500/20'
+                }`}
+              >
+                {theme === 'rose'
+                  ? <Zap size={13} className="text-rose-400 shrink-0" />
+                  : theme === 'amber'
+                    ? <Clock size={13} className="text-amber-400 shrink-0" />
+                    : <CreditCard size={13} className="text-emerald-400 shrink-0" />}
+                <div className="min-w-0 flex-1 text-left">
+                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${
+                    theme === 'rose' ? 'text-rose-400'
+                    : theme === 'amber' ? 'text-amber-400'
+                    : 'text-emerald-400'
+                  }`}>
+                    {isExpired ? 'Bloqueado'
+                      : inGracePeriod ? 'Período de gracia'
+                      : isTrial ? 'Trial gratuito'
+                      : `Plan ${planName}`}
+                  </p>
+                  <p className={`text-[9px] font-bold mt-0.5 ${
+                    theme === 'rose' ? 'text-rose-400/50'
+                    : theme === 'amber' ? 'text-amber-400/50'
+                    : 'text-emerald-400/50'
+                  }`}>
+                    {isExpired ? 'Renueva para continuar'
+                      : inGracePeriod && days != null
+                        ? `${days} día${days !== 1 ? 's' : ''} antes de bloqueo`
+                      : days != null
+                        ? days === 0 ? 'Vence hoy' : `${days} día${days !== 1 ? 's' : ''} restante${days !== 1 ? 's' : ''}`
+                        : isActivePaid ? 'Activo' : ''}
+                  </p>
+                </div>
+              </button>
+            );
+          })()}
 
           {/* Logout */}
           <button

@@ -90,9 +90,7 @@ export default function PendingApprovalWall() {
 
         {/* Logo */}
         <div className="flex items-center justify-center gap-2.5 mb-10">
-          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-xl shadow-indigo-600/30">
-            <span className="text-white font-black text-lg">D</span>
-          </div>
+          <img src="/logo.png" alt="Dualis" className="h-10 w-auto" />
           <span className="text-white font-black text-xl tracking-tight">Dualis ERP</span>
         </div>
 

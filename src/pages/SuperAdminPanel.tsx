@@ -12,7 +12,7 @@ import {
   Smartphone, Monitor as MonitorIcon, Apple,
   BarChart3, TrendingUp, Activity, PieChart, Banknote,
   ShoppingCart, Package, Brain, ArrowUpRight, ArrowDownRight,
-  Globe, Sparkles,
+  Globe, Sparkles, Link2, Ban, RefreshCw, ShieldAlert,
 } from 'lucide-react';
 import {
   VENDOR_TEMPLATES, VENDOR_DEFAULTS, HIDEABLE_ELEMENTS,
@@ -32,6 +32,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { db, firebaseConfig } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { registerTenantSlug, getSlugForBusiness } from '../utils/tenantResolver';
 
 // ─── Config — leído desde .env.local (nunca hardcodeado) ─────────────────────
 const ADMIN_PIN: string = import.meta.env.VITE_SUPER_ADMIN_PIN ?? '';
@@ -60,7 +61,11 @@ const ROLES: { id: UserRole; label: string; color: string }[] = [
 interface BizUser {
   uid: string;
   displayName?: string;
+  fullName?: string;
   email?: string;
+  cedula?: string;
+  telefono?: string;
+  phone?: string;
   role: UserRole;
   status?: string;
   createdAt?: any;
@@ -88,10 +93,10 @@ interface SubPromo   { code:string; discountPct:number; months:number; descripti
 interface SubHistory { action:string; plan?:string; paymentMethod?:string; paymentRef?:string; amountUsd?:number; promo?:SubPromo; date:string; adminEmail:string; note?:string; }
 interface PendingPayment { plan:string; months:number; amountUsd:number; payMethod:string; reference:string; note?:string; submittedAt?:any; submittedBy?:string; }
 interface Subscription { plan:string; status:string; trialEndsAt?:any; currentPeriodEnd?:any; addOns?:SubAddOns; promo?:SubPromo; history?:SubHistory[]; paymentMethod?:string; paymentRef?:string; lastPaymentAt?:string; amountUsd?:number; pendingPayment?:PendingPayment; }
-interface BizRecord { id:string; companyName?:string; ownerEmail?:string; ownerId?:string; createdAt?:any; subscription?:Subscription; }
+interface BizRecord { id:string; companyName?:string; ownerEmail?:string; ownerName?:string; ownerCedula?:string; ownerPhone?:string; ownerId?:string; createdAt?:any; subscription?:Subscription; }
 
 // ─── Top-level panel sections ──────────────────────────────────────────────
-type TopTab = 'dashboard' | 'negocios' | 'roadmap' | 'feedback' | 'ia';
+type TopTab = 'dashboard' | 'negocios' | 'tenants' | 'roadmap' | 'feedback' | 'ia';
 
 // ─── Feedback types ─────────────────────────────────────────────────────────
 interface FeedbackItem {
@@ -215,6 +220,31 @@ function fmt(ts: any): string {
   return d.toLocaleDateString('es-VE', { day:'2-digit', month:'short', year:'numeric' });
 }
 
+// ─── Sidebar navigation config ──────────────────────────────────────────────
+const SIDEBAR_GROUPS = [
+  {
+    label: 'Principal',
+    items: [
+      { id: 'dashboard' as TopTab, icon: BarChart3, label: 'Dashboard' },
+    ],
+  },
+  {
+    label: 'Gestion',
+    items: [
+      { id: 'negocios' as TopTab, icon: Building2, label: 'Negocios' },
+      { id: 'tenants' as TopTab, icon: Globe, label: 'Tenants / URLs' },
+    ],
+  },
+  {
+    label: 'Herramientas',
+    items: [
+      { id: 'roadmap' as TopTab, icon: Rocket, label: 'Roadmap' },
+      { id: 'feedback' as TopTab, icon: MessageSquare, label: 'Feedback' },
+      { id: 'ia' as TopTab, icon: Brain, label: 'IA Asistente' },
+    ],
+  },
+];
+
 // ─── PIN Gate ─────────────────────────────────────────────────────────────────
 function PinGate({ onAuth }: { onAuth: () => void }) {
   const [pin, setPin] = useState('');
@@ -266,7 +296,7 @@ function PinGate({ onAuth }: { onAuth: () => void }) {
         </div>
         <div className={`rounded-2xl border p-6 transition-all space-y-4 ${err ? 'border-rose-500/40 bg-rose-500/[0.05]' : 'border-white/[0.07] bg-white/[0.02]'}`}>
           <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Correo electrónico</label>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Correo electronico</label>
             <input
               type="email"
               value={email}
@@ -276,7 +306,7 @@ function PinGate({ onAuth }: { onAuth: () => void }) {
             />
           </div>
           <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Contraseña</label>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Contrasena</label>
             <div className="relative">
               <input
                 type={show ? 'text' : 'password'}
@@ -410,6 +440,11 @@ export default function SuperAdminPanel() {
   const [actRrhh, setActRrhh]               = useState(false);
   const [saving, setSaving]                 = useState(false);
 
+  // Days modification form
+  const [modDays, setModDays]               = useState(7);
+  const [modReason, setModReason]           = useState('');
+  const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
+
   // Pending approval users
   const [pendingUsers, setPendingUsers]     = useState<Array<{uid:string; email:string; fullName:string; businessId:string; createdAt:string; activating:boolean}>>([]);
 
@@ -420,6 +455,62 @@ export default function SuperAdminPanel() {
   const [promoMonths, setPromoMonths]       = useState(3);
   const [promoDesc, setPromoDesc]           = useState('');
   const [promoSaving, setPromoSaving]       = useState(false);
+
+  // Tenants / URLs state
+  const [tenantSlugs, setTenantSlugs] = useState<Record<string, string>>({});
+  const [tenantInputs, setTenantInputs] = useState<Record<string, string>>({});
+  const [tenantSaving, setTenantSaving] = useState<Record<string, boolean>>({});
+  const [tenantErrors, setTenantErrors] = useState<Record<string, string>>({});
+  const [tenantSuccess, setTenantSuccess] = useState<Record<string, boolean>>({});
+  const [tenantSearch, setTenantSearch] = useState('');
+  const [tenantsLoading, setTenantsLoading] = useState(false);
+
+  // Load tenant slugs for all businesses
+  useEffect(() => {
+    if (!pinAuth || topTab !== 'tenants' || businesses.length === 0) return;
+    setTenantsLoading(true);
+    const loadSlugs = async () => {
+      const slugMap: Record<string, string> = {};
+      const inputMap: Record<string, string> = {};
+      for (const biz of businesses) {
+        try {
+          const slug = await getSlugForBusiness(biz.id);
+          if (slug) {
+            slugMap[biz.id] = slug;
+            inputMap[biz.id] = slug;
+          }
+        } catch { /* ignore */ }
+      }
+      setTenantSlugs(slugMap);
+      setTenantInputs(prev => ({ ...inputMap, ...prev }));
+      setTenantsLoading(false);
+    };
+    loadSlugs();
+  }, [pinAuth, topTab, businesses.length]);
+
+  const handleSaveTenantSlug = async (biz: BizRecord) => {
+    const slug = (tenantInputs[biz.id] ?? '').trim().toLowerCase();
+    if (!slug) {
+      setTenantErrors(prev => ({ ...prev, [biz.id]: 'Ingresa un slug valido' }));
+      return;
+    }
+    setTenantSaving(prev => ({ ...prev, [biz.id]: true }));
+    setTenantErrors(prev => ({ ...prev, [biz.id]: '' }));
+    setTenantSuccess(prev => ({ ...prev, [biz.id]: false }));
+    try {
+      const result = await registerTenantSlug(slug, biz.id, biz.companyName ?? biz.id);
+      if (result.ok) {
+        setTenantSlugs(prev => ({ ...prev, [biz.id]: slug }));
+        setTenantSuccess(prev => ({ ...prev, [biz.id]: true }));
+        setTimeout(() => setTenantSuccess(prev => ({ ...prev, [biz.id]: false })), 3000);
+      } else {
+        setTenantErrors(prev => ({ ...prev, [biz.id]: (result as any).error }));
+      }
+    } catch (e: any) {
+      setTenantErrors(prev => ({ ...prev, [biz.id]: e?.message ?? 'Error al guardar' }));
+    }
+    setTenantSaving(prev => ({ ...prev, [biz.id]: false }));
+  };
 
   // Load roadmap progress from Firestore
   useEffect(() => {
@@ -524,7 +615,7 @@ export default function SuperAdminPanel() {
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) {
-        setAiMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se encontró VITE_GEMINI_API_KEY en las variables de entorno. Agrégala en .env.local y en Vercel.' }]);
+        setAiMessages(prev => [...prev, { role: 'assistant', content: 'No se encontro VITE_GEMINI_API_KEY en las variables de entorno. Agregala en .env.local y en Vercel.' }]);
         setAiLoading(false);
         return;
       }
@@ -572,7 +663,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
       const reply = response.text ?? 'Sin respuesta';
       setAiMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e: any) {
-      setAiMessages(prev => [...prev, { role: 'assistant', content: `❌ Error: ${e?.message ?? 'No se pudo conectar con Gemini'}` }]);
+      setAiMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e?.message ?? 'No se pudo conectar con Gemini'}` }]);
     }
     setAiLoading(false);
     setTimeout(() => aiChatRef.current?.scrollTo({ top: aiChatRef.current.scrollHeight, behavior: 'smooth' }), 100);
@@ -599,15 +690,15 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
 
   // Send feedback to WhatsApp
   const sendFeedbackToWhatsApp = (fb: FeedbackItem) => {
-    const typeLabel = fb.type === 'bug' ? '🐛 Bug' : fb.type === 'idea' ? '💡 Sugerencia' : '💬 Comentario';
+    const typeLabel = fb.type === 'bug' ? 'Bug' : fb.type === 'idea' ? 'Sugerencia' : 'Comentario';
     const date = fb.createdAt?.toDate ? fb.createdAt.toDate().toLocaleDateString('es-VE') : 'N/A';
     const text = encodeURIComponent(
       `${typeLabel} — Dualis Feedback\n\n` +
-      `De: ${fb.name || fb.email || 'Anónimo'}\n` +
+      `De: ${fb.name || fb.email || 'Anonimo'}\n` +
       `Fecha: ${date}\n` +
       `Estado: ${fb.status}\n\n` +
       `Mensaje:\n${fb.message}\n\n` +
-      (fb.imageUrls?.length ? `Imágenes: ${fb.imageUrls.join('\n')}` : '') +
+      (fb.imageUrls?.length ? `Imagenes: ${fb.imageUrls.join('\n')}` : '') +
       (fb.adminNote ? `\nNota admin: ${fb.adminNote}` : '')
     );
     window.open(`https://wa.me/584125343141?text=${text}`, '_blank');
@@ -664,7 +755,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
         'subscription.bonusNotification': {
           days,
           grantedAt: new Date().toISOString(),
-          reason: fb.message?.slice(0, 100) || 'Feedback útil',
+          reason: fb.message?.slice(0, 100) || 'Feedback util',
           seen: false,
         },
       });
@@ -740,9 +831,24 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
         if (ownerIds.length > 0) {
           try {
             const usersSnap = await getDocs(query(collection(db, 'users'), where('__name__', 'in', ownerIds.slice(0, 30))));
-            const emailMap: Record<string, string> = {};
-            usersSnap.forEach(u => { emailMap[u.id] = u.data().email ?? ''; });
-            docs.forEach(d => { if (d.ownerId && emailMap[d.ownerId]) d.ownerEmail = emailMap[d.ownerId]; });
+            const ownerMap: Record<string, { email: string; fullName: string; cedula: string; phone: string }> = {};
+            usersSnap.forEach(u => {
+              const ud = u.data();
+              ownerMap[u.id] = {
+                email: ud.email ?? '',
+                fullName: ud.fullName ?? ud.displayName ?? '',
+                cedula: ud.cedula ?? '',
+                phone: ud.telefono ?? ud.phone ?? '',
+              };
+            });
+            docs.forEach(d => {
+              if (d.ownerId && ownerMap[d.ownerId]) {
+                d.ownerEmail = ownerMap[d.ownerId].email;
+                d.ownerName = ownerMap[d.ownerId].fullName;
+                d.ownerCedula = ownerMap[d.ownerId].cedula;
+                d.ownerPhone = ownerMap[d.ownerId].phone;
+              }
+            });
           } catch (_) { /* ignore enrichment errors */ }
         }
 
@@ -1118,6 +1224,112 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
     } : null);
   };
 
+  // ── Add / Remove days ───────────────────────────────────────────────────
+  const handleModifyDays = async (biz: BizRecord, days: number, reason: string) => {
+    if (!biz || days === 0) return;
+    setSaving(true);
+    try {
+      const sub = biz.subscription;
+      const isTrial = sub?.status === 'trial';
+      const dateField = isTrial ? 'subscription.trialEndsAt' : 'subscription.currentPeriodEnd';
+      const currentEnd = isTrial ? sub?.trialEndsAt : sub?.currentPeriodEnd;
+      const baseDate = currentEnd instanceof Date ? currentEnd
+        : (currentEnd as any)?.toDate?.() ?? new Date();
+      const newDate = new Date(baseDate.getTime() + days * 86_400_000);
+
+      const histEntry: SubHistory = {
+        action: days > 0 ? 'add_days' : 'remove_days',
+        date: new Date().toISOString(),
+        adminEmail: user?.email ?? 'admin',
+        note: `${days > 0 ? '+' : ''}${days} días. Motivo: ${reason}`,
+      };
+      const prevHistory: SubHistory[] = sub?.history ?? [];
+
+      await updateDoc(doc(db, 'businesses', biz.id), {
+        [dateField]: newDate,
+        'subscription.history': [...prevHistory, histEntry],
+        'subscription.updatedAt': serverTimestamp(),
+      });
+
+      setSelected((prev: BizRecord | null) => prev ? {
+        ...prev,
+        subscription: {
+          ...(prev.subscription ?? {}),
+          ...(isTrial ? { trialEndsAt: newDate } : { currentPeriodEnd: newDate }),
+          history: [...prevHistory, histEntry],
+        }
+      } : null);
+    } catch (e) { console.error(e); }
+    setSaving(false);
+  };
+
+  // ── Deactivate account (block access, NEVER delete data) ───────────────
+  const handleDeactivateAccount = async (biz: BizRecord) => {
+    if (!biz) return;
+    setSaving(true);
+    try {
+      const histEntry: SubHistory = {
+        action: 'deactivate',
+        date: new Date().toISOString(),
+        adminEmail: user?.email ?? 'admin',
+        note: 'Cuenta desactivada por administrador. Datos preservados.',
+      };
+      const prevHistory: SubHistory[] = biz.subscription?.history ?? [];
+      await updateDoc(doc(db, 'businesses', biz.id), {
+        'subscription.status': 'cancelled',
+        'subscription.currentPeriodEnd': null,
+        'subscription.trialEndsAt': null,
+        'subscription.history': [...prevHistory, histEntry],
+        'subscription.updatedAt': serverTimestamp(),
+      });
+      setSelected((prev: BizRecord | null) => prev ? {
+        ...prev,
+        subscription: {
+          ...(prev.subscription ?? {}),
+          status: 'cancelled',
+          currentPeriodEnd: undefined,
+          trialEndsAt: undefined,
+          history: [...prevHistory, histEntry],
+        }
+      } : null);
+    } catch (e) { console.error(e); }
+    setSaving(false);
+  };
+
+  // ── Reactivate account (restore to trial) ──────────────────────────────
+  const handleReactivateAccount = async (biz: BizRecord) => {
+    if (!biz) return;
+    setSaving(true);
+    try {
+      const trialEndsAt = new Date(Date.now() + 7 * 86_400_000); // 7 days grace
+      const histEntry: SubHistory = {
+        action: 'reactivate',
+        date: new Date().toISOString(),
+        adminEmail: user?.email ?? 'admin',
+        note: 'Cuenta reactivada por administrador. 7 días de gracia.',
+      };
+      const prevHistory: SubHistory[] = biz.subscription?.history ?? [];
+      await updateDoc(doc(db, 'businesses', biz.id), {
+        'subscription.status': 'trial',
+        'subscription.trialEndsAt': trialEndsAt,
+        'subscription.currentPeriodEnd': null,
+        'subscription.history': [...prevHistory, histEntry],
+        'subscription.updatedAt': serverTimestamp(),
+      });
+      setSelected((prev: BizRecord | null) => prev ? {
+        ...prev,
+        subscription: {
+          ...(prev.subscription ?? {}),
+          status: 'trial',
+          trialEndsAt,
+          currentPeriodEnd: undefined,
+          history: [...prevHistory, histEntry],
+        }
+      } : null);
+    } catch (e) { console.error(e); }
+    setSaving(false);
+  };
+
   // ── Preset promo apply helper ────────────────────────────────────────────
   const applyPreset = (p: typeof PRESET_PROMOS[0]) => {
     setPromoPreset(p.id);
@@ -1131,64 +1343,90 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
     return <PinGate onAuth={() => setPinAuth(true)} />;
   }
 
-  return (
-    <div className="min-h-screen bg-[#070b14] text-white flex flex-col">
+  // Badge counts for sidebar
+  const feedbackNewCount = feedbackItems.filter(f => f.status === 'nuevo').length;
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-[#070b14]/90 backdrop-blur-xl border-b border-white/[0.07]">
-        <div className="px-6 py-4 flex items-center justify-between">
+  return (
+    <div className="min-h-screen h-screen bg-[#070b14] text-white flex overflow-hidden">
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SIDEBAR — Fixed left navigation
+          ══════════════════════════════════════════════════════════════════════ */}
+      <aside className="w-[240px] shrink-0 bg-[#0a0f1a] border-r border-white/[0.07] flex flex-col h-screen overflow-hidden">
+        {/* Sidebar header */}
+        <div className="px-5 py-5 border-b border-white/[0.06]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center shrink-0">
               <Shield size={17} className="text-indigo-400" />
             </div>
-            <div>
-              <p className="font-black text-white text-sm tracking-tight">Dualis Operaciones</p>
-              <p className="text-[9px] font-black uppercase tracking-widest text-white/20">Panel Administrativo Interno</p>
+            <div className="min-w-0">
+              <p className="font-black text-white text-sm tracking-tight truncate">Dualis Ops</p>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-white/20">Panel Interno</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-white/25 font-medium">{user?.email}</span>
-            <button
-              onClick={async () => { sessionStorage.removeItem('dualis_op_auth'); try { await getAuth().signOut(); } catch {} navigate('/'); }}
-              className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest text-white/40 border border-white/[0.07] hover:bg-white/[0.06] transition-all"
-            >
-              Salir
-            </button>
-          </div>
         </div>
-        {/* Top-level tabs */}
-        <div className="px-6 pb-0 flex gap-1 overflow-x-auto">
-          {([
-            { id: 'dashboard' as TopTab, icon: BarChart3,      label: 'Dashboard' },
-            { id: 'negocios' as TopTab,  icon: Building2,      label: 'Negocios', count: businesses.length },
-            { id: 'roadmap' as TopTab,   icon: Rocket,         label: 'Roadmap' },
-            { id: 'feedback' as TopTab,  icon: MessageSquare,  label: 'Feedback', count: feedbackItems.filter(f => f.status === 'nuevo').length || undefined },
-            { id: 'ia' as TopTab,        icon: Brain,          label: 'IA Asistente' },
-          ]).map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTopTab(t.id)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-xs font-black uppercase tracking-widest transition-all border-b-2 ${
-                topTab === t.id
-                  ? 'bg-white/[0.06] text-white border-indigo-500'
-                  : 'text-white/25 hover:text-white/50 border-transparent hover:bg-white/[0.02]'
-              }`}
-            >
-              <t.icon size={13} />
-              {t.label}
-              {t.count !== undefined && t.count > 0 && (
-                <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[8px] font-black ${
-                  t.id === 'feedback' && topTab !== 'feedback'
-                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                    : 'bg-white/[0.08] text-white/40'
-                }`}>{t.count}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      </header>
 
-      <div className="flex flex-1 overflow-hidden">
+        {/* Navigation groups */}
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
+          {SIDEBAR_GROUPS.map(group => (
+            <div key={group.label}>
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/20 px-3 mb-2">{group.label}</p>
+              <div className="space-y-0.5">
+                {group.items.map(item => {
+                  const isActive = topTab === item.id;
+                  const badge = item.id === 'negocios' ? businesses.length
+                    : item.id === 'feedback' ? (feedbackNewCount || undefined)
+                    : undefined;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setTopTab(item.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all relative group ${
+                        isActive
+                          ? 'bg-gradient-to-r from-indigo-600/[0.15] to-violet-600/[0.08] text-white'
+                          : 'text-white/35 hover:text-white/60 hover:bg-white/[0.03]'
+                      }`}
+                    >
+                      {/* Active indicator bar */}
+                      {isActive && (
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-gradient-to-b from-indigo-400 to-violet-400" />
+                      )}
+                      <item.icon size={16} className={isActive ? 'text-indigo-400' : 'text-white/25 group-hover:text-white/45'} />
+                      <span className={`text-[12px] font-bold flex-1 ${isActive ? 'text-white' : ''}`}>{item.label}</span>
+                      {badge !== undefined && badge > 0 && (
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
+                          item.id === 'feedback' && !isActive
+                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            : 'bg-white/[0.08] text-white/40'
+                        }`}>{badge}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* Sidebar footer — user info + logout */}
+        <div className="px-3 py-4 border-t border-white/[0.06] space-y-2">
+          <div className="px-3">
+            <p className="text-[10px] text-white/30 truncate font-medium">{user?.email}</p>
+          </div>
+          <button
+            onClick={async () => { sessionStorage.removeItem('dualis_op_auth'); try { await getAuth().signOut(); } catch {} navigate('/'); }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold text-white/25 hover:text-white/50 hover:bg-white/[0.04] transition-all"
+          >
+            <X size={13} />
+            Cerrar sesion
+          </button>
+        </div>
+      </aside>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          MAIN CONTENT AREA
+          ══════════════════════════════════════════════════════════════════════ */}
+      <main className="flex-1 flex overflow-hidden min-w-0">
 
         {/* ═══════════════════════════════════════════════════════════════════
             TAB: DASHBOARD
@@ -1233,7 +1471,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                   { label: 'Plan Activo', val: kpis.active, icon: BadgeCheck, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.06]', border: 'border-emerald-500/15' },
                   { label: 'En Prueba', val: kpis.trial, icon: Clock, color: 'text-sky-400', bg: 'bg-sky-500/[0.06]', border: 'border-sky-500/15' },
                   { label: 'Expirados', val: kpis.expired, icon: AlertTriangle, color: 'text-rose-400', bg: 'bg-rose-500/[0.06]', border: 'border-rose-500/15' },
-                  { label: 'Feedback Nuevo', val: feedbackItems.filter(f => f.status === 'nuevo').length, icon: MessageSquare, color: 'text-amber-400', bg: 'bg-amber-500/[0.06]', border: 'border-amber-500/15' },
+                  { label: 'Feedback Nuevo', val: feedbackNewCount, icon: MessageSquare, color: 'text-amber-400', bg: 'bg-amber-500/[0.06]', border: 'border-amber-500/15' },
                 ].map(k => (
                   <div key={k.label} className={`rounded-2xl border ${k.border} ${k.bg} p-4 flex items-center gap-3`}>
                     <div className={`h-10 w-10 rounded-xl ${k.bg} border ${k.border} flex items-center justify-center shrink-0`}>
@@ -1402,7 +1640,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
               <div className="flex items-center gap-2.5">
                 <Clock size={15} className="text-amber-400 shrink-0" />
                 <p className="text-xs font-black uppercase tracking-widest text-amber-400">
-                  Cuentas pendientes de activación
+                  Cuentas pendientes de activacion
                   <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[9px]">
                     {pendingUsers.length}
                   </span>
@@ -1500,7 +1738,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
             <div className="rounded-2xl border border-white/[0.07] overflow-hidden">
               {/* Table header */}
               <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-white/[0.05] bg-white/[0.02]">
-                {['Negocio','Plan','Estado','Vence / Período','Promo','Acción'].map((h, i) => (
+                {['Negocio','Plan','Estado','Vence / Periodo','Promo','Accion'].map((h, i) => (
                   <div key={h} className={`text-[9px] font-black uppercase tracking-widest text-white/20 ${
                     i === 0 ? 'col-span-3' : i === 1 ? 'col-span-2' : i === 2 ? 'col-span-2' : i === 3 ? 'col-span-2' : i === 4 ? 'col-span-2' : 'col-span-1'
                   }`}>{h}</div>
@@ -1534,6 +1772,19 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                         )}
                       </div>
                       <p className="text-[10px] text-white/20 truncate">{biz.ownerEmail ?? biz.id}</p>
+                      {(biz.ownerName || biz.ownerCedula || biz.ownerPhone) && (
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {biz.ownerName && <span className="text-[9px] font-bold text-indigo-400/60 truncate">{biz.ownerName}</span>}
+                          {biz.ownerCedula && <span className="text-[9px] font-bold text-white/15">CI: {biz.ownerCedula}</span>}
+                          {biz.ownerPhone && (
+                            <a href={`https://wa.me/${biz.ownerPhone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="text-[9px] font-bold text-emerald-400/50 hover:text-emerald-400 transition-colors flex items-center gap-0.5">
+                              <Smartphone size={8} />{biz.ownerPhone}
+                            </a>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Plan */}
@@ -1590,6 +1841,16 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                 <div>
                   <p className="font-black text-white text-base tracking-tight">{selected.companyName ?? selected.id}</p>
                   <p className="text-xs text-white/25 mt-0.5">{selected.ownerEmail ?? selected.id}</p>
+                  {selected.ownerName && <p className="text-[10px] text-indigo-400/70 mt-0.5 font-bold">{selected.ownerName}</p>}
+                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                    {selected.ownerCedula && <span className="text-[9px] text-white/25 font-bold">CI: {selected.ownerCedula}</span>}
+                    {selected.ownerPhone && (
+                      <a href={`https://wa.me/${selected.ownerPhone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer"
+                        className="text-[9px] font-bold text-emerald-400/60 hover:text-emerald-400 flex items-center gap-0.5">
+                        <Smartphone size={9} />{selected.ownerPhone}
+                      </a>
+                    )}
+                  </div>
                   <p className="text-[9px] text-white/15 mt-0.5 font-mono">ID: {selected.id}</p>
                 </div>
                 <button onClick={() => setSelected(null)} className="w-7 h-7 rounded-lg flex items-center justify-center text-white/25 hover:bg-white/[0.08] transition-all shrink-0">
@@ -1600,7 +1861,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
               {/* Drawer tabs */}
               <div className="flex gap-1 mt-4 p-1 rounded-xl bg-white/[0.03] border border-white/[0.05]">
                 {([
-                  { id:'plan',    icon: CreditCard, label:'Suscripción' },
+                  { id:'plan',    icon: CreditCard, label:'Suscripcion' },
                   { id:'promo',   icon: Gift,       label:'Promo' },
                   { id:'users',   icon: Users,      label:'Usuarios' },
                   { id:'custom',  icon: Sliders,    label:'Config' },
@@ -1645,7 +1906,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                           { l: 'Plan',       v: pp.plan },
                           { l: 'Meses',      v: `${pp.months} mes${pp.months > 1 ? 'es' : ''}` },
                           { l: 'Monto',      v: `$${pp.amountUsd} USD` },
-                          { l: 'Método',     v: pp.payMethod },
+                          { l: 'Metodo',     v: pp.payMethod },
                           { l: 'Referencia', v: pp.reference },
                           ...(pp.note ? [{ l: 'Nota', v: pp.note }] : []),
                           ...(pp.submittedBy ? [{ l: 'Enviado por', v: pp.submittedBy }] : []),
@@ -1685,9 +1946,9 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                     { l:'Plan',    v: selected.subscription?.plan ?? '—' },
                     { l:'Estado',  v: selected.subscription?.status ?? '—' },
                     { l:'Vence',   v: fmt(selected.subscription?.currentPeriodEnd ?? selected.subscription?.trialEndsAt) },
-                    { l:'Último pago', v: selected.subscription?.lastPaymentAt ? new Date(selected.subscription.lastPaymentAt).toLocaleDateString('es-VE') : '—' },
+                    { l:'Ultimo pago', v: selected.subscription?.lastPaymentAt ? new Date(selected.subscription.lastPaymentAt).toLocaleDateString('es-VE') : '—' },
                     { l:'Monto',   v: selected.subscription?.amountUsd ? `$${selected.subscription.amountUsd}` : '—' },
-                    { l:'Método',  v: selected.subscription?.paymentMethod ?? '—' },
+                    { l:'Metodo',  v: selected.subscription?.paymentMethod ?? '—' },
                   ].map(r => (
                     <div key={r.l} className="flex justify-between items-center">
                       <span className="text-[10px] text-white/25 font-medium">{r.l}</span>
@@ -1725,14 +1986,14 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                     ].map(s => (
                       <div key={s.label} className="flex items-center gap-2">
                         <span className="flex-1 text-[10px] text-white/30 font-medium">{s.label}</span>
-                        <button onClick={() => s.set(Math.max(0, s.val-1))} className="w-6 h-6 rounded-lg bg-white/[0.06] text-white/40 hover:bg-white/[0.12] flex items-center justify-center text-xs font-black">−</button>
+                        <button onClick={() => s.set(Math.max(0, s.val-1))} className="w-6 h-6 rounded-lg bg-white/[0.06] text-white/40 hover:bg-white/[0.12] flex items-center justify-center text-xs font-black">-</button>
                         <span className="w-6 text-center text-sm font-black text-white">{s.val}</span>
                         <button onClick={() => s.set(Math.min(s.max, s.val+1))} className="w-6 h-6 rounded-lg bg-white/[0.06] text-white/40 hover:bg-white/[0.12] flex items-center justify-center text-xs font-black">+</button>
                       </div>
                     ))}
                     {[
                       { label:'VisionLab IA (+$24)',       val:actVision,  set:setActVision  },
-                      { label:'Conciliación (+$12)',       val:actConcil,  set:setActConcil  },
+                      { label:'Conciliacion (+$12)',       val:actConcil,  set:setActConcil  },
                       { label:'RRHH Pro (+$15)',           val:actRrhh,    set:setActRrhh    },
                     ].map(t => (
                       <button key={t.label} onClick={() => t.set(!t.val)} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${t.val ? 'border-indigo-500/35 bg-indigo-500/10' : 'border-white/[0.06] hover:border-white/[0.12]'}`}>
@@ -1764,11 +2025,11 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Método de pago</label>
+                    <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Metodo de pago</label>
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         { id:'binance',       label:'Binance Pay' },
-                        { id:'pago_movil',    label:'Pago Móvil' },
+                        { id:'pago_movil',    label:'Pago Movil' },
                         { id:'transferencia', label:'Transferencia' },
                         { id:'paypal',        label:'PayPal' },
                         { id:'manual',        label:'Manual / Otro' },
@@ -1778,7 +2039,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Referencia / Confirmación</label>
+                    <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Referencia / Confirmacion</label>
                     <input value={actRef} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setActRef(e.target.value)} placeholder="TX12345 / Captura enviada" className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.07] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40" />
                   </div>
                   <div>
@@ -1790,13 +2051,13 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                 {/* Total preview */}
                 <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.06] p-4">
                   <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs text-white/40 font-medium">Plan {actPlan} × {actMonths} mes{actMonths > 1 ? 'es' : ''}</span>
+                    <span className="text-xs text-white/40 font-medium">Plan {actPlan} x {actMonths} mes{actMonths > 1 ? 'es' : ''}</span>
                     <span className="text-sm font-black text-white">${actAmount * actMonths}</span>
                   </div>
                   {selected.subscription?.promo && (
                     <div className="flex justify-between items-center text-amber-400 text-xs">
                       <span className="font-medium">Descuento promo {selected.subscription.promo.discountPct}%</span>
-                      <span className="font-black">−${(actAmount * actMonths * selected.subscription.promo.discountPct / 100).toFixed(0)}</span>
+                      <span className="font-black">-${(actAmount * actMonths * selected.subscription.promo.discountPct / 100).toFixed(0)}</span>
                     </div>
                   )}
                 </div>
@@ -1807,15 +2068,103 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                   style={{ background:'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
                 >
                   {saving ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                  Activar suscripción
+                  Activar suscripcion
                 </button>
 
                 <button
                   onClick={() => handleCancel(selected)}
                   className="w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-rose-400/60 hover:text-rose-400 border border-rose-500/10 hover:border-rose-500/25 transition-all"
                 >
-                  Cancelar suscripción
+                  Cancelar suscripcion
                 </button>
+
+                {/* ── Modify Days ─────────────────────────────────────── */}
+                <div className="mt-6 pt-5 border-t border-white/[0.06]">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/25 mb-3 flex items-center gap-2">
+                    <Calendar size={12} /> Gestión de días
+                  </p>
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        type="number" min={1} max={365}
+                        value={modDays} onChange={e => setModDays(Math.max(1, Math.min(365, +e.target.value)))}
+                        className="w-20 px-3 py-2 rounded-xl bg-white/[0.06] border border-white/[0.08] text-sm text-white text-center font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                      />
+                      <input
+                        value={modReason} onChange={e => setModReason(e.target.value)}
+                        placeholder="Motivo..."
+                        className="flex-1 px-3 py-2 rounded-xl bg-white/[0.06] border border-white/[0.08] text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { handleModifyDays(selected, modDays, modReason || 'Días añadidos por admin'); setModReason(''); }}
+                        disabled={saving}
+                        className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
+                      >
+                        <Plus size={12} /> Añadir {modDays}d
+                      </button>
+                      <button
+                        onClick={() => { handleModifyDays(selected, -modDays, modReason || 'Días removidos por admin'); setModReason(''); }}
+                        disabled={saving}
+                        className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
+                      >
+                        <Minus size={12} /> Quitar {modDays}d
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Account Actions ─────────────────────────────────── */}
+                <div className="mt-6 pt-5 border-t border-white/[0.06]">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/25 mb-3 flex items-center gap-2">
+                    <ShieldAlert size={12} /> Acciones de cuenta
+                  </p>
+
+                  {selected.subscription?.status === 'cancelled' ? (
+                    <button
+                      onClick={() => handleReactivateAccount(selected)}
+                      disabled={saving}
+                      className="w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      {saving ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                      Reactivar cuenta (7 días de gracia)
+                    </button>
+                  ) : !showDeactivateConfirm ? (
+                    <button
+                      onClick={() => setShowDeactivateConfirm(true)}
+                      className="w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-rose-400/60 hover:text-rose-400 border border-rose-500/10 hover:border-rose-500/25 hover:bg-rose-500/[0.06] transition-all flex items-center justify-center gap-2"
+                    >
+                      <Ban size={14} /> Desactivar cuenta
+                    </button>
+                  ) : (
+                    <div className="rounded-2xl border-2 border-rose-500/30 bg-rose-500/[0.06] p-4 space-y-3">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={14} className="text-rose-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-black text-rose-400">¿Desactivar esta cuenta?</p>
+                          <p className="text-[10px] text-rose-400/60 mt-0.5">El acceso será bloqueado inmediatamente. Los datos NO se eliminan nunca.</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setShowDeactivateConfirm(false)}
+                          className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white/40 bg-white/[0.06] hover:bg-white/[0.1] transition-all"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => { handleDeactivateAccount(selected); setShowDeactivateConfirm(false); }}
+                          disabled={saving}
+                          className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-rose-600 hover:bg-rose-500 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
+                        >
+                          {saving ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
+                          Confirmar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1830,7 +2179,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                     </div>
                     <p className="text-sm font-black text-white">{selected.subscription.promo.code}</p>
                     <p className="text-xs text-white/40 mt-0.5">{selected.subscription.promo.description}</p>
-                    <p className="text-xs text-amber-400 font-bold mt-2">−{selected.subscription.promo.discountPct}% por {selected.subscription.promo.months} meses</p>
+                    <p className="text-xs text-amber-400 font-bold mt-2">-{selected.subscription.promo.discountPct}% por {selected.subscription.promo.months} meses</p>
                   </div>
                 )}
 
@@ -1850,7 +2199,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                           <p className="text-[10px] text-white/25 font-medium truncate">{p.description}</p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className={`text-sm font-black ${promoPreset === p.id ? p.color : 'text-white/20'}`}>−{p.discountPct}%</p>
+                          <p className={`text-sm font-black ${promoPreset === p.id ? p.color : 'text-white/20'}`}>-{p.discountPct}%</p>
                           <p className="text-[9px] text-white/20">{p.months}m</p>
                         </div>
                       </button>
@@ -1862,7 +2211,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                   <p className="text-[10px] font-black uppercase tracking-widest text-white/25">Personalizar</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Código</label>
+                      <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Codigo</label>
                       <input value={promoCode} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromoCode(e.target.value.toUpperCase())} placeholder="MIPROME" className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.07] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 font-mono uppercase" />
                     </div>
                     <div>
@@ -1871,7 +2220,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Duración (meses)</label>
+                    <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Duracion (meses)</label>
                     <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.07]">
                       <button onClick={() => setPromoMonths(Math.max(1, promoMonths-1))} className="text-white/40 hover:text-white"><Minus size={12}/></button>
                       <span className="flex-1 text-center text-sm font-black text-white">{promoMonths}</span>
@@ -1879,7 +2228,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Descripción</label>
+                    <label className="block text-[9px] font-black text-white/20 mb-1 uppercase tracking-widest">Descripcion</label>
                     <input value={promoDesc} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromoDesc(e.target.value)} placeholder="Ej: Promo especial de lanzamiento..." className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.07] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40" />
                   </div>
                 </div>
@@ -1924,18 +2273,36 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                             {/* Avatar */}
                             <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center shrink-0">
                               <span className="text-sm font-black text-indigo-400">
-                                {(u.displayName ?? u.email ?? '?')[0].toUpperCase()}
+                                {(u.fullName || u.displayName || u.email || '?')[0].toUpperCase()}
                               </span>
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="text-sm font-black text-white truncate">{u.displayName ?? '—'}</p>
+                                <p className="text-sm font-black text-white truncate">{u.fullName || u.displayName || '—'}</p>
                                 <span className={`text-[9px] font-black uppercase tracking-widest ${roleInfo?.color ?? 'text-white/30'}`}>
                                   {roleInfo?.label ?? u.role}
                                 </span>
                                 {disabled && <span className="text-[9px] font-black text-rose-400 uppercase tracking-widest">Desactivado</span>}
                               </div>
                               <p className="text-[11px] text-white/25 mt-0.5 truncate">{u.email ?? '—'}</p>
+                              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                                {(u.cedula) && (
+                                  <span className="flex items-center gap-1 text-[10px] font-bold text-white/30">
+                                    <ShieldCheck size={10} className="text-indigo-400/50" />
+                                    CI: <span className="text-white/50">{u.cedula}</span>
+                                  </span>
+                                )}
+                                {(u.telefono || u.phone) && (
+                                  <a href={`https://wa.me/${(u.telefono || u.phone || '').replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-[10px] font-bold text-emerald-400/50 hover:text-emerald-400 transition-colors">
+                                    <Smartphone size={10} />
+                                    <span>{u.telefono || u.phone}</span>
+                                  </a>
+                                )}
+                                {!u.cedula && !u.telefono && !u.phone && (
+                                  <span className="text-[9px] text-white/15 italic">Sin datos personales</span>
+                                )}
+                              </div>
                               <p className="text-[9px] text-white/15 font-mono mt-0.5 truncate">{u.uid}</p>
                             </div>
                           </div>
@@ -2025,16 +2392,16 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                       <div className="space-y-3">
                         <div>
                           <label className="block text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Nombre completo</label>
-                          <input value={newName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value)} placeholder="Juan Pérez" className="w-full px-3 py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40" />
+                          <input value={newName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value)} placeholder="Juan Perez" className="w-full px-3 py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40" />
                         </div>
                         <div>
-                          <label className="block text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Correo electrónico *</label>
+                          <label className="block text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Correo electronico *</label>
                           <input type="email" value={newEmail} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmail(e.target.value)} placeholder="usuario@empresa.com" className="w-full px-3 py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40" />
                         </div>
                         <div>
-                          <label className="block text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Contraseña temporal *</label>
+                          <label className="block text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Contrasena temporal *</label>
                           <div className="relative">
-                            <input type={newPwShow ? 'text' : 'password'} value={newPassword} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value)} placeholder="Mín. 8 caracteres" className="w-full px-3 py-2.5 pr-10 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40" />
+                            <input type={newPwShow ? 'text' : 'password'} value={newPassword} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value)} placeholder="Min. 8 caracteres" className="w-full px-3 py-2.5 pr-10 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40" />
                             <button onClick={() => setNewPwShow((s: boolean) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/60 transition-colors">{newPwShow ? <EyeOff size={14}/> : <Eye size={14}/>}</button>
                           </div>
                         </div>
@@ -2079,10 +2446,10 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                         <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center"><UserX size={18} className="text-rose-400" /></div>
                         <div>
                           <p className="font-black text-white text-sm">Quitar del negocio</p>
-                          <p className="text-xs text-white/25 mt-0.5">El usuario perderá acceso inmediatamente</p>
+                          <p className="text-xs text-white/25 mt-0.5">El usuario perdera acceso inmediatamente</p>
                         </div>
                       </div>
-                      <p className="text-xs text-white/30 mb-5 leading-relaxed">Su cuenta Firebase Auth no se elimina. Solo se desvincula de este negocio. Puede ser reasignado más adelante.</p>
+                      <p className="text-xs text-white/30 mb-5 leading-relaxed">Su cuenta Firebase Auth no se elimina. Solo se desvincula de este negocio. Puede ser reasignado mas adelante.</p>
                       <div className="flex gap-2">
                         <button onClick={() => setUserAction(null)} className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-sm font-bold text-white/30 hover:bg-white/[0.05] transition-all">Cancelar</button>
                         <button onClick={() => handleRemoveFromBusiness(userAction.uid)} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-sm font-black text-white transition-all">Quitar</button>
@@ -2093,7 +2460,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
               </div>
             )}
 
-            {/* ── Tab: Personalización ──────────────────────────────────── */}
+            {/* ── Tab: Personalizacion ──────────────────────────────────── */}
             {drawerTab === 'custom' && (
               <div className="p-5 space-y-5 overflow-y-auto">
                 {loadingVendor ? (
@@ -2157,8 +2524,8 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
 
                     {/* Modules forced ON */}
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Módulos forzados activos</p>
-                      <p className="text-[9px] text-white/20 mb-3">Accesibles independiente del plan de suscripción.</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Modulos forzados activos</p>
+                      <p className="text-[9px] text-white/20 mb-3">Accesibles independiente del plan de suscripcion.</p>
                       <div className="flex flex-wrap gap-2 mb-2">
                         {['resumen','inventario','cajas','rrhh','sucursales','clientes','proveedores','contabilidad','fiscal','tasas','conciliacion','reportes','vision','comparar','widgets','config'].map(mod => {
                           const active = vendorOverride.forcedModules.includes(mod);
@@ -2175,14 +2542,14 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
 
                     {/* Hidden modules */}
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Módulos ocultos</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Modulos ocultos</p>
                       <p className="text-[9px] text-white/20 mb-2">Completamente invisibles para esta empresa.</p>
                       <div className="flex gap-2 mb-2">
                         <input
                           value={newHideModule}
                           onChange={e => setNewHideModule(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && addHideModule()}
-                          placeholder="ej: rrhh, conciliacion, comparar…"
+                          placeholder="ej: rrhh, conciliacion, comparar..."
                           className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
                         />
                         <button onClick={addHideModule} className="px-3 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 hover:bg-indigo-500/25 transition-all">
@@ -2230,7 +2597,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                           value={newHideId}
                           onChange={e => setNewHideId(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && addHideElement()}
-                          placeholder="ID personalizado…"
+                          placeholder="ID personalizado..."
                           className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
                         />
                         <button onClick={addHideElement} className="px-3 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/25 text-indigo-400 hover:bg-indigo-500/25 transition-all">
@@ -2249,13 +2616,13 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                         placeholder="https://tu-servidor.com/webhook/empresa"
                         className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/70 text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 font-mono"
                       />
-                      <p className="text-[8px] text-white/15 mt-1">Eventos: sale.created · sale.cancelled · customer.created · payment.received · shift.opened · shift.closed</p>
+                      <p className="text-[8px] text-white/15 mt-1">Eventos: sale.created - sale.cancelled - customer.created - payment.received - shift.opened - shift.closed</p>
                     </div>
 
                     {/* Custom CSS */}
                     <div>
                       <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-1">CSS personalizado</p>
-                      <p className="text-[9px] text-white/20 mb-2">Se inyecta en el navegador del cliente. Útil para ajustes de branding, ocultar elementos por selector, etc.</p>
+                      <p className="text-[9px] text-white/20 mb-2">Se inyecta en el navegador del cliente. Util para ajustes de branding, ocultar elementos por selector, etc.</p>
                       <textarea
                         rows={4}
                         value={vendorOverride.customCss}
@@ -2267,8 +2634,8 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
 
                     {/* UI Config (JSON) */}
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-1">Configuración UI (JSON)</p>
-                      <p className="text-[9px] text-white/20 mb-2">Ajustes declarativos sin código. Ej: defaultTab, alertText, loginRedirect.</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-1">Configuracion UI (JSON)</p>
+                      <p className="text-[9px] text-white/20 mb-2">Ajustes declarativos sin codigo. Ej: defaultTab, alertText, loginRedirect.</p>
                       <textarea
                         rows={3}
                         value={JSON.stringify(vendorOverride.uiConfig ?? {}, null, 2)}
@@ -2287,7 +2654,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                         rows={3}
                         value={vendorOverride.notes}
                         onChange={e => setVendorOverride(p => ({ ...p, notes: e.target.value }))}
-                        placeholder="Notas sobre este cliente, acuerdos especiales, customizaciones pendientes…"
+                        placeholder="Notas sobre este cliente, acuerdos especiales, customizaciones pendientes..."
                         className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/70 text-xs placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 resize-none"
                       />
                     </div>
@@ -2311,7 +2678,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                       </button>
                     </div>
                     {vendorOverride.updatedAt && (
-                      <p className="text-[9px] text-white/15">Última actualización: {new Date(vendorOverride.updatedAt).toLocaleString('es-VE')} · por {vendorOverride.updatedBy}</p>
+                      <p className="text-[9px] text-white/15">Ultima actualizacion: {new Date(vendorOverride.updatedAt).toLocaleString('es-VE')} - por {vendorOverride.updatedBy}</p>
                     )}
                   </>
                 )}
@@ -2330,18 +2697,29 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                       <div key={i} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                            h.action === 'activate' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' :
-                            h.action === 'promo'    ? 'bg-amber-500/15 text-amber-400 border-amber-500/25' :
-                            h.action === 'cancel'   ? 'bg-rose-500/15 text-rose-400 border-rose-500/25' :
+                            h.action === 'activate'   ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' :
+                            h.action === 'add_days'   ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' :
+                            h.action === 'reactivate' ? 'bg-sky-500/15 text-sky-400 border-sky-500/25' :
+                            h.action === 'promo'      ? 'bg-amber-500/15 text-amber-400 border-amber-500/25' :
+                            h.action === 'remove_days'? 'bg-amber-500/15 text-amber-400 border-amber-500/25' :
+                            h.action === 'cancel' || h.action === 'deactivate' ? 'bg-rose-500/15 text-rose-400 border-rose-500/25' :
                             'bg-white/[0.06] text-white/30 border-white/[0.08]'
-                          }`}>{h.action === 'activate' ? 'Activación' : h.action === 'promo' ? 'Promo' : h.action === 'cancel' ? 'Cancelación' : h.action}</span>
+                          }`}>{
+                            h.action === 'activate' ? 'Activación' :
+                            h.action === 'add_days' ? '+Días' :
+                            h.action === 'remove_days' ? '-Días' :
+                            h.action === 'reactivate' ? 'Reactivación' :
+                            h.action === 'deactivate' ? 'Desactivación' :
+                            h.action === 'promo' ? 'Promo' :
+                            h.action === 'cancel' ? 'Cancelación' : h.action
+                          }</span>
                           <span className="text-[9px] text-white/20 font-medium">{new Date(h.date).toLocaleDateString('es-VE')}</span>
                         </div>
                         {h.plan      && <p className="text-xs text-white/50 font-medium">Plan: <span className="text-white font-black capitalize">{h.plan}</span></p>}
                         {h.amountUsd && <p className="text-xs text-white/50 font-medium">Monto: <span className="text-emerald-400 font-black">${h.amountUsd}</span></p>}
-                        {h.paymentMethod && <p className="text-xs text-white/50 font-medium">Método: <span className="text-white/70 font-bold">{h.paymentMethod}</span></p>}
+                        {h.paymentMethod && <p className="text-xs text-white/50 font-medium">Metodo: <span className="text-white/70 font-bold">{h.paymentMethod}</span></p>}
                         {h.paymentRef && <p className="text-xs text-white/50 font-medium">Ref: <span className="text-white/70 font-mono text-[10px]">{h.paymentRef}</span></p>}
-                        {h.promo     && <p className="text-xs text-amber-400 font-bold">Promo: {h.promo.code} — −{h.promo.discountPct}% × {h.promo.months}m</p>}
+                        {h.promo     && <p className="text-xs text-amber-400 font-bold">Promo: {h.promo.code} — -{h.promo.discountPct}% x {h.promo.months}m</p>}
                         {h.note      && <p className="text-xs text-white/30 italic mt-1">"{h.note}"</p>}
                         <p className="text-[9px] text-white/15 mt-1.5">por {h.adminEmail}</p>
                       </div>
@@ -2355,6 +2733,133 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
         </>)} {/* end topTab === 'negocios' */}
 
         {/* ═══════════════════════════════════════════════════════════════════
+            TAB: TENANTS / URLs
+            ═══════════════════════════════════════════════════════════════════ */}
+        {topTab === 'tenants' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 min-w-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-black text-white tracking-tight">Tenants / URLs Personalizadas</h2>
+                <p className="text-xs text-white/30 mt-1">Gestiona subdominios para cada negocio — slug.dualis.app</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Globe size={16} className="text-indigo-400/40" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-white/20">
+                  {Object.keys(tenantSlugs).length} asignados
+                </span>
+              </div>
+            </div>
+
+            {/* Summary KPIs */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.06] p-4">
+                <Building2 size={14} className="text-indigo-400 mb-2" />
+                <p className="text-xl font-black text-indigo-400">{businesses.length}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-white/20 mt-1">Total negocios</p>
+              </div>
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] p-4">
+                <Link2 size={14} className="text-emerald-400 mb-2" />
+                <p className="text-xl font-black text-emerald-400">{Object.keys(tenantSlugs).length}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-white/20 mt-1">Con slug asignado</p>
+              </div>
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
+                <AlertTriangle size={14} className="text-amber-400 mb-2" />
+                <p className="text-xl font-black text-amber-400">{businesses.length - Object.keys(tenantSlugs).length}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-white/20 mt-1">Sin slug</p>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div className="relative">
+              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/20" />
+              <input
+                value={tenantSearch}
+                onChange={(e) => setTenantSearch(e.target.value)}
+                placeholder="Buscar negocio por nombre, email o ID..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.07] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              />
+            </div>
+
+            {/* Businesses list */}
+            {tenantsLoading || loading ? (
+              <div className="flex justify-center py-20"><Loader2 size={24} className="animate-spin text-indigo-400" /></div>
+            ) : (
+              <div className="space-y-3">
+                {businesses
+                  .filter(biz => {
+                    if (!tenantSearch) return true;
+                    const q = tenantSearch.toLowerCase();
+                    return (biz.companyName ?? '').toLowerCase().includes(q)
+                      || (biz.ownerEmail ?? '').toLowerCase().includes(q)
+                      || biz.id.toLowerCase().includes(q);
+                  })
+                  .map(biz => {
+                    const currentSlug = tenantSlugs[biz.id];
+                    const inputVal = tenantInputs[biz.id] ?? '';
+                    const isSaving = tenantSaving[biz.id];
+                    const error = tenantErrors[biz.id];
+                    const success = tenantSuccess[biz.id];
+                    const hasChanged = inputVal !== (currentSlug ?? '');
+
+                    return (
+                      <div key={biz.id} className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+                        <div className="flex items-start justify-between gap-4 mb-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-white truncate">{biz.companyName ?? biz.id}</p>
+                            <p className="text-[10px] text-white/25 truncate">{biz.ownerEmail ?? '—'}</p>
+                            <p className="text-[9px] text-white/15 font-mono mt-0.5">{biz.id}</p>
+                          </div>
+                          {currentSlug && (
+                            <div className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                              <Globe size={10} className="text-emerald-400" />
+                              <span className="text-[10px] font-bold text-emerald-400">{currentSlug}.dualis.app</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20 text-xs font-mono">https://</span>
+                            <input
+                              value={inputVal}
+                              onChange={e => setTenantInputs(prev => ({ ...prev, [biz.id]: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                              placeholder="mi-tienda"
+                              className="w-full pl-[72px] pr-[100px] py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.07] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 font-mono"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/15 text-xs font-mono">.dualis.app</span>
+                          </div>
+                          <button
+                            onClick={() => handleSaveTenantSlug(biz)}
+                            disabled={isSaving || !inputVal.trim() || !hasChanged}
+                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5 disabled:opacity-40 shrink-0"
+                            style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
+                          >
+                            {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                            Guardar
+                          </button>
+                        </div>
+
+                        {error && (
+                          <div className="flex items-center gap-2 mt-2 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/20">
+                            <AlertTriangle size={11} className="text-rose-400 shrink-0" />
+                            <p className="text-[10px] text-rose-400 font-medium">{error}</p>
+                          </div>
+                        )}
+                        {success && (
+                          <div className="flex items-center gap-2 mt-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                            <Check size={11} className="text-emerald-400 shrink-0" />
+                            <p className="text-[10px] text-emerald-400 font-medium">Slug guardado exitosamente</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════
             TAB: ROADMAP / CRONOGRAMA
             ═══════════════════════════════════════════════════════════════════ */}
         {topTab === 'roadmap' && (
@@ -2362,7 +2867,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-black text-white tracking-tight">Roadmap del Proyecto</h2>
-                <p className="text-xs text-white/30 mt-1">Beta → Lanzamiento · Marzo — Octubre 2026 · Marca las tareas completadas</p>
+                <p className="text-xs text-white/30 mt-1">Beta - Lanzamiento -- Marzo - Octubre 2026 -- Marca las tareas completadas</p>
               </div>
               <div className="flex items-center gap-3">
                 {roadmapSaving && <Loader2 size={14} className="animate-spin text-indigo-400" />}
@@ -2470,7 +2975,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
             {/* Budget & metrics summary */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
               {[
-                { label: 'Duración total', val: '7 meses', icon: Calendar, color: 'text-indigo-400' },
+                { label: 'Duracion total', val: '7 meses', icon: Calendar, color: 'text-indigo-400' },
                 { label: 'Costo mensual pre-revenue', val: '~$35-55', icon: DollarSign, color: 'text-emerald-400' },
                 { label: 'Meta usuarios lanzamiento', val: '500+', icon: Users, color: 'text-violet-400' },
                 { label: 'Meta MRR lanzamiento', val: '$5,000+', icon: Zap, color: 'text-amber-400' },
@@ -2544,7 +3049,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                       .filter(f => feedbackFilter === 'todos' || f.type === feedbackFilter)
                       .filter(f => feedbackStatusFilter === 'todos' || f.status === feedbackStatusFilter)
                       .length === 0 ? (
-                    <div className="text-center py-20 text-white/15 text-sm">Sin feedback aún</div>
+                    <div className="text-center py-20 text-white/15 text-sm">Sin feedback aun</div>
                   ) : (
                     feedbackItems
                       .filter(f => feedbackFilter === 'todos' || f.type === feedbackFilter)
@@ -2569,7 +3074,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-bold text-white truncate">{fb.name || fb.email || 'Anónimo'}</span>
+                                <span className="text-xs font-bold text-white truncate">{fb.name || fb.email || 'Anonimo'}</span>
                                 <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
                                   fb.status === 'nuevo' ? 'bg-indigo-500/20 text-indigo-400' :
                                   fb.status === 'leido' ? 'bg-white/[0.06] text-white/30' :
@@ -2620,11 +3125,11 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                            <MessageSquare size={20} className="text-sky-400" />}
                         </div>
                         <div>
-                          <p className="text-sm font-black text-white">{selectedFeedback.name || 'Anónimo'}</p>
+                          <p className="text-sm font-black text-white">{selectedFeedback.name || 'Anonimo'}</p>
                           <p className="text-[11px] text-white/30">{selectedFeedback.email || 'Sin email'}</p>
                           <p className="text-[9px] text-white/15 mt-0.5">
                             {selectedFeedback.createdAt?.toDate ? selectedFeedback.createdAt.toDate().toLocaleString('es-VE') : '—'}
-                            {selectedFeedback.businessId && ` · ${selectedFeedback.businessId}`}
+                            {selectedFeedback.businessId && ` - ${selectedFeedback.businessId}`}
                           </p>
                         </div>
                       </div>
@@ -2643,7 +3148,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                         selectedFeedback.type === 'idea' ? 'bg-amber-500/15 text-amber-400 border-amber-500/25' :
                         'bg-sky-500/15 text-sky-400 border-sky-500/25'
                       }`}>
-                        {selectedFeedback.type === 'bug' ? '🐛 Bug Report' : selectedFeedback.type === 'idea' ? '💡 Sugerencia' : '💬 Comentario'}
+                        {selectedFeedback.type === 'bug' ? 'Bug Report' : selectedFeedback.type === 'idea' ? 'Sugerencia' : 'Comentario'}
                       </span>
                       <span className="text-white/10">→</span>
                       {/* Status selector */}
@@ -2718,7 +3223,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                       </div>
                       {(selectedFeedback as any).bonusDaysGranted && (
                         <p className="text-[9px] text-emerald-400/40 mt-2">
-                          Ya se otorgaron +{(selectedFeedback as any).bonusDaysGranted} dias · por {(selectedFeedback as any).bonusGrantedBy}
+                          Ya se otorgaron +{(selectedFeedback as any).bonusDaysGranted} dias - por {(selectedFeedback as any).bonusGrantedBy}
                         </p>
                       )}
                     </div>
@@ -2773,7 +3278,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
               </div>
               <div>
                 <h2 className="text-sm font-black text-white">Asistente IA — Dualis</h2>
-                <p className="text-[10px] text-white/25">Gemini 2.0 Flash · Datos en vivo del sistema · Preguntame lo que quieras</p>
+                <p className="text-[10px] text-white/25">Gemini 2.0 Flash -- Datos en vivo del sistema -- Preguntame lo que quieras</p>
               </div>
               {aiMessages.length > 0 && (
                 <button onClick={() => setAiMessages([])} className="ml-auto text-[9px] font-black uppercase tracking-widest text-white/20 hover:text-white/50 px-3 py-1.5 rounded-lg border border-white/[0.06] hover:bg-white/[0.04] transition-all">
@@ -2852,12 +3357,12 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                   <Send size={14} />
                 </button>
               </div>
-              <p className="text-[9px] text-white/15 mt-2 text-center">Gemini 2.0 Flash · Los datos se cargan en vivo desde Firestore · Requiere VITE_GEMINI_API_KEY</p>
+              <p className="text-[9px] text-white/15 mt-2 text-center">Gemini 2.0 Flash -- Los datos se cargan en vivo desde Firestore -- Requiere VITE_GEMINI_API_KEY</p>
             </div>
           </div>
         )}
 
-      </div>
+      </main>
     </div>
   );
 }

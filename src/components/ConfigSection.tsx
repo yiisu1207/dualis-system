@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AppConfig, AuditLog } from '../../types';
+import { AppConfig, AuditLog, CustomRate } from '../../types';
 import {
   Building,
   Users,
@@ -18,8 +18,19 @@ import {
   Lock,
   Unlock,
   Info,
+  CreditCard,
+  Plus,
+  Trash2,
+  Zap,
+  Edit3,
+  Database,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useRates } from '../context/RatesContext';
+import { getSlugForBusiness, registerTenantSlug, isSlugAvailable, buildSubdomainUrl } from '../utils/tenantResolver';
+import { seedTestData } from '../utils/seedTestData';
 
 interface ConfigSectionProps {
   config: AppConfig;
@@ -33,6 +44,7 @@ interface ConfigSectionProps {
     | 'PERSONALIZACION'
     | 'SISTEMA'
     | 'FISCAL'
+    | 'CREDITO'
     | 'MENSAJES'
     | 'OPERACION'
     | 'AUDITORIA';
@@ -52,17 +64,72 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
   userUiVersion,
   onUpdateUiVersion,
   businessId,
+  currentUser,
 }) => {
   const { success, error, warning, info } = useToast();
   const navigate = useNavigate();
+  const { customRates, zoherEnabled, updateCustomRates, setZoherEnabled } = useRates();
   const [localConfig, setLocalConfig] = useState<AppConfig>(config);
+  const [localCustomRates, setLocalCustomRates] = useState<CustomRate[]>([]);
   const [activeTab, setActiveTab] = useState<
-    'EMPRESA' | 'USUARIOS' | 'PERSONALIZACION' | 'SISTEMA' | 'FISCAL' | 'MENSAJES' | 'OPERACION' | 'AUDITORIA'
+    'EMPRESA' | 'USUARIOS' | 'PERSONALIZACION' | 'SISTEMA' | 'FISCAL' | 'CREDITO' | 'MENSAJES' | 'OPERACION' | 'AUDITORIA' | 'DEV'
   >('EMPRESA');
+  const [seedProgress, setSeedProgress] = useState<{ msg: string; pct: number } | null>(null);
+  const [seedResult, setSeedResult] = useState<{ products: number; customers: number; suppliers: number; movements: number; terminals: number } | null>(null);
   const [auditQuery, setAuditQuery] = useState('');
   const [auditActionFilter, setAuditActionFilter] = useState('ALL');
   const [auditUserFilter, setAuditUserFilter] = useState('ALL');
   const [auditModuleFilter, setAuditModuleFilter] = useState('ALL');
+
+  // Slug / URL personalizada
+  const [currentSlug, setCurrentSlug] = useState<string | null>(null);
+  const [slugInput, setSlugInput] = useState('');
+  const [slugCheck, setSlugCheck] = useState<'idle' | 'checking' | 'available' | 'taken' | 'saved'>('idle');
+  const [slugSaving, setSlugSaving] = useState(false);
+  const slugTimerRef = React.useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (businessId) {
+      getSlugForBusiness(businessId).then(slug => {
+        setCurrentSlug(slug);
+        if (slug) setSlugInput(slug);
+      });
+    }
+  }, [businessId]);
+
+  useEffect(() => {
+    setLocalCustomRates(customRates);
+  }, [customRates]);
+
+  const handleSlugChange = (val: string) => {
+    const normalized = val.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    setSlugInput(normalized);
+    setSlugCheck('idle');
+    clearTimeout(slugTimerRef.current);
+    if (normalized.length >= 3 && normalized !== currentSlug) {
+      setSlugCheck('checking');
+      slugTimerRef.current = setTimeout(() => {
+        isSlugAvailable(normalized).then(available => {
+          setSlugCheck(available ? 'available' : 'taken');
+        });
+      }, 500);
+    }
+  };
+
+  const handleSlugSave = async () => {
+    if (!businessId || !slugInput || slugInput.length < 3) return;
+    setSlugSaving(true);
+    const result = await registerTenantSlug(slugInput, businessId, localConfig.companyName || 'Mi Negocio', localConfig.companyLogo);
+    if (result.ok) {
+      setCurrentSlug(slugInput);
+      setSlugCheck('saved');
+      success('URL personalizada guardada correctamente.');
+    } else {
+      const msg = 'error' in result ? result.error : 'Error al guardar';
+      error(msg);
+    }
+    setSlugSaving(false);
+  };
 
   useEffect(() => {
     setLocalConfig(config);
@@ -106,6 +173,16 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
       localStorage.setItem('fiscal_igtf_rate', String(fiscal.igtfRate ?? 3));
       localStorage.setItem('fiscal_iva_enabled', String(fiscal.ivaEnabled ?? true));
       localStorage.setItem('fiscal_scanner_enabled', String(fiscal.scannerEnabled ?? true));
+    }
+
+    // Credit policy settings
+    const cp = localConfig.creditPolicy;
+    if (cp) {
+      localStorage.setItem('credit_policy_enabled', String(cp.enabled));
+      localStorage.setItem('credit_default_limit', String(cp.defaultCreditLimit));
+      localStorage.setItem('credit_grace_period', String(cp.gracePeriodDays));
+      localStorage.setItem('credit_early_payment_tiers', JSON.stringify(cp.earlyPaymentTiers));
+      localStorage.setItem('credit_require_abono_approval', String(cp.requireAbonoApproval ?? true));
     }
 
     success('Configuración guardada correctamente.');
@@ -212,10 +289,12 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
             { id: 'PERSONALIZACION', icon: Palette, label: 'Estilo' },
             { id: 'SISTEMA', icon: Settings, label: 'Sistema' },
             { id: 'FISCAL', icon: Calculator, label: 'Fiscal / POS' },
+            { id: 'CREDITO', icon: CreditCard, label: 'Crédito' },
             { id: 'OPERACION', icon: GitCompare, label: 'Operación' },
             { id: 'AUDITORIA', icon: Shield, label: 'Auditoría' },
+            { id: 'DEV', icon: Database, label: 'Dev / Test' },
           ].map((tab) =>
-            tab.id === 'AUDITORIA' && !['admin', 'owner'].includes(userRole) ? null : (
+            (tab.id === 'AUDITORIA' || tab.id === 'DEV') && !['admin', 'owner'].includes(userRole) ? null : (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
@@ -273,9 +352,59 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                 <input className={inputClass} value={localConfig.companyRif || ''} onChange={(e) => setLocalConfig({ ...localConfig, companyRif: e.target.value.toUpperCase() })} placeholder="J-12345678-9" />
               </div>
               <div>
-                <label className={labelClass}>Codigo de Espacio</label>
+                <label className={labelClass}>Identificador Interno</label>
                 <input className={inputClass} value={businessId || 'Pendiente...'} readOnly />
               </div>
+
+              {/* URL Personalizada */}
+              {(userRole === 'owner' || userRole === 'admin') && (
+              <div className="p-5 rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.04]">
+                <label className={labelClass}>URL Personalizada</label>
+                <p className="text-xs text-slate-500 dark:text-white/30 mb-3">
+                  Tus usuarios podrán acceder directamente desde esta URL.
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/20 text-xs font-mono pointer-events-none select-none">
+                      https://
+                    </span>
+                    <input
+                      className={`${inputClass} pl-[4.2rem] pr-[5.5rem] font-mono text-sm ${
+                        slugCheck === 'available' ? '!border-emerald-500/40' :
+                        slugCheck === 'taken' ? '!border-red-500/40' :
+                        slugCheck === 'saved' ? '!border-emerald-500/40' : ''
+                      }`}
+                      value={slugInput}
+                      onChange={e => handleSlugChange(e.target.value)}
+                      placeholder="mi-empresa"
+                      maxLength={30}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/15 text-[10px] font-mono pointer-events-none select-none">
+                      .dualis.app
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleSlugSave}
+                    disabled={slugSaving || slugCheck === 'taken' || slugInput.length < 3 || slugInput === currentSlug}
+                    className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30 hover:from-indigo-500 hover:to-violet-500 transition-all shrink-0"
+                  >
+                    {slugSaving ? 'Guardando...' : 'Guardar'}
+                  </button>
+                </div>
+                <div className="mt-2 ml-1">
+                  {slugCheck === 'checking' && <p className="text-[10px] text-slate-400 dark:text-white/30 font-bold">Verificando...</p>}
+                  {slugCheck === 'available' && <p className="text-[10px] text-emerald-500 font-bold">Disponible</p>}
+                  {slugCheck === 'taken' && <p className="text-[10px] text-red-400 font-bold">No disponible</p>}
+                  {slugCheck === 'saved' && <p className="text-[10px] text-emerald-500 font-bold">Guardado — tu URL es: {slugInput}.dualis.app</p>}
+                  {currentSlug && slugCheck === 'idle' && (
+                    <p className="text-[10px] text-slate-500 dark:text-white/25 font-bold">
+                      URL actual: <span className="text-indigo-400 font-mono">{currentSlug}.dualis.app</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+              )}
+
               <div>
                 <label className={labelClass}>Mensaje en Recibos</label>
                 <input className={inputClass} value={localConfig.receiptMessage || ''} onChange={(e) => setLocalConfig({ ...localConfig, receiptMessage: e.target.value })} placeholder="¡Gracias por su compra!" />
@@ -444,7 +573,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                     type="number" min="0" max="100" step="0.5"
                     value={localConfig.fiscal?.igtfRate ?? 3}
                     onChange={(e) => setLocalConfig({ ...localConfig, fiscal: { igtfEnabled: localConfig.fiscal?.igtfEnabled ?? true, igtfRate: parseFloat(e.target.value) || 3, ivaEnabled: localConfig.fiscal?.ivaEnabled ?? true, scannerEnabled: localConfig.fiscal?.scannerEnabled ?? true } })}
-                    className="w-24 px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 rounded-xl text-sm font-black text-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-400 text-center"
+                    className="w-24 px-3 py-2 bg-white dark:bg-slate-900 border border-amber-200 rounded-xl text-sm font-black text-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-400 text-center"
                   />
                   <span className="text-xs font-bold text-amber-600">
                     Actual: {localConfig.fiscal?.igtfRate ?? 3}%
@@ -494,6 +623,206 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
           </div>
         )}
 
+        {/* --- TAB: CRÉDITO --- */}
+        {activeTab === 'CREDITO' && (() => {
+          const cp = localConfig.creditPolicy ?? { enabled: false, defaultCreditLimit: 0, earlyPaymentTiers: [], gracePeriodDays: 30, requireAbonoApproval: true };
+          const updateCP = (patch: Partial<typeof cp>) => setLocalConfig({ ...localConfig, creditPolicy: { ...cp, ...patch } });
+          return (
+            <div className="max-w-2xl mx-auto space-y-6 animate-in zoom-in-95 duration-300">
+
+              {/* Enable credit system */}
+              <div className="p-6 bg-violet-50 dark:bg-violet-500/5 rounded-[2rem] border border-violet-100 dark:border-violet-500/20">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-black text-violet-800 dark:text-violet-300 text-sm uppercase tracking-widest flex items-center gap-2">
+                      <CreditCard size={16} /> Sistema de Crédito
+                    </h3>
+                    <p className="text-xs text-violet-600 dark:text-violet-400/70 mt-0.5">Habilita ventas a crédito con control de límites y pronto pago</p>
+                  </div>
+                  <button
+                    onClick={() => updateCP({ enabled: !cp.enabled })}
+                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${cp.enabled ? 'bg-gradient-to-r from-violet-500 to-purple-600' : 'bg-slate-200 dark:bg-white/10'}`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${cp.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              </div>
+
+              {cp.enabled && (
+                <>
+                  {/* Default credit limit */}
+                  <div className="p-6 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-white/10 shadow-sm">
+                    <h3 className="font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest mb-1">Límite de Crédito por Defecto</h3>
+                    <p className="text-[11px] text-slate-400 mb-4">Aplica a clientes nuevos sin límite individual. $0 = sin límite.</p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-black text-slate-400">$</span>
+                      <input
+                        type="number" min="0" step="100"
+                        value={cp.defaultCreditLimit || ''}
+                        onChange={(e) => updateCP({ defaultCreditLimit: parseFloat(e.target.value) || 0 })}
+                        placeholder="0.00"
+                        className="w-40 px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-lg font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none"
+                      />
+                      <span className="text-xs font-bold text-slate-400">USD</span>
+                    </div>
+                  </div>
+
+                  {/* Grace period */}
+                  <div className="p-6 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-white/10 shadow-sm">
+                    <h3 className="font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest mb-1">Período de Gracia</h3>
+                    <p className="text-[11px] text-slate-400 mb-4">Días después del vencimiento antes de bloquear nuevas ventas a crédito.</p>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number" min="0" max="365"
+                        value={cp.gracePeriodDays || ''}
+                        onChange={(e) => updateCP({ gracePeriodDays: parseInt(e.target.value) || 0 })}
+                        placeholder="30"
+                        className="w-24 px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-lg font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none text-center"
+                      />
+                      <span className="text-xs font-bold text-slate-400">días</span>
+                    </div>
+                  </div>
+
+                  {/* Early payment tiers */}
+                  <div className="p-6 bg-emerald-50 dark:bg-emerald-500/5 rounded-[2rem] border border-emerald-100 dark:border-emerald-500/20">
+                    <div className="flex items-center justify-between gap-4 mb-4">
+                      <div>
+                        <h3 className="font-black text-emerald-800 dark:text-emerald-300 text-sm uppercase tracking-widest">Descuento por Pronto Pago</h3>
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400/70 mt-0.5">Incentiva pagos anticipados con descuentos automáticos (VEN-NIF legal)</p>
+                      </div>
+                      <button
+                        onClick={() => updateCP({ earlyPaymentTiers: [...cp.earlyPaymentTiers, { maxDays: 7, discountPercent: 3, label: '7 días' }] })}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md shadow-emerald-500/25"
+                      >
+                        <Plus size={12} /> Agregar
+                      </button>
+                    </div>
+
+                    {cp.earlyPaymentTiers.length === 0 ? (
+                      <p className="text-xs text-emerald-500/60 font-bold text-center py-4">No hay tiers configurados. Agrega uno para habilitar descuento por pronto pago.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {cp.earlyPaymentTiers.map((tier, idx) => (
+                          <div key={idx} className="flex items-center gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-emerald-100 dark:border-emerald-500/15">
+                            <div className="flex-1 grid grid-cols-3 gap-3">
+                              <div>
+                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Máx. Días</label>
+                                <input type="number" min="1" value={tier.maxDays}
+                                  onChange={(e) => {
+                                    const tiers = [...cp.earlyPaymentTiers];
+                                    tiers[idx] = { ...tier, maxDays: parseInt(e.target.value) || 7 };
+                                    updateCP({ earlyPaymentTiers: tiers });
+                                  }}
+                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-black text-center" />
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Descuento %</label>
+                                <input type="number" min="0" max="100" step="0.5" value={tier.discountPercent}
+                                  onChange={(e) => {
+                                    const tiers = [...cp.earlyPaymentTiers];
+                                    tiers[idx] = { ...tier, discountPercent: parseFloat(e.target.value) || 0 };
+                                    updateCP({ earlyPaymentTiers: tiers });
+                                  }}
+                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-black text-center" />
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Etiqueta</label>
+                                <input value={tier.label}
+                                  onChange={(e) => {
+                                    const tiers = [...cp.earlyPaymentTiers];
+                                    tiers[idx] = { ...tier, label: e.target.value };
+                                    updateCP({ earlyPaymentTiers: tiers });
+                                  }}
+                                  placeholder="Ej: 7 días"
+                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-bold" />
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                const tiers = cp.earlyPaymentTiers.filter((_, i) => i !== idx);
+                                updateCP({ earlyPaymentTiers: tiers });
+                              }}
+                              className="h-9 w-9 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/20 flex items-center justify-center transition-all shrink-0"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {cp.earlyPaymentTiers.length > 0 && (
+                      <div className="mt-4 p-3 bg-emerald-100/50 dark:bg-emerald-500/10 rounded-xl">
+                        <p className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest mb-1">Vista previa</p>
+                        <div className="flex flex-wrap gap-2">
+                          {cp.earlyPaymentTiers.sort((a, b) => a.maxDays - b.maxDays).map((t, i) => (
+                            <span key={i} className="px-3 py-1.5 bg-white dark:bg-slate-900 rounded-lg text-xs font-black text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
+                              ≤{t.maxDays}d → {t.discountPercent}% desc.
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Abono approval toggle */}
+                  <div className="p-6 bg-amber-50 dark:bg-amber-500/5 rounded-[2rem] border border-amber-100 dark:border-amber-500/20">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <h3 className="font-black text-amber-800 dark:text-amber-300 text-sm uppercase tracking-widest flex items-center gap-2">
+                          <Shield size={16} /> Aprobación de Abonos
+                        </h3>
+                        <p className="text-xs text-amber-600 dark:text-amber-400/70 mt-0.5">
+                          Los vendedores registran solicitudes de abono. Un administrador debe aprobar antes de aplicar el pago a la cuenta del cliente.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => updateCP({ requireAbonoApproval: !(cp.requireAbonoApproval ?? true) })}
+                        className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${(cp.requireAbonoApproval ?? true) ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-slate-200 dark:bg-white/10'}`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(cp.requireAbonoApproval ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                    {(cp.requireAbonoApproval ?? true) && (
+                      <div className="mt-3 p-3 bg-amber-100/50 dark:bg-amber-500/10 rounded-xl">
+                        <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 leading-relaxed">
+                          <strong>Flujo:</strong> Vendedor registra abono → Aparece como solicitud pendiente → Admin revisa y aprueba/rechaza → Si aprueba, se crea el movimiento ABONO automáticamente.
+                        </p>
+                      </div>
+                    )}
+                    {!(cp.requireAbonoApproval ?? true) && (
+                      <div className="mt-3 p-3 bg-slate-100 dark:bg-slate-800/50 rounded-xl">
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                          <strong>Modo directo:</strong> Los vendedores pueden registrar abonos directamente sin aprobación. Solo recomendado si confías plenamente en tu equipo.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Multi-account info */}
+                  <div className="p-6 bg-sky-50 dark:bg-sky-500/5 rounded-[2rem] border border-sky-100 dark:border-sky-500/20">
+                    <h3 className="font-black text-sky-800 dark:text-sky-300 text-sm uppercase tracking-widest flex items-center gap-2 mb-2">
+                      <Info size={16} /> Multi-Cuenta (BCV / Grupo / Divisa)
+                    </h3>
+                    <p className="text-xs text-sky-600 dark:text-sky-400/70 leading-relaxed">
+                      El sistema soporta 3 tipos de cuenta por cliente: <strong>BCV</strong> (tasa oficial), <strong>Grupo</strong> (tasa paralela) y <strong>Divisa</strong> (solo USD).
+                      Cada producto puede tener un precio diferente por cuenta. Los precios se configuran en <strong>Inventario → editar producto</strong>.
+                      Las tasas se gestionan desde <strong>Finanzas → Tasas</strong>.
+                    </p>
+                    <p className="text-[10px] font-bold text-sky-500/70 dark:text-sky-400/50 mt-2 uppercase tracking-widest">
+                      Gestión interna — La factura fiscal siempre muestra tasa BCV (cumplimiento legal)
+                    </p>
+                  </div>
+                </>
+              )}
+
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center">
+                Recuerda guardar los cambios para que apliquen en todo el sistema.
+              </p>
+            </div>
+          );
+        })()}
+
         {/* --- TAB: MENSAJES --- */}
         {activeTab === 'MENSAJES' && (
           <div className="max-w-3xl mx-auto space-y-6 animate-in zoom-in-95 duration-300">
@@ -510,7 +839,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                       <input className="app-input w-full max-w-[260px]" value={template.name} onChange={(e) => handleUpdateTemplate(template.id, { name: e.target.value })} placeholder="Nombre de plantilla" />
                       <button type="button" onClick={() => handleDeleteTemplate(template.id)} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-black uppercase">Eliminar</button>
                     </div>
-                    <textarea className="mt-3 w-full min-h-[90px] rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 p-3 text-xs font-semibold text-slate-700 dark:text-slate-300" value={template.body} onChange={(e) => handleUpdateTemplate(template.id, { body: e.target.value })} placeholder="Escribe el mensaje..." />
+                    <textarea className="mt-3 w-full min-h-[90px] rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 text-xs font-semibold text-slate-700 dark:text-slate-300" value={template.body} onChange={(e) => handleUpdateTemplate(template.id, { body: e.target.value })} placeholder="Escribe el mensaje..." />
                   </div>
                 ))}
               </div>
@@ -620,6 +949,140 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                 </div>
               )}
 
+              {/* ── Extensión de Tasas Personalizadas ── */}
+              <div className="border-t border-slate-200 dark:border-white/10 pt-6 mt-2">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                      <Zap size={18} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        Precios Dinámicos por Tasa
+                        <span className="relative group cursor-help">
+                          <Info size={12} className="text-slate-400 dark:text-slate-600" />
+                          <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-900 text-[10px] text-white/80 font-medium shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 text-center leading-relaxed">
+                            Habilita precios que se recalculan automaticamente segun las tasas. Los productos se clasifican como BCV (estatico) o tasa custom (dinamico) en Inventario.
+                          </span>
+                        </span>
+                      </p>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">
+                        Extensión de tasas personalizadas
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await setZoherEnabled(!zoherEnabled);
+                      success(zoherEnabled ? 'Extensión desactivada' : 'Extensión activada');
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      zoherEnabled ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-slate-300 dark:bg-white/10'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-md transition-transform ${
+                      zoherEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </div>
+
+                {zoherEnabled && (
+                  <div className="space-y-4 animate-in slide-in-from-top-2 duration-200">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Los productos clasificados bajo estas tasas tendrán precios que se recalculan automáticamente al actualizar las tasas del día.
+                      En POS no se pueden mezclar productos de tasas distintas en una misma venta.
+                    </p>
+
+                    {/* Custom rates list */}
+                    <div className="space-y-2">
+                      {localCustomRates.map((rate, idx) => (
+                        <div key={rate.id} className="flex items-center gap-2 p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50">
+                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                            <Edit3 size={12} className="text-slate-400 shrink-0" />
+                            <input
+                              type="text"
+                              value={rate.name}
+                              onChange={(e) => {
+                                const updated = [...localCustomRates];
+                                updated[idx] = { ...updated[idx], name: e.target.value };
+                                setLocalCustomRates(updated);
+                              }}
+                              placeholder="Nombre de la tasa"
+                              className="flex-1 min-w-0 bg-transparent text-sm font-bold text-slate-700 dark:text-white placeholder:text-slate-300 dark:placeholder:text-white/20 outline-none"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">Bs/$</span>
+                            <input
+                              type="number"
+                              value={rate.value || ''}
+                              onChange={(e) => {
+                                const updated = [...localCustomRates];
+                                updated[idx] = { ...updated[idx], value: parseFloat(e.target.value) || 0 };
+                                setLocalCustomRates(updated);
+                              }}
+                              step="0.01"
+                              className="w-20 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-700 dark:text-white text-right outline-none focus:ring-2 focus:ring-amber-500"
+                            />
+                          </div>
+                          <button
+                            onClick={() => {
+                              const updated = [...localCustomRates];
+                              updated[idx] = { ...updated[idx], enabled: !updated[idx].enabled };
+                              setLocalCustomRates(updated);
+                            }}
+                            className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${
+                              rate.enabled
+                                ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-slate-100 dark:bg-white/[0.05] text-slate-400'
+                            }`}
+                          >
+                            {rate.enabled ? 'ON' : 'OFF'}
+                          </button>
+                          <button
+                            onClick={() => setLocalCustomRates(localCustomRates.filter((_, i) => i !== idx))}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add rate button */}
+                    {localCustomRates.length < 3 && (
+                      <button
+                        onClick={() => {
+                          setLocalCustomRates([
+                            ...localCustomRates,
+                            { id: `RATE_${Date.now()}`, name: '', value: 0, enabled: true },
+                          ]);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/10 text-slate-400 hover:border-amber-400 hover:text-amber-500 transition-all text-[10px] font-black uppercase tracking-widest w-full justify-center"
+                      >
+                        <Plus size={13} /> Agregar tasa ({localCustomRates.length}/3)
+                      </button>
+                    )}
+
+                    {/* Save custom rates */}
+                    <button
+                      onClick={async () => {
+                        const invalid = localCustomRates.find((r) => !r.name.trim());
+                        if (invalid) {
+                          error('Todas las tasas deben tener un nombre');
+                          return;
+                        }
+                        await updateCustomRates(localCustomRates);
+                        success('Tasas personalizadas guardadas');
+                      }}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-amber-400 hover:to-orange-400 transition-all shadow-lg shadow-amber-500/25"
+                    >
+                      <Save size={13} /> Guardar tasas
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Save button */}
               <button
                 onClick={() => {
@@ -672,6 +1135,107 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+        {/* --- TAB: DEV / TEST --- */}
+        {activeTab === 'DEV' && (
+          <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 overflow-hidden animate-in zoom-in-95 duration-300 p-6 space-y-6">
+            <div>
+              <h3 className="text-lg font-black text-slate-800 dark:text-white">Datos de Prueba</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Carga datos de prueba para probar todas las funciones del sistema: productos, clientes, proveedores, ventas, gastos, terminales, arqueos.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-amber-500/20 bg-amber-50 dark:bg-amber-500/[0.08] p-4 flex items-start gap-3">
+              <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-amber-800 dark:text-amber-400">Advertencia</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400/70 mt-1">
+                  Esto creará datos ficticios en tu negocio. Ideal para testing y demos. Los datos se pueden eliminar después manualmente.
+                </p>
+              </div>
+            </div>
+
+            {seedResult && (
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/[0.08] p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-500" />
+                  <p className="text-sm font-black text-emerald-700 dark:text-emerald-400">Datos cargados exitosamente</p>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-2">
+                  {[
+                    { label: 'Productos', count: seedResult.products },
+                    { label: 'Clientes', count: seedResult.customers },
+                    { label: 'Proveedores', count: seedResult.suppliers },
+                    { label: 'Movimientos', count: seedResult.movements },
+                    { label: 'Terminales', count: seedResult.terminals },
+                  ].map(s => (
+                    <div key={s.label} className="text-center p-2 rounded-lg bg-emerald-100 dark:bg-emerald-500/10">
+                      <p className="text-lg font-black text-emerald-700 dark:text-emerald-400">{s.count}</p>
+                      <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {seedProgress && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 size={14} className="text-indigo-500 animate-spin" />
+                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300">{seedProgress.msg}</p>
+                </div>
+                <div className="w-full h-2 bg-slate-100 dark:bg-white/[0.07] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-500"
+                    style={{ width: `${seedProgress.pct}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={async () => {
+                if (!businessId) { error('No se encontró el businessId'); return; }
+                const uid = currentUser?.uid || 'test-owner';
+                setSeedResult(null);
+                setSeedProgress({ msg: 'Iniciando...', pct: 0 });
+                try {
+                  const result = await seedTestData(businessId, uid, (msg, pct) => {
+                    setSeedProgress({ msg, pct });
+                  });
+                  setSeedResult(result);
+                  setSeedProgress(null);
+                  success(`Datos de prueba cargados: ${result.products} productos, ${result.movements} movimientos`);
+                } catch (e: any) {
+                  console.error('[Seed]', e);
+                  error('Error al cargar datos: ' + (e.message || 'Error desconocido'));
+                  setSeedProgress(null);
+                }
+              }}
+              disabled={!!seedProgress}
+              className="flex items-center gap-2 px-8 py-3 rounded-xl text-sm font-black text-white transition-all hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
+              style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
+            >
+              {seedProgress ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />}
+              Cargar datos de prueba
+            </button>
+
+            <div className="border-t border-slate-200 dark:border-white/10 pt-4">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Lo que se creará:</p>
+              <ul className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
+                <li>30 productos con precios, márgenes, stock y categorías variadas</li>
+                <li>8 clientes con datos completos y límites de crédito</li>
+                <li>5 proveedores con RIF y categoría</li>
+                <li>120 ventas (facturas) distribuidas en los últimos 30 días</li>
+                <li>15 abonos de clientes (pagos parciales)</li>
+                <li>20 gastos/compras (CxP) con categorías variadas</li>
+                <li>3 terminales POS (2 detal + 1 mayor)</li>
+                <li>5 arqueos históricos con conteo de billetes</li>
+                <li>Configuración fiscal completa (IVA + IGTF)</li>
+              </ul>
             </div>
           </div>
         )}

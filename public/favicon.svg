@@ -1,10 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
   <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4f46e5"/>
-      <stop offset="100%" stop-color="#7c3aed"/>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d1424"/>
+      <stop offset="100%" stop-color="#070b14"/>
     </linearGradient>
   </defs>
-  <rect width="100" height="100" rx="22" fill="url(#g)"/>
-  <text x="50" y="72" font-family="system-ui,-apple-system,sans-serif" font-weight="900" font-size="68" fill="white" text-anchor="middle">D</text>
+  <rect width="100" height="100" rx="22" fill="url(#bg)"/>
+  <!-- Cyan circle -->
+  <circle cx="40" cy="44" r="18" fill="none" stroke="#06d6d0" stroke-width="6"/>
+  <!-- Purple circle -->
+  <circle cx="60" cy="44" r="18" fill="none" stroke="#8b5cf6" stroke-width="6"/>
 </svg>

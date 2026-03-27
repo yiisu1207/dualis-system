@@ -7,42 +7,12 @@ import {
 } from 'lucide-react';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { useSubscription, PLAN_BASE_PRICE } from '../hooks/useSubscription';
+import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../context/AuthContext';
 import { uploadToCloudinary } from '../utils/cloudinary';
+import { PLANS as PLAN_CONFIG, PAYMENT_INFO, type PayMethod } from '../utils/planConfig';
 
-// ─── Payment details ─────────────────────────────────────────────────────────
-const PAYMENT_INFO = {
-  binance: {
-    label: 'Binance Pay',
-    id:    '1110745526',
-    note:  'Envía USDT (BEP20 o Binance Pay directo)',
-  },
-  pago_movil: {
-    label: 'Pago Móvil',
-    banco:    'Bancamiga (0172)',
-    cedula:   'V-32477241',
-    telefono: '04125343141',
-    note:     'Concepto: Dualis + nombre de tu empresa',
-  },
-  transferencia: {
-    label:    'Transferencia',
-    banco:    'Bancamiga (0172)',
-    nombre:   'Jesús Miguel Alexander Salazar Álvarez',
-    cedula:   'V-32477241',
-    cuenta:   '01720702427025760104',
-    tipo:     'Cuenta Corriente Amiga',
-  },
-  paypal: {
-    label: 'PayPal',
-    email: 'svillarroel154@gmail.com',
-    note:  'Enviar como "Amigos y familiares" para evitar comisiones',
-  },
-} as const;
-
-type PayMethod = keyof typeof PAYMENT_INFO;
-
-// ─── Plan data ───────────────────────────────────────────────────────────────
+// ─── Plan data (enriched from planConfig) ─────────────────────────────────────
 interface Plan {
   id: 'starter' | 'negocio' | 'enterprise';
   name: string;
@@ -55,26 +25,20 @@ interface Plan {
   popular?: boolean;
 }
 
-const PLANS: Plan[] = [
-  {
-    id: 'starter', name: 'Starter', monthlyPrice: PLAN_BASE_PRICE.starter,
-    Icon: Zap,
-    color: 'sky', gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/25',
-    features: ['2 usuarios', '500 productos', 'POS Detal', 'Inventario', 'Clientes / CxC', 'Cajas', 'Reportes'],
-  },
-  {
-    id: 'negocio', name: 'Negocio', monthlyPrice: PLAN_BASE_PRICE.negocio,
-    Icon: Building2, popular: true,
-    color: 'indigo', gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/25',
-    features: ['5 usuarios', '2 000 productos', 'Todo Starter', 'POS Mayor (crédito)', 'Proveedores / CxP', 'RRHH', '1 sucursal', 'Comparar libros'],
-  },
-  {
-    id: 'enterprise', name: 'Enterprise', monthlyPrice: PLAN_BASE_PRICE.enterprise,
-    Icon: Crown,
-    color: 'violet', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/25',
-    features: ['Usuarios ilimitados', 'Productos ilimitados', 'Todo Negocio', '3 sucursales', 'VisionLab IA (add-on)', 'Conciliación bancaria (add-on)', 'Soporte prioritario'],
-  },
+const PLAN_STYLES: { Icon: React.FC<{ size?: number; className?: string }>; color: string; gradient: string; shadow: string }[] = [
+  { Icon: Zap,       color: 'sky',    gradient: 'from-sky-500 to-blue-600',      shadow: 'shadow-sky-500/25' },
+  { Icon: Building2, color: 'indigo', gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/25' },
+  { Icon: Crown,     color: 'violet', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/25' },
 ];
+
+const PLANS: Plan[] = PLAN_CONFIG.map((p, i) => ({
+  id: p.id,
+  name: p.name,
+  monthlyPrice: p.price,
+  features: p.features,
+  popular: p.popular,
+  ...PLAN_STYLES[i],
+}));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function StatusBadge({ status, daysLeft }: { status: string; daysLeft: number | null }) {
@@ -87,8 +51,8 @@ function StatusBadge({ status, daysLeft }: { status: string; daysLeft: number | 
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function BillingPage() {
-  const { empresa_id } = useParams<{ empresa_id: string }>();
   const navigate = useNavigate();
+  const { empresa_id } = useParams<{ empresa_id: string }>();
   const { userProfile } = useAuth();
   const businessId = userProfile?.businessId || empresa_id || '';
 
@@ -174,7 +138,7 @@ export default function BillingPage() {
   // ── Success state ────────────────────────────────────────────────────────
   if (submitted) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] flex items-center justify-center p-6">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center p-6">
         <div className="max-w-md w-full text-center">
           <div className="w-20 h-20 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-2xl shadow-emerald-500/20">
             <CheckCheck size={36} className="text-white" />
@@ -196,7 +160,7 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] font-inter transition-colors">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-800/50 font-inter transition-colors">
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.07] px-6 py-4 flex items-center justify-between">
@@ -216,7 +180,7 @@ export default function BillingPage() {
 
         {/* ── Status ──────────────────────────────────────────────────────── */}
         {subscription && (
-          <div className="flex items-center justify-between bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.07] rounded-2xl px-6 py-4 shadow-sm">
+          <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.07] rounded-2xl px-6 py-4 shadow-sm">
             <div>
               <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Plan actual</p>
               <p className="text-base font-black text-slate-900 dark:text-white capitalize">{subscription.plan}</p>
@@ -260,8 +224,8 @@ export default function BillingPage() {
                 onClick={() => setSelectedPlan(p.id)}
                 className={`relative text-left rounded-2xl border p-6 transition-all duration-200 ${
                   isSelected
-                    ? `border-transparent ring-2 ring-offset-2 ring-offset-slate-50 dark:ring-offset-[#070b14] ring-indigo-500 bg-white dark:bg-[#0d1424] shadow-xl ${p.shadow}`
-                    : 'border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] hover:border-indigo-300 dark:hover:border-indigo-500/40 shadow-sm'
+                    ? `border-transparent ring-2 ring-offset-2 ring-offset-slate-50 dark:ring-offset-[#070b14] ring-indigo-500 bg-white dark:bg-slate-900 shadow-xl ${p.shadow}`
+                    : 'border-slate-200 dark:border-white/[0.07] bg-white dark:bg-slate-900 hover:border-indigo-300 dark:hover:border-indigo-500/40 shadow-sm'
                 }`}
               >
                 {p.popular && (
@@ -309,7 +273,7 @@ export default function BillingPage() {
 
         {/* ── Payment section (shows after plan selected) ──────────────── */}
         {selectedPlan && plan && (
-          <div className="bg-white dark:bg-[#0d1424] border border-slate-100 dark:border-white/[0.07] rounded-2xl shadow-lg overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.07] rounded-2xl shadow-lg overflow-hidden">
             <div className={`bg-gradient-to-r ${plan.gradient} px-6 py-4`}>
               <h2 className="text-white font-black text-base">Instrucciones de pago — {plan.name}</h2>
               <p className="text-white/70 text-xs mt-0.5">Elige el método y envía tu referencia</p>
@@ -368,7 +332,7 @@ export default function BillingPage() {
               </div>
 
               {/* Payment details */}
-              <div className="bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.06] rounded-xl p-4 space-y-3">
+              <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/[0.06] rounded-xl p-4 space-y-3">
                 {payMethod === 'binance' && (
                   <>
                     <DetailRow label="Binance Pay ID" value={PAYMENT_INFO.binance.id} onCopy={() => copyText(PAYMENT_INFO.binance.id, 'binance-id')} copied={copied === 'binance-id'} />
@@ -447,7 +411,7 @@ export default function BillingPage() {
                       </button>
                     </div>
                   ) : (
-                    <label className="flex items-center gap-3 w-full cursor-pointer bg-slate-50 dark:bg-white/[0.04] border-2 border-dashed border-slate-200 dark:border-white/[0.12] rounded-xl px-4 py-5 hover:border-indigo-400 dark:hover:border-indigo-500/50 transition-all group">
+                    <label className="flex items-center gap-3 w-full cursor-pointer bg-slate-50 dark:bg-slate-800/50 border-2 border-dashed border-slate-200 dark:border-white/[0.12] rounded-xl px-4 py-5 hover:border-indigo-400 dark:hover:border-indigo-500/50 transition-all group">
                       <ImagePlus size={20} className="text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0" />
                       <div>
                         <p className="text-sm font-bold text-slate-600 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">

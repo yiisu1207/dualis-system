@@ -29,6 +29,13 @@ import { useSubscription } from '../hooks/useSubscription';
 import { VendorProvider } from '../context/VendorContext';
 import { findInvitationByToken } from '../firebase/api';
 import { CartProvider } from '../context/CartContext';
+import PortalGuard from '../portal/PortalGuard';
+import PortalDashboard from '../portal/PortalDashboard';
+import PortalInvoices from '../portal/PortalInvoices';
+import PortalProntoPago from '../portal/PortalProntoPago';
+import PortalAbonoForm from '../portal/PortalAbonoForm';
+import PortalStatement from '../portal/PortalStatement';
+import PortalHelp from '../portal/PortalHelp';
 
 function KioskPosPage({ tipo }: { tipo: string }) {
   if (tipo === 'mayor') return <PosMayor />;
@@ -368,6 +375,16 @@ export default function AppRouter() {
       >
         <Route path="detal" element={<PosDetal />} />
         <Route path="mayor" element={<PosMayor />} />
+      </Route>
+
+      {/* Portal de Clientes — acceso público con slug + PIN */}
+      <Route path="/portal/:slug" element={<PortalGuard />}>
+        <Route index element={<PortalDashboard />} />
+        <Route path="facturas" element={<PortalInvoices />} />
+        <Route path="pronto-pago" element={<PortalProntoPago />} />
+        <Route path="pagar" element={<PortalAbonoForm />} />
+        <Route path="estado-cuenta" element={<PortalStatement />} />
+        <Route path="ayuda" element={<PortalHelp />} />
       </Route>
 
       {/* Kiosk POS — clean URL without business ID */}

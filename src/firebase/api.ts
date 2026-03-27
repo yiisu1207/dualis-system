@@ -33,9 +33,11 @@ const mapExchangeRateDoc = (data: any): ExchangeRates | null => {
   if (!data) return null;
   const bcv = Number(data.bcv) || 0;
   const grupo = Number(data.parallel ?? data.grupo) || 0;
+  const divisa = Number(data.divisa) || (grupo > 0 ? grupo - 1 : 0);
   return {
     bcv,
     grupo,
+    divisa,
     lastUpdated: data.date || new Date().toLocaleDateString(),
   };
 };
@@ -56,6 +58,7 @@ export async function upsertExchangeRate(
     date: key,
     bcv: Number(rates.bcv) || 0,
     parallel: Number(rates.grupo) || 0,
+    divisa: Number(rates.divisa) || 0,
     timestamp: serverTimestamp(),
   };
   if (createdBy) {
@@ -89,6 +92,7 @@ export async function createExchangeRateEntry(
     date: key,
     bcv: Number(rates.bcv) || 0,
     parallel: Number(rates.grupo) || 0,
+    divisa: Number(rates.divisa) || 0,
     timestamp: serverTimestamp(),
   };
   if (createdBy) {

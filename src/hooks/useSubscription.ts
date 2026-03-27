@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { PlanId, SubscriptionStatus, PLAN_LIMITS, PLAN_PRICES } from '../utils/planConfig';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type PlanId = 'trial' | 'starter' | 'negocio' | 'enterprise' | 'custom';
-export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'cancelled';
+// Re-export for backward compat
+export type { PlanId, SubscriptionStatus };
+export { PLAN_LIMITS, PLAN_PRICES as PLAN_BASE_PRICE };
 
 export interface SubscriptionAddOns {
-  extraUsers:      number;  // +$3 each
-  extraProducts:   number;  // +$5 per 1k block
-  extraSucursales: number;  // +$9 each
-  visionLab:       boolean; // +$24
-  conciliacion:    boolean; // +$12
-  rrhhPro:         boolean; // +$15
+  extraUsers:      number;
+  extraProducts:   number;
+  extraSucursales: number;
+  visionLab:       boolean;
+  conciliacion:    boolean;
+  rrhhPro:         boolean;
 }
 
 export interface BonusNotification {
@@ -40,22 +40,6 @@ export interface SubscriptionData {
   /** Bonus days notification from admin */
   bonusNotification?: BonusNotification;
 }
-
-// ─── Plan limits ──────────────────────────────────────────────────────────────
-
-export const PLAN_LIMITS: Record<PlanId, { users: number; products: number; sucursales: number; modules: string[] }> = {
-  trial:      { users: 2,  products: 500,  sucursales: 0, modules: ['*'] },
-  starter:    { users: 2,  products: 500,  sucursales: 0, modules: ['pos_detal','inventario','tasas','clientes','cajas','reportes','contabilidad'] },
-  negocio:    { users: 5,  products: 2000, sucursales: 1, modules: ['pos_detal','pos_mayor','inventario','tasas','clientes','proveedores','cajas','rrhh','reportes','sucursales','contabilidad','comparar'] },
-  enterprise: { users: -1, products: -1,   sucursales: 3, modules: ['*'] },
-  custom:     { users: -1, products: -1,   sucursales: -1, modules: ['*'] }, // resolved at runtime with addOns
-};
-
-export const PLAN_BASE_PRICE: Record<Exclude<PlanId,'trial'|'custom'>, number> = {
-  starter:    24,
-  negocio:    49,
-  enterprise: 89,
-};
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -102,14 +86,54 @@ export function useSubscription(businessId: string) {
   // ── Derived values ──────────────────────────────────────────────────────────
   const now = Date.now();
 
+  /** Grace period: 7 days after expiry before blocking access (data is NEVER deleted) */
+  const GRACE_DAYS = 7;
+
   const trialDaysLeft = subscription?.trialEndsAt
     ? Math.max(0, Math.ceil((subscription.trialEndsAt.getTime() - now) / 86_400_000))
     : null;
 
+  /** Days left on a paid (active) plan — null if no currentPeriodEnd */
+  const planDaysLeft = subscription?.currentPeriodEnd
+    ? Math.ceil((subscription.currentPeriodEnd.getTime() - now) / 86_400_000) // can be negative (past expiry)
+    : null;
+
+  /**
+   * Grace period: days remaining in grace after plan/trial expired.
+   * null = not in grace, >0 = grace active, 0 = grace exhausted → blocked.
+   * During grace: system works but shows urgent renewal warnings.
+   * After grace: access blocked (data preserved, NEVER deleted).
+   */
+  const graceDaysLeft = (() => {
+    // Trial expired
+    if (subscription?.status === 'trial' && trialDaysLeft !== null && trialDaysLeft <= 0) {
+      const daysSinceExpiry = subscription.trialEndsAt
+        ? Math.floor((now - subscription.trialEndsAt.getTime()) / 86_400_000)
+        : 0;
+      return Math.max(0, GRACE_DAYS - daysSinceExpiry);
+    }
+    // Paid plan expired (planDaysLeft can be negative when past due)
+    if (subscription?.status === 'active' && planDaysLeft !== null && planDaysLeft <= 0) {
+      const daysSinceExpiry = subscription.currentPeriodEnd
+        ? Math.floor((now - subscription.currentPeriodEnd.getTime()) / 86_400_000)
+        : 0;
+      return Math.max(0, GRACE_DAYS - daysSinceExpiry);
+    }
+    return null;
+  })();
+
+  /** True if in grace period (expired but still within 7-day grace window) */
+  const inGracePeriod = graceDaysLeft !== null && graceDaysLeft > 0;
+
+  /**
+   * Fully blocked: subscription expired AND grace period exhausted.
+   * Access is blocked but data is NEVER deleted — only access is restricted.
+   */
   const isExpired =
     subscription?.status === 'expired' ||
     subscription?.status === 'cancelled' ||
-    (subscription?.status === 'trial' && trialDaysLeft !== null && trialDaysLeft <= 0);
+    (subscription?.status === 'trial' && trialDaysLeft !== null && trialDaysLeft <= 0 && !inGracePeriod) ||
+    (subscription?.status === 'active' && planDaysLeft !== null && planDaysLeft <= 0 && !inGracePeriod);
 
   const isActive = !isExpired && subscription !== null;
 
@@ -154,6 +178,9 @@ export function useSubscription(businessId: string) {
     subscription,
     loading,
     trialDaysLeft,
+    planDaysLeft: planDaysLeft !== null ? Math.max(0, planDaysLeft) : null,
+    graceDaysLeft,
+    inGracePeriod,
     isActive,
     isExpired,
     canAccess,

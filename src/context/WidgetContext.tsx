@@ -2,13 +2,9 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 
 type WidgetKey =
   | 'calculator'
-  | 'notes'
   | 'converter'
-  | 'timer'
   | 'priceChecker'
-  | 'todo'
-  | 'speedDial'
-  | 'chat';
+  | 'speedDial';
 
 type WidgetPosition = {
   x: number;
@@ -36,13 +32,9 @@ const STORAGE_KEY = 'widget_state_v1';
 
 const defaultState: Record<WidgetKey, WidgetState> = {
   calculator: { isOpen: false, isMinimized: false, position: { x: 80, y: 120 } },
-  notes: { isOpen: false, isMinimized: false, position: { x: 140, y: 160 } },
   converter: { isOpen: false, isMinimized: false, position: { x: 200, y: 200 } },
-  timer: { isOpen: false, isMinimized: false, position: { x: 260, y: 240 } },
   priceChecker: { isOpen: false, isMinimized: false, position: { x: 320, y: 280 } },
-  todo: { isOpen: false, isMinimized: false, position: { x: 380, y: 320 } },
   speedDial: { isOpen: false, isMinimized: false, position: { x: 440, y: 360 } },
-  chat: { isOpen: false, isMinimized: false, position: { x: 500, y: 400 } },
 };
 
 const WidgetContext = createContext<WidgetManager | undefined>(undefined);
@@ -63,13 +55,9 @@ export const WidgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!stored) return defaultState;
     return {
       calculator: { ...defaultState.calculator, ...stored.calculator },
-      notes: { ...defaultState.notes, ...stored.notes },
       converter: { ...defaultState.converter, ...stored.converter },
-      timer: { ...defaultState.timer, ...stored.timer },
       priceChecker: { ...defaultState.priceChecker, ...stored.priceChecker },
-      todo: { ...defaultState.todo, ...stored.todo },
       speedDial: { ...defaultState.speedDial, ...stored.speedDial },
-      chat: { ...defaultState.chat, ...stored.chat },
     };
   });
   const [unreadCounts, setUnreadCounts] = useState<Partial<Record<WidgetKey, number>>>({});

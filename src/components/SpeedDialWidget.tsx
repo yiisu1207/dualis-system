@@ -156,7 +156,7 @@ const SpeedDialWidget: React.FC<Props> = ({
 }) => {
   const { userProfile, user: firebaseUser } = useAuth();
   const navigate = useNavigate();
-  const { empresa_id } = useParams<{ empresa_id: string }>();
+  const { empresa_id } = useParams();
   const toast = useToast();
   const [panel, setPanel] = useState<ActivePanel>(null);
   const [syncing, setSyncing] = useState(false);
@@ -182,8 +182,7 @@ const SpeedDialWidget: React.FC<Props> = ({
   };
 
   const goToPOS = () => {
-    const base = empresa_id ? `/${empresa_id}` : '';
-    navigate(`${base}/pos/detal`);
+    navigate(`/${empresa_id}/pos/detal`);
     onClose();
   };
 

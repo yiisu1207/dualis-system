@@ -1,13 +1,19 @@
 {
-  "name": "ERP System",
-  "short_name": "ERP",
+  "name": "Dualis ERP — Sistema Empresarial Inteligente",
+  "short_name": "Dualis",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#0f172a",
-  "description": "ERP colaborativo con finanzas, chat interno y widgets inteligentes.",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
+  "description": "ERP cloud para Venezuela y Latinoamérica. POS, inventario, CxC, CxP, RRHH, contabilidad y más.",
   "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "500x500",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "/pwa-icon-192.svg",
       "sizes": "192x192",

@@ -7,38 +7,24 @@ import {
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
-import { PLAN_BASE_PRICE, useSubscription } from '../hooks/useSubscription';
+import { useSubscription } from '../hooks/useSubscription';
+import { PLANS as PLAN_CONFIG, PAYMENT_INFO, PERIOD_CONFIG, computePeriodPrice, type PayMethod, type SubscriptionPeriod } from '../utils/planConfig';
 
-// ─── Payment info ─────────────────────────────────────────────────────────────
-const PAYMENT_INFO = {
-  binance:       { label: 'Binance Pay',   id: '1110745526', note: 'Envía USDT (BEP20 o Binance Pay directo)' },
-  pago_movil:    { label: 'Pago Móvil',    banco: 'Bancamiga (0172)', cedula: 'V-32477241', telefono: '04125343141', note: 'Concepto: Dualis + nombre de tu empresa' },
-  transferencia: { label: 'Transferencia', banco: 'Bancamiga (0172)', nombre: 'Jesús Miguel Alexander Salazar Álvarez', cedula: 'V-32477241', cuenta: '01720702427025760104', tipo: 'Cuenta Corriente Amiga' },
-  paypal:        { label: 'PayPal',        email: 'svillarroel154@gmail.com', note: 'Enviar como "Amigos y familiares"' },
-} as const;
-type PayMethod = keyof typeof PAYMENT_INFO;
-
-// ─── Plans ────────────────────────────────────────────────────────────────────
-const PLANS = [
-  {
-    id: 'starter' as const, name: 'Starter', price: PLAN_BASE_PRICE.starter,
-    Icon: Zap, gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/30',
-    ring: 'ring-sky-500/40',
-    features: ['2 usuarios', '500 productos', 'POS Detal', 'Inventario', 'Clientes / CxC', 'Cajas'],
-  },
-  {
-    id: 'negocio' as const, name: 'Negocio', price: PLAN_BASE_PRICE.negocio,
-    Icon: Building2, gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/30',
-    ring: 'ring-indigo-500/40', popular: true,
-    features: ['5 usuarios', '2 000 productos', 'POS Mayor (crédito)', 'Proveedores / CxP', 'RRHH', '1 Sucursal'],
-  },
-  {
-    id: 'enterprise' as const, name: 'Enterprise', price: PLAN_BASE_PRICE.enterprise,
-    Icon: Crown, gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30',
-    ring: 'ring-violet-500/40',
-    features: ['Usuarios ilimitados', 'Productos ilimitados', '3 Sucursales', 'VisionLab IA', 'Conciliación', 'Soporte prioritario'],
-  },
+// ─── Plans (UI-enriched from planConfig) ──────────────────────────────────────
+const PLAN_STYLES = [
+  { Icon: Zap,       gradient: 'from-sky-500 to-blue-600',    shadow: 'shadow-sky-500/30',    ring: 'ring-sky-500/40' },
+  { Icon: Building2, gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/30', ring: 'ring-indigo-500/40' },
+  { Icon: Crown,     gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', ring: 'ring-violet-500/40' },
 ];
+
+const PLANS = PLAN_CONFIG.map((p, i) => ({
+  id: p.id as 'starter' | 'negocio' | 'enterprise',
+  name: p.name,
+  price: p.price,
+  features: p.features,
+  popular: p.popular,
+  ...PLAN_STYLES[i],
+}));
 
 // ─── Copy helper ──────────────────────────────────────────────────────────────
 function CopyRow({ label, value, id, copied, onCopy }: { label: string; value: string; id: string; copied: string | null; onCopy: (v: string, id: string) => void }) {
@@ -60,8 +46,8 @@ function CopyRow({ label, value, id, copied, onCopy }: { label: string; value: s
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function SubscriptionWall() {
-  const { empresa_id } = useParams<{ empresa_id: string }>();
   const navigate = useNavigate();
+  const { empresa_id } = useParams<{ empresa_id: string }>();
   const { userProfile } = useAuth();
 
   const businessId  = userProfile?.businessId || empresa_id || '';
@@ -72,11 +58,12 @@ export default function SubscriptionWall() {
     if (!subLoading && subscription) {
       navigate(`/${empresa_id}/admin/dashboard`, { replace: true });
     }
-  }, [subLoading, subscription, empresa_id]);
+  }, [subLoading, subscription]);
 
   // UI state
   const [mode, setMode]               = useState<'choose' | 'pay'>('choose');
   const [selectedPlan, setSelectedPlan] = useState<typeof PLANS[0] | null>(null);
+  const [period, setPeriod]           = useState<SubscriptionPeriod>('triplePlay');
   const [payMethod, setPayMethod]     = useState<PayMethod>('binance');
   const [reference, setReference]     = useState('');
   const [note, setNote]               = useState('');
@@ -128,8 +115,9 @@ export default function SubscriptionWall() {
           addOns: { extraUsers:0, extraProducts:0, extraSucursales:0, visionLab:false, conciliacion:false, rrhhPro:false },
           pendingPayment: {
             plan: selectedPlan.id,
-            months: 1,
-            amountUsd: selectedPlan.price,
+            period,
+            months: PERIOD_CONFIG[period].months,
+            amountUsd: computePeriodPrice(selectedPlan.price, period).total,
             payMethod,
             reference: reference.trim(),
             note: note.trim(),
@@ -239,43 +227,86 @@ export default function SubscriptionWall() {
                 <div className="flex-1 h-px bg-white/[0.06]" />
               </div>
 
+              {/* ── Period tabs ── */}
+              <div className="lg:col-span-3 flex flex-wrap items-center justify-center gap-1.5">
+                {(['triplePlay', 'mensual', 'semestral', 'anual'] as SubscriptionPeriod[]).map(p => {
+                  const cfg = PERIOD_CONFIG[p];
+                  const active = period === p;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setPeriod(p)}
+                      className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2
+                        ${active
+                          ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25'
+                          : 'bg-white/[0.04] text-white/40 hover:text-white/60 border border-white/[0.06]'
+                        }`}
+                    >
+                      {cfg.label}
+                      {cfg.badge && (
+                        <span className={`px-2 py-0.5 rounded-md text-[8px] font-black ${active ? 'bg-white/20 text-white' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                          {cfg.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Promo banner */}
+              {period === 'triplePlay' && (
+                <div className="lg:col-span-3 mx-auto max-w-xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20 rounded-2xl px-5 py-3 text-center">
+                  <p className="text-xs text-white/60 leading-relaxed">
+                    <strong className="text-indigo-400">PROMO POR TIEMPO LIMITADO:</strong> Pagas el equivalente a dos meses y te regalamos el tercero completamente <strong className="text-white">GRATIS</strong>.
+                  </p>
+                </div>
+              )}
+
               {/* ── Plan cards ── */}
-              {PLANS.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => { setSelectedPlan(p); setMode('pay'); }}
-                  className={`group relative text-left rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6 transition-all duration-200 hover:border-white/[0.18] hover:-translate-y-1 hover:shadow-2xl ${p.shadow}`}
-                >
-                  {p.popular && (
-                    <span className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-white bg-gradient-to-r ${p.gradient}`}>
-                      Más popular
-                    </span>
-                  )}
+              {PLANS.map(p => {
+                const pricing = computePeriodPrice(p.price, period);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => { setSelectedPlan(p); setMode('pay'); }}
+                    className={`group relative text-left rounded-2xl border border-white/[0.07] bg-white/[0.02] p-6 transition-all duration-200 hover:border-white/[0.18] hover:-translate-y-1 hover:shadow-2xl ${p.shadow}`}
+                  >
+                    {p.popular && (
+                      <span className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-white bg-gradient-to-r ${p.gradient}`}>
+                        Más popular
+                      </span>
+                    )}
 
-                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${p.gradient} flex items-center justify-center mb-4 shadow-lg ${p.shadow}`}>
-                    <p.Icon size={18} className="text-white" />
-                  </div>
+                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${p.gradient} flex items-center justify-center mb-4 shadow-lg ${p.shadow}`}>
+                      <p.Icon size={18} className="text-white" />
+                    </div>
 
-                  <p className="text-[10px] font-black text-white/25 uppercase tracking-widest mb-1">{p.name}</p>
-                  <div className="flex items-end gap-1 mb-4">
-                    <span className="text-3xl font-black text-white">${p.price}</span>
-                    <span className="text-xs text-white/25 mb-1">/mes</span>
-                  </div>
+                    <p className="text-[10px] font-black text-white/25 uppercase tracking-widest mb-1">{p.name}</p>
+                    <div className="flex items-end gap-1 mb-1">
+                      <span className="text-3xl font-black text-white">${pricing.perMonth}</span>
+                      <span className="text-xs text-white/25 mb-1">/mes</span>
+                    </div>
+                    {period !== 'mensual' && (
+                      <p className="text-[10px] text-emerald-400 font-bold mb-3">
+                        {period === 'triplePlay' ? `Pagas $${pricing.total} por 3 meses` : `Total: $${pricing.total} — Ahorras $${pricing.savings}`}
+                      </p>
+                    )}
 
-                  <ul className="space-y-1.5 mb-5">
-                    {p.features.map(f => (
-                      <li key={f} className="flex items-center gap-2 text-xs text-white/40">
-                        <Check size={11} className={`shrink-0 bg-gradient-to-br ${p.gradient} text-white rounded-full p-0.5`} />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
+                    <ul className="space-y-1.5 mb-5">
+                      {p.features.map(f => (
+                        <li key={f} className="flex items-center gap-2 text-xs text-white/40">
+                          <Check size={11} className={`shrink-0 bg-gradient-to-br ${p.gradient} text-white rounded-full p-0.5`} />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
 
-                  <div className={`w-full py-2.5 rounded-xl bg-gradient-to-r ${p.gradient} text-white text-xs font-black text-center shadow-md ${p.shadow} group-hover:-translate-y-0.5 transition-all`}>
-                    Activar {p.name} <ArrowRight size={12} className="inline ml-1" />
-                  </div>
-                </button>
-              ))}
+                    <div className={`w-full py-2.5 rounded-xl bg-gradient-to-r ${p.gradient} text-white text-xs font-black text-center shadow-md ${p.shadow} group-hover:-translate-y-0.5 transition-all`}>
+                      Activar {p.name} <ArrowRight size={12} className="inline ml-1" />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -299,7 +330,7 @@ export default function SubscriptionWall() {
               </div>
               <div>
                 <p className="text-[10px] font-black text-white/25 uppercase tracking-widest">Activando</p>
-                <p className="text-white font-black text-lg">Plan {plan.name} — ${plan.price}/mes</p>
+                <p className="text-white font-black text-lg">Plan {plan.name} — ${computePeriodPrice(plan.price, period).perMonth}/mes</p>
               </div>
             </div>
 
