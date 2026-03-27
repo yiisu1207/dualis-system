@@ -286,7 +286,7 @@ export default function Login() {
                     <Building2 size={16} className="text-indigo-400 shrink-0" />
                     <div>
                       <p className="text-xs font-black text-white">{subdomain.businessName}</p>
-                      <p className="text-[9px] text-white/30 font-bold">{subdomain.slug}.dualis.app</p>
+                      <p className="text-[9px] text-white/30 font-bold">{subdomain.slug}.dualis.online</p>
                     </div>
                   </div>
                 )}

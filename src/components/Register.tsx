@@ -346,7 +346,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
 
       try { await logAudit(uid, 'create_user', { businessId: bid, email: form.email, plan }); } catch {}
 
-      const customUrl = generatedSlug ? `${generatedSlug}.dualis.app` : undefined;
+      const customUrl = generatedSlug ? `${generatedSlug}.dualis.online` : undefined;
       sendWelcomeEmail(form.email, displayName || form.fullName, bid, customUrl).catch(err => console.error('[WelcomeEmail] Error:', err));
 
       setSuccessBid(bid);
@@ -672,10 +672,10 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
 
                 {successSlug && (
                 <div className="w-full bg-white/[0.04] border-2 border-dashed border-indigo-500/40 rounded-3xl p-7 mb-4 cursor-pointer hover:border-indigo-500/70 transition-colors group"
-                  onClick={() => copyToClipboard(`https://${successSlug}.dualis.app`, 'url')}
+                  onClick={() => copyToClipboard(`https://${successSlug}.dualis.online`, 'url')}
                 >
                   <p className="text-[9px] font-black uppercase tracking-[0.4em] text-indigo-400 mb-3">Tu URL personalizada</p>
-                  <div className="text-[1rem] font-mono font-black text-white break-all select-all leading-relaxed">{successSlug}.dualis.app</div>
+                  <div className="text-[1rem] font-mono font-black text-white break-all select-all leading-relaxed">{successSlug}.dualis.online</div>
                   <p className="text-[9px] font-bold text-white/20 uppercase mt-2.5 group-hover:text-indigo-400 transition-colors">
                     {copiedField === 'url' ? '✓ Copiado' : 'Haz clic para copiar'}
                   </p>
@@ -685,7 +685,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 <div className="w-full bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 mb-6">
                   <p className="text-xs font-bold text-emerald-300 leading-relaxed">
                     {successSlug
-                      ? `Comparte ${successSlug}.dualis.app con tu equipo para que se unan. También te enviamos esta URL a tu correo.`
+                      ? `Comparte ${successSlug}.dualis.online con tu equipo para que se unan. También te enviamos esta URL a tu correo.`
                       : 'Puedes configurar tu URL personalizada después en Configuración > Empresa.'}
                   </p>
                 </div>
@@ -965,6 +965,9 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
       <div className="absolute inset-0 opacity-[0.03]"
         style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
       <div className="absolute top-5 right-5 z-50"><ModeToggle /></div>
+      <button onClick={() => nav('/')} className="absolute top-5 left-5 z-50 flex items-center gap-1.5 text-white/30 hover:text-white/60 transition-colors text-xs font-bold">
+        <ArrowLeft size={14} /> Volver
+      </button>
 
       <div className="relative z-10 w-full max-w-lg">
         <div className="bg-white/[0.03] border border-white/[0.08] backdrop-blur-sm rounded-[2.5rem] overflow-hidden shadow-2xl">
@@ -1005,7 +1008,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                   <Building2 size={16} className="text-indigo-400 shrink-0" />
                   <div>
                     <p className="text-xs font-black text-white">{subdomain.businessName}</p>
-                    <p className="text-[9px] text-white/30 font-bold">{subdomain.slug}.dualis.app</p>
+                    <p className="text-[9px] text-white/30 font-bold">{subdomain.slug}.dualis.online</p>
                   </div>
                 </div>
               )}
@@ -1023,7 +1026,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                       slugStatus === 'taken' ? 'text-red-400' : 'text-white/20'
                     }`}>
                       {slugStatus === 'checking' ? '⟳ ' : slugStatus === 'available' ? '● ' : slugStatus === 'taken' ? '✕ ' : ''}
-                      {form.slug}.dualis.app
+                      {form.slug}.dualis.online
                     </p>
                   )}
                 </div>
@@ -1058,7 +1061,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 )}
                 <div className="flex gap-2">
                   <select
-                    className={`${inp} w-[110px] shrink-0`}
+                    className={`${inp} !w-[110px] shrink-0`}
                     value={form.phoneCode}
                     onChange={e => set('phoneCode', e.target.value)}
                   >
@@ -1070,7 +1073,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                   </select>
                   <input
                     type="tel" placeholder="4125343141"
-                    className={inp}
+                    className={`${inp} flex-1 min-w-0`}
                     value={form.phone}
                     onChange={e => set('phone', e.target.value.replace(/\D/g, ''))}
                     maxLength={12}

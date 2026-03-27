@@ -42,7 +42,7 @@ function emailShell(headerGradient: string, headerTitle: string, headerSubtitle:
         <!-- Header -->
         <tr>
           <td style="background:${headerGradient};padding:44px 48px;text-align:center;">
-            <img src="https://dualis.app/logo.png" alt="Dualis" width="80" height="80" style="display:block;margin:0 auto 16px;border-radius:16px;" />
+            <img src="https://dualis.online/logo.png" alt="Dualis" width="80" height="80" style="display:block;margin:0 auto 16px;border-radius:16px;" />
             <h1 style="margin:0 0 4px;font-size:28px;font-weight:900;color:#fff;letter-spacing:-0.5px;">Dualis ERP</h1>
             <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.65);text-transform:uppercase;letter-spacing:4px;font-weight:700;">${headerSubtitle}</p>
           </td>
@@ -87,7 +87,7 @@ function emailShell(headerGradient: string, headerTitle: string, headerSubtitle:
                       </td>
                       <td style="width:50%;font-size:13px;color:${BRAND.textMuted};line-height:1.8;">
                         <strong style="color:${BRAND.textSecondary};">Correo</strong><br>
-                        <a href="mailto:soporte@dualis.app" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">soporte@dualis.app</a>
+                        <a href="mailto:soporte@dualis.online" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">soporte@dualis.online</a>
                       </td>
                     </tr>
                   </table>
@@ -154,8 +154,8 @@ function buildOTPHtml(name: string, otp: string): string {
 
 /* ── Welcome email ────────────────────────────────────────────────────── */
 function buildWelcomeHtml(name: string, _businessId: string, customUrl?: string): string {
-  const urlDisplay = customUrl || 'dualis.app';
-  const urlHref = customUrl ? `https://${customUrl}` : 'https://dualis.app';
+  const urlDisplay = customUrl || 'dualis.online';
+  const urlHref = customUrl ? `https://${customUrl}` : 'https://dualis.online';
 
   return emailShell(BRAND.gradientPrimary, 'Dualis ERP', 'Bienvenido', `
     <h2 style="margin:0 0 12px;font-size:28px;font-weight:900;color:${BRAND.textPrimary};letter-spacing:-0.5px;">
@@ -190,7 +190,7 @@ function buildWelcomeHtml(name: string, _businessId: string, customUrl?: string)
             Inicia sesi&oacute;n con tu correo y contrase&ntilde;a
           </p>
           <p style="margin:0;font-size:14px;color:${BRAND.textMuted};">
-            Accede desde tu URL personalizada <a href="${urlHref}" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">${urlDisplay}</a> o desde <a href="https://dualis.app" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">dualis.app</a>.
+            Accede desde tu URL personalizada <a href="${urlHref}" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">${urlDisplay}</a> o desde <a href="https://dualis.online" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">dualis.online</a>.
           </p>
         </td>
       </tr>
@@ -299,7 +299,7 @@ export async function sendOTPEmail(toEmail: string, toName: string, otp: string)
 
 export async function sendWelcomeEmail(toEmail: string, toName: string, businessId: string, customUrl?: string): Promise<void> {
   if (DEV || !WELCOME_TPL) {
-    console.info(`%c[EmailService] Bienvenida enviada a ${toEmail} (${businessId}) — URL: ${customUrl || 'dualis.app'}`, 'color:#10b981;font-weight:bold');
+    console.info(`%c[EmailService] Bienvenida enviada a ${toEmail} (${businessId}) — URL: ${customUrl || 'dualis.online'}`, 'color:#10b981;font-weight:bold');
     return;
   }
   await emailjs.send(SVC, WELCOME_TPL, {

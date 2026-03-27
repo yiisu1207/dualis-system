@@ -27,7 +27,7 @@ export default function Privacy() {
           <section>
             <h2 className="text-base font-black text-white mb-2">1. Responsable del Tratamiento</h2>
             <p>
-              El responsable del tratamiento de sus datos personales es <strong className="text-white/70">Jesús Salazar</strong>, desarrollador y propietario de Dualis ERP (en adelante "el Proveedor"), con contacto en soporte@dualis.app y WhatsApp 0412-534-3141.
+              El responsable del tratamiento de sus datos personales es <strong className="text-white/70">Jesús Salazar</strong>, desarrollador y propietario de Dualis ERP (en adelante "el Proveedor"), con contacto en soporte@dualis.online y WhatsApp 0412-534-3141.
             </p>
           </section>
 
@@ -86,7 +86,7 @@ export default function Privacy() {
               <li>• <strong className="text-white/70">Portabilidad:</strong> recibir sus datos en formato exportable.</li>
               <li>• <strong className="text-white/70">Oposición:</strong> limitar ciertos tratamientos no esenciales.</li>
             </ul>
-            <p className="mt-2">Para ejercer estos derechos, contacte a soporte@dualis.app o al WhatsApp 0412-534-3141.</p>
+            <p className="mt-2">Para ejercer estos derechos, contacte a soporte@dualis.online o al WhatsApp 0412-534-3141.</p>
           </section>
 
           <section>
@@ -109,7 +109,7 @@ export default function Privacy() {
             <p>
               <strong className="text-white/70">Jesús Salazar</strong> — Responsable de Datos, Dualis ERP<br />
               WhatsApp: 0412-534-3141<br />
-              Correo: soporte@dualis.app
+              Correo: soporte@dualis.online
             </p>
           </section>
         </div>

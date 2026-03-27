@@ -61,6 +61,7 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
   const tenantId = resolveTenantId(userProfile);
 
   if (!tenantId) {
+    console.warn('[AuthEntry] tenantId vacío para usuario', user.uid, '— perfil:', userProfile);
     return <Navigate to="/onboarding" replace />;
   }
 

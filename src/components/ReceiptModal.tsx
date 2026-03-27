@@ -63,7 +63,7 @@ function printTicket(movement: any, companyName: string) {
   <div class="c" style="font-size:8px">Gracias por su compra</div>
   <div style="margin-top:10px;border-top:1px dashed #ccc;padding-top:7px;text-align:center;">
     <img src="/logo.png" alt="Dualis" style="height:16px;width:auto;display:block;margin:0 auto 3px;" onerror="this.style.display='none'" />
-    <p style="font-size:7px;color:#aaa;margin:0;letter-spacing:1px;text-transform:uppercase;">Con tecnolog&#237;a Dualis &middot; dualis.app</p>
+    <p style="font-size:7px;color:#aaa;margin:0;letter-spacing:1px;text-transform:uppercase;">Con tecnolog&#237;a Dualis &middot; dualis.online</p>
   </div>
   <div class="noPrint"><button onclick="window.print()">Imprimir</button></div>
   </body></html>`;

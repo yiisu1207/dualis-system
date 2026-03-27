@@ -380,7 +380,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                       maxLength={30}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/15 text-[10px] font-mono pointer-events-none select-none">
-                      .dualis.app
+                      .dualis.online
                     </span>
                   </div>
                   <button
@@ -395,10 +395,10 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                   {slugCheck === 'checking' && <p className="text-[10px] text-slate-400 dark:text-white/30 font-bold">Verificando...</p>}
                   {slugCheck === 'available' && <p className="text-[10px] text-emerald-500 font-bold">Disponible</p>}
                   {slugCheck === 'taken' && <p className="text-[10px] text-red-400 font-bold">No disponible</p>}
-                  {slugCheck === 'saved' && <p className="text-[10px] text-emerald-500 font-bold">Guardado — tu URL es: {slugInput}.dualis.app</p>}
+                  {slugCheck === 'saved' && <p className="text-[10px] text-emerald-500 font-bold">Guardado — tu URL es: {slugInput}.dualis.online</p>}
                   {currentSlug && slugCheck === 'idle' && (
                     <p className="text-[10px] text-slate-500 dark:text-white/25 font-bold">
-                      URL actual: <span className="text-indigo-400 font-mono">{currentSlug}.dualis.app</span>
+                      URL actual: <span className="text-indigo-400 font-mono">{currentSlug}.dualis.online</span>
                     </p>
                   )}
                 </div>

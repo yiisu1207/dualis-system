@@ -3,14 +3,14 @@ import { db } from '../firebase/config';
 
 /**
  * Dominios base donde corre Dualis.
- * En dev: localhost, en prod: dualis.app (o el dominio que uses).
+ * En dev: localhost, en prod: dualis.online (o el dominio que uses).
  * Cualquier hostname que NO sea uno de estos se trata como subdominio custom.
  */
 const BASE_DOMAINS = [
   'localhost',
   '127.0.0.1',
-  'dualis.app',
-  'www.dualis.app',
+  'dualis.online',
+  'www.dualis.online',
   'dualis-erp.vercel.app',
 ];
 
@@ -24,9 +24,9 @@ const RESERVED_SLUGS = new Set([
 
 /**
  * Extrae el slug del subdominio desde el hostname actual.
- * Ej: "mitienda.dualis.app" → "mitienda"
+ * Ej: "mitienda.dualis.online" → "mitienda"
  *     "localhost:6000"       → null (no hay subdominio)
- *     "dualis.app"           → null (es el dominio base)
+ *     "dualis.online"           → null (es el dominio base)
  */
 export function extractSubdomain(): string | null {
   const hostname = window.location.hostname.toLowerCase();
@@ -42,10 +42,10 @@ export function extractSubdomain(): string | null {
   }
 
   // Extraer la primera parte del hostname
-  // "mitienda.dualis.app" → parts = ["mitienda", "dualis", "app"]
+  // "mitienda.dualis.online" → parts = ["mitienda", "dualis", "online"]
   const parts = hostname.split('.');
   if (parts.length < 3) {
-    // Solo "dualis.app" → no hay subdominio
+    // Solo "dualis.online" → no hay subdominio
     return null;
   }
 
@@ -210,7 +210,7 @@ export function buildSubdomainUrl(slug: string): string {
   // En producción usa tu dominio real
   const baseDomain = window.location.hostname === 'localhost'
     ? `localhost:${window.location.port}`
-    : 'dualis.app';
+    : 'dualis.online';
 
   if (window.location.hostname === 'localhost') {
     // En dev no se pueden usar subdominios fácilmente, retornar URL con query param

@@ -127,9 +127,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           let needsProfileUpdate = false;
           const firestoreUpdate: Record<string, unknown> = {};
 
-          if (!profile.businessId && profile.status === 'ACTIVE') {
-            profile.status = 'PENDING_SETUP';
-            firestoreUpdate.status = 'PENDING_SETUP';
+          // Auto-repair: si tiene businessId pero status quedó en PENDING_SETUP por bug anterior, restaurar
+          if (profile.businessId && profile.status === 'PENDING_SETUP') {
+            profile.status = 'ACTIVE';
+            firestoreUpdate.status = 'ACTIVE';
             needsProfileUpdate = true;
           }
           if (!profile.displayName) {

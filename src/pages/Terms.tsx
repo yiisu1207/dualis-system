@@ -97,7 +97,7 @@ export default function Terms() {
             <p>
               Para consultas sobre estos Términos contacta a:<br />
               <strong className="text-white/70">Jesús Salazar</strong> — Fundador Dualis ERP<br />
-              WhatsApp: 0412-534-3141 · soporte@dualis.app
+              WhatsApp: 0412-534-3141 · soporte@dualis.online
             </p>
           </section>
         </div>

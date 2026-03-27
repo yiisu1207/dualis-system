@@ -2740,7 +2740,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-black text-white tracking-tight">Tenants / URLs Personalizadas</h2>
-                <p className="text-xs text-white/30 mt-1">Gestiona subdominios para cada negocio — slug.dualis.app</p>
+                <p className="text-xs text-white/30 mt-1">Gestiona subdominios para cada negocio — slug.dualis.online</p>
               </div>
               <div className="flex items-center gap-2">
                 <Globe size={16} className="text-indigo-400/40" />
@@ -2812,7 +2812,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                           {currentSlug && (
                             <div className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                               <Globe size={10} className="text-emerald-400" />
-                              <span className="text-[10px] font-bold text-emerald-400">{currentSlug}.dualis.app</span>
+                              <span className="text-[10px] font-bold text-emerald-400">{currentSlug}.dualis.online</span>
                             </div>
                           )}
                         </div>
@@ -2826,7 +2826,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                               placeholder="mi-tienda"
                               className="w-full pl-[72px] pr-[100px] py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.07] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 font-mono"
                             />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/15 text-xs font-mono">.dualis.app</span>
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/15 text-xs font-mono">.dualis.online</span>
                           </div>
                           <button
                             onClick={() => handleSaveTenantSlug(biz)}

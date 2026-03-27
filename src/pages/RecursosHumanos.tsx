@@ -512,6 +512,10 @@ export default function RecursosHumanos() {
   const [qa, setQa] = useState({ empId:'', date: new Date().toISOString().slice(0,10), amount:'', currency:'USD' as 'USD'|'BS', concept:'Abono en efectivo' });
   const [savingAbono, setSavingAbono] = useState(false);
 
+  // Pagination for vouchers table
+  const VALES_PER_PAGE = 10;
+  const [valesPage, setValesPage] = useState(1);
+
   // Emp dropdown state (G)
   const [empDropOpen, setEmpDropOpen] = useState(false);
   const [empSearch, setEmpSearch] = useState('');
@@ -1314,7 +1318,7 @@ export default function RecursosHumanos() {
                   {/* G: Custom colored employee dropdown */}
                   <div ref={empDropRef} className="relative">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
-                    <button type="button" tabIndex={1} onClick={()=>{setEmpDropOpen(o=>!o);setEmpSearch('');}}
+                    <button type="button"onClick={()=>{setEmpDropOpen(o=>!o);setEmpSearch('');}}
                       className={`w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border rounded-xl text-xs font-bold dark:text-white outline-none text-left flex items-center justify-between gap-1 transition-all ${empDropOpen?'border-indigo-500 ring-2 ring-indigo-500/20':'border-slate-200 dark:border-white/[0.08]'}`}>
                       {qv.empId ? (()=>{
                         const e = employees.find(x=>x.id===qv.empId);
@@ -1323,7 +1327,7 @@ export default function RecursosHumanos() {
                       <ChevronDown size={12} className={`text-slate-400 transition-transform shrink-0 ${empDropOpen?'rotate-180':''}`}/>
                     </button>
                     {empDropOpen && (
-                      <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[220px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
+                      <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[320px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
                         <div className="p-2 border-b border-slate-100 dark:border-white/[0.06]">
                           <input autoFocus value={empSearch} onChange={e=>setEmpSearch(e.target.value)} placeholder="Buscar empleado..."
                             className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg dark:text-white outline-none"/>
@@ -1350,12 +1354,12 @@ export default function RecursosHumanos() {
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Fecha del Vale</label>
-                    <input type="date" required tabIndex={2} value={qv.date} onChange={e=>setQv(f=>({...f,date:e.target.value}))}
+                    <input type="date" required value={qv.date} onChange={e=>setQv(f=>({...f,date:e.target.value}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"/>
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Moneda</label>
-                    <select tabIndex={3} value={qv.currency} onChange={e=>setQv(f=>({...f,currency:e.target.value as any}))}
+                    <select value={qv.currency} onChange={e=>setQv(f=>({...f,currency:e.target.value as any}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-indigo-500">
                       {valeMonedaOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
@@ -1374,13 +1378,13 @@ export default function RecursosHumanos() {
                         </>;
                       })()}
                     </label>
-                    <input ref={amtRef} required tabIndex={4} type="number" step="0.01" value={qv.amount} onChange={e=>setQv(f=>({...f,amount:e.target.value}))}
+                    <input ref={amtRef} required type="number" step="0.01" value={qv.amount} onChange={e=>setQv(f=>({...f,amount:e.target.value}))}
                       placeholder="0.00"
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"/>
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Concepto</label>
-                    <input tabIndex={5} value={qv.reason} onChange={e=>setQv(f=>({...f,reason:e.target.value}))}
+                    <input value={qv.reason} onChange={e=>setQv(f=>({...f,reason:e.target.value}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"/>
                   </div>
                   <div className="flex flex-col gap-2">
@@ -1390,7 +1394,7 @@ export default function RecursosHumanos() {
                       <span className={`w-2 h-2 rounded-full ${qv.defer?'bg-amber-500':'bg-slate-300 dark:bg-white/20'}`}/>
                       {qv.defer ? 'Próx. corte' : 'Este corte'}
                     </button>
-                    <button tabIndex={6} disabled={saving} className="h-[42px] bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 disabled:opacity-50 hover:from-indigo-500 hover:to-violet-500 transition-all">
+                    <button disabled={saving} className="h-[42px] bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 disabled:opacity-50 hover:from-indigo-500 hover:to-violet-500 transition-all">
                       {saving?<Loader2 size={13} className="animate-spin"/>:<><Plus size={13}/>Registrar</>}
                     </button>
                   </div>
@@ -1408,7 +1412,7 @@ export default function RecursosHumanos() {
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                     {visibleVouchers.length===0&&<tr><td colSpan={8} className="px-5 py-16 text-center"><Ticket size={40} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin vales{isIndividual ? ' (modo individual — solo tus registros)' : ''}</p></td></tr>}
-                    {visibleVouchers.map(v=>(
+                    {visibleVouchers.slice((valesPage-1)*VALES_PER_PAGE, valesPage*VALES_PER_PAGE).map(v=>(
                       <React.Fragment key={v.id}>
                       <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${v.status==='CORREGIDO'?'opacity-50':''}`}>
                         <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{v.voucherDate || (v.createdAt?.toDate ? v.createdAt.toDate().toLocaleDateString('es-VE') : '—')}</td>
@@ -1482,6 +1486,27 @@ export default function RecursosHumanos() {
                 </table>
               </div>
 
+              {/* Pagination */}
+              {visibleVouchers.length > VALES_PER_PAGE && (
+                <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 dark:border-white/[0.06]">
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-white/30">
+                    {(valesPage-1)*VALES_PER_PAGE+1}–{Math.min(valesPage*VALES_PER_PAGE, visibleVouchers.length)} de {visibleVouchers.length}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    {Array.from({length: Math.ceil(visibleVouchers.length / VALES_PER_PAGE)}, (_,i) => i+1).map(p => (
+                      <button key={p} onClick={() => setValesPage(p)}
+                        className={`min-w-[28px] h-7 px-1.5 rounded-lg text-[10px] font-black transition-all ${
+                          p === valesPage
+                            ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md'
+                            : 'text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
+                        }`}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* ── ABONOS (L) ── */}
               <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-t border-slate-100 dark:border-white/[0.06]">
                 <div className="flex items-center gap-2 mb-3">
@@ -1502,7 +1527,7 @@ export default function RecursosHumanos() {
                       <ChevronDown size={12} className={`text-slate-400 transition-transform shrink-0 ${abonoDropOpen?'rotate-180':''}`}/>
                     </button>
                     {abonoDropOpen && (
-                      <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[220px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
+                      <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[320px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
                         <div className="p-2 border-b border-slate-100 dark:border-white/[0.06]">
                           <input autoFocus value={abonoSearch} onChange={e=>setAbonoSearch(e.target.value)} placeholder="Buscar..."
                             className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg dark:text-white outline-none"/>
@@ -1587,7 +1612,7 @@ export default function RecursosHumanos() {
                   {/* G: Custom colored employee dropdown */}
                   <div ref={teDropRef} className="relative">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
-                    <button type="button" tabIndex={1} onClick={()=>{setTeDropOpen(o=>!o);setTeSearch('');}}
+                    <button type="button"onClick={()=>{setTeDropOpen(o=>!o);setTeSearch('');}}
                       className={`w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border rounded-xl text-xs font-bold dark:text-white outline-none text-left flex items-center justify-between gap-1 transition-all ${teDropOpen?'border-violet-500 ring-2 ring-violet-500/20':'border-slate-200 dark:border-white/[0.08]'}`}>
                       {te.empId ? (()=>{
                         const e = employees.find(x=>x.id===te.empId);
@@ -1596,7 +1621,7 @@ export default function RecursosHumanos() {
                       <ChevronDown size={12} className={`text-slate-400 transition-transform shrink-0 ${teDropOpen?'rotate-180':''}`}/>
                     </button>
                     {teDropOpen && (
-                      <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[220px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
+                      <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[320px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
                         <div className="p-2 border-b border-slate-100 dark:border-white/[0.06]">
                           <input autoFocus value={teSearch} onChange={e=>setTeSearch(e.target.value)} placeholder="Buscar empleado..."
                             className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg dark:text-white outline-none"/>
@@ -1616,7 +1641,7 @@ export default function RecursosHumanos() {
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Tipo</label>
-                    <select tabIndex={2} value={te.type} onChange={e=>setTe(f=>({...f,type:e.target.value as TimeEntry['type']}))}
+                    <select value={te.type} onChange={e=>setTe(f=>({...f,type:e.target.value as TimeEntry['type']}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
                       <option value="overtime">Horas Extras (+)</option>
                       <option value="absence">Horas Ausentes (−)</option>
@@ -1625,7 +1650,7 @@ export default function RecursosHumanos() {
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Fecha</label>
-                    <input type="date" required tabIndex={3} value={te.date} onChange={e=>setTe(f=>({...f,date:e.target.value}))}
+                    <input type="date" required value={te.date} onChange={e=>setTe(f=>({...f,date:e.target.value}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-violet-500"/>
                   </div>
                   <div>
@@ -1633,22 +1658,22 @@ export default function RecursosHumanos() {
                       {te.type==='missing_day'?'Días':'Horas'}
                     </label>
                     {te.type==='missing_day' ? (
-                      <input required tabIndex={4} type="number" step="1" min="1" value={te.days} onChange={e=>setTe(f=>({...f,days:e.target.value}))}
+                      <input required type="number" step="1" min="1" value={te.days} onChange={e=>setTe(f=>({...f,days:e.target.value}))}
                         placeholder="1"
                         className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-violet-500"/>
                     ) : (
-                      <input required tabIndex={4} type="number" step="0.5" min="0.5" value={te.hours} onChange={e=>setTe(f=>({...f,hours:e.target.value}))}
+                      <input required type="number" step="0.5" min="0.5" value={te.hours} onChange={e=>setTe(f=>({...f,hours:e.target.value}))}
                         placeholder="0.0"
                         className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-violet-500"/>
                     )}
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Razón</label>
-                    <input tabIndex={5} value={te.reason} onChange={e=>setTe(f=>({...f,reason:e.target.value}))}
+                    <input value={te.reason} onChange={e=>setTe(f=>({...f,reason:e.target.value}))}
                       placeholder={te.type==='overtime'?'Horas extras':te.type==='absence'?'Permiso/Ausencia':'Falta sin justificar'}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-violet-500"/>
                   </div>
-                  <button tabIndex={6} disabled={saving} className="h-[42px] bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 disabled:opacity-50 hover:from-violet-500 hover:to-purple-500 transition-all">
+                  <button disabled={saving} className="h-[42px] bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md flex items-center justify-center gap-2 disabled:opacity-50 hover:from-violet-500 hover:to-purple-500 transition-all">
                     {saving?<Loader2 size={13} className="animate-spin"/>:<><Plus size={13}/>Registrar</>}
                   </button>
                 </form>
