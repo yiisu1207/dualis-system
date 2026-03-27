@@ -59,8 +59,8 @@ service cloud.firestore {
 
     // OPS TOKENS (sesiones de monitoreo anónimas)
     match /opsTokens/{tokenId} {
-      // El propio usuario anónimo puede crear/leer/borrar su token
-      allow read, create, delete: if isSignedIn() && request.auth.uid == tokenId;
+      // El propio usuario anónimo puede crear/leer/actualizar/borrar su token
+      allow read, create, update, delete: if isSignedIn() && request.auth.uid == tokenId;
       // Super admin puede limpiar tokens
       allow read, delete: if isSuperAdmin();
     }
