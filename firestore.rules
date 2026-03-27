@@ -12,6 +12,12 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.email == 'yisus_xd77@hotmail.com';
     }
 
+    // Ops monitor — usuario anónimo con token válido
+    function isOpsUser() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/opsTokens/$(request.auth.uid));
+    }
+
     function getUser() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
@@ -51,8 +57,18 @@ service cloud.firestore {
 
     // ─── REGLAS ─────────────────────────────────────────────────────────────
 
+    // OPS TOKENS (sesiones de monitoreo anónimas)
+    match /opsTokens/{tokenId} {
+      // El propio usuario anónimo puede crear/leer/borrar su token
+      allow read, create, delete: if isSignedIn() && request.auth.uid == tokenId;
+      // Super admin puede limpiar tokens
+      allow read, delete: if isSuperAdmin();
+    }
+
     // PERFILES DE USUARIO
     match /users/{uid} {
+      // Ops monitor puede leer todos los perfiles (read-only)
+      allow read: if isOpsUser();
       // Super admin puede leer/escribir cualquier perfil (para activar cuentas pendientes)
       allow read, write: if isSuperAdmin();
       allow read, write: if isSignedIn() && request.auth.uid == uid;
@@ -62,6 +78,8 @@ service cloud.firestore {
 
     // RAMA DE NEGOCIO (Contenedor central)
     match /businesses/{bid} {
+      // Ops monitor puede listar negocios (read-only)
+      allow read: if isOpsUser();
       allow read, write: if isSuperAdmin();
       // Permitir get (lectura por ID exacto) a cualquiera.
       // El businessId es un secreto criptográfico de 32 chars (key_XXX),
@@ -289,11 +307,11 @@ service cloud.firestore {
     match /tenants/{slug} {
       // Público: cualquier persona puede resolver un slug para login
       allow get: if true;
-      // Solo listar si es super-admin (para auditoría)
-      allow list: if isSuperAdmin();
-      // Solo admin/owner del negocio puede crear/actualizar su slug
-      allow create: if isSignedIn() && isAdmin(request.resource.data.businessId);
-      allow update: if isSignedIn() && isAdmin(resource.data.businessId);
+      // Solo listar si es super-admin u ops monitor (para auditoría)
+      allow list: if isSuperAdmin() || isOpsUser();
+      // Super-admin o admin/owner del negocio puede crear/actualizar su slug
+      allow create: if isSuperAdmin() || (isSignedIn() && isAdmin(request.resource.data.businessId));
+      allow update: if isSuperAdmin() || (isSignedIn() && isAdmin(resource.data.businessId));
       // Solo super-admin puede eliminar
       allow delete: if isSuperAdmin();
     }

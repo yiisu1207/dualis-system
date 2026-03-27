@@ -28,6 +28,7 @@ import PendingApprovalWall from '../pages/PendingApprovalWall';
 import { useSubscription } from '../hooks/useSubscription';
 import { VendorProvider } from '../context/VendorContext';
 import { findInvitationByToken } from '../firebase/api';
+import OpsMonitor from '../pages/OpsMonitor';
 import { CartProvider } from '../context/CartContext';
 import PortalGuard from '../portal/PortalGuard';
 import PortalDashboard from '../portal/PortalDashboard';
@@ -316,6 +317,8 @@ export default function AppRouter() {
       <Route path="/privacy" element={<Privacy />} />
       {/* Internal ops panel — PIN-protected, path from env */}
       <Route path={`/${import.meta.env.VITE_SUPER_ADMIN_PATH ?? 'ctrl-9x7b'}`} element={<SuperAdminPanel />} />
+      {/* Ops monitor — passkey-only anonymous access */}
+      <Route path="/ops" element={<OpsMonitor />} />
       {/* Pending approval wall */}
       <Route path="/:empresa_id/pending" element={<ProtectedRoute><PendingApprovalWall /></ProtectedRoute>} />
       {/* Billing — protected, accessible even on expired plan */}
