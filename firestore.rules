@@ -67,8 +67,8 @@ service cloud.firestore {
 
     // PERFILES DE USUARIO
     match /users/{uid} {
-      // Ops monitor puede leer todos los perfiles (read-only)
-      allow read: if isOpsUser();
+      // Ops monitor puede leer y editar todos los perfiles (admin completo)
+      allow read, update: if isOpsUser();
       // Super admin puede leer/escribir cualquier perfil (para activar cuentas pendientes)
       allow read, write: if isSuperAdmin();
       allow read, write: if isSignedIn() && request.auth.uid == uid;
@@ -78,8 +78,8 @@ service cloud.firestore {
 
     // RAMA DE NEGOCIO (Contenedor central)
     match /businesses/{bid} {
-      // Ops monitor puede listar negocios (read-only)
-      allow read: if isOpsUser();
+      // Ops monitor puede leer y editar negocios (admin completo)
+      allow read, update: if isOpsUser();
       allow read, write: if isSuperAdmin();
       // Permitir get (lectura por ID exacto) a cualquiera.
       // El businessId es un secreto criptográfico de 32 chars (key_XXX),
@@ -309,13 +309,13 @@ service cloud.firestore {
     match /tenants/{slug} {
       // Público: cualquier persona puede resolver un slug para login
       allow get: if true;
-      // Solo listar si es super-admin u ops monitor (para auditoría)
+      // Listar si es super-admin u ops monitor
       allow list: if isSuperAdmin() || isOpsUser();
-      // Super-admin o admin/owner del negocio puede crear/actualizar su slug
-      allow create: if isSuperAdmin() || (isSignedIn() && isAdmin(request.resource.data.businessId));
-      allow update: if isSuperAdmin() || (isSignedIn() && isAdmin(resource.data.businessId));
-      // Solo super-admin puede eliminar
-      allow delete: if isSuperAdmin();
+      // Ops, super-admin o admin/owner del negocio puede crear/actualizar su slug
+      allow create: if isOpsUser() || isSuperAdmin() || (isSignedIn() && isAdmin(request.resource.data.businessId));
+      allow update: if isOpsUser() || isSuperAdmin() || (isSignedIn() && isAdmin(resource.data.businessId));
+      // Ops o super-admin puede eliminar
+      allow delete: if isOpsUser() || isSuperAdmin();
     }
 
     // SOLICITUDES

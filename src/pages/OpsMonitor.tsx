@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { auth, db } from '../firebase/config';
 import { signInAnonymously, signOut } from 'firebase/auth';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc,
+  collection, getDocs, doc, setDoc, deleteDoc, updateDoc,
   query, orderBy, limit, where, Timestamp,
 } from 'firebase/firestore';
 import {
@@ -14,7 +14,8 @@ import {
   Filter, X, Bell, Zap, Timer, Hash, Mail, Phone, MapPin,
   Briefcase, CalendarDays, ArrowUpRight, ArrowDownRight,
   Wallet, Banknote, BadgeDollarSign, Receipt, ShieldAlert,
-  Crown, Star, Sparkles, CircleDot,
+  Crown, Star, Sparkles, CircleDot, Pencil, Save, Trash2,
+  ToggleLeft, ToggleRight, UserCog, Link2, Unlink,
 } from 'lucide-react';
 
 /* ── Constants ──────────────────────────────────────────────── */
@@ -548,8 +549,8 @@ export default function OpsMonitor() {
       {/* ── Content ───────────────────────────────────────── */}
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
         {tab === 'overview' && <OverviewTab stats={stats} businesses={businesses} users={users} tenants={tenants} />}
-        {tab === 'businesses' && <BusinessesTab businesses={businesses} stats={stats} tenants={tenants} users={users} exportCSV={exportCSV} />}
-        {tab === 'users' && <UsersTab users={users} businesses={businesses} stats={stats} exportCSV={exportCSV} />}
+        {tab === 'businesses' && <BusinessesTab businesses={businesses} stats={stats} tenants={tenants} users={users} exportCSV={exportCSV} onRefresh={fetchAllData} />}
+        {tab === 'users' && <UsersTab users={users} businesses={businesses} stats={stats} exportCSV={exportCSV} onRefresh={fetchAllData} />}
         {tab === 'revenue' && <RevenueTab stats={stats} movements={movements} businesses={businesses} exportCSV={exportCSV} />}
         {tab === 'activity' && <ActivityTab auditLogs={auditLogs} users={users} businesses={businesses} />}
       </div>
@@ -693,11 +694,16 @@ function OverviewTab({ stats, businesses, users, tenants }: any) {
 /* ══════════════════════════════════════════════════════════════ */
 /*                    BUSINESSES TAB                             */
 /* ══════════════════════════════════════════════════════════════ */
-function BusinessesTab({ businesses, stats, tenants, users, exportCSV }: any) {
+function BusinessesTab({ businesses, stats, tenants, users, exportCSV, onRefresh }: any) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'users' | 'revenue' | 'created'>('created');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [planFilter, setPlanFilter] = useState('all');
+  const [editingBiz, setEditingBiz] = useState<BizInfo | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState('');
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   const filtered = useMemo(() => {
     let list = [...businesses];
@@ -842,7 +848,13 @@ function BusinessesTab({ businesses, stats, tenants, users, exportCSV }: any) {
                               </div>
                             </div>
                           </div>
-                          <p className="text-[8px] text-white/10 font-mono mt-3">ID: {biz.id}</p>
+                          <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/[0.05]">
+                            <p className="text-[8px] text-white/10 font-mono">ID: {biz.id}</p>
+                            <button onClick={(e) => { e.stopPropagation(); setEditingBiz(biz); }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all text-[10px] font-bold text-indigo-400">
+                              <Pencil size={11} /> Editar negocio
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -853,6 +865,214 @@ function BusinessesTab({ businesses, stats, tenants, users, exportCSV }: any) {
           </table>
         </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-[100] px-4 py-2.5 bg-[#0d1424] border border-white/[0.1] rounded-xl shadow-2xl shadow-black/50 text-xs text-white font-bold">
+          {toast}
+        </div>
+      )}
+
+      {/* Business Edit Modal */}
+      {editingBiz && (
+        <BizEditModal biz={editingBiz} slug={tenants[editingBiz.id] || ''}
+          onClose={() => setEditingBiz(null)}
+          onSave={async () => { showToast('✓ Negocio actualizado'); setEditingBiz(null); onRefresh?.(); }}
+          saving={saving} setSaving={setSaving} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
+/* ── Business Edit Modal ──────────────────────────────────────── */
+function BizEditModal({ biz, slug, onClose, onSave, saving, setSaving, showToast }: {
+  biz: BizInfo; slug: string; onClose: () => void; onSave: () => Promise<void>;
+  saving: boolean; setSaving: (v: boolean) => void; showToast: (msg: string) => void;
+}) {
+  const [editName, setEditName] = useState(biz.name);
+  const [editPlan, setEditPlan] = useState(biz.plan || 'free_tier');
+  const [editSubStatus, setEditSubStatus] = useState(biz.subStatus || 'unknown');
+  const [editSlug, setEditSlug] = useState(slug);
+  const [editPaymentMethod, setEditPaymentMethod] = useState(biz.paymentMethod || '');
+  const [bonusDays, setBonusDays] = useState(0);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Update business doc
+      const bizUpdate: Record<string, any> = {};
+      if (editName !== biz.name) bizUpdate.name = editName;
+      if (editPlan !== (biz.plan || 'free_tier')) bizUpdate['subscription.plan'] = editPlan;
+      if (editSubStatus !== (biz.subStatus || 'unknown')) bizUpdate['subscription.status'] = editSubStatus;
+      if (editPaymentMethod !== (biz.paymentMethod || '')) bizUpdate['subscription.paymentMethod'] = editPaymentMethod;
+
+      // Bonus days — extend trial/period end
+      if (bonusDays > 0) {
+        const baseDate = biz.trialEndsAt ? new Date(biz.trialEndsAt) :
+          biz.currentPeriodEnd ? new Date(biz.currentPeriodEnd) : new Date();
+        const newDate = new Date(baseDate.getTime() + bonusDays * 24 * 60 * 60 * 1000);
+        if (editSubStatus === 'trial') {
+          bizUpdate['subscription.trialEndsAt'] = newDate;
+        } else {
+          bizUpdate['subscription.currentPeriodEnd'] = newDate;
+        }
+        bizUpdate['subscription.bonusNotification'] = {
+          days: bonusDays,
+          grantedAt: new Date().toISOString(),
+          reason: 'Ops admin grant',
+          seen: false,
+        };
+      }
+
+      if (Object.keys(bizUpdate).length > 0) {
+        await updateDoc(doc(db, 'businesses', biz.id), bizUpdate);
+      }
+
+      // Handle slug changes
+      const oldSlug = slug;
+      const newSlug = editSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+      if (newSlug !== oldSlug) {
+        // Delete old slug doc if it existed
+        if (oldSlug) {
+          try { await deleteDoc(doc(db, 'tenants', oldSlug)); } catch {}
+        }
+        // Create new slug doc if not empty
+        if (newSlug) {
+          await setDoc(doc(db, 'tenants', newSlug), {
+            businessId: biz.id,
+            businessName: editName || biz.name,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      await onSave();
+    } catch (err: any) {
+      showToast(`✗ Error: ${err.message}`);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-xl bg-[#0d1424] border border-white/[0.1] rounded-2xl shadow-2xl shadow-black/50 overflow-hidden max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between sticky top-0 bg-[#0d1424] z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-violet-500/15 border border-violet-500/20 flex items-center justify-center">
+              <Building2 size={18} className="text-violet-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-white">Editar Negocio</h3>
+              <p className="text-[10px] text-white/30">{biz.ownerEmail}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/[0.06] transition-all">
+            <X size={16} className="text-white/30" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          {/* Name */}
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Nombre del negocio</label>
+            <input value={editName} onChange={e => setEditName(e.target.value)}
+              className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none focus:ring-1 focus:ring-violet-500/50" />
+          </div>
+
+          {/* Plan + Status */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Plan</label>
+              <select value={editPlan} onChange={e => setEditPlan(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none">
+                <option value="free_tier">Free Tier</option>
+                <option value="trial">Trial</option>
+                <option value="starter">Starter</option>
+                <option value="negocio">Negocio</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Estado Suscripción</label>
+              <select value={editSubStatus} onChange={e => setEditSubStatus(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none">
+                <option value="trial">Trial</option>
+                <option value="active">Activa</option>
+                <option value="expired">Expirada</option>
+                <option value="cancelled">Cancelada</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Slug + Payment */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Subdominio (slug)</label>
+              <div className="flex items-center gap-1">
+                <input value={editSlug} onChange={e => setEditSlug(e.target.value)} placeholder="mitienda"
+                  className="flex-1 px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none focus:ring-1 focus:ring-violet-500/50" />
+                <span className="text-[9px] text-white/15 font-mono">.dualis.online</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Método de pago</label>
+              <select value={editPaymentMethod} onChange={e => setEditPaymentMethod(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none">
+                <option value="">Sin método</option>
+                <option value="stripe">Stripe</option>
+                <option value="binance">Binance</option>
+                <option value="zelle">Zelle</option>
+                <option value="pago_movil">Pago Móvil</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Bonus days */}
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4">
+            <label className="text-[10px] font-black uppercase tracking-widest text-amber-400/60 mb-2 flex items-center gap-1.5 block">
+              <Sparkles size={11} /> Otorgar días bonus
+            </label>
+            <div className="flex items-center gap-3">
+              <input type="number" min={0} max={365} value={bonusDays} onChange={e => setBonusDays(Number(e.target.value))}
+                className="w-24 px-3 py-2 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none text-center" />
+              <span className="text-xs text-white/30">días</span>
+              {bonusDays > 0 && (
+                <span className="text-[10px] text-amber-400/70">
+                  Se extenderá {editSubStatus === 'trial' ? 'el trial' : 'el período'} por {bonusDays} días
+                </span>
+              )}
+            </div>
+            {/* Current dates */}
+            <div className="flex gap-4 mt-2 text-[9px] text-white/20 font-mono">
+              {biz.trialEndsAt && <span>Trial ends: {fmtDate(biz.trialEndsAt)}</span>}
+              {biz.currentPeriodEnd && <span>Period ends: {fmtDate(biz.currentPeriodEnd)}</span>}
+            </div>
+          </div>
+
+          {/* Current info */}
+          <div className="grid grid-cols-3 gap-2 text-[9px] text-white/15 font-mono">
+            <span>Owner: {biz.ownerName || biz.ownerEmail || '—'}</span>
+            <span>Creado: {biz.createdAt ? fmtDate(biz.createdAt) : '—'}</span>
+            <span>Último pago: {biz.lastPaymentAt ? fmtDate(biz.lastPaymentAt) : '—'}</span>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-white/[0.06] flex items-center justify-end gap-2 sticky bottom-0 bg-[#0d1424]">
+          <button onClick={onClose}
+            className="px-4 py-2.5 rounded-xl bg-white/[0.04] text-white/40 text-xs font-bold hover:bg-white/[0.08] transition-all">
+            Cancelar
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 disabled:opacity-40 hover:from-violet-500 hover:to-indigo-500 transition-all shadow-lg shadow-violet-500/25">
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+            Guardar cambios
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -860,11 +1080,14 @@ function BusinessesTab({ businesses, stats, tenants, users, exportCSV }: any) {
 /* ══════════════════════════════════════════════════════════════ */
 /*                      USERS TAB                                */
 /* ══════════════════════════════════════════════════════════════ */
-function UsersTab({ users, businesses, stats, exportCSV }: any) {
+function UsersTab({ users, businesses, stats, exportCSV, onRefresh }: any) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [selectedUser, setSelectedUser] = useState<UserInfo | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState('');
 
   const bizMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -892,6 +1115,24 @@ function UsersTab({ users, businesses, stats, exportCSV }: any) {
 
   useEffect(() => { setPage(1); }, [search, statusFilter, roleFilter]);
 
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  /* ── User Actions ──────────────────────────────────────── */
+  const updateUser = async (uid: string, data: Record<string, any>, label: string) => {
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'users', uid), data);
+      showToast(`✓ ${label}`);
+      onRefresh?.();
+    } catch (err: any) {
+      showToast(`✗ Error: ${err.message}`);
+    } finally { setSaving(false); }
+  };
+
+  const quickApprove = (u: UserInfo) => updateUser(u.uid, { status: 'ACTIVE' }, `${u.fullName || u.email} activado`);
+  const quickDisable = (u: UserInfo) => updateUser(u.uid, { status: 'DISABLED' }, `${u.fullName || u.email} deshabilitado`);
+  const quickEnable = (u: UserInfo) => updateUser(u.uid, { status: 'ACTIVE' }, `${u.fullName || u.email} reactivado`);
+
   const handleExport = () => {
     exportCSV('usuarios_ops.csv',
       ['Nombre', 'Email', 'Rol', 'Status', 'Cédula', 'Teléfono', 'Negocio', 'Creado'],
@@ -904,6 +1145,13 @@ function UsersTab({ users, businesses, stats, exportCSV }: any) {
 
   return (
     <div className="space-y-4">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-[100] px-4 py-2.5 bg-[#0d1424] border border-white/[0.1] rounded-xl shadow-2xl shadow-black/50 text-xs text-white font-bold animate-in slide-in-from-right">
+          {toast}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
@@ -928,6 +1176,18 @@ function UsersTab({ users, businesses, stats, exportCSV }: any) {
         </button>
       </div>
 
+      {/* Pending approval quick bar */}
+      {stats.pendingUsers > 0 && statusFilter === 'all' && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-500/[0.06] border border-amber-500/20">
+          <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+          <span className="text-xs text-amber-200/70 flex-1">{stats.pendingUsers} usuario(s) pendientes de aprobación</span>
+          <button onClick={() => setStatusFilter('PENDING_APPROVAL')}
+            className="px-3 py-1 rounded-lg bg-amber-500/20 text-amber-400 text-[10px] font-black uppercase hover:bg-amber-500/30 transition-all">
+            Ver pendientes
+          </button>
+        </div>
+      )}
+
       <p className="text-[10px] text-white/20 font-mono">{filtered.length} usuarios · Página {page}/{totalPages || 1}</p>
 
       <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
@@ -942,11 +1202,12 @@ function UsersTab({ users, businesses, stats, exportCSV }: any) {
                 <th className="px-4 py-3">Cédula</th>
                 <th className="px-4 py-3">Teléfono</th>
                 <th className="px-4 py-3 text-right">Registrado</th>
+                <th className="px-4 py-3 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.03]">
               {paginated.map((u: UserInfo) => (
-                <tr key={u.uid} className="hover:bg-white/[0.02] transition-colors">
+                <tr key={u.uid} className="hover:bg-white/[0.02] transition-colors group">
                   <td className="px-4 py-3">
                     <p className="text-sm font-bold text-white truncate max-w-[200px]">{u.fullName || '(sin nombre)'}</p>
                     <p className="text-[9px] text-white/20 truncate">{u.email}</p>
@@ -964,6 +1225,32 @@ function UsersTab({ users, businesses, stats, exportCSV }: any) {
                   <td className="px-4 py-3 text-[10px] text-white/30 font-mono">{u.cedula || '—'}</td>
                   <td className="px-4 py-3 text-[10px] text-white/30">{u.phone || '—'}</td>
                   <td className="px-4 py-3 text-right text-[10px] text-white/25 font-mono">{u.createdAt ? fmtDate(u.createdAt) : '—'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1 opacity-40 group-hover:opacity-100 transition-opacity">
+                      {(u.status === 'PENDING_APPROVAL' || u.status === 'PENDING_SETUP') && (
+                        <button onClick={() => quickApprove(u)} disabled={saving} title="Aprobar"
+                          className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all">
+                          <UserCheck size={12} className="text-emerald-400" />
+                        </button>
+                      )}
+                      {u.status === 'ACTIVE' && (
+                        <button onClick={() => quickDisable(u)} disabled={saving} title="Deshabilitar"
+                          className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition-all">
+                          <UserX size={12} className="text-rose-400" />
+                        </button>
+                      )}
+                      {u.status === 'DISABLED' && (
+                        <button onClick={() => quickEnable(u)} disabled={saving} title="Reactivar"
+                          className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all">
+                          <ToggleRight size={12} className="text-emerald-400" />
+                        </button>
+                      )}
+                      <button onClick={() => setSelectedUser(u)} title="Editar usuario"
+                        className="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all">
+                        <Pencil size={12} className="text-indigo-400" />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -974,7 +1261,7 @@ function UsersTab({ users, businesses, stats, exportCSV }: any) {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-1">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+          {Array.from({ length: Math.min(totalPages, 20) }, (_, i) => i + 1).map(p => (
             <button key={p} onClick={() => setPage(p)}
               className={`w-8 h-8 rounded-lg text-[10px] font-black transition-all ${
                 p === page ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white' : 'bg-white/[0.04] text-white/30 hover:bg-white/[0.08]'
@@ -982,6 +1269,144 @@ function UsersTab({ users, businesses, stats, exportCSV }: any) {
           ))}
         </div>
       )}
+
+      {/* ── User Edit Modal ─────────────────────────────── */}
+      {selectedUser && (
+        <UserEditModal user={selectedUser} bizMap={bizMap} onClose={() => setSelectedUser(null)}
+          onSave={async (uid, data, label) => { await updateUser(uid, data, label); setSelectedUser(null); }} saving={saving} />
+      )}
+    </div>
+  );
+}
+
+/* ── User Edit Modal ─────────────────────────────────────────── */
+function UserEditModal({ user, bizMap, onClose, onSave, saving }: {
+  user: UserInfo; bizMap: Record<string, string>; onClose: () => void;
+  onSave: (uid: string, data: Record<string, any>, label: string) => Promise<void>; saving: boolean;
+}) {
+  const [editRole, setEditRole] = useState(user.role);
+  const [editStatus, setEditStatus] = useState(user.status);
+  const [editName, setEditName] = useState(user.fullName);
+  const [editPhone, setEditPhone] = useState(user.phone || '');
+  const [editCedula, setEditCedula] = useState(user.cedula || '');
+
+  const hasChanges = editRole !== user.role || editStatus !== user.status ||
+    editName !== user.fullName || editPhone !== (user.phone || '') || editCedula !== (user.cedula || '');
+
+  const handleSave = () => {
+    const data: Record<string, any> = {};
+    if (editRole !== user.role) data.role = editRole;
+    if (editStatus !== user.status) data.status = editStatus;
+    if (editName !== user.fullName) data.fullName = editName;
+    if (editPhone !== (user.phone || '')) data.phone = editPhone;
+    if (editCedula !== (user.cedula || '')) data.cedula = editCedula;
+    onSave(user.uid, data, `${user.fullName || user.email} actualizado`);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-lg bg-[#0d1424] border border-white/[0.1] rounded-2xl shadow-2xl shadow-black/50 overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center">
+              <UserCog size={18} className="text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-white">Editar Usuario</h3>
+              <p className="text-[10px] text-white/30 font-mono">{user.uid.slice(0, 20)}...</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/[0.06] transition-all">
+            <X size={16} className="text-white/30" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          {/* Info row */}
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+            <Mail size={13} className="text-white/20 shrink-0" />
+            <span className="text-xs text-white/50">{user.email}</span>
+            {user.businessId && (
+              <>
+                <span className="text-white/10">·</span>
+                <Building2 size={11} className="text-white/15 shrink-0" />
+                <span className="text-[10px] text-white/30 truncate">{bizMap[user.businessId] || user.businessId}</span>
+              </>
+            )}
+          </div>
+
+          {/* Name */}
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Nombre completo</label>
+            <input value={editName} onChange={e => setEditName(e.target.value)}
+              className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500/50" />
+          </div>
+
+          {/* Role + Status */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Rol</label>
+              <select value={editRole} onChange={e => setEditRole(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500/50">
+                <option value="owner">Owner</option>
+                <option value="admin">Admin</option>
+                <option value="ventas">Ventas</option>
+                <option value="auditor">Auditor</option>
+                <option value="staff">Staff</option>
+                <option value="member">Member</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Status</label>
+              <select value={editStatus} onChange={e => setEditStatus(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500/50">
+                <option value="ACTIVE">Activo</option>
+                <option value="PENDING_APPROVAL">Pendiente Aprobación</option>
+                <option value="PENDING_SETUP">Pendiente Setup</option>
+                <option value="DISABLED">Deshabilitado</option>
+                <option value="REJECTED">Rechazado</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Cedula + Phone */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Cédula</label>
+              <input value={editCedula} onChange={e => setEditCedula(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500/50" />
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Teléfono</label>
+              <input value={editPhone} onChange={e => setEditPhone(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500/50" />
+            </div>
+          </div>
+
+          {/* Metadata */}
+          <div className="flex items-center gap-4 text-[9px] text-white/15 font-mono pt-1">
+            <span>Registrado: {user.createdAt ? fmtDate(user.createdAt) : '—'}</span>
+            {user.lastLogin && <span>Último login: {fmtDate(user.lastLogin)}</span>}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-white/[0.06] flex items-center justify-end gap-2">
+          <button onClick={onClose}
+            className="px-4 py-2.5 rounded-xl bg-white/[0.04] text-white/40 text-xs font-bold hover:bg-white/[0.08] transition-all">
+            Cancelar
+          </button>
+          <button onClick={handleSave} disabled={!hasChanges || saving}
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 disabled:opacity-40 hover:from-indigo-500 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/25">
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+            Guardar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
