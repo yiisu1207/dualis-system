@@ -99,6 +99,13 @@ service cloud.firestore {
         allow update: if isMember(bid);
       }
 
+      // Almacenes: miembros leen, admin gestiona
+      match /almacenes/{almacenId} {
+        allow read: if isMember(bid);
+        allow create, update: if isAdmin(bid);
+        allow delete: if isAdmin(bid);
+      }
+
       // Terminales: ventas puede actualizar estadísticas al procesar venta
       match /terminals/{terminalId} {
         allow read: if isMember(bid);

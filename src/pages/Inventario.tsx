@@ -4,8 +4,11 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
+  increment,
   onSnapshot,
   setDoc,
+  updateDoc,
   query,
   orderBy,
   limit,
@@ -78,6 +81,7 @@ type Product = {
   precioDivisa: number;
   preciosCuenta: Record<string, number>;
   stock: number;
+  stockByAlmacen?: Record<string, number>;
   stockMinimo: number;
   iva: number;
   ivaTipo: 'GENERAL' | 'REDUCIDO' | 'EXENTO';
@@ -100,7 +104,16 @@ type StockMovement = {
   createdAt: any;
 };
 
-type TabType = 'catalog' | 'kardex' | 'tools';
+type TabType = 'catalog' | 'kardex' | 'tools' | 'almacenes';
+
+type Almacen = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  activo: boolean;
+  orden: number;
+  createdAt?: string;
+};
 
 const initialProduct: Omit<Product, 'id'> = {
   codigo: '',
@@ -129,7 +142,7 @@ const initialProduct: Omit<Product, 'id'> = {
 };
 
 // ─── IMPORT AUTO-DETECTION ────────────────────────────────────────────────────
-const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuenta'> | 'margen', string[]> = {
+const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuenta' | 'stockByAlmacen'> | 'margen', string[]> = {
   codigo:       ['código','codigo','code','sku','barcode','cod','upc','ean','referencia','ref'],
   nombre:       ['nombre','name','producto','descripción','descripcion','description','item','artículo','articulo','denominacion'],
   categoria:    ['categoría','categoria','category','grupo','tipo','type','familia','rubro'],
@@ -250,6 +263,14 @@ export default function Inventario() {
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ── ALMACENES ──────────────────────────────────────────────────────────────
+  const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
+  const [selectedAlmacenId, setSelectedAlmacenId] = useState<string>('principal');
+  const [almacenModalOpen, setAlmacenModalOpen] = useState(false);
+  const [editingAlmacenId, setEditingAlmacenId] = useState<string | null>(null);
+  const [almacenForm, setAlmacenForm] = useState({ nombre: '', descripcion: '', activo: true });
+  const [almacenSaving, setAlmacenSaving] = useState(false);
+
   // Catalog states
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -258,8 +279,8 @@ export default function Inventario() {
   const [form, setForm] = useState(initialProduct);
   const [quickMode, setQuickMode] = useState(true);
   const [mayorManual, setMayorManual] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showMayorPrices, setShowMayorPrices] = useState(false);
+  const [customMarginDetal, setCustomMarginDetal] = useState('');
+  const [customMarginMayor, setCustomMarginMayor] = useState('');
   const [stickyMargin, setStickyMargin] = useState<number>(() => {
     const saved = localStorage.getItem('dualis_last_margin');
     return saved ? parseFloat(saved) : 30;
@@ -423,6 +444,65 @@ export default function Inventario() {
     return () => { unsubProd(); unsubMov(); };
   }, [tenantId]);
 
+  // Load almacenes
+  useEffect(() => {
+    if (!tenantId) return;
+    const q = query(collection(db, `businesses/${tenantId}/almacenes`), orderBy('orden', 'asc'));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Almacen));
+      setAlmacenes(list);
+      // If current selectedAlmacenId not in list, reset to first or 'principal'
+      if (list.length > 0 && !list.find(a => a.id === selectedAlmacenId)) {
+        setSelectedAlmacenId(list[0].id);
+      }
+    });
+    return () => unsub();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
+
+  const handleSaveAlmacen = async () => {
+    if (!tenantId || !almacenForm.nombre.trim()) return;
+    setAlmacenSaving(true);
+    try {
+      if (editingAlmacenId) {
+        await updateDoc(doc(db, `businesses/${tenantId}/almacenes`, editingAlmacenId), {
+          nombre: almacenForm.nombre.trim(),
+          descripcion: almacenForm.descripcion.trim(),
+          activo: almacenForm.activo,
+        });
+      } else {
+        const maxOrden = almacenes.length > 0 ? Math.max(...almacenes.map(a => a.orden)) + 1 : 0;
+        await addDoc(collection(db, `businesses/${tenantId}/almacenes`), {
+          nombre: almacenForm.nombre.trim(),
+          descripcion: almacenForm.descripcion.trim(),
+          activo: almacenForm.activo,
+          orden: maxOrden,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      setAlmacenModalOpen(false);
+      setEditingAlmacenId(null);
+      setAlmacenForm({ nombre: '', descripcion: '', activo: true });
+    } finally {
+      setAlmacenSaving(false);
+    }
+  };
+
+  const handleDeleteAlmacen = async (almacen: Almacen) => {
+    if (!tenantId) return;
+    // Check if any product has stock in this almacén
+    const hasStock = products.some(p => (p.stockByAlmacen?.[almacen.id] ?? 0) > 0);
+    if (hasStock) {
+      alert(`No se puede eliminar "${almacen.nombre}" porque tiene productos con stock asignado.`);
+      return;
+    }
+    if (!window.confirm(`¿Eliminar almacén "${almacen.nombre}"?`)) return;
+    await deleteDoc(doc(db, `businesses/${tenantId}/almacenes`, almacen.id));
+    if (selectedAlmacenId === almacen.id) {
+      setSelectedAlmacenId(almacenes.find(a => a.id !== almacen.id)?.id || 'principal');
+    }
+  };
+
   // 2. METRICS
   const metrics = useMemo(() => {
     const totalCapital = products.reduce((acc, p) => acc + (p.costoUSD * p.stock), 0);
@@ -438,7 +518,12 @@ export default function Inventario() {
     if (!tenantId || !form.codigo || !form.nombre) return;
     // Sync preciosCuenta to legacy fields for backward compat
     const pc = form.preciosCuenta || {};
-    const payload = {
+    // Build stockByAlmacen for new products
+    const almacenId = almacenes.length > 0 ? selectedAlmacenId : 'principal';
+    const stockByAlmacen = editingId
+      ? undefined  // don't overwrite on edit; use dedicated stock adjust
+      : { [almacenId]: form.stock };
+    const payload: Record<string, any> = {
       ...form,
       precioBCV: pc.BCV || form.precioBCV || 0,
       precioGrupo: pc.GRUPO || form.precioGrupo || 0,
@@ -446,7 +531,9 @@ export default function Inventario() {
       preciosCuenta: pc,
       updatedAt: new Date().toISOString(),
     };
+    if (stockByAlmacen) payload.stockByAlmacen = stockByAlmacen;
     if (editingId) {
+      delete payload.stockByAlmacen; // keep existing stockByAlmacen on edit
       await setDoc(doc(db, `businesses/${tenantId}/products`, editingId), payload, { merge: true });
       setModalOpen(false);
       setForm(initialProduct);
@@ -1031,6 +1118,7 @@ export default function Inventario() {
             {[
               { id: 'catalog', label: 'Catálogo', icon: Package },
               { id: 'kardex', label: 'Kardex', icon: History },
+              { id: 'almacenes', label: 'Almacenes', icon: Layers },
               { id: 'tools', label: 'Herramientas', icon: Settings2 },
             ].map((tab) => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as TabType)}
@@ -1039,7 +1127,7 @@ export default function Inventario() {
               </button>
             ))}
           </div>
-          <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setShowAdvanced(false); setShowMayorPrices(false); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
+          <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setCustomMarginDetal(''); setCustomMarginMayor(''); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
             className="flex items-center justify-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
             <Plus size={16} /> Registrar Mercancía
           </button>
@@ -1319,7 +1407,7 @@ export default function Inventario() {
                             {/* Stock adjust */}
                             <button onClick={() => { setSelectedProduct(p); setAdjModalOpen(true); }} className="p-1.5 rounded-xl bg-indigo-600 text-white hover:bg-emerald-500 transition-all shadow-md shadow-indigo-500/25" title="Ajuste de Stock"><TrendingUp size={13} /></button>
                             {/* Edit */}
-                            <button onClick={() => { setEditingId(p.id); setForm(p); setQuickMode(false); setMayorManual(true); setShowAdvanced(true); setShowMayorPrices((p.precioBCV || 0) > 0 || (p.precioGrupo || 0) > 0 || (p.precioDivisa || 0) > 0); setModalOpen(true); }} className="p-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-900 hover:text-white dark:hover:bg-white/[0.12] transition-all"><Pencil size={13} /></button>
+                            <button onClick={() => { setEditingId(p.id); setForm(p); setQuickMode(false); setMayorManual(true); setCustomMarginDetal(''); setCustomMarginMayor(''); setModalOpen(true); }} className="p-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-900 hover:text-white dark:hover:bg-white/[0.12] transition-all"><Pencil size={13} /></button>
                             {/* Delete */}
                             {deleteConfirmId === p.id ? (
                               <div className="flex items-center gap-1">
@@ -1532,13 +1620,148 @@ export default function Inventario() {
               </div>
             </div>
           )}
+
+          {/* TAB 4: ALMACENES */}
+          {activeTab === 'almacenes' && (
+            <div className="p-6 space-y-5">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-1">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/25"><Layers size={16} /></div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">Gestión de Almacenes</h3>
+                    <p className="text-[10px] text-slate-400 dark:text-white/40 font-bold uppercase tracking-widest">Stock independiente por almacén</p>
+                  </div>
+                </div>
+                <button onClick={() => { setEditingAlmacenId(null); setAlmacenForm({ nombre: '', descripcion: '', activo: true }); setAlmacenModalOpen(true); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
+                  <Plus size={13} /> Nuevo Almacén
+                </button>
+              </div>
+
+              {almacenes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                  <div className="h-16 w-16 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center">
+                    <Layers size={28} className="text-indigo-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-slate-900 dark:text-white">Sin almacenes configurados</p>
+                    <p className="text-xs text-slate-400 dark:text-white/40 font-medium mt-1">El stock se maneja en un almacén principal por defecto.<br />Crea almacenes para gestionar inventario independiente.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {almacenes.map(almacen => {
+                    const totalStock = products.reduce((sum, p) => sum + (p.stockByAlmacen?.[almacen.id] ?? 0), 0);
+                    const productCount = products.filter(p => (p.stockByAlmacen?.[almacen.id] ?? 0) > 0).length;
+                    return (
+                      <div key={almacen.id} className={`bg-white dark:bg-slate-900 border rounded-2xl p-5 flex flex-col gap-3 transition-all hover:shadow-lg ${almacen.activo ? 'border-indigo-100 dark:border-indigo-500/20 hover:shadow-indigo-500/10' : 'border-slate-100 dark:border-white/[0.06] opacity-60'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${almacen.activo ? 'bg-indigo-50 dark:bg-indigo-500/10' : 'bg-slate-100 dark:bg-white/[0.04]'}`}>
+                              <Layers size={16} className={almacen.activo ? 'text-indigo-500' : 'text-slate-400'} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-black text-slate-900 dark:text-white">{almacen.nombre}</p>
+                              {almacen.descripcion && <p className="text-[10px] text-slate-400 dark:text-white/40 font-medium">{almacen.descripcion}</p>}
+                            </div>
+                          </div>
+                          <span className={`shrink-0 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${almacen.activo ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/30'}`}>
+                            {almacen.activo ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="p-2.5 bg-slate-50 dark:bg-white/[0.03] rounded-xl border border-slate-100 dark:border-white/[0.05]">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Stock Total</p>
+                            <p className="text-lg font-black text-slate-900 dark:text-white mt-0.5">{totalStock}</p>
+                          </div>
+                          <div className="p-2.5 bg-slate-50 dark:bg-white/[0.03] rounded-xl border border-slate-100 dark:border-white/[0.05]">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Productos</p>
+                            <p className="text-lg font-black text-slate-900 dark:text-white mt-0.5">{productCount}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 pt-1 border-t border-slate-100 dark:border-white/[0.05]">
+                          <button onClick={() => { setEditingAlmacenId(almacen.id); setAlmacenForm({ nombre: almacen.nombre, descripcion: almacen.descripcion || '', activo: almacen.activo }); setAlmacenModalOpen(true); }}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-slate-200 dark:border-white/[0.08] text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all">
+                            <Pencil size={11} /> Editar
+                          </button>
+                          <button onClick={() => handleDeleteAlmacen(almacen)}
+                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-500/20 text-[9px] font-black uppercase tracking-wider text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all">
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Info banner */}
+              <div className="p-4 rounded-2xl bg-indigo-50/60 dark:bg-indigo-500/[0.06] border border-indigo-100 dark:border-indigo-500/20 flex items-start gap-3">
+                <Info size={14} className="text-indigo-500 mt-0.5 shrink-0" />
+                <div className="text-[10px] text-indigo-600/70 dark:text-indigo-400/60 font-semibold leading-relaxed space-y-0.5">
+                  <p>· Al registrar mercancía, puedes asignar el stock inicial a un almacén específico.</p>
+                  <p>· El POS Detal y Mayor permitirán seleccionar desde cuál almacén vender cuando haya 2+ almacenes activos.</p>
+                  <p>· Eliminar un almacén solo es posible si no tiene productos con stock asignado.</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* ═══════════════ MODAL: ALMACEN ═══════════════ */}
+      {almacenModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl shadow-black/40 border border-slate-100 dark:border-white/[0.07] animate-in fade-in zoom-in-95 duration-300">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.07] flex items-center justify-between bg-slate-50/50 dark:bg-white/[0.02]">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-md shadow-indigo-500/30">
+                  <Layers size={15} className="text-white" />
+                </div>
+                <h2 className="text-sm font-black text-slate-900 dark:text-white">{editingAlmacenId ? 'Editar Almacén' : 'Nuevo Almacén'}</h2>
+              </div>
+              <button onClick={() => setAlmacenModalOpen(false)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 dark:text-white/40 transition-all"><X size={16} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Nombre *</label>
+                <input value={almacenForm.nombre} onChange={e => setAlmacenForm(f => ({ ...f, nombre: e.target.value }))}
+                  placeholder="Ej: Almacén Principal, Depósito B..."
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white dark:placeholder:text-white/20 focus:ring-2 focus:ring-indigo-500 outline-none" />
+              </div>
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Descripción (opcional)</label>
+                <input value={almacenForm.descripcion} onChange={e => setAlmacenForm(f => ({ ...f, descripcion: e.target.value }))}
+                  placeholder="Notas sobre este almacén..."
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-medium text-slate-900 dark:text-white dark:placeholder:text-white/20 focus:ring-2 focus:ring-indigo-500 outline-none" />
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <button type="button" onClick={() => setAlmacenForm(f => ({ ...f, activo: !f.activo }))}
+                  className={`relative w-10 h-5 rounded-full transition-all ${almacenForm.activo ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${almacenForm.activo ? 'translate-x-5' : ''}`} />
+                </button>
+                <span className="text-xs font-black text-slate-700 dark:text-white/70">Almacén activo</span>
+              </label>
+            </div>
+            <div className="px-5 pb-5 flex gap-3">
+              <button onClick={() => setAlmacenModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-black text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all">
+                Cancelar
+              </button>
+              <button onClick={handleSaveAlmacen} disabled={almacenSaving || !almacenForm.nombre.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-black shadow-md shadow-indigo-500/25 hover:opacity-90 transition-all disabled:opacity-50">
+                {almacenSaving ? 'Guardando...' : editingAlmacenId ? 'Guardar cambios' : 'Crear almacén'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════ MODAL: PRODUCT ═══════════════ */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-3 sm:p-4">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl shadow-black/40 border border-slate-100 dark:border-white/[0.07] overflow-hidden overflow-y-auto max-h-[95vh] animate-in fade-in zoom-in-95 duration-300">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl shadow-black/40 border border-slate-100 dark:border-white/[0.07] overflow-hidden overflow-y-auto max-h-[95vh] animate-in fade-in zoom-in-95 duration-300">
 
             {/* Header */}
             <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.07] flex items-center justify-between bg-slate-50/50 dark:bg-white/[0.02]">
@@ -1603,7 +1826,7 @@ export default function Inventario() {
               {/* ── ROW 2: PRECIOS ── */}
               <div className="bg-gradient-to-br from-slate-900 to-[#0d1220] rounded-2xl p-4 border border-white/[0.06] space-y-3">
                 {/* Margin presets */}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[9px] font-black text-white/30 uppercase tracking-widest shrink-0">Margen:</span>
                   {[20, 30, 50, 100].map(pct => (
                     <button key={pct} type="button" onClick={() => applyMargin(pct)}
@@ -1616,7 +1839,47 @@ export default function Inventario() {
                     </button>
                   ))}
                   <div className="flex-1" />
-                  <span className="text-[9px] font-black text-white/20 uppercase tracking-widest">Mayor = Detal × 0.95</span>
+                  {/* Custom margin inputs */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[8px] font-black text-emerald-400/60 uppercase tracking-widest">D%</span>
+                    <input type="number" min="0" step="1" value={customMarginDetal}
+                      onChange={e => setCustomMarginDetal(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && form.costoUSD > 0) {
+                          const pct = parseFloat(customMarginDetal);
+                          if (!isNaN(pct) && pct > 0) setForm(f => ({ ...f, precioDetal: parseFloat((f.costoUSD * (1 + pct / 100)).toFixed(2)) }));
+                        }
+                      }}
+                      placeholder="%" className="w-14 px-2 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[10px] font-black text-emerald-300 text-center focus:outline-none focus:ring-1 focus:ring-emerald-400 placeholder:text-white/20" />
+                    <button type="button"
+                      onClick={() => {
+                        const pct = parseFloat(customMarginDetal);
+                        if (!isNaN(pct) && pct > 0 && form.costoUSD > 0)
+                          setForm(f => ({ ...f, precioDetal: parseFloat((f.costoUSD * (1 + pct / 100)).toFixed(2)) }));
+                      }}
+                      className="px-2 py-1 rounded-lg text-[9px] font-black bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all border border-emerald-500/20">↗</button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[8px] font-black text-violet-400/60 uppercase tracking-widest">M%</span>
+                    <input type="number" min="0" step="1" value={customMarginMayor}
+                      onChange={e => setCustomMarginMayor(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && form.costoUSD > 0) {
+                          const pct = parseFloat(customMarginMayor);
+                          if (!isNaN(pct) && pct > 0) { setMayorManual(true); setForm(f => ({ ...f, precioMayor: parseFloat((f.costoUSD * (1 + pct / 100)).toFixed(2)) })); }
+                        }
+                      }}
+                      placeholder="%" className="w-14 px-2 py-1 bg-violet-500/10 border border-violet-500/20 rounded-lg text-[10px] font-black text-violet-300 text-center focus:outline-none focus:ring-1 focus:ring-violet-400 placeholder:text-white/20" />
+                    <button type="button"
+                      onClick={() => {
+                        const pct = parseFloat(customMarginMayor);
+                        if (!isNaN(pct) && pct > 0 && form.costoUSD > 0) {
+                          setMayorManual(true);
+                          setForm(f => ({ ...f, precioMayor: parseFloat((f.costoUSD * (1 + pct / 100)).toFixed(2)) }));
+                        }
+                      }}
+                      className="px-2 py-1 rounded-lg text-[9px] font-black bg-violet-500/20 text-violet-400 hover:bg-violet-500/30 transition-all border border-violet-500/20">↗</button>
+                  </div>
                 </div>
 
                 {/* Bulk pricing calculator */}
@@ -1778,39 +2041,31 @@ export default function Inventario() {
                       </div>
                     </div>
 
-                    {/* ── PRECIOS POR CUENTA (MAYOR) — DINÁMICO ── */}
+                    {/* ── PRECIOS POR CUENTA (MAYOR) — siempre visible si hay cuentas ── */}
                     {hasDynamicPricing && customRates.length > 0 && (
-                    <div className="rounded-xl border border-white/[0.07] overflow-hidden">
-                      <button type="button" onClick={() => setShowMayorPrices(v => !v)}
-                        className="w-full flex items-center justify-between px-3.5 py-2.5 bg-white/[0.03] hover:bg-white/[0.05] transition-all">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-violet-400/70">Precios por Cuenta (Mayor)</span>
-                        <ChevronDown size={14} className={`text-white/40 transition-transform ${showMayorPrices ? 'rotate-180' : ''}`} />
-                      </button>
-                      {showMayorPrices && (
-                        <div className="px-3.5 pb-3.5 pt-2 space-y-3">
-                          <div className={`grid gap-3 ${customRates.length <= 3 ? `grid-cols-${customRates.length}` : 'grid-cols-2 sm:grid-cols-3'}`}>
-                            {customRates.map(rate => (
-                              <div key={rate.id}>
-                                <label className="text-[9px] font-black uppercase tracking-widest text-violet-400/70 mb-1.5 block">
-                                  Precio {rate.name} ($)
-                                </label>
-                                <input type="number" step="0.01" min="0"
-                                  value={form.preciosCuenta[rate.id] || ''}
-                                  onChange={e => setForm(f => ({
-                                    ...f,
-                                    preciosCuenta: { ...f.preciosCuenta, [rate.id]: Number(e.target.value) },
-                                  }))}
-                                  placeholder="0.00"
-                                  className="w-full px-3 py-2.5 bg-violet-500/10 border border-violet-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder:text-white/20" />
-                              </div>
-                            ))}
-                          </div>
-                          <p className="text-[9px] text-white/30 leading-relaxed">
-                            Nota: si se dejan en 0, el POS Mayor usará el Precio Mayor como fallback
-                          </p>
+                      <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] px-3.5 pb-3.5 pt-3 space-y-3">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-violet-400/70">Precios por Cuenta (Mayor)</p>
+                        <div className={`grid gap-3 ${customRates.length <= 3 ? `grid-cols-${customRates.length}` : 'grid-cols-2 sm:grid-cols-3'}`}>
+                          {customRates.map(rate => (
+                            <div key={rate.id}>
+                              <label className="text-[9px] font-black uppercase tracking-widest text-violet-400/70 mb-1.5 block">
+                                Precio {rate.name} ($)
+                              </label>
+                              <input type="number" step="0.01" min="0"
+                                value={form.preciosCuenta[rate.id] || ''}
+                                onChange={e => setForm(f => ({
+                                  ...f,
+                                  preciosCuenta: { ...f.preciosCuenta, [rate.id]: Number(e.target.value) },
+                                }))}
+                                placeholder="0.00"
+                                className="w-full px-3 py-2.5 bg-violet-500/10 border border-violet-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder:text-white/20" />
+                            </div>
+                          ))}
                         </div>
-                      )}
-                    </div>
+                        <p className="text-[9px] text-white/30 leading-relaxed">
+                          Nota: si se dejan en 0, el POS Mayor usará el Precio Mayor como fallback
+                        </p>
+                      </div>
                     )}
                   </>
                 )}
@@ -1883,7 +2138,21 @@ export default function Inventario() {
                   )}
                 </div>
                 <div>
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Stock inicial</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Stock inicial</label>
+                    {/* Almacén selector — solo si hay almacenes configurados */}
+                    {almacenes.length > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <Layers size={10} className="text-indigo-400" />
+                        <select value={selectedAlmacenId} onChange={e => setSelectedAlmacenId(e.target.value)}
+                          className="text-[9px] font-black uppercase tracking-wider bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-2 py-1 text-indigo-400 dark:text-indigo-300 outline-none focus:ring-1 focus:ring-indigo-500">
+                          {almacenes.filter(a => a.activo).map(a => (
+                            <option key={a.id} value={a.id}>{a.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     {[1, 5, 10, 25, 50].map(n => (
                       <button key={n} type="button"
@@ -1903,74 +2172,63 @@ export default function Inventario() {
                 </div>
               </div>
 
-              {/* ── ADVANCED FIELDS (collapsible) ── */}
-              {(quickMode && !editingId) ? (
-                <button type="button"
-                  onClick={() => setShowAdvanced(a => !a)}
-                  className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors w-full">
-                  <ChevronDown size={14} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
-                  {showAdvanced ? 'Ocultar campos adicionales' : 'Más campos — Marca, Unidad, IVA, Proveedor'}
-                </button>
-              ) : null}
-
-              {(!quickMode || editingId || showAdvanced) && (
-                <div className="space-y-3 border-t border-slate-100 dark:border-white/[0.07] pt-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Marca</label>
-                      <input value={form.marca} onChange={e => setForm(f => ({ ...f, marca: e.target.value }))} placeholder="Nike, Sony..."
-                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Unidad</label>
-                      <select value={form.unidad} onChange={e => setForm(f => ({ ...f, unidad: e.target.value }))}
-                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
-                        <option value="UND">UND</option>
-                        <option value="KG">KG</option>
-                        <option value="L">Litros</option>
-                        <option value="M">Metros</option>
-                        <option value="PAR">Par</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">IVA</label>
-                      <select value={form.ivaTipo} onChange={e => {
-                        const tipo = e.target.value as Product['ivaTipo'];
-                        const tasa = tipo === 'GENERAL' ? 16 : tipo === 'REDUCIDO' ? 8 : 0;
-                        setForm(f => ({ ...f, ivaTipo: tipo, iva: tasa }));
-                      }} className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
-                        <option value="GENERAL">16% General</option>
-                        <option value="REDUCIDO">8% Reducido</option>
-                        <option value="EXENTO">0% Exento</option>
-                      </select>
-                    </div>
+              {/* ── CAMPOS ADICIONALES (siempre visibles) ── */}
+              <div className="space-y-3 border-t border-slate-100 dark:border-white/[0.07] pt-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Marca</label>
+                    <input value={form.marca} onChange={e => setForm(f => ({ ...f, marca: e.target.value }))} placeholder="Nike, Sony..."
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Proveedor</label>
-                      <input value={form.proveedor} onChange={e => setForm(f => ({ ...f, proveedor: e.target.value }))} placeholder="Nombre proveedor"
-                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Ubicación</label>
-                      <input value={form.ubicacion} onChange={e => setForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Pasillo A-4"
-                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
-                    </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Unidad</label>
+                    <select value={form.unidad} onChange={e => setForm(f => ({ ...f, unidad: e.target.value }))}
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                      <option value="UND">UND</option>
+                      <option value="KG">KG</option>
+                      <option value="L">Litros</option>
+                      <option value="M">Metros</option>
+                      <option value="PAR">Par</option>
+                    </select>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Stock mínimo</label>
-                      <input type="number" min="0" value={form.stockMinimo} onChange={e => setForm(f => ({ ...f, stockMinimo: Number(e.target.value) }))}
-                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Peso (KG)</label>
-                      <input type="number" step="0.001" min="0" value={form.peso || ''} onChange={e => setForm(f => ({ ...f, peso: Number(e.target.value) }))} placeholder="0.000"
-                        className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
-                    </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">IVA</label>
+                    <select value={form.ivaTipo} onChange={e => {
+                      const tipo = e.target.value as Product['ivaTipo'];
+                      const tasa = tipo === 'GENERAL' ? 16 : tipo === 'REDUCIDO' ? 8 : 0;
+                      setForm(f => ({ ...f, ivaTipo: tipo, iva: tasa }));
+                    }} className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                      <option value="GENERAL">16% General</option>
+                      <option value="REDUCIDO">8% Reducido</option>
+                      <option value="EXENTO">0% Exento</option>
+                    </select>
                   </div>
                 </div>
-              )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Proveedor</label>
+                    <input value={form.proveedor} onChange={e => setForm(f => ({ ...f, proveedor: e.target.value }))} placeholder="Nombre proveedor"
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Ubicación</label>
+                    <input value={form.ubicacion} onChange={e => setForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Pasillo A-4"
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Stock mínimo</label>
+                    <input type="number" min="0" value={form.stockMinimo} onChange={e => setForm(f => ({ ...f, stockMinimo: Number(e.target.value) }))}
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Peso (KG)</label>
+                    <input type="number" step="0.001" min="0" value={form.peso || ''} onChange={e => setForm(f => ({ ...f, peso: Number(e.target.value) }))} placeholder="0.000"
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  </div>
+                </div>
+              </div>
             </form>
 
             {/* Footer */}

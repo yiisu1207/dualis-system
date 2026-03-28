@@ -508,6 +508,10 @@ const PosContent = () => {
   // Terminal info
   const [terminalInfo, setTerminalInfo] = useState<{ nombre: string; cajeroNombre: string } | null>(null);
 
+  // Almacenes
+  const [almacenes, setAlmacenes] = useState<{ id: string; nombre: string; activo: boolean }[]>([]);
+  const [selectedAlmacenId, setSelectedAlmacenId] = useState<string>('principal');
+
   // Live clock
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -545,6 +549,20 @@ const PosContent = () => {
     });
   }, [cajaId, empresa_id]);
 
+  // Load almacenes
+  useEffect(() => {
+    if (!empresa_id) return;
+    getDocs(query(collection(db, `businesses/${empresa_id}/almacenes`))).then(snap => {
+      const list = snap.docs.map(d => ({ id: d.id, nombre: d.data().nombre as string, activo: d.data().activo as boolean }))
+        .filter(a => a.activo);
+      setAlmacenes(list);
+      if (list.length > 0 && !list.find(a => a.id === selectedAlmacenId)) {
+        setSelectedAlmacenId(list[0].id);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresa_id]);
+
   // Load products + clients
   useEffect(() => {
     if (!empresa_id) return;
@@ -560,13 +578,15 @@ const PosContent = () => {
           if (data.precioBCV && !pc.BCV) pc.BCV = Number(data.precioBCV);
           if (data.precioGrupo && !pc.GRUPO) pc.GRUPO = Number(data.precioGrupo);
           if (data.precioDivisa && !pc.DIVISA) pc.DIVISA = Number(data.precioDivisa);
+          const stockByAlmacen: Record<string, number> = data.stockByAlmacen || {};
+          const almacenStock = stockByAlmacen[selectedAlmacenId] ?? Number(data.stock || 0);
           return {
             id: d.id,
             name: data.name || data.nombre || 'Sin nombre',
             price: mayorPrice,
             precioDetal: Number(data.precioDetal || data.marketPrice || data.precioVenta || data.price || 0),
             preciosCuenta: pc,
-            stock: Number(data.stock || 0),
+            stock: almacenStock,
             codigo: data.codigo || d.id,
             marca: data.marca || '',
             tipoTasa: data.tipoTasa || 'BCV',
@@ -818,13 +838,25 @@ const PosContent = () => {
       await addDoc(collection(db, 'movements'), movementPayload);
 
       // Update stock — floor at 0, never negative
+      const almacenKey = almacenes.length > 0 ? selectedAlmacenId : 'principal';
       for (const item of items) {
         await runTransaction(db, async (txn) => {
           const ref = doc(db, `businesses/${empresa_id}/products`, item.id);
           const snap = await txn.get(ref);
           if (!snap.exists()) return;
-          const cur = Number(snap.data().stock ?? 0);
-          txn.update(ref, { stock: Math.max(0, cur - item.qty) });
+          const data = snap.data();
+          const stockByAlmacen: Record<string, number> = data.stockByAlmacen || {};
+          if (stockByAlmacen[almacenKey] !== undefined) {
+            const curAlmacen = Number(stockByAlmacen[almacenKey] ?? 0);
+            const curTotal = Number(data.stock ?? 0);
+            txn.update(ref, {
+              [`stockByAlmacen.${almacenKey}`]: Math.max(0, curAlmacen - item.qty),
+              stock: Math.max(0, curTotal - item.qty),
+            });
+          } else {
+            const cur = Number(data.stock ?? 0);
+            txn.update(ref, { stock: Math.max(0, cur - item.qty) });
+          }
         });
       }
 
@@ -943,13 +975,25 @@ const PosContent = () => {
       await addDoc(collection(db, 'movements'), movementPayload);
 
       // Update stock — floor at 0, never negative
+      const almacenKey = almacenes.length > 0 ? selectedAlmacenId : 'principal';
       for (const item of items) {
         await runTransaction(db, async (txn) => {
           const ref = doc(db, `businesses/${empresa_id}/products`, item.id);
           const snap = await txn.get(ref);
           if (!snap.exists()) return;
-          const cur = Number(snap.data().stock ?? 0);
-          txn.update(ref, { stock: Math.max(0, cur - item.qty) });
+          const data = snap.data();
+          const stockByAlmacen: Record<string, number> = data.stockByAlmacen || {};
+          if (stockByAlmacen[almacenKey] !== undefined) {
+            const curAlmacen = Number(stockByAlmacen[almacenKey] ?? 0);
+            const curTotal = Number(data.stock ?? 0);
+            txn.update(ref, {
+              [`stockByAlmacen.${almacenKey}`]: Math.max(0, curAlmacen - item.qty),
+              stock: Math.max(0, curTotal - item.qty),
+            });
+          } else {
+            const cur = Number(data.stock ?? 0);
+            txn.update(ref, { stock: Math.max(0, cur - item.qty) });
+          }
         });
       }
 
@@ -1127,6 +1171,17 @@ const PosContent = () => {
             <div className="text-right hidden sm:block lg:hidden">
               <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400">USD ONLY</p>
               <p className="text-sm font-black text-emerald-500">$$$</p>
+            </div>
+          )}
+
+          {/* Almacén selector — only shown when 2+ almacenes */}
+          {almacenes.length >= 2 && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-violet-500/10 border border-violet-500/20">
+              <Layers size={11} className="text-violet-400 shrink-0" />
+              <select value={selectedAlmacenId} onChange={e => setSelectedAlmacenId(e.target.value)}
+                className="text-[9px] font-black uppercase tracking-wider bg-transparent border-none text-violet-300 outline-none cursor-pointer max-w-[100px]">
+                {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+              </select>
             </div>
           )}
 
