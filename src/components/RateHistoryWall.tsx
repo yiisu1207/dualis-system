@@ -35,7 +35,6 @@ type RateEntry = {
   id: string;
   date: string;
   bcv: number;
-  parallel: number;
   status?: 'pending' | 'verified' | 'rejected';
   createdBy?: {
     uid: string;
@@ -161,7 +160,6 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
   const [entries, setEntries] = useState<RateEntry[]>([]);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [manualBcv, setManualBcv] = useState('');
-  const [manualGrupo, setManualGrupo] = useState('');
   const [manualDate, setManualDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [isPublishing, setIsPublishing] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
@@ -209,16 +207,15 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     setIsPublishing(true);
     try {
       const today = new Date().toISOString().split('T')[0];
-      const grupoNum = Number(String(manualGrupo).replace(',', '.')) || 0;
 
       // 1. Actualizar businessConfigs → se propaga en tiempo real a todos los dispositivos
-      await updateRates({ tasaBCV: bcvPreview.rate, ...(grupoNum > 0 ? { tasaGrupo: grupoNum } : {}) });
+      await updateRates({ tasaBCV: bcvPreview.rate });
 
       // 2. Guardar en historial
       await createExchangeRateEntry(
         resolvedBusinessId,
         today,
-        { bcv: bcvPreview.rate, grupo: grupoNum, divisa: grupoNum > 0 ? grupoNum - 1 : 0, lastUpdated: today },
+        { bcv: bcvPreview.rate, grupo: 0, divisa: 0, lastUpdated: today },
         currentUser?.uid
           ? { uid: currentUser.uid, displayName: currentUser.displayName || null, photoURL: currentUser.photoURL || null }
           : undefined,
@@ -254,7 +251,6 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
           id: docSnap.id,
           date: data.date || docSnap.id,
           bcv: Number(data.bcv) || 0,
-          parallel: Number(data.parallel ?? data.grupo) || 0,
           status: (data.status as RateEntry['status']) || 'pending',
           createdBy: data.createdBy,
           notes: data.notes,
@@ -302,21 +298,20 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       return;
     }
     const bcv = Number(String(manualBcv).replace(',', '.'));
-    const grupo = Number(String(manualGrupo).replace(',', '.'));
-    if (!bcv || !grupo) {
-      warning('Ingresa BCV y Grupo válidos.');
+    if (!bcv) {
+      warning('Ingresa una tasa BCV válida.');
       return;
     }
     setIsPublishing(true);
     try {
       // 1. Actualizar tasa activa en businessConfigs → se propaga a todos los dispositivos
-      await updateRates({ tasaBCV: bcv, tasaGrupo: grupo });
+      await updateRates({ tasaBCV: bcv });
 
       // 2. Guardar en historial
       await createExchangeRateEntry(
         resolvedBusinessId,
         manualDate,
-        { bcv, grupo, divisa: grupo > 0 ? grupo - 1 : 0, lastUpdated: manualDate },
+        { bcv, grupo: 0, divisa: 0, lastUpdated: manualDate },
         currentUser?.uid
           ? {
               uid: currentUser.uid,
@@ -325,9 +320,8 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             }
           : undefined
       );
-      success(`Tasas actualizadas: BCV ${bcv.toFixed(4)} · Grupo ${grupo.toFixed(4)}`);
+      success(`Tasa BCV actualizada: ${bcv.toFixed(4)} Bs/$`);
       setManualBcv('');
-      setManualGrupo('');
     } catch (error) {
       console.error('No se pudo publicar la tasa', error);
       error('No se pudo publicar la tasa. Revisa la conexión y permisos.');
@@ -341,11 +335,6 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       warning('No hay un espacio de trabajo activo.');
       return;
     }
-    const grupo = Number(String(manualGrupo).replace(',', '.'));
-    if (!grupo) {
-      warning('Ingresa una tasa Grupo válida para publicar en lote.');
-      return;
-    }
     if (ocrDrafts.length === 0) return;
     setIsPublishing(true);
     try {
@@ -353,7 +342,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
         await createExchangeRateEntry(
           resolvedBusinessId,
           draft.date,
-          { bcv: draft.bcv, grupo, divisa: grupo > 0 ? grupo - 1 : 0, lastUpdated: draft.date },
+          { bcv: draft.bcv, grupo: 0, divisa: 0, lastUpdated: draft.date },
           currentUser?.uid
             ? {
                 uid: currentUser.uid,
@@ -502,7 +491,6 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     const latest = entries[0];
     return {
       bcv: latest.bcv,
-      parallel: latest.parallel,
       date: latest.date,
     };
   }, [entries]);
@@ -531,10 +519,6 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             <div>
               <div className="text-[9px] uppercase font-bold text-white/40">BCV</div>
               <div className="text-lg font-black text-white">{summary.bcv}</div>
-            </div>
-            <div>
-              <div className="text-[9px] uppercase font-bold text-white/40">Grupo</div>
-              <div className="text-lg font-black text-white">{summary.parallel}</div>
             </div>
             <div>
               <div className="text-[9px] uppercase font-bold text-white/40">Fecha</div>
@@ -781,19 +765,6 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
           </div>
           <div>
             <label className="text-[10px] font-black uppercase tracking-widest text-white/40">
-              Tasa Grupo
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              className={inp}
-              value={manualGrupo}
-              onChange={(event) => setManualGrupo(event.target.value)}
-              placeholder="0.00"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">
               Fecha
             </label>
             <input
@@ -823,9 +794,6 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                 </div>
                 <p className="text-xs text-white/50 font-semibold mt-0.5">
                   {csvPreview.length} tasas detectadas. Revisa antes de publicar.
-                </p>
-                <p className="text-[10px] text-white/30 font-semibold mt-0.5">
-                  Nota: La tasa Grupo se registrará como 0 — edítala manualmente si es necesario.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -959,10 +927,6 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                     <div className="text-right">
                       <div className="text-[9px] uppercase font-bold text-white/40">BCV</div>
                       <div className="text-lg font-black text-white">{entry.bcv}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[9px] uppercase font-bold text-white/40">Grupo</div>
-                      <div className="text-lg font-black text-white">{entry.parallel}</div>
                     </div>
                   </div>
                   <button

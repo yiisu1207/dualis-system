@@ -67,10 +67,10 @@ service cloud.firestore {
 
     // PERFILES DE USUARIO
     match /users/{uid} {
-      // Ops monitor puede leer y editar todos los perfiles (admin completo)
-      allow read, update: if isOpsUser();
-      // Super admin puede leer/escribir cualquier perfil (para activar cuentas pendientes)
-      allow read, write: if isSuperAdmin();
+      // Ops monitor puede leer, editar y eliminar todos los perfiles
+      allow read, update, delete: if isOpsUser();
+      // Super admin puede leer/escribir/eliminar cualquier perfil (para activar cuentas pendientes)
+      allow read, write, delete: if isSuperAdmin();
       allow read, write: if isSignedIn() && request.auth.uid == uid;
       allow read: if isSignedIn() && belongsToMe(resource.data);
       allow update, delete: if isSignedIn() && belongsToMe(resource.data) && (myRole() == 'admin' || myRole() == 'owner');
@@ -78,9 +78,9 @@ service cloud.firestore {
 
     // RAMA DE NEGOCIO (Contenedor central)
     match /businesses/{bid} {
-      // Ops monitor puede leer y editar negocios (admin completo)
-      allow read, update: if isOpsUser();
-      allow read, write: if isSuperAdmin();
+      // Ops monitor puede leer, editar y eliminar negocios (admin completo)
+      allow read, update, delete: if isOpsUser();
+      allow read, write, delete: if isSuperAdmin();
       // Permitir get (lectura por ID exacto) a cualquiera.
       // El businessId es un secreto criptográfico de 32 chars (key_XXX),
       // así que conocerlo equivale a haber sido invitado.
@@ -215,7 +215,7 @@ service cloud.firestore {
       // Catch-all: cualquier subcollection NO listada arriba
       // Miembros pueden leer y crear/actualizar; solo admin puede borrar
       match /{allSubcollections=**} {
-        allow read: if isOpsUser();
+        allow read, write, delete: if isOpsUser();
         allow read: if isMember(bid);
         allow create, update: if isMember(bid);
         allow delete: if isAdmin(bid);
@@ -224,10 +224,12 @@ service cloud.firestore {
 
     // CONFIGURACIONES (solo admin puede escribir)
     match /businessConfigs/{bid} {
+      allow read, write, delete: if isOpsUser() || isSuperAdmin();
       allow read: if isMember(bid);
       allow write: if isAdmin(bid);
 
       match /{allSubcollections=**} {
+        allow read, write, delete: if isOpsUser() || isSuperAdmin();
         allow read: if isMember(bid);
         allow write: if isAdmin(bid);
       }
@@ -254,9 +256,9 @@ service cloud.firestore {
 
     // COLECCIONES OPERATIVAS EN RAÍZ
     // (movements, customers, suppliers, auditLogs, etc.)
-    // Ops monitor puede leer todo; miembros leen solo lo suyo
+    // Ops monitor puede leer/escribir/borrar todo; miembros leen solo lo suyo
     match /{collectionName}/{docId} {
-      allow read: if isOpsUser();
+      allow read, write, delete: if isOpsUser() || isSuperAdmin();
       allow read: if isSignedIn() && belongsToMe(resource.data);
       allow create: if isSignedIn() && belongsToMe(request.resource.data);
       allow update: if isSignedIn() && belongsToMe(resource.data);

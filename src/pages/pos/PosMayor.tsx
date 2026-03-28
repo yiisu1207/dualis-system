@@ -463,6 +463,7 @@ const PosContent = () => {
   const [customer, setCustomer] = useState<any>(null);
   const [clients, setClients] = useState<any[]>([]);
   const [consumidorFinal, setConsumidorFinal] = useState(false);
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
 
   // Payment condition
   const [paymentCondition, setPaymentCondition] = useState<PaymentCondition>('contado');
@@ -1338,28 +1339,34 @@ const PosContent = () => {
                   </div>
                 </div>
               ) : !customer ? (
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-3.5 w-3.5" />
-                  <input
-                    value={clientQuery}
-                    onChange={e => setClientQuery(e.target.value)}
-                    placeholder="Buscar cliente (nombre, RIF, cédula)..."
-                    className="w-full pl-9 pr-4 py-3 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30 focus:ring-2 focus:ring-violet-600 dark:focus:ring-violet-500 outline-none shadow-sm transition-all"
-                  />
-                  {filteredClients.length > 0 && (
-                    <div className="absolute bottom-full left-0 right-0 mb-2 max-h-36 overflow-y-auto bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-white/[0.07] z-50 p-1">
-                      {filteredClients.map(c => (
-                        <button key={c.id} onClick={() => { setCustomer(c); setClientQuery(''); }}
-                          className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 rounded-lg flex justify-between items-center group">
-                          <div>
-                            <p className="text-xs font-black text-slate-800 dark:text-slate-200">{c.fullName || c.nombre || 'Sin Nombre'}</p>
-                            <p className="text-[10px] font-bold text-slate-400">{c.rif || c.cedula}</p>
-                          </div>
-                          <CheckCircle2 size={13} className="text-emerald-500 opacity-0 group-hover:opacity-100" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-3.5 w-3.5" />
+                    <input
+                      value={clientQuery}
+                      onChange={e => setClientQuery(e.target.value)}
+                      placeholder="Buscar cliente (nombre, RIF, cédula)..."
+                      className="w-full pl-9 pr-4 py-3 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30 focus:ring-2 focus:ring-violet-600 dark:focus:ring-violet-500 outline-none shadow-sm transition-all"
+                    />
+                    {filteredClients.length > 0 && (
+                      <div className="absolute bottom-full left-0 right-0 mb-2 max-h-36 overflow-y-auto bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-white/[0.07] z-50 p-1">
+                        {filteredClients.map(c => (
+                          <button key={c.id} onClick={() => { setCustomer(c); setClientQuery(''); }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 rounded-lg flex justify-between items-center group">
+                            <div>
+                              <p className="text-xs font-black text-slate-800 dark:text-slate-200">{c.fullName || c.nombre || 'Sin Nombre'}</p>
+                              <p className="text-[10px] font-bold text-slate-400">{c.rif || c.cedula}</p>
+                            </div>
+                            <CheckCircle2 size={13} className="text-emerald-500 opacity-0 group-hover:opacity-100" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => setShowNewClientModal(true)}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-violet-500/30 text-[10px] font-black uppercase tracking-wider text-violet-400 hover:bg-violet-500/10 transition-all">
+                    <Plus size={12} /> Nuevo cliente
+                  </button>
                 </div>
               ) : (
                 <div className="bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl p-3.5 flex items-center gap-3 shadow-sm">
@@ -1701,9 +1708,144 @@ const PosContent = () => {
       )}
 
       {/* Account change confirmation removed — now reprices cart instead */}
+
+      {/* ── NEW CLIENT MODAL ───────────────────────────────────────────────── */}
+      {showNewClientModal && (
+        <NewClientModal
+          businessId={empresa_id!}
+          onClose={() => setShowNewClientModal(false)}
+          onCreated={(newClient) => {
+            setClients(prev => [...prev, newClient]);
+            setCustomer(newClient);
+            setShowNewClientModal(false);
+          }}
+        />
+      )}
     </div>
   );
 };
+
+// ─── NEW CLIENT MODAL ─────────────────────────────────────────────────────────
+function NewClientModal({ businessId, onClose, onCreated }: {
+  businessId: string;
+  onClose: () => void;
+  onCreated: (customer: any) => void;
+}) {
+  const [tipoDoc, setTipoDoc] = useState('V');
+  const [cedula, setCedula] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [telefono2, setTelefono2] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [email, setEmail] = useState('');
+  const [creditLimit, setCreditLimit] = useState('0');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nombre.trim()) return;
+    setSaving(true);
+    try {
+      const data: Record<string, any> = {
+        businessId,
+        nombre: nombre.trim(),
+        fullName: nombre.trim(),
+        cedula: cedula ? `${tipoDoc}-${cedula.trim()}` : '',
+        rif: cedula ? `${tipoDoc}-${cedula.trim()}` : '',
+        telefono: telefono.trim(),
+        telefono2: telefono2.trim(),
+        direccion: direccion.trim(),
+        email: email.trim(),
+        creditLimit: Number(creditLimit) || 0,
+        createdAt: new Date().toISOString(),
+      };
+      const ref = await addDoc(collection(db, 'customers'), data);
+      onCreated({ id: ref.id, ...data });
+    } catch (err) {
+      console.error('Error creating customer:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inp = "w-full px-3 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/25 focus:ring-2 focus:ring-violet-500 outline-none transition-all";
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-md px-4">
+      <div className="w-full max-w-md bg-white dark:bg-[#0d1424] rounded-2xl shadow-2xl shadow-black/40 border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/[0.06]">
+          <div className="flex items-center gap-2">
+            <User size={15} className="text-violet-500" />
+            <h3 className="text-sm font-black text-slate-800 dark:text-white">Nuevo Cliente</h3>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-all">
+            <X size={14} className="text-slate-400" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
+          {/* Nombre */}
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Nombre completo *</label>
+            <input value={nombre} onChange={e => setNombre(e.target.value)} required placeholder="Nombre completo" className={inp} />
+          </div>
+          {/* Documento */}
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Documento</label>
+            <div className="flex gap-2">
+              <select value={tipoDoc} onChange={e => setTipoDoc(e.target.value)}
+                className="px-3 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none w-20">
+                <option value="V">V-</option>
+                <option value="J">J-</option>
+                <option value="E">E-</option>
+                <option value="G">G-</option>
+                <option value="P">P-</option>
+              </select>
+              <input value={cedula} onChange={e => setCedula(e.target.value)} placeholder="12345678" className={`${inp} flex-1`} />
+            </div>
+          </div>
+          {/* Teléfonos */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Teléfono</label>
+              <input value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="+584241234567" className={inp} />
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Teléfono 2</label>
+              <input value={telefono2} onChange={e => setTelefono2(e.target.value)} placeholder="Opcional" className={inp} />
+            </div>
+          </div>
+          {/* Dirección */}
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Dirección</label>
+            <input value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Dirección de entrega" className={inp} />
+          </div>
+          {/* Email + Crédito */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" className={inp} />
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Límite crédito $</label>
+              <input type="number" min="0" step="0.01" value={creditLimit} onChange={e => setCreditLimit(e.target.value)} placeholder="0.00" className={inp} />
+            </div>
+          </div>
+        </form>
+        <div className="px-5 py-4 border-t border-slate-100 dark:border-white/[0.06] flex items-center justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={saving}
+            className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-white/[0.04] text-slate-500 dark:text-white/40 text-xs font-bold hover:bg-slate-200 dark:hover:bg-white/[0.08] transition-all">
+            Cancelar
+          </button>
+          <button type="submit" form="new-client-form" onClick={handleSubmit as any} disabled={!nombre.trim() || saving}
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 disabled:opacity-40 hover:from-violet-500 hover:to-indigo-500 transition-all shadow-lg shadow-violet-500/25">
+            {saving ? <span className="animate-spin">⏳</span> : <Plus size={13} />}
+            Crear cliente
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── EXPORT ───────────────────────────────────────────────────────────────────
 export default function PosMayor() {

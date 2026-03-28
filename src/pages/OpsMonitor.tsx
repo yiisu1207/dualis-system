@@ -3,7 +3,7 @@ import { auth, db } from '../firebase/config';
 import { signInAnonymously, signOut } from 'firebase/auth';
 import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc,
-  query, orderBy, limit, where, Timestamp,
+  query, orderBy, limit, where, Timestamp, writeBatch,
 } from 'firebase/firestore';
 import {
   Shield, Loader2, KeyRound, Building2, Users, Activity,
@@ -700,8 +700,68 @@ function BusinessesTab({ businesses, stats, tenants, users, exportCSV, onRefresh
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [planFilter, setPlanFilter] = useState('all');
   const [editingBiz, setEditingBiz] = useState<BizInfo | null>(null);
+  const [deletingBiz, setDeletingBiz] = useState<BizInfo | null>(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
+
+  const deleteBusinessFull = async (biz: BizInfo): Promise<string> => {
+    const bid = biz.id;
+    const slug = tenants[bid] || '';
+
+    // Helper: batch delete all docs in a subcollection
+    const batchDeleteSub = async (subPath: string) => {
+      const snap = await getDocs(collection(db, 'businesses', bid, subPath));
+      if (snap.empty) return;
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    };
+
+    // Helper: batch delete root collection docs matching businessId
+    const batchDeleteRoot = async (colName: string) => {
+      let done = false;
+      while (!done) {
+        const snap = await getDocs(query(collection(db, colName), where('businessId', '==', bid), limit(400)));
+        if (snap.empty) { done = true; break; }
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        if (snap.docs.length < 400) done = true;
+      }
+    };
+
+    // 1. Delete subcollections
+    const subs = ['products', 'terminals', 'employees', 'members', 'payroll_runs', 'loans',
+      'payroll_advances', 'vouchers', 'time_entries', 'portalAccess', 'portalPayments',
+      'paymentRequests', 'voucher_rates', 'voucher_compare_comments', 'conversations'];
+    for (const sub of subs) { try { await batchDeleteSub(sub); } catch {} }
+
+    // 2. businessConfigs
+    try { await deleteDoc(doc(db, 'businessConfigs', bid)); } catch {}
+
+    // 3. tenants slug
+    if (slug) { try { await deleteDoc(doc(db, 'tenants', slug)); } catch {} }
+
+    // 4. Root collections
+    for (const col of ['customers', 'suppliers', 'movements', 'auditLogs']) {
+      try { await batchDeleteRoot(col); } catch {}
+    }
+
+    // 5. Disable all users of this business (don't delete — they may have email history)
+    try {
+      const usersSnap = await getDocs(query(collection(db, 'users'), where('businessId', '==', bid)));
+      if (!usersSnap.empty) {
+        const batch = writeBatch(db);
+        usersSnap.docs.forEach(d => batch.update(d.ref, { status: 'DISABLED' }));
+        await batch.commit();
+      }
+    } catch {}
+
+    // 6. Delete business doc itself
+    await deleteDoc(doc(db, 'businesses', bid));
+
+    return `Empresa "${biz.name}" eliminada completamente`;
+  };
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -850,10 +910,16 @@ function BusinessesTab({ businesses, stats, tenants, users, exportCSV, onRefresh
                           </div>
                           <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/[0.05]">
                             <p className="text-[8px] text-white/10 font-mono">ID: {biz.id}</p>
-                            <button onClick={(e) => { e.stopPropagation(); setEditingBiz(biz); }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all text-[10px] font-bold text-indigo-400">
-                              <Pencil size={11} /> Editar negocio
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button onClick={(e) => { e.stopPropagation(); setEditingBiz(biz); }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all text-[10px] font-bold text-indigo-400">
+                                <Pencil size={11} /> Editar negocio
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); setDeletingBiz(biz); }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition-all text-[10px] font-bold text-rose-400">
+                                <Trash2 size={11} /> Eliminar empresa
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -879,6 +945,27 @@ function BusinessesTab({ businesses, stats, tenants, users, exportCSV, onRefresh
           onClose={() => setEditingBiz(null)}
           onSave={async () => { showToast('✓ Negocio actualizado'); setEditingBiz(null); onRefresh?.(); }}
           saving={saving} setSaving={setSaving} showToast={showToast} />
+      )}
+
+      {/* Delete Business Modal */}
+      {deletingBiz && (
+        <DeleteBizModal
+          biz={deletingBiz}
+          slug={tenants[deletingBiz.id] || ''}
+          onClose={() => setDeletingBiz(null)}
+          onConfirm={async () => {
+            setSaving(true);
+            try {
+              const msg = await deleteBusinessFull(deletingBiz);
+              showToast('✓ ' + msg);
+              setDeletingBiz(null);
+              onRefresh?.();
+            } catch (err: any) {
+              showToast('✗ ' + err.message);
+            } finally { setSaving(false); }
+          }}
+          saving={saving}
+        />
       )}
     </div>
   );
@@ -1086,6 +1173,7 @@ function UsersTab({ users, businesses, stats, exportCSV, onRefresh }: any) {
   const [roleFilter, setRoleFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<UserInfo | null>(null);
+  const [deletingUser, setDeletingUser] = useState<UserInfo | null>(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -1132,6 +1220,30 @@ function UsersTab({ users, businesses, stats, exportCSV, onRefresh }: any) {
   const quickApprove = (u: UserInfo) => updateUser(u.uid, { status: 'ACTIVE' }, `${u.fullName || u.email} activado`);
   const quickDisable = (u: UserInfo) => updateUser(u.uid, { status: 'DISABLED' }, `${u.fullName || u.email} deshabilitado`);
   const quickEnable = (u: UserInfo) => updateUser(u.uid, { status: 'ACTIVE' }, `${u.fullName || u.email} reactivado`);
+
+  const deleteUserFull = async (u: UserInfo): Promise<string> => {
+    const steps: string[] = [];
+    try {
+      // 1. Delete main user doc
+      await deleteDoc(doc(db, 'users', u.uid));
+      steps.push('users/' + u.uid);
+      // 2. Delete business membership if businessId known
+      if (u.businessId) {
+        try {
+          await deleteDoc(doc(db, 'businesses', u.businessId, 'members', u.uid));
+          steps.push('businesses/' + u.businessId + '/members/' + u.uid);
+        } catch {}
+      }
+      // 3. Delete opsToken if it exists
+      try {
+        await deleteDoc(doc(db, 'opsTokens', u.uid));
+        steps.push('opsTokens/' + u.uid);
+      } catch {}
+      return 'Eliminado: ' + steps.join(', ');
+    } catch (err: any) {
+      throw new Error(err.message || 'Error al eliminar usuario');
+    }
+  };
 
   const handleExport = () => {
     exportCSV('usuarios_ops.csv',
@@ -1249,6 +1361,10 @@ function UsersTab({ users, businesses, stats, exportCSV, onRefresh }: any) {
                         className="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all">
                         <Pencil size={12} className="text-indigo-400" />
                       </button>
+                      <button onClick={() => setDeletingUser(u)} title="Eliminar cuenta"
+                        className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition-all">
+                        <Trash2 size={12} className="text-rose-400" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1274,6 +1390,26 @@ function UsersTab({ users, businesses, stats, exportCSV, onRefresh }: any) {
       {selectedUser && (
         <UserEditModal user={selectedUser} bizMap={bizMap} onClose={() => setSelectedUser(null)}
           onSave={async (uid, data, label) => { await updateUser(uid, data, label); setSelectedUser(null); }} saving={saving} />
+      )}
+
+      {/* ── Delete User Modal ────────────────────────────── */}
+      {deletingUser && (
+        <DeleteUserModal
+          user={deletingUser}
+          onClose={() => setDeletingUser(null)}
+          onConfirm={async () => {
+            setSaving(true);
+            try {
+              const msg = await deleteUserFull(deletingUser);
+              showToast('✓ ' + msg);
+              setDeletingUser(null);
+              onRefresh?.();
+            } catch (err: any) {
+              showToast('✗ ' + err.message);
+            } finally { setSaving(false); }
+          }}
+          saving={saving}
+        />
       )}
     </div>
   );
@@ -1795,6 +1931,112 @@ function InfoRow({ label, value, ..._rest }: { label: string; value: string; [k:
     <div className="flex items-center justify-between">
       <span className="text-[10px] text-white/25">{label}</span>
       <span className="text-[10px] text-white/50 font-bold">{value}</span>
+    </div>
+  );
+}
+
+/* ── Delete User Modal ───────────────────────────────────────── */
+function DeleteUserModal({ user, onClose, onConfirm, saving }: {
+  user: UserInfo; onClose: () => void; onConfirm: () => Promise<void>; saving: boolean;
+}) {
+  const [input, setInput] = useState('');
+  const confirmed = input.trim() === 'DELETE';
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md px-4">
+      <div className="w-full max-w-md bg-[#0d1424] rounded-2xl shadow-2xl shadow-black/40 border border-white/[0.07] overflow-hidden">
+        <div className="px-6 pt-6 pb-4 border-b border-white/[0.06]">
+          <div className="flex items-center gap-2 mb-1">
+            <Trash2 size={16} className="text-rose-400" />
+            <h3 className="text-sm font-black text-white">Eliminar cuenta</h3>
+          </div>
+          <p className="text-xs text-white/40">Esta acción es <span className="text-rose-400 font-bold">irreversible</span>.</p>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          <div className="p-3 rounded-xl bg-rose-500/[0.06] border border-rose-500/20 space-y-1">
+            <p className="text-[10px] font-black uppercase text-rose-400 tracking-widest">Se eliminará permanentemente:</p>
+            <ul className="text-[11px] text-white/50 space-y-0.5 ml-2">
+              <li>· Perfil de usuario <span className="text-white/70 font-bold">{user.fullName || user.email}</span></li>
+              {user.businessId && <li>· Membresía en empresa</li>}
+              <li>· Token de sesión OpsMonitor (si existe)</li>
+            </ul>
+          </div>
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Escribe DELETE para confirmar</label>
+            <input value={input} onChange={e => setInput(e.target.value)} placeholder="DELETE"
+              className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl font-mono focus:outline-none focus:ring-1 focus:ring-rose-500/50 placeholder:text-white/15" />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-white/[0.06] flex items-center justify-end gap-2">
+          <button onClick={onClose} disabled={saving}
+            className="px-4 py-2.5 rounded-xl bg-white/[0.04] text-white/40 text-xs font-bold hover:bg-white/[0.08] transition-all">
+            Cancelar
+          </button>
+          <button onClick={onConfirm} disabled={!confirmed || saving}
+            className="px-5 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 disabled:opacity-30 hover:bg-rose-500 transition-all">
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            Eliminar cuenta
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Delete Business Modal ───────────────────────────────────── */
+function DeleteBizModal({ biz, slug, onClose, onConfirm, saving }: {
+  biz: BizInfo; slug: string; onClose: () => void; onConfirm: () => Promise<void>; saving: boolean;
+}) {
+  const [nameInput, setNameInput] = useState('');
+  const [checked, setChecked] = useState(false);
+  const confirmed = checked && nameInput.trim() === biz.name;
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md px-4">
+      <div className="w-full max-w-md bg-[#0d1424] rounded-2xl shadow-2xl shadow-black/40 border border-white/[0.07] overflow-hidden">
+        <div className="px-6 pt-6 pb-4 border-b border-white/[0.06]">
+          <div className="flex items-center gap-2 mb-1">
+            <Trash2 size={16} className="text-rose-400" />
+            <h3 className="text-sm font-black text-white">Eliminar empresa</h3>
+          </div>
+          <p className="text-xs text-white/40">Esta acción es <span className="text-rose-400 font-bold">permanente e irreversible</span>.</p>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          <div className="p-3 rounded-xl bg-rose-500/[0.06] border border-rose-500/20 space-y-1">
+            <p className="text-[10px] font-black uppercase text-rose-400 tracking-widest">Se eliminará permanentemente:</p>
+            <ul className="text-[11px] text-white/50 space-y-0.5 ml-2">
+              <li>· Empresa: <span className="text-white/70 font-bold">{biz.name}</span></li>
+              <li>· Productos, cajas, empleados, membresías</li>
+              <li>· Nóminas, préstamos, adelantos, vales</li>
+              <li>· Configuraciones y tasas</li>
+              <li>· Clientes, proveedores y movimientos</li>
+              {slug && <li>· Subdominio: <span className="font-mono text-sky-400">{slug}.dualis.online</span></li>}
+              <li>· Usuarios de la empresa → quedan deshabilitados</li>
+            </ul>
+          </div>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)}
+              className="mt-0.5 accent-rose-500" />
+            <span className="text-[11px] text-white/50">Entiendo que esto es irreversible y que todos los datos serán eliminados.</span>
+          </label>
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">
+              Escribe el nombre exacto: <span className="text-white/60 font-mono">{biz.name}</span>
+            </label>
+            <input value={nameInput} onChange={e => setNameInput(e.target.value)} placeholder={biz.name}
+              className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-500/50 placeholder:text-white/15" />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-white/[0.06] flex items-center justify-end gap-2">
+          <button onClick={onClose} disabled={saving}
+            className="px-4 py-2.5 rounded-xl bg-white/[0.04] text-white/40 text-xs font-bold hover:bg-white/[0.08] transition-all">
+            Cancelar
+          </button>
+          <button onClick={onConfirm} disabled={!confirmed || saving}
+            className="px-5 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 disabled:opacity-30 hover:bg-rose-500 transition-all">
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            Eliminar empresa
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
