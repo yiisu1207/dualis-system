@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import SEO from './SEO';
 import { auth, db } from '../firebase/config';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore';
 import {
   ArrowRight, Loader2, ShieldCheck, Building2, Users,
   Eye, EyeOff, Mail, Lock, CheckCircle2, Shield, AlertTriangle,
@@ -309,13 +309,13 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
         }
       }
 
-      const isTrial  = plan === 'trial' || !isCreate;
       // Si tiene invitación válida, se aprueba automáticamente con el rol de la invitación
       const inviteRole = hasInvite ? (inviteData!.role || 'ventas') : null;
       const role     = isCreate ? 'owner' : (inviteRole || 'pending');
+      // Trial owners entran directo como ACTIVE — sin onboarding wizard ni espera de aprobación
       const status   = !isCreate
         ? (hasInvite ? 'ACTIVE' : 'PENDING_APPROVAL')
-        : (isTrial ? 'PENDING_SETUP' : 'PENDING_APPROVAL');
+        : 'ACTIVE';
 
       const displayName = isCreate ? form.businessName : form.fullName;
       await setDoc(doc(db, 'users', uid), {
@@ -335,6 +335,39 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
             displayName, role: 'owner', status, joinedAt: new Date().toISOString(),
           }, { merge: true });
         } catch {}
+
+        // Auto-inicializar businessConfigs con defaults inteligentes
+        try {
+          await setDoc(doc(db, 'businessConfigs', bid), {
+            companyName:    form.businessName || form.fullName || 'Mi Negocio',
+            companyRif:     '',
+            companyPhone:   form.phone ? `${form.phoneCode}${form.phone}` : '',
+            companyAddress: '',
+            mainCurrency:   'USD',
+            defaultIva:     16,
+            tasaBCV:        36.50,
+            tasaGrupo:      36.50,
+            igtfEnabled:    true,
+            igtfRate:       3,
+            setupCompleted: false,
+            updatedAt:      new Date().toISOString(),
+          }, { merge: true });
+        } catch (e) { console.warn('businessConfigs init failed:', e); }
+
+        // Auto-crear primera terminal POS
+        try {
+          await addDoc(collection(db, 'businesses', bid, 'terminals'), {
+            nombre:         'Caja Principal 01',
+            tipo:           'detal',
+            estado:         'cerrada',
+            cajeroNombre:   null,
+            apertura:       null,
+            cierreAt:       null,
+            totalFacturado: 0,
+            movimientos:    0,
+            createdAt:      new Date().toISOString(),
+          });
+        } catch (e) { console.warn('terminal init failed:', e); }
       } else if (hasInvite) {
         // Invite mode: consumir token y crear membership directamente
         try {

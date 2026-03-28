@@ -21,7 +21,6 @@ const MainSystem       = lazy(() => import('../MainSystem'));
 const PosDetal         = lazy(() => import('../pages/pos/PosDetal'));
 const PosMayor         = lazy(() => import('../pages/pos/PosMayor'));
 const AdminPosManager  = lazy(() => import('../pages/AdminPosManager'));
-const OnboardingWizard = lazy(() => import('../features/onboarding/OnboardingWizard'));
 const Terms            = lazy(() => import('../pages/Terms'));
 const Privacy          = lazy(() => import('../pages/Privacy'));
 const SuperAdminPanel  = lazy(() => import('../pages/SuperAdminPanel'));
@@ -91,12 +90,6 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
     return <Navigate to="/onboarding" replace />;
   }
 
-  if (userProfile?.status === 'PENDING_SETUP') {
-    const isInsideSystem = window.location.pathname.includes('/admin') || window.location.pathname.includes('/pos');
-    if (isInsideSystem) return <>{children}</>;
-    return <Navigate to="/onboarding" replace />;
-  }
-
   if (userProfile?.status === 'PENDING_APPROVAL') {
     return <Navigate to={`/${tenantId}/pending`} replace />;
   }
@@ -118,35 +111,14 @@ function SubdomainGuard({ children, fallback }: { children: React.ReactNode; fal
 
 function OnboardingGate() {
   const { user, userProfile, loading } = useAuth();
-  const [searchParams] = useSearchParams();
-  const force = searchParams.get('force') === '1';
-  const stepParam = Number(searchParams.get('step'));
-  const forceStep = Number.isFinite(stepParam)
-    ? Math.max(1, Math.min(2, stepParam))
-    : force
-    ? 2
-    : undefined;
 
-  if (loading) {
-    return <PageSpinner />;
-  }
-
-  if (!user && !force) {
-    return <Navigate to="/login" replace />;
-  }
+  if (loading) return <PageSpinner />;
+  if (!user) return <Navigate to="/login" replace />;
 
   const tenantId = resolveTenantId(userProfile);
-  const isSetupComplete = tenantId && userProfile?.status === 'ACTIVE';
+  if (tenantId) return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
 
-  if (tenantId && userProfile?.status === 'PENDING_APPROVAL') {
-    return <Navigate to={`/${tenantId}/pending`} replace />;
-  }
-
-  if (isSetupComplete && !force) {
-    return <Navigate to={`/${tenantId}/admin`} replace />;
-  }
-
-  return <OnboardingWizard forceStep={forceStep} />;
+  return <Navigate to="/" replace />;
 }
 
 function TenantGuard({ children }: { children: React.ReactNode }) {
