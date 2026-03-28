@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /register
+
+# No indexar rutas privadas de tenants
+Disallow: /*/admin/
+Disallow: /*/pos/
+Disallow: /*/billing
+Disallow: /*/subscribe
+Disallow: /*/pending
+Disallow: /portal/
+Disallow: /caja/
+Disallow: /ops
+Disallow: /join
+
+# Sitemap
+Sitemap: https://dualis.online/sitemap.xml
