@@ -1,6 +1,7 @@
 import React from 'react';
 // Deploy Version: 2.5.0 - Full Remodel
 import { BrowserRouter } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { RatesProvider } from './context/RatesContext';
@@ -10,18 +11,20 @@ import AppRouter from './routes/AppRouter';
 
 export default function App() {
   return (
-    <SubdomainProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <RatesProvider>
-            <ToastProvider>
-              <BrowserRouter>
-                <AppRouter />
-              </BrowserRouter>
-            </ToastProvider>
-          </RatesProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </SubdomainProvider>
+    <HelmetProvider>
+      <SubdomainProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <RatesProvider>
+              <ToastProvider>
+                <BrowserRouter>
+                  <AppRouter />
+                </BrowserRouter>
+              </ToastProvider>
+            </RatesProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </SubdomainProvider>
+    </HelmetProvider>
   );
 }

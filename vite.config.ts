@@ -38,13 +38,17 @@ export default defineConfig(({ mode }) => {
         rollupOptions: {
           output: {
             manualChunks: {
-              'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-              'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+              'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
+              'vendor-react': ['react', 'react-dom', 'react-router-dom', 'react-helmet-async'],
               'vendor-charts': ['recharts'],
               'vendor-ui': ['lucide-react'],
+              'vendor-pdf': ['jspdf'],
+              'vendor-excel': ['exceljs'],
+              'vendor-canvas': ['html2canvas'],
             },
           },
         },
+        chunkSizeWarningLimit: 1000,
       },
     };
 });

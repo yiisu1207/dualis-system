@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import SEO from './SEO';
 import {
   ArrowRight, BarChart3, Zap, Sparkles, Shield,
   ShoppingCart, Package, TrendingUp,
@@ -208,7 +209,51 @@ export default function LandingPage() {
   /* ═══════════════════════════════════════════════════════════════════════════════
      RENDER
      ═══════════════════════════════════════════════════════════════════════════════ */
+  const faqSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: FAQ_ITEMS.map((item) => ({
+      '@type': 'Question',
+      name: `¿${item.q}`,
+      acceptedAnswer: { '@type': 'Answer', text: item.a },
+    })),
+  };
+
+  const orgSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'Dualis ERP',
+    url: 'https://dualis.online',
+    logo: 'https://dualis.online/logo.png',
+    description: 'Sistema ERP Cloud diseñado para empresas venezolanas.',
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'customer support',
+      availableLanguage: 'Spanish',
+    },
+    sameAs: ['https://dualis.online'],
+  };
+
+  const webSiteSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Dualis ERP',
+    url: 'https://dualis.online',
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: 'https://dualis.online/?q={search_term_string}',
+      'query-input': 'required name=search_term_string',
+    },
+  };
+
   return (
+    <>
+    <SEO
+      title="Dualis ERP — El sistema que Venezuela necesitaba"
+      description="ERP Cloud para Venezuela. POS Detal + Mayor, inventario, CxC, CxP, RRHH, contabilidad, tasas BCV en vivo e IA. Multi-moneda USD/Bolívares. 30 días gratis, sin tarjeta."
+      url="https://dualis.online"
+      jsonLd={[faqSchema, orgSchema, webSiteSchema]}
+    />
     <div className="min-h-screen bg-[#020710] text-white overflow-x-hidden selection:bg-indigo-600/80 antialiased">
       <style>{`
         @keyframes ticker    { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
@@ -1234,5 +1279,6 @@ export default function LandingPage() {
         </div>
       )}
     </div>
+    </>
   );
 }

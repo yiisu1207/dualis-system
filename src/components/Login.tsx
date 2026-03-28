@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import SEO from './SEO';
 import { auth, db } from '../firebase/config';
 import { signInWithEmailAndPassword, signInWithCustomToken, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -153,6 +154,13 @@ export default function Login() {
   }
 
   return (
+    <>
+    <SEO
+      title="Iniciar sesión — Dualis ERP"
+      description="Accede a tu cuenta Dualis ERP. Sistema administrativo para empresas venezolanas."
+      url="https://dualis.online/login"
+      noindex={true}
+    />
     <div className="min-h-screen relative overflow-hidden bg-[#050816]">
 
       {/* ── TOP BAR ───────────────────────────────────────── */}
@@ -339,5 +347,6 @@ export default function Login() {
       )}
 
     </div>
+    </>
   );
 }

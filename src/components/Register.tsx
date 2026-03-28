@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import SEO from './SEO';
 import { auth, db } from '../firebase/config';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
@@ -981,6 +982,12 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
   const inp      = `w-full px-4 py-3.5 bg-white/[0.06] border border-white/[0.1] text-white rounded-xl placeholder:text-white/20 focus:outline-none focus:ring-2 ${ring} text-sm transition-all`;
 
   return (
+    <>
+    <SEO
+      title="Crear cuenta gratis — Dualis ERP"
+      description="Registra tu empresa en Dualis ERP. 30 días gratis, sin tarjeta. POS, inventario, finanzas y más para tu negocio venezolano."
+      url="https://dualis.online/register"
+    />
     <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden bg-[#060b1a]">
       <div className="absolute inset-0 pointer-events-none transition-all duration-700">
         <div className={`absolute -top-[20%] -left-[10%] w-[70%] h-[70%] rounded-full ${orb1} blur-[120px] transition-colors duration-700`} />
@@ -1202,5 +1209,6 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
         <p className="text-center text-[9px] font-black uppercase tracking-[0.4em] text-white/10 mt-6">Dualis ERP &copy; 2026</p>
       </div>
     </div>
+    </>
   );
 }

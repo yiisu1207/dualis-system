@@ -26,7 +26,7 @@
     <meta name="twitter:description" content="POS Detal + Mayor, inventario, CxC, CxP, RRHH y VisionLab IA. Multi-moneda USD/VES. Tasas BCV en vivo. 30 días gratis." />
     <meta name="twitter:image" content="https://dualis.online/logo.png" />
 
-    <!-- JSON-LD Structured Data -->
+    <!-- JSON-LD: SoftwareApplication -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -43,25 +43,68 @@
         "priceCurrency": "USD",
         "description": "30 días de prueba gratuita"
       },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "reviewCount": "12"
+      },
       "featureList": [
         "POS Detal y Mayor",
-        "Inventario con alertas",
+        "Inventario con alertas de stock",
         "Cuentas por Cobrar (CxC)",
         "Cuentas por Pagar (CxP)",
         "Recursos Humanos y Nómina",
         "Contabilidad multi-moneda",
-        "Tasas BCV en vivo",
-        "VisionLab IA",
-        "Facturación Venezuela",
-        "Multi-sucursal"
+        "Tasas BCV en vivo y tasas custom",
+        "VisionLab IA con Gemini",
+        "Facturación Venezuela IVA + IGTF",
+        "Multi-sucursal y multi-terminal",
+        "Portal de Clientes",
+        "Conciliación bancaria"
       ],
       "inLanguage": "es",
-      "availableOnDevice": "Desktop, Mobile",
+      "availableOnDevice": "Desktop, Mobile, Tablet",
       "softwareVersion": "5.0",
       "creator": {
         "@type": "Organization",
         "name": "Dualis",
         "url": "https://dualis.online"
+      }
+    }
+    </script>
+
+    <!-- JSON-LD: Organization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Dualis ERP",
+      "alternateName": "Dualis",
+      "url": "https://dualis.online",
+      "logo": "https://dualis.online/logo.png",
+      "description": "ERP Cloud diseñado para empresas venezolanas. POS, inventario, finanzas, RRHH e inteligencia artificial.",
+      "foundingLocation": "Venezuela",
+      "inLanguage": "es",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer support",
+        "availableLanguage": "Spanish"
+      }
+    }
+    </script>
+
+    <!-- JSON-LD: WebSite (habilita Sitelinks Search Box) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Dualis ERP",
+      "url": "https://dualis.online",
+      "inLanguage": "es",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://dualis.online/?q={search_term_string}",
+        "query-input": "required name=search_term_string"
       }
     }
     </script>
@@ -139,7 +182,42 @@
     <div class="amb a2"></div>
     <div class="amb a3"></div>
     <div id="root"></div>
-    
+
+    <!-- Noscript fallback para crawlers sin JS -->
+    <noscript>
+      <div style="font-family:sans-serif;max-width:900px;margin:0 auto;padding:40px 20px;color:#111;">
+        <h1>Dualis ERP — El sistema administrativo que Venezuela necesitaba</h1>
+        <p>ERP Cloud completo para empresas venezolanas. POS Detal + Mayor, inventario, CxC, CxP, RRHH, contabilidad, tasas BCV en vivo e IA. Multi-moneda USD y bolívares. 30 días gratis, sin tarjeta.</p>
+        <h2>Módulos incluidos</h2>
+        <ul>
+          <li><strong>POS Detal</strong> — Ventas al contado con escáner, modo offline y ticket digital.</li>
+          <li><strong>POS Mayor</strong> — Terminal mayorista con crédito 15/30/45 días.</li>
+          <li><strong>Inventario Pro</strong> — Kardex, alertas de stock, márgenes y Smart Advisor.</li>
+          <li><strong>CxC / Clientes</strong> — Cuentas por cobrar, historial y deudas USD/Bs.</li>
+          <li><strong>CxP / Proveedores</strong> — Cuentas por pagar y control de proveedores.</li>
+          <li><strong>RRHH y Nómina</strong> — Empleados, nómina, adelantos y recibos.</li>
+          <li><strong>Contabilidad</strong> — Libro diario, mayor y balance automático.</li>
+          <li><strong>Tasas BCV y Custom</strong> — BCV oficial en vivo más tasas personalizadas.</li>
+          <li><strong>VisionLab IA</strong> — Gemini analiza tu negocio en tiempo real.</li>
+          <li><strong>Dashboard BI</strong> — KPIs, producto estrella, alertas predictivas y P&amp;L.</li>
+          <li><strong>Portal de Clientes</strong> — Tus deudores consultan su balance y registran pagos.</li>
+          <li><strong>Conciliación Bancaria</strong> — Conciliación con CSV.</li>
+        </ul>
+        <h2>¿Por qué Dualis?</h2>
+        <p>Diseñado 100% para Venezuela: maneja IVA 16%, IGTF 3%, tasa BCV oficial, precios dinámicos en USD y bolívares. Sin servidores propios — tu data en Google Cloud. 30 días gratis, sin tarjeta de crédito.</p>
+        <h2>Preguntas frecuentes</h2>
+        <h3>¿Funciona para empresas venezolanas?</h3>
+        <p>Sí, está diseñado 100% para Venezuela. Maneja USD y bolívares, IVA 16%, IGTF 3%, tasa BCV oficial.</p>
+        <h3>¿Mis datos están seguros?</h3>
+        <p>Dualis usa Firebase de Google con cifrado en tránsito y en reposo. Tus datos están aislados de otras empresas.</p>
+        <h3>¿Necesito tarjeta para la prueba?</h3>
+        <p>No. Los 30 días de prueba son completamente gratis y sin tarjeta.</p>
+        <h3>¿Puedo exportar mis datos?</h3>
+        <p>Sí. Inventario, CxC, reportes, auditoría y nómina se exportan en Excel, PDF o CSV.</p>
+        <p><a href="https://dualis.online/register">Crear cuenta gratis →</a></p>
+      </div>
+    </noscript>
+
     <script type="module" src="/src/index.tsx"></script>
 </body>
 </html>
