@@ -23,6 +23,7 @@ import { useToast } from '../context/ToastContext';
 import { useRates } from '../context/RatesContext';
 import { useSubscription } from '../hooks/useSubscription';
 import CxCClientProfile from './cxc/CxCClientProfile';
+import CxPSupplierProfile from './cxc/CxPSupplierProfile';
 import CxCLedgerTable from './cxc/CxCLedgerTable';
 
 interface AccountingSectionProps {
@@ -39,7 +40,7 @@ interface AccountingSectionProps {
   openEntityId?: string | null;
 }
 
-type ViewMode = 'DIRECTORY' | 'PROFILE' | 'DETAIL';
+type ViewMode = 'DIRECTORY' | 'PROFILE' | 'SUPPLIER_PROFILE' | 'DETAIL';
 type TabFilter = 'ALL' | AccountType;
 type EntityTypeFilter = 'ALL' | 'CLIENTE' | 'PROVEEDOR' | 'NÓMINA' | 'CATALOGO';
 
@@ -108,7 +109,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     if (!openEntityId) return;
     setSelectedEntityId(openEntityId);
     const isClient = customers.some((c) => c.id === openEntityId);
-    setViewMode(isClient ? 'PROFILE' : 'DETAIL');
+    setViewMode(isClient ? 'PROFILE' : 'SUPPLIER_PROFILE');
   }, [openEntityId, customers]);
 
   useEffect(() => {
@@ -1456,7 +1457,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                           className="hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors group cursor-pointer"
                           onClick={() => {
                             setSelectedEntityId(entity.id);
-                            setViewMode(entity.type === 'CLIENTE' ? 'PROFILE' : 'DETAIL');
+                            setViewMode(entity.type === 'CLIENTE' ? 'PROFILE' : 'SUPPLIER_PROFILE');
                           }}
                         >
                           <td className="px-8 py-4">
@@ -1577,7 +1578,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   setSelectedEntityId(entity.id);
-                                  setViewMode(entity.type === 'CLIENTE' ? 'PROFILE' : 'DETAIL');
+                                  setViewMode(entity.type === 'CLIENTE' ? 'PROFILE' : 'SUPPLIER_PROFILE');
                                 }}
                                 className="w-9 h-9 rounded-full bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-600 hover:text-slate-900 dark:text-white transition-all shadow-sm dark:shadow-black/20"
                                 title="Ver Expediente"
@@ -1620,6 +1621,20 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
         />
       )}
 
+      {/* LEVEL 1.6: SUPPLIER PROFILE VIEW */}
+      {viewMode === 'SUPPLIER_PROFILE' && selectedEntityId && currentSupplier && (
+        <CxPSupplierProfile
+          entityId={selectedEntityId}
+          supplier={currentSupplier}
+          movements={movements}
+          rates={rates}
+          customRates={customRates}
+          onBack={() => setViewMode('DIRECTORY')}
+          onViewLedger={() => setViewMode('DETAIL')}
+          onRegisterPago={() => { setViewMode('DETAIL'); setShowAbonoModal(true); }}
+        />
+      )}
+
       {/* LEVEL 2: DETAILED VIEW */}
       {viewMode === 'DETAIL' && selectedEntityId && currentEntityInfo && (
         <div className="flex flex-col h-full gap-6 animate-in slide-in-from-right-4">
@@ -1634,7 +1649,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               <div className="space-y-6">
                 <div className="flex items-center gap-6">
                   <button
-                    onClick={() => setViewMode(currentEntityInfo?.type === 'CLIENTE' ? 'PROFILE' : 'DIRECTORY')}
+                    onClick={() => setViewMode(currentEntityInfo?.type === 'CLIENTE' ? 'PROFILE' : 'SUPPLIER_PROFILE')}
                     className="w-12 h-12 rounded-2xl app-btn app-btn-ghost flex items-center justify-center"
                   >
                     <i className="fa-solid fa-arrow-left"></i>
