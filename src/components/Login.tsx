@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { auth, db } from '../firebase/config';
 import { signInWithEmailAndPassword, signInWithCustomToken, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -6,8 +6,6 @@ import { startAuthentication } from '@simplewebauthn/browser';
 import {
   Mail, Lock, Loader2, Building2, Eye, EyeOff, Fingerprint,
   ArrowRight, X, CheckCircle2,
-  ShoppingCart, BarChart3, Package, Users, Brain, Shield, Receipt, Globe,
-  ChevronLeft, ChevronRight as ChevronRightIcon,
 } from 'lucide-react';
 import ReCAPTCHA from 'react-google-recaptcha';
 import { useNavigate } from 'react-router-dom';
@@ -15,80 +13,20 @@ import { useAuth } from '../context/AuthContext';
 import { useSubdomain } from '../context/SubdomainContext';
 import ModeToggle from './ModeToggle';
 
-/* ── Carousel slides ──────────────────────────────────── */
-const SLIDES = [
-  {
-    gradient: 'from-indigo-600 via-indigo-700 to-violet-800',
-    icon: ShoppingCart,
-    title: 'POS en la Nube',
-    subtitle: 'Vende desde cualquier dispositivo',
-    features: ['Facturación instantánea', 'Escáner de código de barras', 'Ticket digital y térmico', 'Modo offline disponible'],
-    accent: 'text-indigo-300',
-    featureBg: 'bg-indigo-500/20 border-indigo-400/30',
-  },
-  {
-    gradient: 'from-violet-600 via-purple-700 to-fuchsia-800',
-    icon: BarChart3,
-    title: 'Dashboard Inteligente',
-    subtitle: 'KPIs y métricas en tiempo real',
-    features: ['Producto estrella', 'Flujo de caja diario', 'Alertas predictivas', 'Estado de Resultados (P&L)'],
-    accent: 'text-violet-300',
-    featureBg: 'bg-violet-500/20 border-violet-400/30',
-  },
-  {
-    gradient: 'from-emerald-600 via-teal-700 to-cyan-800',
-    icon: Package,
-    title: 'Inventario Pro',
-    subtitle: 'Control total de tu stock',
-    features: ['Kardex automático', 'Alertas de stock bajo', 'Márgenes y costos', 'Smart Advisor con IA'],
-    accent: 'text-emerald-300',
-    featureBg: 'bg-emerald-500/20 border-emerald-400/30',
-  },
-  {
-    gradient: 'from-sky-600 via-blue-700 to-indigo-800',
-    icon: Users,
-    title: 'RRHH y Nómina',
-    subtitle: 'Gestiona tu equipo completo',
-    features: ['Empleados y cargos', 'Cálculo de nómina', 'Adelantos y préstamos', 'Recibos digitales'],
-    accent: 'text-sky-300',
-    featureBg: 'bg-sky-500/20 border-sky-400/30',
-  },
-  {
-    gradient: 'from-amber-600 via-orange-700 to-red-800',
-    icon: Brain,
-    title: 'VisionLab IA',
-    subtitle: 'Inteligencia artificial para tu negocio',
-    features: ['Análisis con Gemini', 'Predicciones de venta', 'Recomendaciones de stock', 'Insights en lenguaje natural'],
-    accent: 'text-amber-300',
-    featureBg: 'bg-amber-500/20 border-amber-400/30',
-  },
-  {
-    gradient: 'from-rose-600 via-pink-700 to-fuchsia-800',
-    icon: Shield,
-    title: 'Seguridad Total',
-    subtitle: 'Tus datos protegidos 24/7',
-    features: ['Cifrado en tránsito y reposo', 'Roles y permisos granulares', 'Auditoría inmutable', 'Datos aislados por empresa'],
-    accent: 'text-rose-300',
-    featureBg: 'bg-rose-500/20 border-rose-400/30',
-  },
-  {
-    gradient: 'from-teal-600 via-emerald-700 to-green-800',
-    icon: Receipt,
-    title: 'Contabilidad y Fiscal',
-    subtitle: 'IVA, IGTF, BCV y más',
-    features: ['Libro de ventas fiscal', 'Tasas BCV en vivo', 'CxC y CxP dual currency', 'Conciliación bancaria'],
-    accent: 'text-teal-300',
-    featureBg: 'bg-teal-500/20 border-teal-400/30',
-  },
-  {
-    gradient: 'from-blue-600 via-indigo-700 to-violet-800',
-    icon: Globe,
-    title: 'Portal de Clientes',
-    subtitle: 'Tus clientes conectados contigo',
-    features: ['Estado de cuenta online', 'Registro de pagos', 'Facturas pendientes', 'Acceso con PIN seguro'],
-    accent: 'text-blue-300',
-    featureBg: 'bg-blue-500/20 border-blue-400/30',
-  },
+/* ── Floating module pills ────────────────────────────── */
+const MODULE_PILLS = [
+  { label: 'POS Detal',       x: '8%',  y: '12%', delay: '0s',    dur: '7s'  },
+  { label: 'Inventario',      x: '78%', y: '8%',  delay: '1.2s',  dur: '8s'  },
+  { label: 'Dashboard BI',    x: '85%', y: '35%', delay: '0.5s',  dur: '9s'  },
+  { label: 'CxC Clientes',    x: '5%',  y: '45%', delay: '2s',    dur: '7.5s'},
+  { label: 'RRHH',            x: '90%', y: '65%', delay: '1.8s',  dur: '8.5s'},
+  { label: 'Contabilidad',    x: '3%',  y: '75%', delay: '0.8s',  dur: '7s'  },
+  { label: 'VisionLab IA',    x: '75%', y: '88%', delay: '2.5s',  dur: '9s'  },
+  { label: 'Libro Ventas',    x: '15%', y: '90%', delay: '1.5s',  dur: '8s'  },
+  { label: 'POS Mayor',       x: '70%', y: '15%', delay: '3s',    dur: '7.5s'},
+  { label: 'Auditoría',       x: '12%', y: '30%', delay: '0.3s',  dur: '8.5s'},
+  { label: 'Tasas BCV',       x: '82%', y: '50%', delay: '1s',    dur: '7s'  },
+  { label: 'Portal Clientes', x: '20%', y: '60%', delay: '2.2s',  dur: '9s'  },
 ];
 
 const RATE_KEY  = 'login_rate_limit_v1';
@@ -115,19 +53,6 @@ export default function Login() {
   const [recents,   setRecents]   = useState<Array<{ email: string; lastUsed: string }>>(() => {
     try { const r = localStorage.getItem('erp_login_users'); return r ? JSON.parse(r) : []; } catch { return []; }
   });
-
-  // Carousel
-  const [slide, setSlide] = useState(0);
-  const [paused, setPaused] = useState(false);
-
-  const nextSlide = useCallback(() => setSlide(s => (s + 1) % SLIDES.length), []);
-  const prevSlide = useCallback(() => setSlide(s => (s - 1 + SLIDES.length) % SLIDES.length), []);
-
-  useEffect(() => {
-    if (paused) return;
-    const t = setInterval(nextSlide, 5000);
-    return () => clearInterval(t);
-  }, [paused, nextSlide]);
 
   const nav                     = useNavigate();
   const { user, loading: aLoad } = useAuth();
@@ -218,7 +143,7 @@ export default function Login() {
   };
 
   /* ── SHARED INPUT CLASS ──────────────────────────────── */
-  const inp = 'w-full pl-11 pr-4 py-3.5 bg-white/[0.04] border border-white/[0.1] text-white rounded-xl placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500/40 text-sm font-medium transition-all';
+  const inp = 'w-full pl-11 pr-4 py-3.5 bg-white/[0.06] border border-white/[0.08] text-white rounded-xl placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/30 text-sm font-medium transition-all backdrop-blur-sm';
 
   /* ═══════════════════════════════════════════════════════
      RENDER
@@ -243,56 +168,94 @@ export default function Login() {
     );
   }
 
-  const cur = SLIDES[slide];
-  const SlideIcon = cur.icon;
-
   return (
-    <div className="min-h-screen flex bg-[#07091a]">
+    <div className="min-h-screen relative overflow-hidden bg-[#050816]">
 
-      {/* ── LEFT: LOGIN FORM ───────────────────────────────── */}
-      <div className="w-full lg:w-[42%] flex flex-col items-center justify-center px-6 sm:px-10 py-10 relative">
-        {/* Top controls */}
-        <div className="absolute top-5 right-5 z-10"><ModeToggle /></div>
+      {/* ── ANIMATED MESH GRADIENT BACKGROUND ──────────── */}
+      <div className="absolute inset-0 pointer-events-none">
+        {/* Primary orbs — slow movement via CSS animation */}
+        <div className="absolute w-[600px] h-[600px] rounded-full opacity-30 blur-[150px] bg-indigo-600"
+          style={{ top: '-10%', left: '-5%', animation: 'loginOrb1 20s ease-in-out infinite' }} />
+        <div className="absolute w-[500px] h-[500px] rounded-full opacity-20 blur-[130px] bg-violet-600"
+          style={{ bottom: '-15%', right: '-5%', animation: 'loginOrb2 25s ease-in-out infinite' }} />
+        <div className="absolute w-[400px] h-[400px] rounded-full opacity-15 blur-[120px] bg-blue-600"
+          style={{ top: '40%', left: '50%', transform: 'translateX(-50%)', animation: 'loginOrb3 18s ease-in-out infinite' }} />
 
-        <div className="w-full max-w-[380px]">
+        {/* Subtle noise texture */}
+        <div className="absolute inset-0 opacity-[0.015]"
+          style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")' }} />
+      </div>
 
-          {/* Logo + company name */}
-          <div className="flex items-center gap-3 mb-10">
-            {subdomain.logoUrl ? (
-              <img src={subdomain.logoUrl} alt={subdomain.businessName || ''} className="h-12 w-auto rounded-xl" />
-            ) : (
-              <img src="/logo.png" alt="Dualis" className="h-11 w-auto" />
-            )}
-            <div>
-              <p className="text-white font-black text-lg tracking-tight leading-tight">{subdomain.businessName}</p>
-              <p className="text-white/20 text-[9px] font-bold uppercase tracking-widest">{subdomain.slug}.dualis.online</p>
-            </div>
+      {/* ── FLOATING MODULE PILLS ──────────────────────── */}
+      <div className="absolute inset-0 pointer-events-none hidden lg:block">
+        {MODULE_PILLS.map((pill) => (
+          <div
+            key={pill.label}
+            className="absolute px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06] backdrop-blur-sm"
+            style={{
+              left: pill.x, top: pill.y,
+              animation: `loginFloat ${pill.dur} ease-in-out ${pill.delay} infinite`,
+            }}
+          >
+            <span className="text-[10px] font-bold text-white/25 whitespace-nowrap">{pill.label}</span>
           </div>
+        ))}
+      </div>
+
+      {/* ── TOP BAR ───────────────────────────────────────── */}
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-6 sm:px-10 py-5">
+        <div className="flex items-center gap-2">
+          <img src="/logo.png" alt="Dualis" className="h-7 w-auto opacity-40" />
+          <span className="text-white/20 text-[9px] font-bold uppercase tracking-[0.25em] hidden sm:inline">Dualis ERP</span>
+        </div>
+        <ModeToggle />
+      </div>
+
+      {/* ── CENTER CARD ───────────────────────────────────── */}
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 py-20">
+
+        {/* Company identity */}
+        <div className="flex flex-col items-center mb-8">
+          {subdomain.logoUrl ? (
+            <img src={subdomain.logoUrl} alt={subdomain.businessName || ''} className="h-16 w-auto rounded-2xl mb-4 shadow-2xl shadow-black/30" />
+          ) : (
+            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mb-4 shadow-2xl shadow-indigo-500/30">
+              <Building2 size={28} className="text-white" />
+            </div>
+          )}
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight text-center">
+            {subdomain.businessName}
+          </h1>
+          <p className="text-white/20 text-xs font-bold mt-1 font-mono">{subdomain.slug}.dualis.online</p>
+        </div>
+
+        {/* Glass card */}
+        <div className="w-full max-w-[420px] bg-white/[0.04] border border-white/[0.08] backdrop-blur-xl rounded-3xl p-8 sm:p-10 shadow-2xl shadow-black/20">
 
           {/* ── RESET SENT ── */}
           {resetSent ? (
             <div className="text-center space-y-6 animate-in fade-in-0 duration-500">
-              <div className="h-20 w-20 mx-auto rounded-[2rem] bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                <CheckCircle2 size={36} className="text-emerald-400" />
+              <div className="h-16 w-16 mx-auto rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                <CheckCircle2 size={30} className="text-emerald-400" />
               </div>
               <div>
-                <h2 className="text-2xl font-black text-white">Correo enviado</h2>
+                <h2 className="text-xl font-black text-white">Correo enviado</h2>
                 <p className="text-white/35 text-sm mt-2">Revisa <span className="text-white/70 font-bold">{email}</span> y sigue las instrucciones.</p>
               </div>
               <button onClick={() => { setResetMode(false); setResetSent(false); setError(''); }} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-xs uppercase tracking-widest">
-                Volver al inicio de sesión
+                Volver
               </button>
             </div>
 
           /* ── RESET FORM ── */
           ) : resetMode ? (
-            <div className="space-y-5 animate-in fade-in-0 slide-in-from-right-4 duration-400">
+            <div className="space-y-5 animate-in fade-in-0 duration-400">
               <button onClick={() => { setResetMode(false); setError(''); }} className="flex items-center gap-2 text-white/25 hover:text-white/60 text-[10px] font-bold uppercase tracking-widest transition-colors">
                 <ArrowRight size={12} className="rotate-180" /> Volver
               </button>
               <div>
-                <h1 className="text-2xl font-black text-white tracking-tight">Recuperar acceso</h1>
-                <p className="text-white/35 text-sm mt-1">Te enviaremos un enlace de recuperación.</p>
+                <h2 className="text-xl font-black text-white tracking-tight">Recuperar acceso</h2>
+                <p className="text-white/30 text-sm mt-1">Te enviaremos un enlace de recuperación.</p>
               </div>
               <form onSubmit={handleReset} className="space-y-4">
                 <div className="relative">
@@ -310,17 +273,17 @@ export default function Login() {
           ) : (
             <div className="animate-in fade-in-0 duration-500">
               <div className="mb-7">
-                <h1 className="text-2xl font-black text-white tracking-tight">Iniciar sesión</h1>
-                <p className="text-white/30 text-sm mt-1">Ingresa con tu cuenta para acceder al sistema.</p>
+                <h2 className="text-xl font-black text-white tracking-tight">Iniciar sesión</h2>
+                <p className="text-white/25 text-sm mt-1">Ingresa tus credenciales para acceder.</p>
               </div>
 
               <form onSubmit={handleLogin} className="space-y-4">
                 {/* Email */}
                 <div>
                   <div className="flex items-center justify-between ml-1 mb-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Correo</label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/25">Correo</label>
                     {recents.length > 0 && (
-                      <button type="button" onClick={() => setPicker(true)} className="text-[9px] font-black uppercase tracking-widest text-indigo-400 hover:text-indigo-300 transition-colors">
+                      <button type="button" onClick={() => setPicker(true)} className="text-[9px] font-black uppercase tracking-widest text-indigo-400/70 hover:text-indigo-400 transition-colors">
                         Recientes
                       </button>
                     )}
@@ -338,8 +301,8 @@ export default function Login() {
                 {/* Password */}
                 <div>
                   <div className="flex items-center justify-between ml-1 mb-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Contraseña</label>
-                    <button type="button" onClick={() => { setResetMode(true); setError(''); }} className="text-[9px] font-black uppercase tracking-widest text-white/25 hover:text-indigo-400 transition-colors">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/25">Contraseña</label>
+                    <button type="button" onClick={() => { setResetMode(true); setError(''); }} className="text-[9px] font-black uppercase tracking-widest text-white/20 hover:text-indigo-400 transition-colors">
                       ¿Olvidaste tu clave?
                     </button>
                   </div>
@@ -366,7 +329,7 @@ export default function Login() {
                 {/* Submit */}
                 <button
                   type="submit" disabled={loading}
-                  className="w-full py-3.5 mt-1 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
+                  className="w-full py-3.5 mt-1 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
                 >
                   {loading ? <Loader2 size={18} className="animate-spin" /> : <>Entrar al sistema <ArrowRight size={15} /></>}
                 </button>
@@ -376,111 +339,32 @@ export default function Login() {
                   <div className="flex justify-center">
                     <ReCAPTCHA sitekey={captchaKey} onChange={v => setCaptcha(v)} theme="dark" />
                   </div>
-                ) : (
-                  <p className="text-center text-[9px] font-mono text-white/10 uppercase tracking-widest">MODO_DEV</p>
-                )}
+                ) : null}
 
                 {/* Passkey */}
                 <button
                   type="button" onClick={handlePasskey} disabled={pkLoading}
-                  className="w-full py-3 bg-white/[0.03] border border-white/[0.08] text-white/40 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/[0.06] hover:text-white/60 flex items-center justify-center gap-2 transition-all"
+                  className="w-full py-3 bg-white/[0.03] border border-white/[0.06] text-white/35 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/[0.06] hover:text-white/55 flex items-center justify-center gap-2 transition-all"
                 >
-                  <Fingerprint size={14} className="text-indigo-400" />
+                  <Fingerprint size={14} className="text-indigo-400/70" />
                   {pkLoading ? 'Validando...' : 'Usar Passkey'}
                 </button>
               </form>
 
               {/* Invite-only notice */}
               <div className="mt-6 pt-5 border-t border-white/[0.06] text-center">
-                <p className="text-[10px] text-white/20">
-                  ¿No tienes cuenta? Contacta al administrador de tu empresa para recibir una invitación.
+                <p className="text-[10px] text-white/15 leading-relaxed">
+                  ¿No tienes cuenta? Contacta al administrador de tu empresa.
                 </p>
               </div>
             </div>
           )}
         </div>
-      </div>
 
-      {/* ── RIGHT: FEATURE CAROUSEL ────────────────────────── */}
-      <div className="hidden lg:flex flex-1 relative overflow-hidden"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
-      >
-        {/* Slide background */}
-        <div className={`absolute inset-0 bg-gradient-to-br ${cur.gradient} transition-all duration-700`} />
-
-        {/* Grid overlay */}
-        <div className="absolute inset-0 opacity-[0.04]"
-          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
-
-        {/* Floating decorative elements */}
-        <div className="absolute top-[18%] right-[12%] w-32 h-32 rounded-full bg-white/[0.06] blur-xl" />
-        <div className="absolute bottom-[22%] left-[8%] w-24 h-24 rounded-full bg-white/[0.04] blur-lg" />
-
-        {/* Content */}
-        <div className="relative z-10 flex flex-col justify-between p-12 xl:p-16 w-full">
-
-          {/* Top: Dualis branding */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <img src="/logo.png" alt="Dualis" className="h-8 w-auto brightness-0 invert opacity-80" />
-              <span className="text-white/60 text-xs font-black uppercase tracking-widest">Dualis ERP</span>
-            </div>
-            <div className="text-white/30 text-[9px] font-bold uppercase tracking-widest">
-              Sistema Empresarial
-            </div>
-          </div>
-
-          {/* Center: slide content */}
-          <div className="flex-1 flex flex-col justify-center max-w-lg" key={slide}>
-            <div className="animate-in fade-in-0 slide-in-from-right-8 duration-500">
-              {/* Icon */}
-              <div className="h-16 w-16 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center mb-6 backdrop-blur-sm">
-                <SlideIcon size={28} className="text-white" />
-              </div>
-
-              {/* Title */}
-              <h2 className="text-4xl xl:text-5xl font-black text-white tracking-tight leading-[1.1] mb-3">
-                {cur.title}
-              </h2>
-              <p className="text-white/50 text-lg font-medium mb-8">{cur.subtitle}</p>
-
-              {/* Features */}
-              <div className="space-y-3">
-                {cur.features.map(f => (
-                  <div key={f} className={`inline-flex items-center gap-3 px-5 py-3 rounded-xl border ${cur.featureBg} backdrop-blur-sm mr-2`}>
-                    <div className="w-1.5 h-1.5 rounded-full bg-white/60 shrink-0" />
-                    <span className="text-white/90 text-sm font-bold">{f}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom: navigation + dots */}
-          <div className="flex items-center justify-between">
-            {/* Dots */}
-            <div className="flex items-center gap-2">
-              {SLIDES.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSlide(i)}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${i === slide ? 'w-8 bg-white' : 'w-1.5 bg-white/25 hover:bg-white/40'}`}
-                />
-              ))}
-            </div>
-
-            {/* Arrows */}
-            <div className="flex items-center gap-2">
-              <button onClick={prevSlide} className="h-10 w-10 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 flex items-center justify-center text-white/60 hover:text-white transition-all">
-                <ChevronLeft size={18} />
-              </button>
-              <button onClick={nextSlide} className="h-10 w-10 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 flex items-center justify-center text-white/60 hover:text-white transition-all">
-                <ChevronRightIcon size={18} />
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* Bottom tagline */}
+        <p className="mt-8 text-[10px] text-white/10 font-bold text-center tracking-wider">
+          Powered by Dualis ERP &middot; Sistema Empresarial Cloud
+        </p>
       </div>
 
       {/* ── RECENTS MODAL ──────────────────────────────── */}
@@ -510,6 +394,28 @@ export default function Login() {
           </div>
         </div>
       )}
+
+      {/* ── CSS ANIMATIONS (injected) ──────────────────── */}
+      <style>{`
+        @keyframes loginOrb1 {
+          0%, 100% { transform: translate(0, 0); }
+          33% { transform: translate(80px, 60px); }
+          66% { transform: translate(-40px, 30px); }
+        }
+        @keyframes loginOrb2 {
+          0%, 100% { transform: translate(0, 0); }
+          33% { transform: translate(-70px, -50px); }
+          66% { transform: translate(50px, -30px); }
+        }
+        @keyframes loginOrb3 {
+          0%, 100% { transform: translateX(-50%) translateY(0); }
+          50% { transform: translateX(-50%) translateY(-40px); }
+        }
+        @keyframes loginFloat {
+          0%, 100% { transform: translateY(0px); opacity: 0.6; }
+          50% { transform: translateY(-12px); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }
