@@ -61,14 +61,20 @@ import {
   AlertTriangle,
   Truck,
   Package,
+  User,
+  KeyRound,
+  BadgeCheck,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
+import { updatePassword, updateProfile, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { acceptRequest, rejectRequest } from '../firebase/api';
 import { seedTestData } from '../utils/seedTestData';
 
-type SectionType = 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'devtest';
+type SectionType = 'perfil' | 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'devtest';
 
 interface ConfigData {
   companyName: string;
@@ -142,7 +148,7 @@ const Configuracion: React.FC = () => {
   const toast = useToast();
   const { t } = useTranslation();
 
-  const [activeSection, setActiveSection] = useState<SectionType>('identidad');
+  const [activeSection, setActiveSection] = useState<SectionType>('perfil');
   const [users, setUsers] = useState<any[]>([]);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [requestRoles, setRequestRoles] = useState<Record<string, string>>({});
@@ -190,6 +196,16 @@ const Configuracion: React.FC = () => {
     splitAlmacenista: 50,
   });
   const [savingCommissions, setSavingCommissions] = useState(false);
+
+  // Profile state
+  const [profileDisplayName, setProfileDisplayName] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
 
   // Feature toggles (guardados en businessConfigs/{bid})
   // multiCurrency siempre true — no configurable
@@ -274,6 +290,11 @@ const Configuracion: React.FC = () => {
     };
     loadData();
   }, [businessId]);
+
+  // Init profile display name from userProfile
+  useEffect(() => {
+    if (userProfile?.displayName) setProfileDisplayName(userProfile.displayName);
+  }, [userProfile?.displayName]);
 
   // Load terminals for cajero assignment
   useEffect(() => {
@@ -407,6 +428,47 @@ const Configuracion: React.FC = () => {
     navigator.clipboard?.writeText(url);
     setInviteCopied(token);
     setTimeout(() => setInviteCopied(null), 2000);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!auth.currentUser || !userProfile?.uid) return;
+    setSavingProfile(true);
+    try {
+      await updateProfile(auth.currentUser, { displayName: profileDisplayName.trim() });
+      await setDoc(doc(db, 'users', userProfile.uid), { displayName: profileDisplayName.trim() }, { merge: true });
+      updateUserProfile({ displayName: profileDisplayName.trim() });
+      toast.success('Perfil actualizado');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al actualizar el perfil');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!auth.currentUser || !auth.currentUser.email) return;
+    if (!currentPassword) { toast.error('Ingresa tu contraseña actual'); return; }
+    if (newPassword.length < 6) { toast.error('La nueva contraseña debe tener al menos 6 caracteres'); return; }
+    if (newPassword !== confirmPassword) { toast.error('Las contraseñas no coinciden'); return; }
+    setSavingPassword(true);
+    try {
+      const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      await updatePassword(auth.currentUser, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      toast.success('Contraseña actualizada correctamente');
+    } catch (e: any) {
+      if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+        toast.error('Contraseña actual incorrecta');
+      } else {
+        toast.error('Error al cambiar la contraseña');
+      }
+    } finally {
+      setSavingPassword(false);
+    }
   };
 
   const handleSaveConfig = async () => {
@@ -556,18 +618,35 @@ const Configuracion: React.FC = () => {
     );
   }
 
-  const menuItems = [
-    { id: 'identidad',  label: 'Identidad del Negocio', icon: Building2 },
-    { id: 'facturacion',label: 'Facturación y POS',     icon: Receipt },
-    { id: 'despacho',   label: 'Despacho / NDE',        icon: Truck },
-    { id: 'comisiones', label: 'Comisiones',             icon: Package },
-    { id: 'equipo',     label: 'Equipo y Permisos',     icon: Users2 },
-    { id: 'funciones',  label: 'Funciones del Sistema', icon: Sliders },
-    { id: 'seguridad',  label: 'Seguridad',              icon: ShieldCheck },
-    { id: 'suscripcion',label: 'Suscripción',            icon: CreditCard },
-    { id: 'apariencia', label: 'Apariencia',             icon: Palette },
-    { id: 'devtest',    label: 'Dev / Test',              icon: Database },
+  const menuGroups = [
+    {
+      label: 'Mi Cuenta',
+      items: [
+        { id: 'perfil',     label: 'Mi Perfil',           icon: User },
+        { id: 'apariencia', label: 'Apariencia',           icon: Palette },
+      ],
+    },
+    {
+      label: 'Mi Empresa',
+      items: [
+        { id: 'identidad',  label: 'Identidad',            icon: Building2 },
+        { id: 'facturacion',label: 'Facturación y POS',    icon: Receipt },
+        { id: 'despacho',   label: 'Despacho / NDE',       icon: Truck },
+        { id: 'comisiones', label: 'Comisiones',            icon: Package },
+        { id: 'equipo',     label: 'Equipo y Permisos',    icon: Users2 },
+      ],
+    },
+    {
+      label: 'Sistema',
+      items: [
+        { id: 'funciones',  label: 'Funciones',             icon: Sliders },
+        { id: 'seguridad',  label: 'Seguridad',             icon: ShieldCheck },
+        { id: 'suscripcion',label: 'Suscripción',           icon: CreditCard },
+        ...(isAdmin ? [{ id: 'devtest', label: 'Dev / Test', icon: Database }] : []),
+      ],
+    },
   ];
+  const menuItems = menuGroups.flatMap(g => g.items);
 
   const inputClasses =
     'w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold dark:text-white focus:ring-2 focus:ring-indigo-500 transition-all outline-none placeholder:text-slate-300 dark:placeholder:text-white/20';
@@ -622,30 +701,68 @@ const Configuracion: React.FC = () => {
         </div>
 
         {/* DESKTOP ASIDE */}
-        <aside className="hidden sm:block w-60 border-r border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] p-4 overflow-y-auto custom-scroll">
-          <nav className="space-y-1">
-            {menuItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => setActiveSection(item.id as SectionType)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${
-                  activeSection === item.id
-                    ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/20'
-                    : 'text-slate-400 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.06] hover:text-slate-600 dark:hover:text-white'
-                }`}
-              >
-                <item.icon size={16} className={activeSection === item.id ? 'text-indigo-200' : 'text-slate-300 dark:text-white/30'} />
-                {item.label}
-              </button>
+        <aside className="hidden sm:flex flex-col w-64 border-r border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] overflow-y-auto custom-scroll shrink-0">
+          {/* User card at top */}
+          <button
+            onClick={() => setActiveSection('perfil')}
+            className={`flex items-center gap-3 p-4 border-b border-slate-100 dark:border-white/[0.07] hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all text-left ${activeSection === 'perfil' ? 'bg-indigo-50/60 dark:bg-indigo-500/[0.08]' : ''}`}
+          >
+            <div className="relative shrink-0">
+              {userProfile?.photoURL ? (
+                <img src={userProfile.photoURL} alt="" className="w-10 h-10 rounded-xl object-cover border-2 border-indigo-500/30" />
+              ) : (
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-black text-sm">
+                  {(userProfile?.displayName || userProfile?.email || 'U')[0].toUpperCase()}
+                </div>
+              )}
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-[#0d1424]" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-black text-slate-900 dark:text-white truncate leading-none">
+                {userProfile?.displayName || 'Mi Perfil'}
+              </p>
+              <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 truncate mt-0.5">
+                {userProfile?.email}
+              </p>
+              <span className={`inline-block mt-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest ${
+                isOwner ? 'bg-amber-500/15 text-amber-500' : isAdmin ? 'bg-indigo-500/15 text-indigo-500' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/30'
+              }`}>
+                {userProfile?.role || 'usuario'}
+              </span>
+            </div>
+          </button>
+
+          {/* Grouped nav */}
+          <nav className="flex-1 p-3 space-y-4">
+            {menuGroups.map(group => (
+              <div key={group.label}>
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-white/20 px-3 mb-1.5">{group.label}</p>
+                <div className="space-y-0.5">
+                  {group.items.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveSection(item.id as SectionType)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-[11px] transition-all ${
+                        activeSection === item.id
+                          ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/20'
+                          : 'text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.05] hover:text-slate-700 dark:hover:text-white'
+                      }`}
+                    >
+                      <item.icon size={15} className={activeSection === item.id ? 'text-indigo-200' : 'text-slate-300 dark:text-white/25'} />
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </nav>
 
-          <div className="mt-8 pt-4 border-t border-slate-100 dark:border-white/[0.07]">
+          <div className="p-3 border-t border-slate-100 dark:border-white/[0.07]">
             <button
               onClick={() => auth.signOut()}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-[11px] text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all"
             >
-              <LogOut size={16} /> Cerrar Sesión
+              <LogOut size={15} /> Cerrar Sesión
             </button>
           </div>
         </aside>
@@ -653,6 +770,184 @@ const Configuracion: React.FC = () => {
         {/* MAIN CONTENT */}
         <main className="flex-1 p-4 md:p-6 overflow-y-auto custom-scroll bg-slate-50 dark:bg-[#070b14]">
           <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-right-6 duration-700">
+
+            {/* PERFIL */}
+            {activeSection === 'perfil' && (
+              <div className="space-y-5 pb-10">
+                {/* Hero banner */}
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 p-6 shadow-xl shadow-indigo-500/25">
+                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, white 0%, transparent 60%)' }} />
+                  <div className="relative flex items-center gap-5">
+                    <div className="relative shrink-0">
+                      {userProfile?.photoURL ? (
+                        <img src={userProfile.photoURL} alt="" className="w-20 h-20 rounded-2xl object-cover border-4 border-white/30 shadow-lg" />
+                      ) : (
+                        <div className="w-20 h-20 rounded-2xl bg-white/20 backdrop-blur border-4 border-white/30 flex items-center justify-center text-white font-black text-2xl shadow-lg">
+                          {(userProfile?.displayName || userProfile?.email || 'U')[0].toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xl font-black text-white leading-none">{userProfile?.displayName || 'Sin nombre'}</p>
+                      <p className="text-indigo-200 text-sm mt-1">{userProfile?.email}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="px-2.5 py-1 rounded-lg bg-white/20 text-white text-[10px] font-black uppercase tracking-widest">
+                          {userProfile?.role || 'usuario'}
+                        </span>
+                        <span className="flex items-center gap-1 text-emerald-300 text-[10px] font-black">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          En línea
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Información personal */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/5 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.06] flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+                      <User size={16} className="text-indigo-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Información Personal</h3>
+                      <p className="text-[10px] text-slate-400 dark:text-white/30">Tu nombre público y datos de cuenta</p>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Nombre completo</label>
+                      <input
+                        type="text"
+                        value={profileDisplayName}
+                        onChange={e => setProfileDisplayName(e.target.value)}
+                        placeholder="Tu nombre visible"
+                        className={inputClasses}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Correo electrónico</label>
+                      <div className="relative">
+                        <Mail size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 dark:text-white/20" />
+                        <input
+                          type="email"
+                          value={userProfile?.email || ''}
+                          readOnly
+                          className="w-full px-4 py-3 pl-10 bg-slate-50/60 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-xl text-sm font-bold dark:text-white/50 text-slate-400 cursor-not-allowed"
+                        />
+                      </div>
+                      <p className="text-[9px] text-slate-400 dark:text-white/20 mt-1 ml-1">El correo no se puede cambiar desde aquí.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Rol</label>
+                        <div className="px-4 py-3 bg-slate-50/60 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-xl flex items-center gap-2">
+                          <BadgeCheck size={14} className={isOwner ? 'text-amber-500' : isAdmin ? 'text-indigo-500' : 'text-slate-400'} />
+                          <span className="text-sm font-black text-slate-700 dark:text-white capitalize">{userProfile?.role || '—'}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Estado</label>
+                        <div className="px-4 py-3 bg-emerald-50 dark:bg-emerald-500/[0.08] border border-emerald-100 dark:border-emerald-500/20 rounded-xl flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">Activo</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleSaveProfile}
+                      disabled={savingProfile || !profileDisplayName.trim()}
+                      className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20"
+                    >
+                      {savingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                      Guardar Perfil
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cambiar contraseña */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/5 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.06] flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                      <KeyRound size={16} className="text-amber-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Cambiar Contraseña</h3>
+                      <p className="text-[10px] text-slate-400 dark:text-white/30">Elige una contraseña segura de al menos 6 caracteres</p>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Contraseña actual</label>
+                      <div className="relative">
+                        <input
+                          type={showCurrentPwd ? 'text' : 'password'}
+                          value={currentPassword}
+                          onChange={e => setCurrentPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className={inputClasses + ' pr-11'}
+                        />
+                        <button type="button" onClick={() => setShowCurrentPwd(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-white/20 hover:text-slate-500 dark:hover:text-white/50 transition-colors">
+                          {showCurrentPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Nueva contraseña</label>
+                      <div className="relative">
+                        <input
+                          type={showNewPwd ? 'text' : 'password'}
+                          value={newPassword}
+                          onChange={e => setNewPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className={inputClasses + ' pr-11'}
+                        />
+                        <button type="button" onClick={() => setShowNewPwd(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-white/20 hover:text-slate-500 dark:hover:text-white/50 transition-colors">
+                          {showNewPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Confirmar nueva contraseña</label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={e => setConfirmPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className={`${inputClasses} ${confirmPassword && confirmPassword !== newPassword ? 'border-rose-400 dark:border-rose-500/40 focus:ring-rose-500' : ''}`}
+                      />
+                      {confirmPassword && confirmPassword !== newPassword && (
+                        <p className="text-[10px] text-rose-500 mt-1 ml-1 font-bold">Las contraseñas no coinciden</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleChangePassword}
+                      disabled={savingPassword || !currentPassword || !newPassword || newPassword !== confirmPassword}
+                      className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:from-amber-400 hover:to-orange-400 transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-md shadow-amber-500/20"
+                    >
+                      {savingPassword ? <Loader2 className="animate-spin" size={14} /> : <KeyRound size={14} />}
+                      Actualizar Contraseña
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sesión */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/5 p-6 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-black text-slate-900 dark:text-white">Cerrar sesión</p>
+                    <p className="text-xs text-slate-400 dark:text-white/30 mt-0.5">Salir de tu cuenta en este dispositivo</p>
+                  </div>
+                  <button
+                    onClick={() => auth.signOut()}
+                    className="px-5 py-2.5 rounded-xl border border-rose-200 dark:border-rose-500/30 text-rose-500 text-xs font-black uppercase tracking-widest hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all flex items-center gap-2"
+                  >
+                    <LogOut size={14} /> Cerrar sesión
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* IDENTIDAD */}
             {activeSection === 'identidad' && (
