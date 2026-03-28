@@ -1,43 +1,57 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { PosKioskContext } from '../pages/pos/PosDetal';
+import { PosKioskContext } from '../context/PosKioskContext';
 import { useAuth } from '../context/AuthContext';
-import { TenantProvider } from '../context/TenantContext';
-import PosLayout from '../layouts/PosLayout';
-import PosDetal from '../pages/pos/PosDetal';
-import PosMayor from '../pages/pos/PosMayor';
-import NotAuthorized from '../features/common/NotAuthorized';
-import NotFound from '../features/common/NotFound';
-import OnboardingWizard from '../features/onboarding/OnboardingWizard';
-import LandingPage from '../components/LandingPage';
-import Login from '../components/Login';
-import Register from '../components/Register';
-import AdminPosManager from '../pages/AdminPosManager';
-import ProtectedRoute from '../components/ProtectedRoute';
-import { WidgetProvider } from '../context/WidgetContext';
-import MainSystem from '../MainSystem';
-import { useTenant } from '../context/TenantContext';
-import Terms from '../pages/Terms';
-import Privacy from '../pages/Privacy';
-import SuperAdminPanel from '../pages/SuperAdminPanel';
-import BillingPage from '../pages/BillingPage';
-import SubscriptionWall from '../pages/SubscriptionWall';
-import PendingApprovalWall from '../pages/PendingApprovalWall';
+import { TenantProvider, useTenant } from '../context/TenantContext';
 import { useSubscription } from '../hooks/useSubscription';
-import { VendorProvider } from '../context/VendorContext';
-import { findInvitationByToken } from '../firebase/api';
-import OpsMonitor from '../pages/OpsMonitor';
+import ProtectedRoute from '../components/ProtectedRoute';
 import { useSubdomain } from '../context/SubdomainContext';
+import { findInvitationByToken } from '../firebase/api';
+import { VendorProvider } from '../context/VendorContext';
+import { WidgetProvider } from '../context/WidgetContext';
 import { CartProvider } from '../context/CartContext';
-import PortalGuard from '../portal/PortalGuard';
-import PortalDashboard from '../portal/PortalDashboard';
-import PortalInvoices from '../portal/PortalInvoices';
-import PortalProntoPago from '../portal/PortalProntoPago';
-import PortalAbonoForm from '../portal/PortalAbonoForm';
-import PortalStatement from '../portal/PortalStatement';
-import PortalHelp from '../portal/PortalHelp';
+
+// ─── Lazy imports — solo se cargan cuando se necesitan ──────────────────────────
+const LandingPage      = lazy(() => import('../components/LandingPage'));
+const Login            = lazy(() => import('../components/Login'));
+const Register         = lazy(() => import('../components/Register'));
+const MainSystem       = lazy(() => import('../MainSystem'));
+const PosDetal         = lazy(() => import('../pages/pos/PosDetal'));
+const PosMayor         = lazy(() => import('../pages/pos/PosMayor'));
+const AdminPosManager  = lazy(() => import('../pages/AdminPosManager'));
+const OnboardingWizard = lazy(() => import('../features/onboarding/OnboardingWizard'));
+const Terms            = lazy(() => import('../pages/Terms'));
+const Privacy          = lazy(() => import('../pages/Privacy'));
+const SuperAdminPanel  = lazy(() => import('../pages/SuperAdminPanel'));
+const BillingPage      = lazy(() => import('../pages/BillingPage'));
+const SubscriptionWall = lazy(() => import('../pages/SubscriptionWall'));
+const PendingApprovalWall = lazy(() => import('../pages/PendingApprovalWall'));
+const OpsMonitor       = lazy(() => import('../pages/OpsMonitor'));
+const NotAuthorized    = lazy(() => import('../features/common/NotAuthorized'));
+const NotFound         = lazy(() => import('../features/common/NotFound'));
+const PosLayout        = lazy(() => import('../layouts/PosLayout'));
+// Portal
+const PortalGuard      = lazy(() => import('../portal/PortalGuard'));
+const PortalDashboard  = lazy(() => import('../portal/PortalDashboard'));
+const PortalInvoices   = lazy(() => import('../portal/PortalInvoices'));
+const PortalProntoPago = lazy(() => import('../portal/PortalProntoPago'));
+const PortalAbonoForm  = lazy(() => import('../portal/PortalAbonoForm'));
+const PortalStatement  = lazy(() => import('../portal/PortalStatement'));
+const PortalHelp       = lazy(() => import('../portal/PortalHelp'));
+// Páginas públicas SEO
+const PreciosPage      = lazy(() => import('../pages/public/PreciosPage'));
+const FuncionesPage    = lazy(() => import('../pages/public/FuncionesPage'));
+
+// ─── Spinner universal para Suspense ─────────────────────────────────────────────
+function PageSpinner() {
+  return (
+    <div className="h-screen flex items-center justify-center bg-[#070b14]">
+      <div className="w-6 h-6 border-2 border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" />
+    </div>
+  );
+}
 
 function KioskPosPage({ tipo }: { tipo: string }) {
   if (tipo === 'mayor') return <PosMayor />;
@@ -54,20 +68,17 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
   const subdomain = useSubdomain();
 
   if (loading || subdomain.loading) {
-    return <div className="h-screen flex items-center justify-center bg-[#070b14]"><div className="w-6 h-6 border-2 border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" /></div>;
+    return <PageSpinner />;
   }
 
   const isSubdomain = !!(subdomain.slug && subdomain.businessId);
 
   if (!user) {
-    // En subdomain: siempre mostrar Login (no landing, no register)
     if (isSubdomain) {
       const path = window.location.pathname;
       if (path === '/login') return <>{children}</>;
-      // Cualquier otra ruta en subdomain → redirect a login
       return <Navigate to="/login" replace />;
     }
-    // En main domain: /login ya no existe → redirect a landing
     const path = window.location.pathname;
     if (path === '/login') return <Navigate to="/" replace />;
     return <>{children}</>;
@@ -98,7 +109,6 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
   return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
 }
 
-/** En subdomain: bloquea rutas que no son login ni join */
 function SubdomainGuard({ children, fallback }: { children: React.ReactNode; fallback?: string }) {
   const subdomain = useSubdomain();
   const isSubdomain = !!(subdomain.slug && subdomain.businessId);
@@ -118,7 +128,7 @@ function OnboardingGate() {
     : undefined;
 
   if (loading) {
-    return <div className="h-screen flex items-center justify-center">Cargando...</div>;
+    return <PageSpinner />;
   }
 
   if (!user && !force) {
@@ -132,8 +142,6 @@ function OnboardingGate() {
     return <Navigate to={`/${tenantId}/pending`} replace />;
   }
 
-  // Solo redirigimos al admin si el setup está COMPLETO (status ACTIVE).
-  // Si status es PENDING_SETUP, mostramos el wizard aunque haya tenantId.
   if (isSetupComplete && !force) {
     return <Navigate to={`/${tenantId}/admin`} replace />;
   }
@@ -146,7 +154,7 @@ function TenantGuard({ children }: { children: React.ReactNode }) {
   const { empresa_id } = useParams();
 
   if (loading) {
-    return <div className="h-screen flex items-center justify-center">Cargando...</div>;
+    return <PageSpinner />;
   }
 
   if (!user || !userProfile) {
@@ -184,7 +192,7 @@ function SubscriptionGuard({ children }: { children: React.ReactNode }) {
   }, [authLoading, subLoading, subscription, empresa_id]);
 
   if (authLoading || subLoading) {
-    return <div className="h-screen flex items-center justify-center bg-[#070b14]"><div className="w-6 h-6 border-2 border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" /></div>;
+    return <PageSpinner />;
   }
   if (!subscription) return null;
   return <>{children}</>;
@@ -203,12 +211,11 @@ function AdminCoreWrapper() {
   );
 }
 
-// Redirige rutas legacy al tenant dashboard del usuario autenticado
 function LegacyRedirect() {
   const { user, userProfile, loading } = useAuth();
 
   if (loading) {
-    return <div className="h-screen flex items-center justify-center">Cargando...</div>;
+    return <PageSpinner />;
   }
 
   if (!user) {
@@ -277,11 +284,9 @@ function JoinPage() {
     );
   }
 
-  // Valid invite — render Register with invite data
   return <Register inviteToken={token} inviteData={invite} />;
 }
 
-// ─── KIOSK GATE — resolves /caja/:posToken → renders POS without auth ──────────
 function KioskGate() {
   const { posToken } = useParams<{ posToken: string }>();
   const [state, setState] = useState<'loading' | 'ready' | 'invalid'>('loading');
@@ -297,11 +302,7 @@ function KioskGate() {
     }).catch(() => setState('invalid'));
   }, [posToken]);
 
-  if (state === 'loading') return (
-    <div className="h-screen flex items-center justify-center bg-[#070b14]">
-      <div className="w-8 h-8 border-2 border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" />
-    </div>
-  );
+  if (state === 'loading') return <PageSpinner />;
 
   if (state === 'invalid' || !kioskData) return (
     <div className="h-screen flex items-center justify-center bg-[#070b14] px-4">
@@ -313,7 +314,6 @@ function KioskGate() {
     </div>
   );
 
-  // Inline CartProvider + PosContent (mirrors PosLayout without needing Outlet)
   return (
     <PosKioskContext.Provider value={{ businessId: kioskData.businessId, cajaId: kioskData.cajaId, token: posToken! }}>
       <TenantProvider tenantId={kioskData.businessId}>
@@ -329,94 +329,96 @@ function KioskGate() {
 
 export default function AppRouter() {
   return (
-    <Routes>
-      {/* Rutas públicas */}
-      <Route path="/" element={<AuthEntry><LandingPage /></AuthEntry>} />
-      <Route path="/login" element={<AuthEntry><Login /></AuthEntry>} />
-      <Route path="/register" element={<SubdomainGuard><AuthEntry><Register /></AuthEntry></SubdomainGuard>} />
-      <Route path="/join" element={<JoinPage />} />
-      <Route path="/terms" element={<SubdomainGuard><Terms /></SubdomainGuard>} />
-      <Route path="/privacy" element={<SubdomainGuard><Privacy /></SubdomainGuard>} />
-      {/* Internal ops panel — PIN-protected, path from env */}
-      <Route path={`/${import.meta.env.VITE_SUPER_ADMIN_PATH ?? 'ctrl-9x7b'}`} element={<SuperAdminPanel />} />
-      {/* Ops monitor — passkey-only anonymous access */}
-      <Route path="/ops" element={<OpsMonitor />} />
-      {/* Pending approval wall */}
-      <Route path="/:empresa_id/pending" element={<ProtectedRoute><PendingApprovalWall /></ProtectedRoute>} />
-      {/* Billing — protected, accessible even on expired plan */}
-      <Route path="/:empresa_id/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
-      {/* Subscription wall — shown before first access */}
-      <Route path="/:empresa_id/subscribe" element={<ProtectedRoute><SubscriptionWall /></ProtectedRoute>} />
-      <Route path="/onboarding" element={<OnboardingGate />} />
-      <Route path="/unauthorized" element={<NotAuthorized />} />
+    <Suspense fallback={<PageSpinner />}>
+      <Routes>
+        {/* Rutas públicas */}
+        <Route path="/" element={<AuthEntry><LandingPage /></AuthEntry>} />
+        <Route path="/login" element={<AuthEntry><Login /></AuthEntry>} />
+        <Route path="/register" element={<SubdomainGuard><AuthEntry><Register /></AuthEntry></SubdomainGuard>} />
+        <Route path="/join" element={<JoinPage />} />
+        <Route path="/terms" element={<SubdomainGuard><Terms /></SubdomainGuard>} />
+        <Route path="/privacy" element={<SubdomainGuard><Privacy /></SubdomainGuard>} />
+        {/* Páginas públicas SEO */}
+        <Route path="/precios" element={<SubdomainGuard><PreciosPage /></SubdomainGuard>} />
+        <Route path="/funciones" element={<SubdomainGuard><FuncionesPage /></SubdomainGuard>} />
+        {/* Internal ops panel */}
+        <Route path={`/${import.meta.env.VITE_SUPER_ADMIN_PATH ?? 'ctrl-9x7b'}`} element={<SuperAdminPanel />} />
+        <Route path="/ops" element={<OpsMonitor />} />
+        {/* Walls */}
+        <Route path="/:empresa_id/pending" element={<ProtectedRoute><PendingApprovalWall /></ProtectedRoute>} />
+        <Route path="/:empresa_id/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
+        <Route path="/:empresa_id/subscribe" element={<ProtectedRoute><SubscriptionWall /></ProtectedRoute>} />
+        <Route path="/onboarding" element={<OnboardingGate />} />
+        <Route path="/unauthorized" element={<NotAuthorized />} />
 
-      {/* Rutas legacy — redirigen al dashboard del tenant */}
-      <Route path="/dashboard" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/cobranzas" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/contabilidad" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/tasas" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/cxp" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/rrhh" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/inventario" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/vision" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/comparar" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/conciliacion" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/configuracion" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/help" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
-      <Route path="/ayuda" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        {/* Rutas legacy */}
+        <Route path="/dashboard" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/cobranzas" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/contabilidad" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/tasas" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/cxp" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/rrhh" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/inventario" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/vision" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/comparar" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/conciliacion" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/configuracion" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/help" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
+        <Route path="/ayuda" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
 
-      {/* Redirección raíz del tenant */}
-      <Route path="/:empresa_id" element={<Navigate to="admin/dashboard" replace />} />
+        {/* Tenant root */}
+        <Route path="/:empresa_id" element={<Navigate to="admin/dashboard" replace />} />
 
-      {/* Sistema principal multi-tenant */}
-      <Route
-        path="/:empresa_id/admin/cajas"
-        element={
-          <TenantGuard>
-            <SubscriptionGuard>
-              <AdminPosManager />
-            </SubscriptionGuard>
-          </TenantGuard>
-        }
-      />
-      <Route
-        path="/:empresa_id/admin/*"
-        element={
-          <TenantGuard>
-            <SubscriptionGuard>
-              <AdminCoreWrapper />
-            </SubscriptionGuard>
-          </TenantGuard>
-        }
-      />
+        {/* Sistema principal */}
+        <Route
+          path="/:empresa_id/admin/cajas"
+          element={
+            <TenantGuard>
+              <SubscriptionGuard>
+                <AdminPosManager />
+              </SubscriptionGuard>
+            </TenantGuard>
+          }
+        />
+        <Route
+          path="/:empresa_id/admin/*"
+          element={
+            <TenantGuard>
+              <SubscriptionGuard>
+                <AdminCoreWrapper />
+              </SubscriptionGuard>
+            </TenantGuard>
+          }
+        />
 
-      {/* POS */}
-      <Route
-        path="/:empresa_id/pos"
-        element={
-          <TenantGuard>
-            <PosLayout />
-          </TenantGuard>
-        }
-      >
-        <Route path="detal" element={<PosDetal />} />
-        <Route path="mayor" element={<PosMayor />} />
-      </Route>
+        {/* POS */}
+        <Route
+          path="/:empresa_id/pos"
+          element={
+            <TenantGuard>
+              <PosLayout />
+            </TenantGuard>
+          }
+        >
+          <Route path="detal" element={<PosDetal />} />
+          <Route path="mayor" element={<PosMayor />} />
+        </Route>
 
-      {/* Portal de Clientes — acceso público con slug + PIN */}
-      <Route path="/portal/:slug" element={<PortalGuard />}>
-        <Route index element={<PortalDashboard />} />
-        <Route path="facturas" element={<PortalInvoices />} />
-        <Route path="pronto-pago" element={<PortalProntoPago />} />
-        <Route path="pagar" element={<PortalAbonoForm />} />
-        <Route path="estado-cuenta" element={<PortalStatement />} />
-        <Route path="ayuda" element={<PortalHelp />} />
-      </Route>
+        {/* Portal de Clientes */}
+        <Route path="/portal/:slug" element={<PortalGuard />}>
+          <Route index element={<PortalDashboard />} />
+          <Route path="facturas" element={<PortalInvoices />} />
+          <Route path="pronto-pago" element={<PortalProntoPago />} />
+          <Route path="pagar" element={<PortalAbonoForm />} />
+          <Route path="estado-cuenta" element={<PortalStatement />} />
+          <Route path="ayuda" element={<PortalHelp />} />
+        </Route>
 
-      {/* Kiosk POS — clean URL without business ID */}
-      <Route path="/caja/:posToken" element={<KioskGate />} />
+        {/* Kiosk */}
+        <Route path="/caja/:posToken" element={<KioskGate />} />
 
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
   );
 }

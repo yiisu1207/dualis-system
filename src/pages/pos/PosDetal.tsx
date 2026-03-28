@@ -1,9 +1,9 @@
-import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 
 // ─── KIOSK CONTEXT (for clean /caja/:token URL) ────────────────────────────────
-interface PosKioskCtx { businessId: string; cajaId: string; token: string; }
-export const PosKioskContext = createContext<PosKioskCtx | null>(null);
+export { PosKioskContext } from '../../context/PosKioskContext';
+import { PosKioskContext } from '../../context/PosKioskContext';
 import { useCart, CartProvider, DiscountType, CartItem } from '../../context/CartContext';
 import { useRates } from '../../context/RatesContext';
 import {
