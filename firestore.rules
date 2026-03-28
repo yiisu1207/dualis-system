@@ -215,6 +215,7 @@ service cloud.firestore {
       // Catch-all: cualquier subcollection NO listada arriba
       // Miembros pueden leer y crear/actualizar; solo admin puede borrar
       match /{allSubcollections=**} {
+        allow read: if isOpsUser();
         allow read: if isMember(bid);
         allow create, update: if isMember(bid);
         allow delete: if isAdmin(bid);
@@ -247,14 +248,15 @@ service cloud.firestore {
 
     // SUBSCRIPCIONES
     match /subscriptions/{docId} {
-      allow read: if isSuperAdmin() || (isSignedIn() && belongsToMe(resource.data));
+      allow read: if isOpsUser() || isSuperAdmin() || (isSignedIn() && belongsToMe(resource.data));
       allow write: if isSuperAdmin();
     }
 
     // COLECCIONES OPERATIVAS EN RAÍZ
     // (movements, customers, suppliers, auditLogs, etc.)
-    // Cualquier miembro puede leer, crear y actualizar; solo admin puede borrar
+    // Ops monitor puede leer todo; miembros leen solo lo suyo
     match /{collectionName}/{docId} {
+      allow read: if isOpsUser();
       allow read: if isSignedIn() && belongsToMe(resource.data);
       allow create: if isSignedIn() && belongsToMe(request.resource.data);
       allow update: if isSignedIn() && belongsToMe(resource.data);
