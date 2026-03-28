@@ -14,7 +14,8 @@ import { useAuth } from '../context/AuthContext';
 import { useRates } from '../context/RatesContext';
 import { createExchangeRateEntry } from '../firebase/api';
 import { useToast } from '../context/ToastContext';
-import { Globe, Loader2, RefreshCw, CheckCircle2, AlertTriangle, Wifi, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Globe, Loader2, RefreshCw, CheckCircle2, AlertTriangle, Wifi, Info, ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
+import type { CustomRate } from '../../types';
 
 interface RateHistoryWallProps {
   businessId?: string | null;
@@ -23,6 +24,7 @@ interface RateHistoryWallProps {
     displayName?: string | null;
     photoURL?: string | null;
   };
+  customRates?: CustomRate[];
 }
 
 type RateReaction = {
@@ -35,6 +37,7 @@ type RateEntry = {
   id: string;
   date: string;
   bcv: number;
+  customRates?: Record<string, number>;
   status?: 'pending' | 'verified' | 'rejected';
   createdBy?: {
     uid: string;
@@ -153,14 +156,15 @@ type BcvPreview = {
   fechaActualizacion: string;
 };
 
-const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUser: currentUserProp }) => {
+const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUser: currentUserProp, customRates = [] }) => {
   const { userProfile } = useAuth();
   // Prefer the passed currentUser prop, fall back to the auth profile
   const currentUser = currentUserProp ?? (userProfile?.uid ? { uid: userProfile.uid, displayName: userProfile.displayName ?? null, photoURL: userProfile.photoURL ?? null } : undefined);
   const { success, error, warning } = useToast();
-  const { updateRates } = useRates();
+  const { tasaBCV, updateRates, updateCustomRates } = useRates();
   const [entries, setEntries] = useState<RateEntry[]>([]);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  const [customRateInputs, setCustomRateInputs] = useState<Record<string, string>>({});
   const [manualBcv, setManualBcv] = useState('');
   const [manualDate, setManualDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -260,6 +264,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
           id: docSnap.id,
           date: data.date || docSnap.id,
           bcv: Number(data.bcv) || 0,
+          customRates: data.customRates && typeof data.customRates === 'object' ? data.customRates : undefined,
           status: (data.status as RateEntry['status']) || 'pending',
           createdBy: data.createdBy,
           notes: data.notes,
@@ -313,26 +318,47 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     }
     setIsPublishing(true);
     try {
-      // 1. Actualizar tasa activa en businessConfigs → se propaga a todos los dispositivos
-      await updateRates({ tasaBCV: bcv });
+      // Build custom rates map from form inputs
+      const customRatesMap: Record<string, number> = {};
+      customRates.forEach(cr => {
+        const v = Number((customRateInputs[cr.id] ?? '').replace(',', '.'));
+        if (v > 0) customRatesMap[cr.id] = v;
+      });
 
-      // 2. Guardar en historial
+      const createdByPayload = currentUser?.uid
+        ? { uid: currentUser.uid, displayName: currentUser.displayName || null, photoURL: currentUser.photoURL || null }
+        : undefined;
+
+      // 1. Guardar en historial con todos los rates
       await createExchangeRateEntry(
         resolvedBusinessId,
         manualDate,
         { bcv, grupo: 0, divisa: 0, lastUpdated: manualDate },
-        currentUser?.uid
-          ? {
-              uid: currentUser.uid,
-              displayName: currentUser.displayName || null,
-              photoURL: currentUser.photoURL || null,
-            }
-          : undefined
+        createdByPayload,
+        undefined,
+        customRatesMap
       );
-      success(`Tasa BCV actualizada: ${bcv.toFixed(4)} Bs/$`);
+
+      // 2. Actualizar tasa BCV activa
+      await updateRates({ tasaBCV: bcv });
+
+      // 3. Actualizar valores de custom rates si se ingresaron
+      if (Object.keys(customRatesMap).length > 0) {
+        const updatedCR = customRates.map(cr => ({
+          ...cr,
+          value: customRatesMap[cr.id] ?? cr.value,
+        }));
+        await updateCustomRates(updatedCR);
+      }
+
+      const customSummary = Object.entries(customRatesMap)
+        .map(([id, v]) => `${id}: ${v.toFixed(2)}`)
+        .join(' · ');
+      success(`Tasas publicadas: BCV ${bcv.toFixed(4)}${customSummary ? ' · ' + customSummary : ''}`);
       setManualBcv('');
-    } catch (error) {
-      console.error('No se pudo publicar la tasa', error);
+      setCustomRateInputs({});
+    } catch (err) {
+      console.error('No se pudo publicar la tasa', err);
       error('No se pudo publicar la tasa. Revisa la conexión y permisos.');
     } finally {
       setIsPublishing(false);
@@ -518,29 +544,51 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     );
   }
 
-  const inp = "mt-2 w-full px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.06] text-sm font-bold text-white placeholder:text-white/20 focus:outline-none focus:border-white/25 focus:ring-2 focus:ring-white/10 transition-all";
+  const inp = "mt-1.5 w-full px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.06] text-sm font-bold text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20 transition-all";
+
+  // Color palette for custom rate chips in cards
+  const RATE_COLORS = [
+    { bg: 'bg-violet-500/[0.12]', border: 'border-violet-500/25', text: 'text-violet-300' },
+    { bg: 'bg-sky-500/[0.12]', border: 'border-sky-500/25', text: 'text-sky-300' },
+    { bg: 'bg-amber-500/[0.12]', border: 'border-amber-500/25', text: 'text-amber-300' },
+    { bg: 'bg-teal-500/[0.12]', border: 'border-teal-500/25', text: 'text-teal-300' },
+    { bg: 'bg-pink-500/[0.12]', border: 'border-pink-500/25', text: 'text-pink-300' },
+  ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-black text-white">Rate Wall</h2>
-          <p className="text-xs font-bold uppercase tracking-widest text-white/40">
-            Historial colaborativo de tasas
-          </p>
-        </div>
-        {summary && (
-          <div className="inline-flex items-center gap-6 px-5 py-3 rounded-2xl bg-white/[0.04] border border-white/[0.08]">
-            <div>
-              <div className="text-[9px] uppercase font-bold text-white/40">BCV</div>
-              <div className="text-lg font-black text-white">{summary.bcv}</div>
+    <div className="space-y-5">
+      {/* ─── HEADER: título + chips tasas activas en vivo ─────────────────── */}
+      <div className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.04] to-white/[0.01] p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600/30 to-violet-600/20 border border-indigo-500/25 flex items-center justify-center shrink-0">
+              <TrendingUp size={18} className="text-indigo-400" />
             </div>
             <div>
-              <div className="text-[9px] uppercase font-bold text-white/40">Fecha</div>
-              <div className="text-sm font-bold text-white/60">{summary.date}</div>
+              <h2 className="text-lg font-black text-white leading-tight">Tasas Cambiarias</h2>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">
+                Historial colaborativo · actualización en tiempo real
+              </p>
             </div>
           </div>
-        )}
+
+          {/* Live rate chips */}
+          <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600/20 to-violet-600/10 border border-indigo-500/25">
+              <span className="text-[9px] font-black uppercase tracking-widest text-indigo-400/70">BCV</span>
+              <span className="text-base font-black text-white">{tasaBCV > 0 ? tasaBCV.toFixed(4) : '—'}</span>
+            </div>
+            {customRates.filter(cr => cr.value > 0).map((cr, i) => {
+              const col = RATE_COLORS[i % RATE_COLORS.length];
+              return (
+                <div key={cr.id} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl ${col.bg} border ${col.border}`}>
+                  <span className={`text-[9px] font-black uppercase tracking-widest ${col.text} opacity-70`}>{cr.name}</span>
+                  <span className={`text-base font-black ${col.text}`}>{cr.value.toFixed(2)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5">
@@ -764,41 +812,51 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             </div>
           </div>
         )}
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-3">
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">
-              Tasa BCV
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              className={inp}
-              value={manualBcv}
-              onChange={(event) => setManualBcv(event.target.value)}
-              placeholder="0.00"
-            />
+        {/* ── FORMULARIO UNIFICADO ── */}
+        <div className="mt-4 space-y-3">
+          <div className={`grid gap-3 ${customRates.length > 0 ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-[1fr_repeat(var(--cr-count,1),1fr)_1fr]' : 'grid-cols-1 sm:grid-cols-[1fr_1fr_auto]'}`}
+            style={{ '--cr-count': customRates.length } as React.CSSProperties}>
+            {/* Fecha */}
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/40">Fecha</label>
+              <input type="date" className={inp} value={manualDate} onChange={e => setManualDate(e.target.value)} />
+            </div>
+            {/* BCV */}
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-indigo-400/70">BCV (oficial)</label>
+              <input
+                type="number" step="0.0001" className={inp}
+                value={manualBcv}
+                onChange={e => setManualBcv(e.target.value)}
+                placeholder="0.0000"
+              />
+            </div>
+            {/* Custom rate inputs (one per custom rate) */}
+            {customRates.map((cr, i) => {
+              const col = RATE_COLORS[i % RATE_COLORS.length];
+              return (
+                <div key={cr.id}>
+                  <label className={`text-[10px] font-black uppercase tracking-widest ${col.text} opacity-80`}>{cr.name}</label>
+                  <input
+                    type="number" step="0.01"
+                    className={inp}
+                    value={customRateInputs[cr.id] ?? ''}
+                    onChange={e => setCustomRateInputs(prev => ({ ...prev, [cr.id]: e.target.value }))}
+                    placeholder="0.00"
+                  />
+                </div>
+              );
+            })}
           </div>
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-white/40">
-              Fecha
-            </label>
-            <input
-              type="date"
-              className={inp}
-              value={manualDate}
-              onChange={(event) => setManualDate(event.target.value)}
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={handlePublish}
-              className="w-full px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-black uppercase transition-colors shadow-lg shadow-emerald-500/20"
-              disabled={isPublishing}
-            >
-              {isPublishing ? 'Publicando...' : 'Publicar Tasa'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handlePublish}
+            disabled={isPublishing}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+          >
+            {isPublishing ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+            {isPublishing ? 'Publicando...' : customRates.length > 0 ? 'Publicar todas las tasas' : 'Publicar tasa BCV'}
+          </button>
         </div>
         {csvPreview.length > 0 && (
           <div className="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.05] p-4">
@@ -888,8 +946,9 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       </div>
 
       {entries.length === 0 ? (
-        <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/[0.07] text-sm text-white/40">
-          No hay tasas registradas aun.
+        <div className="p-8 rounded-2xl bg-white/[0.02] border border-dashed border-white/[0.07] text-center">
+          <p className="text-sm text-white/30 font-bold">No hay tasas registradas aún.</p>
+          <p className="text-[10px] text-white/20 mt-1">Publica la primera tasa usando el formulario de arriba.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -898,106 +957,129 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             const noteOpen = Boolean(expandedNotes[entry.id]);
             const isVerified = entry.status === 'verified';
             const isRejected = entry.status === 'rejected';
-            const verifyCount = isVerified ? 1 : 0;
-            const rejectCount = isRejected ? 1 : 0;
+            const entryCustomRates: [string, number][] = entry.customRates
+              ? (Object.entries(entry.customRates) as [string, number][]).filter(([, v]) => v > 0)
+              : [];
 
             return (
               <div
                 key={entry.id}
-                className={`p-4 rounded-2xl border transition-colors ${
+                className={`relative rounded-2xl border overflow-hidden transition-all ${
                   isVerified
-                    ? 'border-emerald-500/30 bg-emerald-500/5'
+                    ? 'border-emerald-500/25 bg-emerald-500/[0.04]'
                     : isRejected
-                    ? 'border-rose-500/30 bg-rose-500/5'
-                    : 'border-white/[0.07] bg-white/[0.03]'
+                    ? 'border-rose-500/25 bg-rose-500/[0.04]'
+                    : 'border-white/[0.07] bg-white/[0.02]'
                 }`}
               >
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    {entry.createdBy?.photoURL ? (
-                      <img
-                        src={entry.createdBy.photoURL}
-                        alt={creatorName}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-white/10 text-white/60 flex items-center justify-center text-xs font-black">
-                        {getInitials(creatorName)}
+                {/* Colored left accent bar */}
+                <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-2xl ${
+                  isVerified ? 'bg-emerald-500' : isRejected ? 'bg-rose-500' : 'bg-indigo-500/40'
+                }`} />
+
+                <div className="pl-4 pr-4 pt-4 pb-3">
+                  {/* Row 1: avatar + author + date + status badge + delete */}
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      {entry.createdBy?.photoURL ? (
+                        <img src={entry.createdBy.photoURL} alt={creatorName}
+                          className="w-9 h-9 rounded-xl object-cover shrink-0" />
+                      ) : (
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black text-white shrink-0 ${
+                          creatorName === 'Sin autor'
+                            ? 'bg-slate-600/50'
+                            : 'bg-gradient-to-br from-indigo-600 to-violet-600'
+                        }`}>
+                          {getInitials(creatorName)}
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-sm font-black text-white leading-tight">{creatorName}</div>
+                        <div className="text-[10px] text-white/35 font-semibold mt-0.5">
+                          {entry.date} · {formatTimeShort(entry.timestamp || entry.createdBy?.timestamp)}
+                        </div>
                       </div>
-                    )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isVerified && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-[9px] font-black uppercase tracking-wider">
+                          ✓ Verificado
+                        </span>
+                      )}
+                      {isRejected && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/15 border border-rose-500/25 text-rose-400 text-[9px] font-black uppercase tracking-wider">
+                          ✕ Rechazado
+                        </span>
+                      )}
+                      <button
+                        type="button" onClick={() => handleDelete(entry)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-white/20 hover:text-rose-400 hover:bg-rose-500/10 transition-all text-sm"
+                        title="Eliminar"
+                      >🗑</button>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Rate values */}
+                  <div className="flex flex-wrap items-end gap-4 mb-3">
+                    {/* BCV — large */}
                     <div>
-                      <div className="text-sm font-black text-white">{creatorName}</div>
-                      <div className="text-[10px] font-bold text-white/40">
-                        {entry.date}
-                        {entry.createdBy?.timestamp &&
-                          ` • ${formatTimestamp(entry.createdBy.timestamp)}`}
-                      </div>
-                      <div className="text-[10px] font-bold text-white/40">
-                        Hora: {formatTimeShort(entry.timestamp || entry.createdBy?.timestamp)}
-                      </div>
+                      <div className="text-[9px] font-black uppercase tracking-widest text-indigo-400/60 mb-0.5">BCV</div>
+                      <div className="text-2xl font-black text-white leading-none">{entry.bcv.toFixed(4)}</div>
+                      <div className="text-[9px] text-white/25 font-semibold">Bs / $</div>
                     </div>
+
+                    {/* Custom rates — chips */}
+                    {entryCustomRates.map(([rateId, value], idx) => {
+                      const label = customRates.find(cr => cr.id === rateId)?.name ?? rateId;
+                      const col = RATE_COLORS[idx % RATE_COLORS.length];
+                      return (
+                        <div key={rateId} className={`px-3.5 py-2 rounded-xl ${col.bg} border ${col.border}`}>
+                          <div className={`text-[9px] font-black uppercase tracking-widest ${col.text} opacity-60 mb-0.5`}>{label}</div>
+                          <div className={`text-lg font-black ${col.text}`}>{value.toFixed(2)}</div>
+                          <div className={`text-[9px] ${col.text} opacity-40`}>Bs / $</div>
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <div className="text-[9px] uppercase font-bold text-white/40">BCV</div>
-                      <div className="text-lg font-black text-white">{entry.bcv}</div>
+                  {/* Row 3: actions */}
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.05]">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button" onClick={() => handleReaction(entry, '✅')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${
+                          isVerified
+                            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                            : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20'
+                        }`}
+                      >✅ Verificar</button>
+                      <button
+                        type="button" onClick={() => handleReaction(entry, '❌')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${
+                          isRejected
+                            ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                            : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20'
+                        }`}
+                      >❌ Rechazar</button>
                     </div>
+                    {entry.notes && entry.notes.trim().length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedNotes(prev => ({ ...prev, [entry.id]: !prev[entry.id] }))}
+                        className="text-[10px] font-bold text-white/25 hover:text-white/50 transition-colors flex items-center gap-1"
+                      >
+                        {noteOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                        {noteOpen ? 'Ocultar nota' : 'Ver nota'}
+                      </button>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(entry)}
-                    className="text-white/20 hover:text-rose-400 text-sm transition-colors"
-                    title="Eliminar"
-                  >
-                    🗑️
-                  </button>
-                </div>
 
-                <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleReaction(entry, '✅')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-black transition-colors ${
-                        isVerified
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                      }`}
-                    >
-                      ✅ Verificar {verifyCount > 0 ? `(${verifyCount})` : ''}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleReaction(entry, '❌')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-black transition-colors ${
-                        isRejected ? 'bg-rose-500 text-white' : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
-                      }`}
-                    >
-                      ❌ Rechazar {rejectCount > 0 ? `(${rejectCount})` : ''}
-                    </button>
-                  </div>
-                  {entry.notes && entry.notes.trim().length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedNotes((prev) => ({
-                          ...prev,
-                          [entry.id]: !prev[entry.id],
-                        }))
-                      }
-                      className="text-xs font-bold text-white/30 hover:text-white/60 transition-colors"
-                    >
-                      {noteOpen ? 'Ocultar nota' : 'Ver nota'}
-                    </button>
+                  {noteOpen && entry.notes && (
+                    <div className="mt-2.5 p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] text-[11px] text-white/45 font-semibold italic">
+                      {entry.notes}
+                    </div>
                   )}
                 </div>
-
-                {noteOpen && entry.notes && (
-                  <div className="mt-3 p-3 rounded-xl bg-white/[0.05] text-xs text-white/50 font-semibold">
-                    {entry.notes}
-                  </div>
-                )}
               </div>
             );
           })}

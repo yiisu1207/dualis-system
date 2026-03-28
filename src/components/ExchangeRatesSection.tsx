@@ -7,7 +7,6 @@ import { useSubscription } from '../hooks/useSubscription';
 import { auth } from '../firebase/config';
 import type { CustomRate } from '../../types';
 import RateHistoryWall from './RateHistoryWall';
-import CustomRateWall from './CustomRateWall';
 
 const ExchangeRatesSection: React.FC = () => {
   const { customRates, updateCustomRates } = useRates();
@@ -92,19 +91,12 @@ const ExchangeRatesSection: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      {/* ─── BCV Rate Wall ───────────────────────────────────────────────── */}
-      <RateHistoryWall businessId={businessId} currentUser={currentUserProp} />
-
-      {/* ─── Custom Rate Walls (one per tasa) ───────────────────────────── */}
-      {hasDynamicPricing && localAccounts.map(account => (
-        <CustomRateWall
-          key={account.id}
-          businessId={businessId}
-          rateId={account.id}
-          rateName={account.name}
-          currentUser={currentUserProp}
-        />
-      ))}
+      {/* ─── Unified Rate Wall (BCV + all custom rates) ─────────────────── */}
+      <RateHistoryWall
+        businessId={businessId}
+        currentUser={currentUserProp}
+        customRates={hasDynamicPricing ? localAccounts.map(a => ({ id: a.id, name: a.name, value: a.value, enabled: true })) : []}
+      />
 
       {/* ─── Gestión de Cuentas ──────────────────────────────────────────── */}
       {hasDynamicPricing ? (

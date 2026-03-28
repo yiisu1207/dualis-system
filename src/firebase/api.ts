@@ -84,7 +84,8 @@ export async function createExchangeRateEntry(
   date: string,
   rates: ExchangeRates,
   createdBy?: { uid: string; displayName?: string | null; photoURL?: string | null },
-  notes?: string
+  notes?: string,
+  customRatesMap?: Record<string, number>
 ) {
   if (!businessId) throw new Error('Missing businessId for exchange rates');
   const key = normalizeDateKey(date);
@@ -105,6 +106,9 @@ export async function createExchangeRateEntry(
   }
   if (notes !== undefined) {
     payload.notes = String(notes || '');
+  }
+  if (customRatesMap && Object.keys(customRatesMap).length > 0) {
+    payload.customRates = customRatesMap;
   }
   await addDoc(exchangeRatesCollection(businessId), payload);
 }
