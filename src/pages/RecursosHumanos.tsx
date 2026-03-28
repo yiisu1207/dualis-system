@@ -587,11 +587,13 @@ export default function RecursosHumanos() {
     return timeEntries.filter(t => t.registeredBy === myUid || (isOwner && !t.registeredBy));
   }, [timeEntries, isIndividual, myUid, isOwner]);
 
-  const currentRate   = voucherRates[0]?.rate || 0;
+  // Tasa interna propia de RRHH; si no hay, cae al BCV global
+  const currentRate = voucherRates[0]?.rate || (tasaBCV ?? 0);
 
   // Find the applicable rate for a specific date (latest effectiveDate on or before that date)
   const getRateForDate = useCallback((dateStr: string): number => {
-    if (!voucherRates.length) return currentRate;
+    const bcvFallback = tasaBCV ?? 0;
+    if (!voucherRates.length) return bcvFallback;
     // Use effectiveDate if available, else fall back to createdAt
     const withDates = voucherRates.map(r => {
       const ed = r.effectiveDate
@@ -603,8 +605,8 @@ export default function RecursosHumanos() {
     for (const r of withDates) {
       if (r._date <= target) return r.rate;
     }
-    return withDates[withDates.length - 1]?.rate || currentRate;
-  }, [voucherRates, currentRate]);
+    return withDates[withDates.length - 1]?.rate || bcvFallback;
+  }, [voucherRates, tasaBCV]);
   const pendingVouchers = useMemo(()=>visibleVouchers.filter(v=>v.status==='PENDIENTE'),[visibleVouchers]);
   // For nómina: exclude deferred vales (they apply next period)
   const currentPeriodVouchers = useMemo(()=>pendingVouchers.filter(v=>!v.deferToNextPeriod),[pendingVouchers]);

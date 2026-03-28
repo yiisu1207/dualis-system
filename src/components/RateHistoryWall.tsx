@@ -153,8 +153,10 @@ type BcvPreview = {
   fechaActualizacion: string;
 };
 
-const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUser }) => {
+const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUser: currentUserProp }) => {
   const { userProfile } = useAuth();
+  // Prefer the passed currentUser prop, fall back to the auth profile
+  const currentUser = currentUserProp ?? (userProfile?.uid ? { uid: userProfile.uid, displayName: userProfile.displayName ?? null, photoURL: userProfile.photoURL ?? null } : undefined);
   const { success, error, warning } = useToast();
   const { updateRates } = useRates();
   const [entries, setEntries] = useState<RateEntry[]>([]);
@@ -345,7 +347,8 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     if (ocrDrafts.length === 0) return;
     setIsPublishing(true);
     try {
-      for (const draft of ocrDrafts) {
+      const sorted = [...ocrDrafts].sort((a, b) => b.date.localeCompare(a.date));
+      for (const draft of sorted) {
         await createExchangeRateEntry(
           resolvedBusinessId,
           draft.date,
@@ -359,6 +362,8 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
             : undefined
         );
       }
+      // Activar la tasa más reciente del lote
+      await updateRates({ tasaBCV: sorted[0].bcv });
       setOcrDrafts([]);
     } catch (error) {
       console.error('No se pudo publicar el lote de tasas', error);
@@ -439,6 +444,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     if (!resolvedBusinessId || csvPreview.length === 0) return;
     setCsvImporting(true);
     let imported = 0;
+    // csvPreview ya viene ordenado desc por fecha
     try {
       for (const row of csvPreview) {
         await createExchangeRateEntry(
@@ -452,7 +458,9 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
         );
         imported++;
       }
-      success(`${imported} tasas importadas exitosamente.`);
+      // Activar la tasa más reciente del lote como tasa activa
+      await updateRates({ tasaBCV: csvPreview[0].bcv });
+      success(`${imported} tasas importadas. Tasa activa: ${csvPreview[0].bcv.toFixed(4)} Bs/$`);
       setCsvPreview([]);
     } catch {
       error(`Se importaron ${imported} de ${csvPreview.length}. Error al continuar.`);

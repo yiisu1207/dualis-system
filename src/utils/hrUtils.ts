@@ -1,7 +1,7 @@
 // ── HR Utility Functions ─────────────────────────────────────────────────────
 
-export function fmtHR(n: number): string {
-  return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export function fmtHR(n: number | undefined | null): string {
+  return (n ?? 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** Días de vacaciones acumulados según fecha de ingreso */
