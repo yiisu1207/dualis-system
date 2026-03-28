@@ -13,22 +13,6 @@ import { useAuth } from '../context/AuthContext';
 import { useSubdomain } from '../context/SubdomainContext';
 import ModeToggle from './ModeToggle';
 
-/* ── Floating module pills ────────────────────────────── */
-const MODULE_PILLS = [
-  { label: 'POS Detal',       x: '8%',  y: '12%', delay: '0s',    dur: '7s'  },
-  { label: 'Inventario',      x: '78%', y: '8%',  delay: '1.2s',  dur: '8s'  },
-  { label: 'Dashboard BI',    x: '85%', y: '35%', delay: '0.5s',  dur: '9s'  },
-  { label: 'CxC Clientes',    x: '5%',  y: '45%', delay: '2s',    dur: '7.5s'},
-  { label: 'RRHH',            x: '90%', y: '65%', delay: '1.8s',  dur: '8.5s'},
-  { label: 'Contabilidad',    x: '3%',  y: '75%', delay: '0.8s',  dur: '7s'  },
-  { label: 'VisionLab IA',    x: '75%', y: '88%', delay: '2.5s',  dur: '9s'  },
-  { label: 'Libro Ventas',    x: '15%', y: '90%', delay: '1.5s',  dur: '8s'  },
-  { label: 'POS Mayor',       x: '70%', y: '15%', delay: '3s',    dur: '7.5s'},
-  { label: 'Auditoría',       x: '12%', y: '30%', delay: '0.3s',  dur: '8.5s'},
-  { label: 'Tasas BCV',       x: '82%', y: '50%', delay: '1s',    dur: '7s'  },
-  { label: 'Portal Clientes', x: '20%', y: '60%', delay: '2.2s',  dur: '9s'  },
-];
-
 const RATE_KEY  = 'login_rate_limit_v1';
 const MAX_ATT   = 5;
 const WIN_MS    = 10 * 60 * 1000;
@@ -143,7 +127,7 @@ export default function Login() {
   };
 
   /* ── SHARED INPUT CLASS ──────────────────────────────── */
-  const inp = 'w-full pl-11 pr-4 py-3.5 bg-white/[0.06] border border-white/[0.08] text-white rounded-xl placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/30 text-sm font-medium transition-all backdrop-blur-sm';
+  const inp = 'w-full pl-11 pr-4 py-3.5 bg-white/[0.06] border border-white/[0.08] text-white rounded-xl placeholder:text-white/25 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/30 text-sm font-medium transition-all';
 
   /* ═══════════════════════════════════════════════════════
      RENDER
@@ -171,66 +155,29 @@ export default function Login() {
   return (
     <div className="min-h-screen relative overflow-hidden bg-[#050816]">
 
-      {/* ── ANIMATED MESH GRADIENT BACKGROUND ──────────── */}
-      <div className="absolute inset-0 pointer-events-none">
-        {/* Primary orbs — slow movement via CSS animation */}
-        <div className="absolute w-[600px] h-[600px] rounded-full opacity-30 blur-[150px] bg-indigo-600"
-          style={{ top: '-10%', left: '-5%', animation: 'loginOrb1 20s ease-in-out infinite' }} />
-        <div className="absolute w-[500px] h-[500px] rounded-full opacity-20 blur-[130px] bg-violet-600"
-          style={{ bottom: '-15%', right: '-5%', animation: 'loginOrb2 25s ease-in-out infinite' }} />
-        <div className="absolute w-[400px] h-[400px] rounded-full opacity-15 blur-[120px] bg-blue-600"
-          style={{ top: '40%', left: '50%', transform: 'translateX(-50%)', animation: 'loginOrb3 18s ease-in-out infinite' }} />
-
-        {/* Subtle noise texture */}
-        <div className="absolute inset-0 opacity-[0.015]"
-          style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")' }} />
-      </div>
-
-      {/* ── FLOATING MODULE PILLS ──────────────────────── */}
-      <div className="absolute inset-0 pointer-events-none hidden lg:block">
-        {MODULE_PILLS.map((pill) => (
-          <div
-            key={pill.label}
-            className="absolute px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06] backdrop-blur-sm"
-            style={{
-              left: pill.x, top: pill.y,
-              animation: `loginFloat ${pill.dur} ease-in-out ${pill.delay} infinite`,
-            }}
-          >
-            <span className="text-[10px] font-bold text-white/25 whitespace-nowrap">{pill.label}</span>
-          </div>
-        ))}
-      </div>
-
       {/* ── TOP BAR ───────────────────────────────────────── */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-6 sm:px-10 py-5">
-        <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="Dualis" className="h-7 w-auto opacity-40" />
-          <span className="text-white/20 text-[9px] font-bold uppercase tracking-[0.25em] hidden sm:inline">Dualis ERP</span>
-        </div>
+      <div className="absolute top-0 right-0 z-20 px-6 py-5">
         <ModeToggle />
       </div>
 
-      {/* ── CENTER CARD ───────────────────────────────────── */}
+      {/* ── CENTER ──────────────────────────────────────── */}
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 py-20">
 
         {/* Company identity */}
         <div className="flex flex-col items-center mb-8">
           {subdomain.logoUrl ? (
-            <img src={subdomain.logoUrl} alt={subdomain.businessName || ''} className="h-16 w-auto rounded-2xl mb-4 shadow-2xl shadow-black/30" />
+            <img src={subdomain.logoUrl} alt={subdomain.businessName || ''} className="h-14 w-auto rounded-2xl mb-4" />
           ) : (
-            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mb-4 shadow-2xl shadow-indigo-500/30">
-              <Building2 size={28} className="text-white" />
-            </div>
+            <img src="/logo.png" alt="Dualis" className="h-12 w-auto mb-4" />
           )}
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight text-center">
+          <h1 className="text-2xl font-black text-white tracking-tight text-center">
             {subdomain.businessName}
           </h1>
           <p className="text-white/20 text-xs font-bold mt-1 font-mono">{subdomain.slug}.dualis.online</p>
         </div>
 
-        {/* Glass card */}
-        <div className="w-full max-w-[420px] bg-white/[0.04] border border-white/[0.08] backdrop-blur-xl rounded-3xl p-8 sm:p-10 shadow-2xl shadow-black/20">
+        {/* Card */}
+        <div className="w-full max-w-[400px]">
 
           {/* ── RESET SENT ── */}
           {resetSent ? (
@@ -361,10 +308,6 @@ export default function Login() {
           )}
         </div>
 
-        {/* Bottom tagline */}
-        <p className="mt-8 text-[10px] text-white/10 font-bold text-center tracking-wider">
-          Powered by Dualis ERP &middot; Sistema Empresarial Cloud
-        </p>
       </div>
 
       {/* ── RECENTS MODAL ──────────────────────────────── */}
@@ -395,27 +338,6 @@ export default function Login() {
         </div>
       )}
 
-      {/* ── CSS ANIMATIONS (injected) ──────────────────── */}
-      <style>{`
-        @keyframes loginOrb1 {
-          0%, 100% { transform: translate(0, 0); }
-          33% { transform: translate(80px, 60px); }
-          66% { transform: translate(-40px, 30px); }
-        }
-        @keyframes loginOrb2 {
-          0%, 100% { transform: translate(0, 0); }
-          33% { transform: translate(-70px, -50px); }
-          66% { transform: translate(50px, -30px); }
-        }
-        @keyframes loginOrb3 {
-          0%, 100% { transform: translateX(-50%) translateY(0); }
-          50% { transform: translateX(-50%) translateY(-40px); }
-        }
-        @keyframes loginFloat {
-          0%, 100% { transform: translateY(0px); opacity: 0.6; }
-          50% { transform: translateY(-12px); opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }
