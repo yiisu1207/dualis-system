@@ -170,6 +170,13 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
   const [csvImporting, setCsvImporting] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const resolvedBusinessId = (businessId || userProfile?.businessId || '').trim();
+  const RATES_PER_PAGE = 10;
+  const [ratePage, setRatePage] = useState(1);
+  const pagedEntries = useMemo(() => {
+    const start = (ratePage - 1) * RATES_PER_PAGE;
+    return entries.slice(start, start + RATES_PER_PAGE);
+  }, [entries, ratePage]);
+  const totalRatePages = Math.max(1, Math.ceil(entries.length / RATES_PER_PAGE));
 
   // ── BCV FETCH ──────────────────────────────────────────────────────────────
   const [fetchingBCV, setFetchingBCV] = useState(false);
@@ -242,7 +249,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
     const q = query(
       collection(db, 'businesses', resolvedBusinessId, 'exchange_rates_history'),
       orderBy('date', 'desc'),
-      limit(60)
+      limit(200)
     );
     const unsubscribe = onSnapshot(q, (snap) => {
       const next = snap.docs.map((docSnap) => {
@@ -878,7 +885,7 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
         </div>
       ) : (
         <div className="space-y-3">
-          {entries.map((entry) => {
+          {pagedEntries.map((entry) => {
             const creatorName = entry.createdBy?.displayName || 'Sin autor';
             const noteOpen = Boolean(expandedNotes[entry.id]);
             const isVerified = entry.status === 'verified';
@@ -986,6 +993,22 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
               </div>
             );
           })}
+        </div>
+      )}
+
+      {totalRatePages > 1 && (
+        <div className="flex justify-center items-center gap-2 mt-4">
+          <button
+            onClick={() => setRatePage(p => Math.max(1, p - 1))}
+            disabled={ratePage === 1}
+            className="px-3 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-white/60 text-xs font-bold disabled:opacity-30 hover:bg-white/[0.1] transition-all"
+          >‹</button>
+          <span className="text-xs text-white/40 font-bold">{ratePage} / {totalRatePages}</span>
+          <button
+            onClick={() => setRatePage(p => Math.min(totalRatePages, p + 1))}
+            disabled={ratePage === totalRatePages}
+            className="px-3 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-white/60 text-xs font-bold disabled:opacity-30 hover:bg-white/[0.1] transition-all"
+          >›</button>
         </div>
       )}
     </div>

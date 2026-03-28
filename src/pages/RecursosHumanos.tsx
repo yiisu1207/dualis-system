@@ -150,10 +150,10 @@ const Confirm = ({ msg, detail, onConfirm, onCancel }: any) => (
 );
 
 // ── EMPLOYEE PROFILE PANEL ───────────────────────────────────────────────────
-function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, currentRate, onClose, onAddVoucher, onAddLoan, businessName }:
+function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, currentRate, onClose, onAddVoucher, onAddLoan, businessName, businessLogo }:
   { emp:Employee; vouchers:Voucher[]; loans:Loan[]; payrollHistory:PayrollRun[];
     businessId:string; currentRate:number; onClose:()=>void;
-    onAddVoucher:(v:any)=>Promise<void>; onAddLoan:(l:any)=>Promise<void>; businessName:string }) {
+    onAddVoucher:(v:any)=>Promise<void>; onAddLoan:(l:any)=>Promise<void>; businessName:string; businessLogo?:string }) {
 
   const [vForm,  setVForm]  = useState({ amount:'', currency:'USD' as 'USD'|'BS', reason:'Adelanto' });
   const [lForm,  setLForm]  = useState({ totalAmount:'', currency:'USD' as 'USD'|'BS', totalInstallments:'2', reason:'Préstamo' });
@@ -225,7 +225,7 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={()=>printVoucherSheet(emp, allVouchers, businessName)} title="Imprimir Hoja de Vales"
+            <button onClick={()=>printVoucherSheet(emp, allVouchers, businessName, businessLogo)} title="Imprimir Hoja de Vales"
               className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-all">
               <Printer size={15}/>
             </button>
@@ -427,25 +427,12 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
 
 // ── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function RecursosHumanos() {
-  const { userProfile } = useAuth();
+  const { userProfile, isolationMode } = useAuth();
   const toast           = useToast();
   const { tasaBCV }     = useRates();
   const bid             = userProfile?.businessId || '';
 
-  // ── Isolation mode (individual vs shared) ──────────────────────────────────
-  const [isolationMode, setIsolationMode] = useState<'individual' | 'shared'>(() => {
-    return (localStorage.getItem('operation_isolation_mode') as 'individual' | 'shared') || 'shared';
-  });
-  // Listen for config changes
-  useEffect(() => {
-    const handler = () => {
-      const mode = (localStorage.getItem('operation_isolation_mode') as 'individual' | 'shared') || 'shared';
-      setIsolationMode(mode);
-    };
-    window.addEventListener('storage', handler);
-    return () => window.removeEventListener('storage', handler);
-  }, []);
-
+  // ── Isolation mode comes from AuthContext (Firestore real-time) ──────────────
   const isIndividual = isolationMode === 'individual';
   const myUid = userProfile?.uid || '';
 
@@ -515,6 +502,8 @@ export default function RecursosHumanos() {
   // Pagination for vouchers table
   const VALES_PER_PAGE = 10;
   const [valesPage, setValesPage] = useState(1);
+  // Reset to page 1 when employee filter changes
+  useEffect(() => { setValesPage(1); }, [qv.empId]);
 
   // Emp dropdown state (G)
   const [empDropOpen, setEmpDropOpen] = useState(false);
@@ -547,12 +536,16 @@ export default function RecursosHumanos() {
   const [commentDraft, setCommentDraft] = useState<Record<string,string>>({});
   const [compareFilter, setCompareFilter] = useState<'all'|'match'|'diff'|'missing'>('all');
 
-  // Business name for prints (fetched from Firestore)
+  // Business name + logo for prints (fetched from Firestore)
   const [businessName, setBusinessName] = useState('Mi Negocio');
+  const [businessLogo, setBusinessLogo] = useState('');
   useEffect(() => {
     if (!bid) return;
     getDoc(doc(db, 'businesses', bid)).then(snap => {
-      if (snap.exists()) setBusinessName(snap.data().name || 'Mi Negocio');
+      if (snap.exists()) {
+        setBusinessName(snap.data().name || 'Mi Negocio');
+        setBusinessLogo(snap.data().logoUrl || snap.data().logo || '');
+      }
     }).catch(() => {});
   }, [bid]);
 
@@ -582,10 +575,13 @@ export default function RecursosHumanos() {
   // When isolation mode = individual, only show MY entries
   const isOwner = userProfile?.role === 'owner';
   const visibleVouchers   = useMemo(() => {
-    if (!isIndividual) return vouchers;
-    // En modo individual: solo tus registros. Owner ve también los que no tienen registeredBy (legacy)
-    return vouchers.filter(v => v.registeredBy === myUid || (isOwner && !v.registeredBy));
-  }, [vouchers, isIndividual, myUid, isOwner]);
+    let list = !isIndividual
+      ? vouchers
+      : vouchers.filter(v => v.registeredBy === myUid || (isOwner && !v.registeredBy));
+    // Filter by selected employee in the form
+    if (qv.empId) list = list.filter(v => v.employeeId === qv.empId);
+    return list;
+  }, [vouchers, isIndividual, myUid, isOwner, qv.empId]);
   const visibleTimeEntries = useMemo(() => {
     if (!isIndividual) return timeEntries;
     return timeEntries.filter(t => t.registeredBy === myUid || (isOwner && !t.registeredBy));
@@ -759,7 +755,7 @@ export default function RecursosHumanos() {
     const amt = Number(qv.amount);
     // D: BCV employees use tasaBCV for BS vales; Tasa Interna employees use getRateForDate
     const isBcvEmp = emp?.paymentCurrency === 'BS';
-    const rateForDate = qv.currency==='BS' ? (isBcvEmp ? tasaBCV : getRateForDate(qv.date)) : 0;
+    const rateForDate = qv.currency==='BS' ? (isBcvEmp ? (tasaBCV ?? 0) : getRateForDate(qv.date)) : 0;
     try {
       await handleAddVoucher({
         employeeId:qv.empId, employeeName:emp?.fullName||'',
@@ -1370,11 +1366,11 @@ export default function RecursosHumanos() {
                       {qv.currency==='BS'&&qv.date&&(()=>{
                         const selEmp = employees.find(e=>e.id===qv.empId);
                         const isBcv = selEmp?.paymentCurrency==='BS';
-                        const rate = isBcv ? tasaBCV : getRateForDate(qv.date);
+                        const rate = isBcv ? (tasaBCV ?? 0) : getRateForDate(qv.date);
                         const amt = Number(qv.amount);
                         return <>
                           <span className="text-[8px] text-indigo-400 normal-case">(Tasa: Bs {fmtHR(rate)})</span>
-                          {amt > 0 && <span className="text-emerald-400 text-[9px] ml-1">≈ ${fmtHR(amt / rate)}</span>}
+                          {amt > 0 && rate > 0 && <span className="text-emerald-400 text-[9px] ml-1">≈ ${fmtHR(amt / rate)}</span>}
                         </>;
                       })()}
                     </label>
@@ -1400,6 +1396,18 @@ export default function RecursosHumanos() {
                   </div>
                 </form>
               </div>
+              {qv.empId && (() => {
+                const empFilt = employees.find(e => e.id === qv.empId);
+                return (
+                  <div className="flex items-center justify-between px-5 py-2.5 bg-indigo-500/[0.06] border-t border-indigo-500/[0.12]">
+                    <span className="text-xs font-black text-indigo-400">Mostrando vales de: {empFilt?.fullName}</span>
+                    <button onClick={() => setQv(f => ({...f, empId: ''}))}
+                      className="text-[10px] text-white/30 hover:text-white/60 transition-all px-2 py-1 rounded-lg hover:bg-white/[0.04]">
+                      Ver todos ×
+                    </button>
+                  </div>
+                );
+              })()}
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead>
@@ -2153,7 +2161,7 @@ export default function RecursosHumanos() {
         <ProfilePanel
           emp={fichaEmp} vouchers={visibleVouchers} loans={loans}
           payrollHistory={payrollHistory} businessId={bid}
-          currentRate={currentRate} businessName={businessName}
+          currentRate={currentRate} businessName={businessName} businessLogo={businessLogo}
           onClose={()=>setFichaEmp(null)}
           onAddVoucher={handleAddVoucher}
           onAddLoan={handleAddLoan}

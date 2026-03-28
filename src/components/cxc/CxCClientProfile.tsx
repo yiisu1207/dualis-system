@@ -7,6 +7,7 @@ import {
   AppConfig,
   Customer,
   AccountType,
+  CustomRate,
   PortalAccessToken,
 } from '../../../types';
 import { formatCurrency, getMovementUsdAmount } from '../../utils/formatters';
@@ -36,6 +37,8 @@ import {
   sumByAccount,
   calculateAgingBuckets,
   formatDateTime,
+  getDistinctAccounts,
+  buildAccountLabels,
 } from './cxcHelpers';
 
 interface Props {
@@ -46,6 +49,7 @@ interface Props {
   movements: Movement[];
   rates: ExchangeRates;
   config: AppConfig;
+  customRates?: CustomRate[];
   onBack: () => void;
   onViewLedger: () => void;
   onRegisterAbono: () => void;
@@ -61,6 +65,7 @@ export default function CxCClientProfile({
   movements,
   rates,
   config,
+  customRates = [],
   onBack,
   onViewLedger,
   onRegisterAbono,
@@ -119,12 +124,21 @@ export default function CxCClientProfile({
     [entityMovs, rates, customer]
   );
 
+  const distinctAccounts = useMemo(() => getDistinctAccounts(entityMovs), [entityMovs]);
+  const accountLabels = useMemo(() => buildAccountLabels(distinctAccounts, customRates), [distinctAccounts, customRates]);
+
   const balances = useMemo(() => {
-    const bcv = sumByAccount(entityMovs, AccountType.BCV, rates);
-    const grupo = sumByAccount(entityMovs, AccountType.GRUPO, rates);
-    const divisa = sumByAccount(entityMovs, AccountType.DIVISA, rates);
-    return { bcv, grupo, divisa, total: bcv + grupo + divisa };
-  }, [entityMovs, rates]);
+    const byAccount: Record<string, number> = {};
+    distinctAccounts.forEach((acc) => {
+      byAccount[acc] = sumByAccount(entityMovs, acc as AccountType, rates);
+    });
+    // Keep legacy named fields for backward compat
+    const bcv = byAccount[AccountType.BCV] ?? 0;
+    const grupo = byAccount[AccountType.GRUPO] ?? 0;
+    const divisa = byAccount[AccountType.DIVISA] ?? 0;
+    const total = Object.values(byAccount).reduce((s, v) => s + v, 0);
+    return { ...byAccount, bcv, grupo, divisa, total };
+  }, [entityMovs, rates, distinctAccounts]);
 
   const aging = useMemo(
     () => calculateAgingBuckets(entityMovs, rates),
@@ -325,29 +339,44 @@ export default function CxCClientProfile({
             </div>
           </div>
 
-          {/* Per-account balances */}
-          <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/10 grid grid-cols-3 gap-3 text-center">
-            {([
-              { label: 'BCV', value: balances.bcv, color: 'blue' },
-              { label: 'GRUPO', value: balances.grupo, color: 'orange' },
-              { label: 'DIVISA', value: balances.divisa, color: 'emerald' },
-            ] as const).map((acct) => (
-              <div key={acct.label}>
+          {/* Per-account balances — dynamic */}
+          <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/10 grid gap-3 text-center"
+            style={{ gridTemplateColumns: `repeat(${Math.max(3, distinctAccounts.length)}, 1fr)` }}>
+            {distinctAccounts.map((acc) => {
+              const val = (balances as Record<string, number>)[acc] ?? 0;
+              return (
+              <div key={acc}>
                 <div className="flex items-center justify-center gap-1.5 mb-1">
-                  <span className={`w-2 h-2 rounded-full bg-${acct.color}-500`} />
+                  <span className="w-2 h-2 rounded-full bg-indigo-500" />
                   <span className="text-[9px] font-black uppercase text-slate-400">
-                    {acct.label}
+                    {accountLabels[acc] ?? acc}
                   </span>
                 </div>
                 <span
                   className={`text-sm font-black font-mono ${
-                    acct.value > 0.01 ? 'text-rose-600' : 'text-emerald-600'
+                    val > 0.01 ? 'text-rose-600' : 'text-emerald-600'
                   }`}
                 >
-                  {formatCurrency(Math.abs(acct.value), '$')}
+                  {formatCurrency(Math.abs(val), '$')}
                 </span>
               </div>
-            ))}
+              );
+            })}
+            {distinctAccounts.length === 0 && (
+              <>
+                {[{ label: 'BCV', value: balances.bcv }, { label: 'GRUPO', value: balances.grupo }, { label: 'DIVISA', value: balances.divisa }].map(acct => (
+                  <div key={acct.label}>
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                      <span className="text-[9px] font-black uppercase text-slate-400">{acct.label}</span>
+                    </div>
+                    <span className={`text-sm font-black font-mono ${acct.value > 0.01 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {formatCurrency(Math.abs(acct.value), '$')}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       )}

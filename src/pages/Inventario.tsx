@@ -91,6 +91,9 @@ type Product = {
   tipoTasa?: string;       // 'BCV' | customRate.id — clasificación de tasa
   margenMayor?: number;    // margen % para precio mayor (productos dinámicos)
   margenDetal?: number;    // margen % para precio detal (productos dinámicos)
+  status?: 'active' | 'pending_review';
+  pendingBy?: string;
+  unitType?: 'unidad' | 'kg' | 'g' | 'ton' | 'lt' | 'ml' | 'lb';
 };
 
 type StockMovement = {
@@ -105,6 +108,10 @@ type StockMovement = {
 };
 
 type TabType = 'catalog' | 'kardex' | 'tools' | 'almacenes';
+
+const UNIT_LABELS: Record<NonNullable<Product['unitType']>, string> = {
+  unidad: 'UND', kg: 'kg', g: 'g', ton: 'ton', lt: 'L', ml: 'mL', lb: 'lb',
+};
 
 type Almacen = {
   id: string;
@@ -139,10 +146,11 @@ const initialProduct: Omit<Product, 'id'> = {
   tipoTasa: 'BCV',
   margenMayor: 0,
   margenDetal: 0,
+  unitType: 'unidad',
 };
 
 // ─── IMPORT AUTO-DETECTION ────────────────────────────────────────────────────
-const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuenta' | 'stockByAlmacen'> | 'margen', string[]> = {
+const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuenta' | 'stockByAlmacen' | 'status' | 'pendingBy' | 'unitType'> | 'margen', string[]> = {
   codigo:       ['código','codigo','code','sku','barcode','cod','upc','ean','referencia','ref'],
   nombre:       ['nombre','name','producto','descripción','descripcion','description','item','artículo','articulo','denominacion'],
   categoria:    ['categoría','categoria','category','grupo','tipo','type','familia','rubro'],
@@ -253,6 +261,16 @@ export default function Inventario() {
   const { userProfile } = useAuth();
   const { rates, customRates, zoherEnabled } = useRates();
   const tenantId = userProfile?.businessId;
+  const userRole = userProfile?.role;
+  const isAdmin = userRole === 'owner' || userRole === 'admin';
+  const isAlmacenista = userRole === 'almacenista';
+  const isInventario = userRole === 'inventario';   // Jefe de Inventario: edita precios, aprueba pendientes
+  const isReadOnlyRole = userRole === 'ventas' || userRole === 'staff' || userRole === 'member';
+  const canEditProduct   = isAdmin || isInventario;
+  const canDeleteProduct = isAdmin;
+  const canAddStock      = isAdmin || isAlmacenista || isInventario;
+  const canRegisterNew   = isAdmin || isAlmacenista || isInventario;
+  const canBulkEdit      = isAdmin || isInventario;
   const { canAccess } = useSubscription(tenantId || '');
   const hasDynamicPricing = canAccess('precios_dinamicos');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -273,6 +291,11 @@ export default function Inventario() {
 
   // Catalog states
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterCategoria, setFilterCategoria] = useState<string>('all');
+  const [filterStock, setFilterStock] = useState<'all' | 'low' | 'out'>('all');
+  const [filterAlmacen, setFilterAlmacen] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'nombre' | 'stock' | 'precio' | 'costo'>('nombre');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -534,11 +557,24 @@ export default function Inventario() {
     if (stockByAlmacen) payload.stockByAlmacen = stockByAlmacen;
     if (editingId) {
       delete payload.stockByAlmacen; // keep existing stockByAlmacen on edit
+      // When admin/inventario edits a pending_review product, approve it automatically
+      const currentProduct = products.find(p => p.id === editingId);
+      if (currentProduct?.status === 'pending_review' && (isAdmin || isInventario)) {
+        payload.status = 'active';
+        payload.pendingBy = null;
+      }
       await setDoc(doc(db, `businesses/${tenantId}/products`, editingId), payload, { merge: true });
       setModalOpen(false);
       setForm(initialProduct);
       setEditingId(null);
     } else {
+      if (isAlmacenista) {
+        payload.status = 'pending_review';
+        payload.pendingBy = userProfile?.uid || '';
+        payload.precioDetal = 0;
+        payload.precioMayor = 0;
+        payload.costoUSD = 0;
+      }
       await addDoc(collection(db, `businesses/${tenantId}/products`), payload);
       // Quick mode: stay open, reset to categoria only
       setForm({ ...initialProduct, categoria: form.categoria });
@@ -599,26 +635,48 @@ export default function Inventario() {
     () => [...new Set(products.map(p => p.categoria).filter(Boolean))].slice(0, 8),
     [products],
   );
+  const pendingProducts = useMemo(
+    () => products.filter(p => p.status === 'pending_review'),
+    [products]
+  );
 
   const PAGE_SIZE = 25;
+  const uniqueCategories = useMemo(
+    () => [...new Set(products.map(p => p.categoria).filter(Boolean))].sort(),
+    [products]
+  );
   const filteredProducts = useMemo(() => {
     const q = searchTerm.toLowerCase();
-    if (!q) return products;
-    return products.filter(p =>
+    let list = products;
+    if (q) list = list.filter(p =>
       (p.nombre || '').toLowerCase().includes(q) ||
       (p.codigo || '').toLowerCase().includes(q) ||
       (p.categoria || '').toLowerCase().includes(q)
     );
-  }, [products, searchTerm]);
+    if (filterCategoria !== 'all') list = list.filter(p => p.categoria === filterCategoria);
+    if (filterStock === 'low') list = list.filter(p => p.stock > 0 && p.stock < (p.stockMinimo || 5));
+    if (filterStock === 'out') list = list.filter(p => p.stock === 0);
+    if (filterAlmacen !== 'all') list = list.filter(p => p.stockByAlmacen != null);
+    list = [...list].sort((a, b) => {
+      let va: any, vb: any;
+      if (sortBy === 'nombre') { va = (a.nombre || '').toLowerCase(); vb = (b.nombre || '').toLowerCase(); }
+      else if (sortBy === 'stock') { va = a.stock; vb = b.stock; }
+      else if (sortBy === 'precio') { va = a.precioDetal; vb = b.precioDetal; }
+      else { va = a.costoUSD; vb = b.costoUSD; }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return list;
+  }, [products, searchTerm, filterCategoria, filterStock, filterAlmacen, sortBy, sortDir]);
   const totalPages = Math.ceil(filteredProducts.length / PAGE_SIZE);
   const pagedProducts = filteredProducts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  useEffect(() => { setCurrentPage(1); }, [searchTerm]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterCategoria, filterStock, filterAlmacen]);
   const selectPage = () => setSelectedIds(new Set(pagedProducts.map(p => p.id)));
   const selectAllProducts = () => setSelectedIds(new Set(filteredProducts.map(p => p.id)));
   const selectAll = selectPage; // alias used in header checkbox
   const allPageSelected = pagedProducts.length > 0 && pagedProducts.every(p => selectedIds.has(p.id));
   const allFilteredSelected = filteredProducts.length > 0 && filteredProducts.every(p => selectedIds.has(p.id));
-  const uniqueCategories = useMemo(() => [...new Set(products.map(p => p.categoria).filter(Boolean))].sort(), [products]);
 
   // ── SMART ADVISOR ───────────────────────────────────────────────────────────
   const smartAdvisor = useMemo(() => {
@@ -1127,10 +1185,12 @@ export default function Inventario() {
               </button>
             ))}
           </div>
+          {canRegisterNew && (
           <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setCustomMarginDetal(''); setCustomMarginMayor(''); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
             className="flex items-center justify-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
             <Plus size={16} /> Registrar Mercancía
           </button>
+          )}
         </div>
 
         {/* CONTENT AREA */}
@@ -1139,20 +1199,78 @@ export default function Inventario() {
           {/* TAB 1: CATALOG */}
           {activeTab === 'catalog' && (
             <div className="flex flex-col h-full">
-              <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.07] bg-slate-50/50 dark:bg-white/[0.02] flex flex-col md:flex-row gap-4 justify-between items-center">
-                <div className="relative w-full md:w-[380px]">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/30 h-4 w-4" />
-                  <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por código, nombre o categoría..."
-                    className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-700 dark:text-white dark:placeholder:text-white/20 focus:ring-2 focus:ring-indigo-500 transition-all outline-none" />
-                </div>
-                <div className="flex gap-3">
-                  <div className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl text-white flex items-center gap-2 shadow-md shadow-indigo-500/25">
-                    <Tags size={13} className="text-white/70" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">{rates.tasaBCV.toFixed(2)} BS / USD</span>
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.07] bg-slate-50/50 dark:bg-white/[0.02] flex flex-col gap-3">
+                <div className="flex flex-col md:flex-row gap-3 items-center">
+                  <div className="relative w-full md:w-[320px]">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/30 h-4 w-4" />
+                    <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por código, nombre o categoría..."
+                      className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-700 dark:text-white dark:placeholder:text-white/20 focus:ring-2 focus:ring-indigo-500 transition-all outline-none" />
+                  </div>
+                  <div className="flex flex-wrap gap-2 flex-1">
+                    {/* Category filter */}
+                    <select value={filterCategoria} onChange={e => setFilterCategoria(e.target.value)}
+                      className="px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-[10px] font-black text-slate-600 dark:text-white/70 focus:ring-2 focus:ring-indigo-500 outline-none">
+                      <option value="all">Categoría: Todas</option>
+                      {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {/* Almacén filter */}
+                    {almacenes.length > 0 && (
+                      <select value={filterAlmacen} onChange={e => setFilterAlmacen(e.target.value)}
+                        className="px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-[10px] font-black text-slate-600 dark:text-white/70 focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <option value="all">Almacén: Todos</option>
+                        {almacenes.filter(a => a.activo).map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                      </select>
+                    )}
+                    {/* Stock filter */}
+                    <select value={filterStock} onChange={e => setFilterStock(e.target.value as any)}
+                      className="px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-[10px] font-black text-slate-600 dark:text-white/70 focus:ring-2 focus:ring-indigo-500 outline-none">
+                      <option value="all">Stock: Todos</option>
+                      <option value="low">Stock bajo</option>
+                      <option value="out">Sin stock</option>
+                    </select>
+                    {/* Sort */}
+                    <div className="flex items-center gap-1">
+                      <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
+                        className="px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-[10px] font-black text-slate-600 dark:text-white/70 focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <option value="nombre">Ordenar: Nombre</option>
+                        <option value="stock">Stock</option>
+                        <option value="precio">Precio detal</option>
+                        {!isReadOnlyRole && <option value="costo">Costo</option>}
+                      </select>
+                      <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                        className="p-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-slate-500 dark:text-white/50 hover:border-indigo-400 transition-all text-[11px] font-black">
+                        {sortDir === 'asc' ? '↑' : '↓'}
+                      </button>
+                    </div>
+                    {/* Active filters badge */}
+                    {(filterCategoria !== 'all' || filterStock !== 'all' || filterAlmacen !== 'all') && (
+                      <button onClick={() => { setFilterCategoria('all'); setFilterStock('all'); setFilterAlmacen('all'); }}
+                        className="px-3 py-2 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-xl text-[10px] font-black text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                        <X size={10} /> Limpiar filtros
+                      </button>
+                    )}
+                    <div className="ml-auto px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl text-white flex items-center gap-2 shadow-md shadow-indigo-500/25 shrink-0">
+                      <Tags size={13} className="text-white/70" />
+                      <span className="text-[10px] font-black uppercase tracking-widest">{rates.tasaBCV.toFixed(2)} BS / USD</span>
+                    </div>
                   </div>
                 </div>
+                {/* Pending products banner — admin only */}
+                {(isAdmin || isInventario) && pendingProducts.length > 0 && (
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <AlertTriangle size={15} className="text-amber-400 shrink-0" />
+                    <span className="text-xs font-black text-amber-400 flex-1">
+                      {pendingProducts.length} producto{pendingProducts.length > 1 ? 's' : ''} pendiente{pendingProducts.length > 1 ? 's' : ''} de revisión — registrados por un almacenista sin precio asignado
+                    </span>
+                    <button onClick={() => { setFilterCategoria('all'); setFilterStock('all'); setFilterAlmacen('all'); setSearchTerm(''); }}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest hover:bg-amber-500/30 transition-all">
+                      Ver pendientes
+                    </button>
+                  </div>
+                )}
               </div>
               {/* ── INFO CARD ────────────────────────────────────────────────── */}
+              {canBulkEdit && (
               <div className="mx-5 mt-4 mb-0 p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-500/[0.06] border border-indigo-100 dark:border-indigo-500/20 flex items-start gap-3">
                 <div className="w-7 h-7 rounded-xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center shrink-0 mt-0.5">
                   <ListChecks size={14} className="text-indigo-500 dark:text-indigo-400" />
@@ -1168,8 +1286,10 @@ export default function Inventario() {
                   </ul>
                 </div>
               </div>
+              )}
 
               {/* ── MASTER CONTROLS BAR ──────────────────────────────────────── */}
+              {canBulkEdit && (
               <div className="px-5 py-2.5 border-b border-slate-100 dark:border-white/[0.06] bg-slate-50/30 dark:bg-white/[0.01] flex flex-wrap items-center gap-2 mt-3">
                 <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mr-1">Ajuste Masivo:</span>
 
@@ -1311,23 +1431,33 @@ export default function Inventario() {
                   )}
                 </div>
               </div>
+              )}
+              {!canBulkEdit && (
+                <div className="px-5 py-2 border-b border-slate-100 dark:border-white/[0.06]">
+                  <span className="text-[9px] text-slate-400 dark:text-white/30 italic">{filteredProducts.length} productos en catálogo</span>
+                </div>
+              )}
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead className="bg-slate-50/50 dark:bg-white/[0.02] text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 border-b border-slate-100 dark:border-white/[0.07]">
                     <tr>
+                      {canBulkEdit && (
                       <th className="px-3 py-3.5">
                         <button onClick={allPageSelected ? clearSelect : selectAll}
                           className="w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 border-slate-300 dark:border-white/20 hover:border-indigo-500">
                           {allPageSelected ? <CheckSquare size={12} className="text-indigo-600 dark:text-indigo-400" /> : <Square size={12} className="text-slate-300 dark:text-white/20" />}
                         </button>
                       </th>
+                      )}
                       <th className="px-2.5 py-2 sm:px-5 sm:py-3.5">Producto / SKU</th>
                       <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 hidden sm:table-cell">Categoría</th>
-                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right hidden md:table-cell">Costo Base</th>
+                      {!isReadOnlyRole && <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right hidden md:table-cell">Costo Base</th>}
                       <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right">Precio Detal</th>
                       <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right hidden md:table-cell">Precio Mayor</th>
-                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-center">Stock Real</th>
+                      <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-center">
+                        {filterAlmacen !== 'all' ? `Stock ${almacenes.find(a => a.id === filterAlmacen)?.nombre || ''}` : 'Stock Real'}
+                      </th>
                       <th className="px-2.5 py-2 sm:px-5 sm:py-3.5 text-right">Control</th>
                     </tr>
                   </thead>
@@ -1335,26 +1465,35 @@ export default function Inventario() {
                     {pagedProducts.map((p) => {
                       const isSelected = selectedIds.has(p.id);
                       const marginDetal = p.costoUSD > 0 ? Math.round(((p.precioDetal - p.costoUSD) / p.costoUSD) * 100) : 0;
+                      const isPending = p.status === 'pending_review';
+                      const stockValue = filterAlmacen !== 'all' ? (p.stockByAlmacen?.[filterAlmacen] ?? 0) : p.stock;
                       return (
-                      <tr key={p.id} className={`transition-colors group border-b border-slate-50 dark:border-white/[0.04] ${isSelected ? 'bg-indigo-50/40 dark:bg-indigo-500/[0.06]' : 'hover:bg-slate-50 dark:hover:bg-white/[0.03]'}`}>
+                      <tr key={p.id} className={`transition-colors group border-b border-slate-50 dark:border-white/[0.04] ${isPending ? 'bg-amber-50/30 dark:bg-amber-500/[0.04]' : isSelected ? 'bg-indigo-50/40 dark:bg-indigo-500/[0.06]' : 'hover:bg-slate-50 dark:hover:bg-white/[0.03]'}`}>
                         {/* Checkbox */}
+                        {canBulkEdit && (
                         <td className="px-3 py-4 w-8">
                           <button onClick={() => toggleSelect(p.id)}
                             className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 dark:border-white/20 hover:border-indigo-400 opacity-0 group-hover:opacity-100'}`}>
                             {isSelected && <CheckSquare size={12} className="text-white" />}
                           </button>
                         </td>
+                        )}
                         <td className="px-2.5 sm:px-5 py-3 sm:py-4">
                           <div className="flex items-center gap-2 sm:gap-3">
                             <div className={`h-8 w-8 sm:h-9 sm:w-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${isSelected ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/40 group-hover:bg-gradient-to-br group-hover:from-indigo-600 group-hover:to-violet-600 group-hover:text-white'}`}>
                               <Package size={14} className="sm:hidden" /><Package size={16} className="hidden sm:block" />
                             </div>
                             <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight truncate">{p.nombre}</p>
                                 {isDynamicProduct(p.tipoTasa) && (
                                   <span className="px-1.5 py-0.5 bg-amber-500/15 text-amber-500 text-[7px] font-black uppercase rounded shrink-0 border border-amber-500/20">
                                     {customRates.find(r => r.id === p.tipoTasa)?.name?.charAt(0) || 'D'}
+                                  </span>
+                                )}
+                                {isPending && (
+                                  <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-400 text-[9px] font-black border border-amber-500/20 shrink-0">
+                                    Pendiente precio
                                   </span>
                                 )}
                               </div>
@@ -1362,7 +1501,7 @@ export default function Inventario() {
                               {/* Mobile-only: show price + stock inline */}
                               <div className="flex items-center gap-2 mt-1 sm:hidden">
                                 <span className="text-[10px] font-black text-emerald-600">${p.precioDetal.toFixed(2)}</span>
-                                <span className={`text-[10px] font-black ${p.stock < p.stockMinimo ? 'text-rose-500' : 'text-slate-400'}`}>Stock: {p.stock}</span>
+                                <span className={`text-[10px] font-black ${p.stock < p.stockMinimo ? 'text-rose-500' : 'text-slate-400'}`}>Stock: {p.stock} {UNIT_LABELS[p.unitType ?? 'unidad']}</span>
                               </div>
                             </div>
                           </div>
@@ -1370,26 +1509,41 @@ export default function Inventario() {
                         <td className="px-5 py-4 hidden sm:table-cell">
                           <span className="px-3 py-1 bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/50 rounded-lg text-[9px] font-black uppercase tracking-widest border border-slate-200 dark:border-white/[0.08]">{p.categoria}</span>
                         </td>
+                        {!isReadOnlyRole && (
                         <td className="px-5 py-4 text-right hidden md:table-cell">
                           <p className="text-sm font-black text-slate-700 dark:text-slate-200">${p.costoUSD.toFixed(2)}</p>
                         </td>
+                        )}
                         <td className="px-2.5 sm:px-5 py-3 sm:py-4 text-right">
-                          <p className="text-xs sm:text-sm font-black text-emerald-600">${p.precioDetal.toFixed(2)}</p>
-                          <p className="text-[8px] sm:text-[9px] text-slate-400 dark:text-white/30 uppercase tracking-widest">Bs {(p.precioDetal * rates.tasaBCV).toFixed(2)}</p>
+                          {isPending ? (
+                            <span className="text-[10px] text-amber-400 font-black">Sin precio</span>
+                          ) : (
+                            <>
+                              <p className="text-xs sm:text-sm font-black text-emerald-600">${p.precioDetal.toFixed(2)}</p>
+                              <p className="text-[8px] sm:text-[9px] text-slate-400 dark:text-white/30 uppercase tracking-widest">Bs {(p.precioDetal * rates.tasaBCV).toFixed(2)}</p>
+                            </>
+                          )}
                         </td>
                         <td className="px-5 py-4 text-right hidden md:table-cell">
-                          <p className="text-sm font-black text-violet-600">${p.precioMayor.toFixed(2)}</p>
-                          <p className="text-[9px] text-slate-400 dark:text-white/30 uppercase tracking-widest">Bs {(p.precioMayor * rates.tasaBCV).toFixed(2)}</p>
+                          {isPending ? (
+                            <span className="text-[10px] text-amber-400 font-black">—</span>
+                          ) : (
+                            <>
+                              <p className="text-sm font-black text-violet-600">${p.precioMayor.toFixed(2)}</p>
+                              <p className="text-[9px] text-slate-400 dark:text-white/30 uppercase tracking-widest">Bs {(p.precioMayor * rates.tasaBCV).toFixed(2)}</p>
+                            </>
+                          )}
                         </td>
                         <td className="px-2.5 sm:px-5 py-3 sm:py-4 text-center hidden sm:table-cell">
-                          <div className={`inline-flex flex-col items-center px-3 sm:px-4 py-1.5 rounded-xl border ${p.stock < p.stockMinimo ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-white/[0.07]'}`}>
-                            <span className={`text-base font-black ${p.stock < p.stockMinimo ? 'text-rose-600' : 'text-slate-900 dark:text-white'}`}>{p.stock}</span>
-                            <span className="text-[8px] font-black uppercase text-slate-400 tracking-tighter">UND</span>
+                          <div className={`inline-flex flex-col items-center px-3 sm:px-4 py-1.5 rounded-xl border ${stockValue < p.stockMinimo ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-white/[0.07]'}`}>
+                            <span className={`text-base font-black ${stockValue < p.stockMinimo ? 'text-rose-600' : 'text-slate-900 dark:text-white'}`}>{stockValue}</span>
+                            <span className="text-[8px] font-black uppercase text-slate-400 tracking-tighter">{UNIT_LABELS[p.unitType ?? 'unidad']}</span>
                           </div>
                         </td>
                         <td className="px-2 sm:px-4 py-3 sm:py-4">
                           <div className="flex justify-end items-center gap-1 sm:gap-1.5 sm:opacity-0 sm:group-hover:opacity-100 transition-all sm:translate-x-2 sm:group-hover:translate-x-0">
-                            {/* IVA badge — quick toggle */}
+                            {/* IVA badge — quick toggle (admin only) */}
+                            {canEditProduct && (
                             <button
                               title={`IVA: ${p.ivaTipo || 'GENERAL'} ${p.iva ?? 16}%`}
                               onClick={async () => {
@@ -1399,23 +1553,32 @@ export default function Inventario() {
                               className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider border transition-all ${(p.ivaTipo === 'EXENTO' || p.iva === 0) ? 'bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/30 border-slate-200 dark:border-white/[0.08]' : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'}`}>
                               {(p.ivaTipo === 'EXENTO' || p.iva === 0) ? 'Exento' : `IVA ${p.iva ?? 16}%`}
                             </button>
-                            {/* Margin badge */}
+                            )}
+                            {/* Margin badge (info only) */}
+                            {!isReadOnlyRole && (
                             <span className={`px-2 py-1 rounded-lg text-[8px] font-black border ${marginDetal >= 30 ? 'bg-indigo-50 dark:bg-indigo-500/[0.08] text-indigo-500 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-white/30 border-slate-100 dark:border-white/[0.07]'}`}
                               title="Margen detal">
                               +{marginDetal}%
                             </span>
+                            )}
                             {/* Stock adjust */}
+                            {canAddStock && (
                             <button onClick={() => { setSelectedProduct(p); setAdjModalOpen(true); }} className="p-1.5 rounded-xl bg-indigo-600 text-white hover:bg-emerald-500 transition-all shadow-md shadow-indigo-500/25" title="Ajuste de Stock"><TrendingUp size={13} /></button>
+                            )}
                             {/* Edit */}
+                            {canEditProduct && (
                             <button onClick={() => { setEditingId(p.id); setForm(p); setQuickMode(false); setMayorManual(true); setCustomMarginDetal(''); setCustomMarginMayor(''); setModalOpen(true); }} className="p-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-900 hover:text-white dark:hover:bg-white/[0.12] transition-all"><Pencil size={13} /></button>
+                            )}
                             {/* Delete */}
-                            {deleteConfirmId === p.id ? (
+                            {canDeleteProduct && (
+                              deleteConfirmId === p.id ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={async () => { await deleteDoc(doc(db, `businesses/${tenantId}/products`, p.id)); setDeleteConfirmId(null); }} className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black">Sí</button>
                                 <button onClick={() => setDeleteConfirmId(null)} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 text-[9px] font-black">No</button>
                               </div>
                             ) : (
                               <button onClick={() => setDeleteConfirmId(p.id)} className="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-500 hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={13} /></button>
+                            )
                             )}
                           </div>
                         </td>
@@ -1824,6 +1987,17 @@ export default function Inventario() {
               </div>
 
               {/* ── ROW 2: PRECIOS ── */}
+              {isAlmacenista && !editingId ? (
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-3">
+                  <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-black text-amber-400 mb-0.5">Mercancía en revisión</p>
+                    <p className="text-[10px] text-amber-400/70 leading-relaxed">
+                      Esta mercancía quedará pendiente de revisión hasta que el administrador confirme y asigne los precios. Solo necesitas ingresar el nombre, código y stock inicial.
+                    </p>
+                  </div>
+                </div>
+              ) : (
               <div className="bg-gradient-to-br from-slate-900 to-[#0d1220] rounded-2xl p-4 border border-white/[0.06] space-y-3">
                 {/* Margin presets */}
                 <div className="flex flex-wrap items-center gap-2">
@@ -1841,7 +2015,10 @@ export default function Inventario() {
                   <div className="flex-1" />
                   {/* Custom margin inputs */}
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[8px] font-black text-emerald-400/60 uppercase tracking-widest">D%</span>
+                    <div className="flex flex-col items-end leading-tight">
+                      <span className="text-[8px] font-black text-emerald-400/60 uppercase tracking-widest">% Detal</span>
+                      <span className="text-[7px] text-emerald-400/40">→ precio detal</span>
+                    </div>
                     <input type="number" min="0" step="1" value={customMarginDetal}
                       onChange={e => setCustomMarginDetal(e.target.value)}
                       onKeyDown={e => {
@@ -1860,7 +2037,10 @@ export default function Inventario() {
                       className="px-2 py-1 rounded-lg text-[9px] font-black bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all border border-emerald-500/20">↗</button>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[8px] font-black text-violet-400/60 uppercase tracking-widest">M%</span>
+                    <div className="flex flex-col items-end leading-tight">
+                      <span className="text-[8px] font-black text-violet-400/60 uppercase tracking-widest">% Mayor</span>
+                      <span className="text-[7px] text-violet-400/40">→ precio mayor</span>
+                    </div>
                     <input type="number" min="0" step="1" value={customMarginMayor}
                       onChange={e => setCustomMarginMayor(e.target.value)}
                       onKeyDown={e => {
@@ -1885,7 +2065,7 @@ export default function Inventario() {
                 {/* Bulk pricing calculator */}
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-1 block">Costo Bulto ($)</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-1 block">Costo Bulto ($) <span className="font-medium text-amber-400/40 normal-case tracking-normal">precio total del paquete</span></label>
                     <input type="number" step="0.01" min="0" value={bulkCalc.costoBulto || ''}
                       onChange={e => {
                         const c = Number(e.target.value);
@@ -1897,7 +2077,7 @@ export default function Inventario() {
                   </div>
                   <div className="w-12 text-center text-white/20 text-lg font-black pb-2">/</div>
                   <div className="flex-1">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-1 block">Unidades</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-1 block">Unidades <span className="font-medium text-amber-400/40 normal-case tracking-normal">piezas por paquete</span></label>
                     <input type="number" step="1" min="1" value={bulkCalc.unidades || ''}
                       onChange={e => {
                         const u = Number(e.target.value);
@@ -2110,6 +2290,7 @@ export default function Inventario() {
                   </div>
                 )}
               </div>
+              )}
 
               {/* ── ROW 3: CATEGORÍA + STOCK ── */}
               <div className="grid grid-cols-2 gap-3">
@@ -2139,7 +2320,7 @@ export default function Inventario() {
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Stock inicial</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Stock Inicial <span className="font-medium normal-case tracking-normal">unidades disponibles al registrar</span></label>
                     {/* Almacén selector — solo si hay almacenes configurados */}
                     {almacenes.length > 0 && (
                       <div className="flex items-center gap-1.5">
@@ -2192,6 +2373,22 @@ export default function Inventario() {
                     </select>
                   </div>
                   <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Unidad de Venta</label>
+                    <select value={form.unitType ?? 'unidad'} onChange={e => setForm(f => ({ ...f, unitType: e.target.value as Product['unitType'] }))}
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                      <option value="unidad">Unidad (piezas)</option>
+                      <option value="kg">Kilogramos (kg)</option>
+                      <option value="g">Gramos (g)</option>
+                      <option value="ton">Toneladas (ton)</option>
+                      <option value="lt">Litros (L)</option>
+                      <option value="ml">Mililitros (mL)</option>
+                      <option value="lb">Libras (lb)</option>
+                    </select>
+                    {form.unitType && form.unitType !== 'unidad' && (
+                      <p className="text-[9px] text-amber-400 mt-1">💡 Stock y precio en {form.unitType}</p>
+                    )}
+                  </div>
+                  <div>
                     <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">IVA</label>
                     <select value={form.ivaTipo} onChange={e => {
                       const tipo = e.target.value as Product['ivaTipo'];
@@ -2211,14 +2408,14 @@ export default function Inventario() {
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Ubicación</label>
-                    <input value={form.ubicacion} onChange={e => setForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Pasillo A-4"
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Ubicación <span className="font-medium normal-case tracking-normal text-slate-400/60">Ej: Pasillo A-4, Estante 2</span></label>
+                    <input value={form.ubicacion} onChange={e => setForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Pasillo A-4, Estante 2"
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Stock mínimo</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Stock Mínimo <span className="font-medium normal-case tracking-normal text-slate-400/60">alerta cuando baje de este número</span></label>
                     <input type="number" min="0" value={form.stockMinimo} onChange={e => setForm(f => ({ ...f, stockMinimo: Number(e.target.value) }))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
@@ -2272,7 +2469,7 @@ export default function Inventario() {
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cantidad de Unidades</label>
                   <input type="number" value={adjData.quantity} onChange={e => setAdjData({ ...adjData, quantity: Number(e.target.value) })} className="w-full px-6 py-6 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-3xl font-black text-center focus:ring-4 focus:ring-slate-900 shadow-inner" placeholder="0" />
                 </div>
-                {adjData.type === 'AJUSTE' && (
+                {adjData.type === 'AJUSTE' && !isAlmacenista && (
                   <div className="space-y-3">
                     <button
                       type="button"

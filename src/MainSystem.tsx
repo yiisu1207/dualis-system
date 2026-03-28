@@ -35,6 +35,7 @@ import SmartCalculatorWidget from './components/SmartCalculatorWidget';
 import HelpCenter from './components/HelpCenter';
 import WidgetLaunchpad from './components/WidgetLaunchpad';
 import AdminPosManager from './pages/AdminPosManager';
+import DespachoPanel from './pages/DespachoPanel';
 import SucursalesManager from './pages/SucursalesManager';
 import TrialBanner from './components/TrialBanner';
 import NotificationCenter from './components/NotificationCenter';
@@ -260,6 +261,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [pendingJoinCount, setPendingJoinCount] = useState(0);
   const [pendingCompareCount, setPendingCompareCount] = useState(0);
+  const [pendingProductsCount, setPendingProductsCount] = useState(0);
   const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('dualis_dismissed_notifs');
@@ -311,6 +313,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     tasas:         `${adminBase}/tasas`,
     conciliacion:  `${adminBase}/conciliacion`,
     cajas:         `${adminBase}/cajas`,
+    despacho:      `${adminBase}/despacho`,
     sucursales:    `${adminBase}/sucursales`,
     fiscal:        `${adminBase}/fiscal`,
     libroventas:   `${adminBase}/libroventas`,
@@ -343,6 +346,18 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       where('status', '==', 'PENDING_APPROVAL')
     );
     const unsub = onSnapshot(q, snap => setPendingJoinCount(snap.size));
+    return unsub;
+  }, [businessId, userProfile?.role]);
+
+  // ── Listener: productos pendientes de revisión (almacenista) ────────────────────
+  useEffect(() => {
+    const role = userProfile?.role;
+    if (!businessId || (role !== 'owner' && role !== 'admin' && role !== 'inventario')) return;
+    const q = query(
+      collection(db, `businesses/${businessId}/products`),
+      where('status', '==', 'pending_review')
+    );
+    const unsub = onSnapshot(q, snap => setPendingProductsCount(snap.size));
     return unsub;
   }, [businessId, userProfile?.role]);
 
@@ -510,6 +525,12 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       items.push({ id: 'pending-join', title: `${pendingJoinCount} solicitud${pendingJoinCount > 1 ? 'es' : ''} de acceso al equipo`, subtitle: 'Ver en Configuración → Equipo', type: 'warning' });
     }
 
+    // 7. Productos pendientes de revisión (registrados por almacenista sin precio)
+    const canReviewProducts = isAdmin || user?.role === 'inventario';
+    if (canReviewProducts && pendingProductsCount > 0) {
+      items.push({ id: 'pending-products', title: `${pendingProductsCount} producto${pendingProductsCount > 1 ? 's' : ''} pendiente${pendingProductsCount > 1 ? 's' : ''} de revisión`, subtitle: 'Un almacenista registró mercancía sin precio asignado', type: 'warning' });
+    }
+
     // 5. Bonus days notification
     if (subData?.bonusNotification && !subData.bonusNotification.seen) {
       items.push({ id: 'bonus-days', title: `🎉 +${subData.bonusNotification.days} días gratis añadidos a tu cuenta`, subtitle: subData.bonusNotification.reason || 'Gracias por tu feedback', type: 'info' });
@@ -532,8 +553,14 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       items.push({ id: 'pending-cxp', title: `${debtSuppliers} proveedor${debtSuppliers > 1 ? 'es' : ''} con deuda pendiente`, subtitle: 'Ver CxP', type: 'info' });
     }
 
+    // NDE pendientes de despacho (visible para almacenista/admin/owner)
+    const ndePendientes = movements.filter((m: any) => m.esNotaEntrega && m.estadoNDE === 'pendiente_despacho' && !m.anulada);
+    if (ndePendientes.length > 0) {
+      items.push({ id: 'nde-pendientes', title: `${ndePendientes.length} NDE pendiente${ndePendientes.length > 1 ? 's' : ''} de despacho`, subtitle: 'Panel de Despacho', type: 'warning' });
+    }
+
     return items;
-  }, [inventoryItems, movements, pendingJoinCount, pendingCompareCount, subData]);
+  }, [inventoryItems, movements, pendingJoinCount, pendingCompareCount, pendingProductsCount, subData, isAdmin]);
 
   const visibleNotifications = useMemo(
     () => notifications.filter(n => !dismissedNotifIds.has(n.id)),
@@ -565,7 +592,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     proveedores: 'Proveedores', rrhh: 'RRHH', inventario: 'Inventario',
     reportes: 'Reportes', vision: 'VisionLab', widgets: 'Herramientas',
     comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
-    cajas: 'Cajas', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Libro de Ventas',
+    cajas: 'Cajas', despacho: 'Panel Despacho', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Libro de Ventas',
     config: 'Configuración', help: 'Ayuda',
   };
 
@@ -628,6 +655,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               canAccess('cajas')
                 ? <AdminPosManager />
                 : <LockedModule moduleName="Cajas / Terminales POS" requiredPlan="starter" />
+            )}
+            {activeTab === 'despacho' && (
+              <DespachoPanel businessId={businessId} />
             )}
             {activeTab === 'rrhh' && (
               !canView('rrhh') ? <NoAccess /> :

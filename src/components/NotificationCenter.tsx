@@ -25,6 +25,8 @@ const NAV_MAP: Record<string, string> = {
   'overdue-cxc': 'clientes',
   'pending-cxp': 'proveedores',
   'pending-compare': 'comparar',
+  'pending-products': 'inventario',
+  'nde-pendientes': 'despacho',
 };
 
 const NotificationCenter: React.FC<NotificationCenterProps> = ({

@@ -59,6 +59,8 @@ import {
   CheckCircle2,
   Database,
   AlertTriangle,
+  Truck,
+  Package,
 } from 'lucide-react';
 import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
@@ -66,7 +68,7 @@ import AuditLogViewer from '../components/AuditLogViewer';
 import { acceptRequest, rejectRequest } from '../firebase/api';
 import { seedTestData } from '../utils/seedTestData';
 
-type SectionType = 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'devtest';
+type SectionType = 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'devtest';
 
 interface ConfigData {
   companyName: string;
@@ -155,6 +157,9 @@ const Configuracion: React.FC = () => {
   const [seedProgress, setSeedProgress] = useState<{ msg: string; pct: number } | null>(null);
   const [seedResult, setSeedResult] = useState<{ products: number; customers: number; suppliers: number; movements: number; terminals: number } | null>(null);
 
+  // Terminals (for assigning cajeros)
+  const [terminals, setTerminals] = useState<any[]>([]);
+
   // Invite modal
   const [inviteModal, setInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -163,16 +168,36 @@ const Configuracion: React.FC = () => {
   const [invitations, setInvitations] = useState<any[]>([]);
   const [inviteCopied, setInviteCopied] = useState<string | null>(null);
 
+  // NDE / Despacho config
+  const [ndeConfig, setNdeConfig] = useState({
+    enabled: false,
+    defaultMode: false,
+    showLogo: true,
+    showPoweredBy: true,
+    footerMessage: '',
+    rejectionReasons: ['Sin stock', 'Avería en transporte', 'Dirección incorrecta', 'Cliente ausente'] as string[],
+    requireRejectionReason: false,
+    autoNotifyVendedor: false,
+  });
+  const [savingNde, setSavingNde] = useState(false);
+
+  // Commissions config
+  const [commissions, setCommissions] = useState({
+    enabled: false,
+    perBulto: 0,
+    target: 'vendedor' as 'vendedor' | 'almacenista' | 'both',
+    splitVendedor: 50,
+    splitAlmacenista: 50,
+  });
+  const [savingCommissions, setSavingCommissions] = useState(false);
+
   // Feature toggles (guardados en businessConfigs/{bid})
+  // multiCurrency siempre true — no configurable
   const [features, setFeatures] = useState({
-    teamChat:         true,
     bookComparison:   true,
     personalBooks:    false,
     peerComparison:   true,
-    perUserBilling:   false, // Phase 2
     aiVision:         true,
-    multiCurrency:    true,
-    whatsappNotifs:   false,
   });
   const [savingFeatures, setSavingFeatures] = useState(false);
 
@@ -231,6 +256,12 @@ const Configuracion: React.FC = () => {
             localStorage.setItem('operation_isolation_mode', featuresSnap.features.personalBooks ? 'individual' : 'shared');
           }
         }
+        if (featuresSnap?.ndeConfig) {
+          setNdeConfig(prev => ({ ...prev, ...featuresSnap.ndeConfig }));
+        }
+        if (featuresSnap?.commissions) {
+          setCommissions(prev => ({ ...prev, ...featuresSnap.commissions }));
+        }
         if (featuresSnap?.rolePermissions) {
           setRolePerms(prev => ({ ...prev, ...featuresSnap.rolePermissions }));
         }
@@ -243,6 +274,16 @@ const Configuracion: React.FC = () => {
     };
     loadData();
   }, [businessId]);
+
+  // Load terminals for cajero assignment
+  useEffect(() => {
+    if (!businessId || !isAdmin) return;
+    const q = collection(db, 'businesses', businessId, 'terminals');
+    const unsub = onSnapshot(q, snap => {
+      setTerminals(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, [businessId, isAdmin]);
 
   // Listener en tiempo real de solicitudes pendientes — consulta directamente users collection
   useEffect(() => {
@@ -464,6 +505,34 @@ const Configuracion: React.FC = () => {
     }
   };
 
+  const handleSaveNde = async () => {
+    if (!businessId) return;
+    setSavingNde(true);
+    try {
+      await setDoc(doc(db, 'businessConfigs', businessId), { ndeConfig }, { merge: true });
+      toast.success('Configuración de NDE guardada');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar configuración NDE');
+    } finally {
+      setSavingNde(false);
+    }
+  };
+
+  const handleSaveCommissions = async () => {
+    if (!businessId) return;
+    setSavingCommissions(true);
+    try {
+      await setDoc(doc(db, 'businessConfigs', businessId), { commissions }, { merge: true });
+      toast.success('Configuración de comisiones guardada');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar comisiones');
+    } finally {
+      setSavingCommissions(false);
+    }
+  };
+
   const handleSaveUiPrefs = async () => {
     if (!userProfile?.uid) return;
     setSavingPrefs(true);
@@ -490,6 +559,8 @@ const Configuracion: React.FC = () => {
   const menuItems = [
     { id: 'identidad',  label: 'Identidad del Negocio', icon: Building2 },
     { id: 'facturacion',label: 'Facturación y POS',     icon: Receipt },
+    { id: 'despacho',   label: 'Despacho / NDE',        icon: Truck },
+    { id: 'comisiones', label: 'Comisiones',             icon: Package },
     { id: 'equipo',     label: 'Equipo y Permisos',     icon: Users2 },
     { id: 'funciones',  label: 'Funciones del Sistema', icon: Sliders },
     { id: 'seguridad',  label: 'Seguridad',              icon: ShieldCheck },
@@ -712,6 +783,8 @@ const Configuracion: React.FC = () => {
                           >
                             <option value="admin">Admin</option>
                             <option value="ventas">Ventas</option>
+                            <option value="almacenista">Almacenista</option>
+                            <option value="inventario">Jefe de Inventario</option>
                             <option value="auditor">Auditor</option>
                             <option value="staff">Staff</option>
                           </select>
@@ -790,6 +863,7 @@ const Configuracion: React.FC = () => {
                             </td>
                             <td className="px-5 py-3.5 text-center">
                               {isAdmin && !isOwner && !isSelf ? (
+                                <div className="flex flex-col items-center gap-1.5">
                                 <select
                                   defaultValue={u.role}
                                   onChange={async e => {
@@ -803,9 +877,30 @@ const Configuracion: React.FC = () => {
                                 >
                                   <option value="admin">Admin</option>
                                   <option value="ventas">Ventas</option>
+                                  <option value="almacenista">Almacenista</option>
+                                  <option value="inventario">Jefe de Inventario</option>
                                   <option value="auditor">Auditor</option>
                                   <option value="staff">Staff</option>
                                 </select>
+                                {u.role === 'ventas' && (
+                                  <select
+                                    value={u.assignedCajaId || ''}
+                                    onChange={async e => {
+                                      const cajaId = e.target.value || null;
+                                      try {
+                                        await updateDoc(doc(db, 'users', u.uid), { assignedCajaId: cajaId });
+                                        setUsers(prev => prev.map(m => m.uid === u.uid ? { ...m, assignedCajaId: cajaId } : m));
+                                      } catch { toast.error('No se pudo asignar la caja'); }
+                                    }}
+                                    className="px-2 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[10px] font-black text-amber-400 uppercase tracking-widest focus:outline-none focus:ring-1 focus:ring-amber-500 w-full"
+                                  >
+                                    <option value="">Sin caja asignada</option>
+                                    {terminals.map(t => (
+                                      <option key={t.id} value={t.id}>{t.nombre || t.name || t.id}</option>
+                                    ))}
+                                  </select>
+                                )}
+                                </div>
                               ) : (
                                 <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
                                   isOwner
@@ -862,7 +957,7 @@ const Configuracion: React.FC = () => {
                     <div className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                       {invitations.filter(i => i.status === 'active').map(inv => {
                         const isExpired = new Date(inv.expiresAt) < new Date();
-                        const roleLabels: Record<string, string> = { admin: 'Admin', ventas: 'Ventas', auditor: 'Auditor', staff: 'Staff', member: 'Miembro' };
+                        const roleLabels: Record<string, string> = { admin: 'Admin', ventas: 'Ventas', almacenista: 'Almacenista', inventario: 'Jefe de Inventario', auditor: 'Auditor', staff: 'Staff', member: 'Miembro' };
                         return (
                           <div key={inv.token} className="px-5 py-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-3">
                             <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1002,14 +1097,6 @@ const Configuracion: React.FC = () => {
                   <div className="p-5 space-y-3">
                     {[
                       {
-                        key: 'teamChat',
-                        icon: MessageSquare,
-                        title: 'Chat de Equipo',
-                        desc: 'Canal de mensajes internos entre todos los miembros. Mensajes directos y canales.',
-                        phase: null,
-                        color: 'text-indigo-400',
-                      },
-                      {
                         key: 'bookComparison',
                         icon: FileText,
                         title: 'Comparación de Libros',
@@ -1026,14 +1113,6 @@ const Configuracion: React.FC = () => {
                         color: 'text-violet-400',
                       },
                       {
-                        key: 'multiCurrency',
-                        icon: Coins,
-                        title: 'Multi-moneda USD/BS',
-                        desc: 'Operaciones simultáneas en dólares y bolívares con tasas BCV en tiempo real.',
-                        phase: null,
-                        color: 'text-amber-400',
-                      },
-                      {
                         key: 'personalBooks',
                         icon: Globe,
                         title: 'Libros Individuales por Usuario',
@@ -1048,22 +1127,6 @@ const Configuracion: React.FC = () => {
                         desc: 'Los usuarios pueden comparar sus libros entre ellos, detectar diferencias y resolver discrepancias con comentarios.',
                         phase: null,
                         color: 'text-rose-400',
-                      },
-                      {
-                        key: 'perUserBilling',
-                        icon: CreditCard,
-                        title: 'Facturación por Asiento (per-seat)',
-                        desc: 'Cada usuario adicional tiene un costo mensual. Controla quién accede y cuánto pagas.',
-                        phase: 'Fase 2 · Próximamente',
-                        color: 'text-orange-400',
-                      },
-                      {
-                        key: 'whatsappNotifs',
-                        icon: Phone,
-                        title: 'Notificaciones WhatsApp',
-                        desc: 'Alertas automáticas de facturas, deudas y vencimientos por WhatsApp al dueño.',
-                        phase: 'Add-on · $6/mes',
-                        color: 'text-emerald-400',
                       },
                     ].map(feat => {
                       const isPhase2 = feat.phase !== null;
@@ -1218,6 +1281,220 @@ const Configuracion: React.FC = () => {
                       <Copy size={14} /> {copyToast ? '¡Copiado!' : 'Copiar Identificador'}
                     </button>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* DESPACHO / NDE */}
+            {activeSection === 'despacho' && (
+              <div className="space-y-5 pb-10">
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <Truck size={15} className="text-amber-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Nota de Entrega (NDE)</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Configura el flujo de Nota de Entrega para POS Mayor</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {/* Toggles */}
+                    {[
+                      { key: 'enabled',         label: 'Habilitar modo Nota de Entrega en POS Mayor',  sub: 'Muestra el toggle NDE en el POS Mayor' },
+                      { key: 'defaultMode',      label: 'Activar modo NDE por defecto al abrir POS',    sub: 'Arranca en modo NDE sin necesidad de activarlo cada vez' },
+                      { key: 'showLogo',         label: 'Mostrar logo en la Nota de Entrega',           sub: 'Logo de la empresa en el documento impreso' },
+                      { key: 'showPoweredBy',    label: "Mostrar 'Powered by Dualis'",                  sub: 'Branding al pie del documento' },
+                      { key: 'requireRejectionReason', label: 'Requerir motivo al rechazar despacho',    sub: 'El almacenista debe indicar el motivo de rechazo' },
+                      { key: 'autoNotifyVendedor',     label: 'Notificar al vendedor si su NDE es rechazada', sub: 'Notificación interna al vendedor' },
+                    ].map(({ key, label, sub }) => (
+                      <div key={key} className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-50 dark:border-white/[0.04] last:border-0">
+                        <div>
+                          <p className="text-sm font-bold text-slate-700 dark:text-white/80">{label}</p>
+                          <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">{sub}</p>
+                        </div>
+                        <button
+                          onClick={() => setNdeConfig(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))}
+                          className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${ndeConfig[key as keyof typeof ndeConfig] ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                        >
+                          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${ndeConfig[key as keyof typeof ndeConfig] ? 'left-5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Footer message */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Mensaje al pie de la NDE</label>
+                      <textarea
+                        value={ndeConfig.footerMessage}
+                        onChange={e => setNdeConfig(prev => ({ ...prev, footerMessage: e.target.value }))}
+                        placeholder="Ej: Gracias por su compra. Horario de despacho: L-V 8am-5pm"
+                        rows={2}
+                        className={inputClasses + ' resize-none'}
+                      />
+                    </div>
+
+                    {/* Rejection reasons */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Motivos de rechazo de despacho</label>
+                      <div className="space-y-2">
+                        {ndeConfig.rejectionReasons.map((r, i) => (
+                          <div key={i} className="flex gap-2">
+                            <input
+                              value={r}
+                              onChange={e => setNdeConfig(prev => ({
+                                ...prev,
+                                rejectionReasons: prev.rejectionReasons.map((x, j) => j === i ? e.target.value : x)
+                              }))}
+                              className="flex-1 px-3 py-2 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <button
+                              onClick={() => setNdeConfig(prev => ({ ...prev, rejectionReasons: prev.rejectionReasons.filter((_, j) => j !== i) }))}
+                              className="h-9 w-9 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-400 flex items-center justify-center hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all"
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => setNdeConfig(prev => ({ ...prev, rejectionReasons: [...prev.rejectionReasons, ''] }))}
+                          className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 py-1"
+                        >
+                          <Plus size={12} /> Agregar motivo
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveNde}
+                    disabled={savingNde}
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-sm shadow-md shadow-indigo-500/25 hover:opacity-90 transition-all disabled:opacity-50"
+                  >
+                    {savingNde ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                    Guardar Configuración NDE
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* COMISIONES */}
+            {activeSection === 'comisiones' && (
+              <div className="space-y-5 pb-10">
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <Package size={15} className="text-emerald-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Comisiones por Bulto</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Configura comisiones automáticas basadas en bultos despachados</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {/* Enabled toggle */}
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-bold text-slate-700 dark:text-white/80">Activar comisiones por bulto</p>
+                        <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">Calcula comisiones automáticamente según los bultos en cada NDE</p>
+                      </div>
+                      <button
+                        onClick={() => setCommissions(prev => ({ ...prev, enabled: !prev.enabled }))}
+                        className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${commissions.enabled ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                      >
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${commissions.enabled ? 'left-5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+
+                    {commissions.enabled && (
+                      <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-white/[0.07]">
+                        {/* Per bulto amount */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">USD por bulto</label>
+                          <input
+                            type="number" min="0" step="0.01"
+                            value={commissions.perBulto}
+                            onChange={e => setCommissions(prev => ({ ...prev, perBulto: parseFloat(e.target.value) || 0 }))}
+                            className={inputClasses}
+                            placeholder="Ej: 0.50"
+                          />
+                          <p className="text-[10px] text-slate-400 dark:text-white/30 mt-1">Monto en USD que se asigna como comisión por cada bulto</p>
+                        </div>
+
+                        {/* Target */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">¿Quién recibe la comisión?</label>
+                          <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl border border-slate-200 dark:border-white/[0.08]">
+                            {(['vendedor', 'almacenista', 'both'] as const).map(t => {
+                              const labels = { vendedor: 'Vendedor (al vender)', almacenista: 'Almacenista (al despachar)', both: 'Ambos (dividir %)' };
+                              return (
+                                <button key={t} onClick={() => setCommissions(prev => ({ ...prev, target: t }))}
+                                  className={`flex-1 px-2 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all text-center ${commissions.target === t ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}>
+                                  {labels[t]}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Split percentages */}
+                        {commissions.target === 'both' && (
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">% Vendedor</label>
+                              <input type="number" min="0" max="100" step="1"
+                                value={commissions.splitVendedor}
+                                onChange={e => setCommissions(prev => ({ ...prev, splitVendedor: parseInt(e.target.value) || 0, splitAlmacenista: 100 - (parseInt(e.target.value) || 0) }))}
+                                className={inputClasses}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">% Almacenista</label>
+                              <input type="number" min="0" max="100" step="1"
+                                value={commissions.splitAlmacenista}
+                                onChange={e => setCommissions(prev => ({ ...prev, splitAlmacenista: parseInt(e.target.value) || 0, splitVendedor: 100 - (parseInt(e.target.value) || 0) }))}
+                                className={inputClasses}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Preview */}
+                        {commissions.perBulto > 0 && (
+                          <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3 border border-slate-100 dark:border-white/[0.07]">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-2">Ejemplo: 10 bultos</p>
+                            <div className="space-y-1">
+                              {commissions.target !== 'almacenista' && (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-slate-500 dark:text-slate-400">Comisión vendedor:</span>
+                                  <span className="font-black text-slate-900 dark:text-white">
+                                    ${(10 * commissions.perBulto * (commissions.target === 'both' ? (commissions.splitVendedor / 100) : 1)).toFixed(2)}
+                                  </span>
+                                </div>
+                              )}
+                              {commissions.target !== 'vendedor' && (
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-slate-500 dark:text-slate-400">Comisión almacenista:</span>
+                                  <span className="font-black text-slate-900 dark:text-white">
+                                    ${(10 * commissions.perBulto * (commissions.target === 'both' ? (commissions.splitAlmacenista / 100) : 1)).toFixed(2)}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveCommissions}
+                    disabled={savingCommissions}
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-sm shadow-md shadow-indigo-500/25 hover:opacity-90 transition-all disabled:opacity-50"
+                  >
+                    {savingCommissions ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                    Guardar Comisiones
+                  </button>
                 </div>
               </div>
             )}
@@ -1680,6 +1957,8 @@ const Configuracion: React.FC = () => {
                 >
                   <option value="admin">Administrador</option>
                   <option value="ventas">Ventas</option>
+                  <option value="almacenista">Almacenista</option>
+                  <option value="inventario">Jefe de Inventario</option>
                   <option value="auditor">Auditor</option>
                   <option value="staff">Staff</option>
                   <option value="member">Miembro</option>

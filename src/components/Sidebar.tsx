@@ -28,6 +28,7 @@ import {
   Clock,
   Zap,
   TrendingUp,
+  Truck,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -69,6 +70,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'inventario',   label: 'Inventario',      Icon: Package,         path: 'inventario'    },
       { id: 'cajas',        label: 'Ventas / Cajas',  Icon: ShoppingCart,    path: 'cajas'         },
+      { id: 'despacho',     label: 'Panel Despacho',  Icon: Truck,           path: 'despacho'      },
       { id: 'tasas',        label: 'Tasas Cambiarias', Icon: TrendingUp,     path: 'tasas'         },
       { id: 'historial',    label: 'Historial',       Icon: FileText,        path: 'historial'     },
     ],
@@ -193,17 +195,21 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (rolePermissions && role in rolePermissions) {
       return rolePermissions[role][item.id as ModuleId] === true;
     }
+    // Despacho panel: always visible for almacenista and inventario roles
+    if (item.id === 'despacho' && (user.role === 'almacenista' || user.role === 'inventario')) return true;
     return item.id === 'cajas';
   };
 
   const roleLabel: Record<string, string> = {
-    owner:   'Dueño',
-    admin:   'Admin',
-    ventas:  'Ventas',
-    auditor: 'Auditor',
-    staff:   'Staff',
-    member:  'Miembro',
-    pending: 'Pendiente',
+    owner:       'Dueño',
+    admin:       'Admin',
+    ventas:      'Vendedor',
+    auditor:     'Auditor',
+    staff:       'Staff',
+    member:      'Miembro',
+    pending:     'Pendiente',
+    almacenista: 'Almacenista',
+    inventario:  'Jefe Inv.',
   };
 
   // Accent colors per group index for icons

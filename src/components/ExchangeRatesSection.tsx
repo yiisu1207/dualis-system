@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Loader2, Plus, Trash2, Lock } from 'lucide-react';
+import { Loader2, Plus, Trash2, Lock } from 'lucide-react';
 import { useRates } from '../context/RatesContext';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
@@ -7,6 +7,7 @@ import { useSubscription } from '../hooks/useSubscription';
 import { auth } from '../firebase/config';
 import type { CustomRate } from '../../types';
 import RateHistoryWall from './RateHistoryWall';
+import CustomRateWall from './CustomRateWall';
 
 const ExchangeRatesSection: React.FC = () => {
   const { customRates, updateCustomRates } = useRates();
@@ -46,8 +47,8 @@ const ExchangeRatesSection: React.FC = () => {
     }
   };
 
-  // Add new account
-  const handleAddAccount = () => {
+  // Add new account (auto-saves)
+  const handleAddAccount = async () => {
     const name = newName.trim();
     if (!name) return;
     const id = name.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
@@ -55,47 +56,66 @@ const ExchangeRatesSection: React.FC = () => {
       toast.error('Ya existe una cuenta con ese nombre');
       return;
     }
-    setLocalAccounts(prev => [...prev, { id, name, value: 0 }]);
+    const updated = [...localAccounts, { id, name, value: 0 }];
+    setLocalAccounts(updated);
     setNewName('');
+    setSaving(true);
+    try {
+      await updateCustomRates(updated.map(a => ({ id: a.id, name: a.name, value: a.value, enabled: true })));
+      toast.success(`Cuenta ${name} agregada`);
+    } catch {
+      toast.error('Error al guardar');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const removeAccount = (id: string) => {
-    setLocalAccounts(prev => prev.filter(a => a.id !== id));
+  const removeAccount = async (id: string) => {
+    const updated = localAccounts.filter(a => a.id !== id);
+    setLocalAccounts(updated);
+    setSaving(true);
+    try {
+      await updateCustomRates(updated.map(a => ({ id: a.id, name: a.name, value: a.value, enabled: true })));
+      toast.success('Cuenta eliminada');
+    } catch {
+      toast.error('Error al eliminar');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const currentUserProp = auth.currentUser ? {
+    uid: auth.currentUser.uid,
+    displayName: auth.currentUser.displayName,
+    photoURL: auth.currentUser.photoURL,
+  } : undefined;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      {/* ─── Rate Wall (Historial Colaborativo) ─────────────────────────── */}
-      <RateHistoryWall
-        businessId={businessId}
-        currentUser={auth.currentUser ? {
-          uid: auth.currentUser.uid,
-          displayName: auth.currentUser.displayName,
-          photoURL: auth.currentUser.photoURL,
-        } : undefined}
-      />
+      {/* ─── BCV Rate Wall ───────────────────────────────────────────────── */}
+      <RateHistoryWall businessId={businessId} currentUser={currentUserProp} />
 
-      {/* ─── Cuentas de Precio ──────────────────────────────────────────── */}
+      {/* ─── Custom Rate Walls (one per tasa) ───────────────────────────── */}
+      {hasDynamicPricing && localAccounts.map(account => (
+        <CustomRateWall
+          key={account.id}
+          businessId={businessId}
+          rateId={account.id}
+          rateName={account.name}
+          currentUser={currentUserProp}
+        />
+      ))}
+
+      {/* ─── Gestión de Cuentas ──────────────────────────────────────────── */}
       {hasDynamicPricing ? (
       <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/5 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-black text-slate-700 dark:text-white/80 uppercase tracking-widest">
-              Cuentas de Precio
-            </h3>
-            <p className="text-[10px] font-bold text-slate-400 dark:text-white/20 mt-0.5">
-              Tasas adicionales para POS Mayor e Inventario
-            </p>
-          </div>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-5 py-2 rounded-xl text-xs font-black text-white flex items-center gap-2 transition-all hover:scale-105 active:scale-95 disabled:opacity-40 shadow-md shadow-indigo-500/20"
-            style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
-          >
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-            Guardar
-          </button>
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.06]">
+          <h3 className="text-sm font-black text-slate-700 dark:text-white/80 uppercase tracking-widest">
+            Gestión de Cuentas
+          </h3>
+          <p className="text-[10px] font-bold text-slate-400 dark:text-white/20 mt-0.5">
+            Agrega o elimina tasas adicionales. El valor se publica desde el historial de cada tasa.
+          </p>
         </div>
 
         <div className="p-5 space-y-3">
@@ -106,21 +126,10 @@ const ExchangeRatesSection: React.FC = () => {
                 <span className="text-xs font-black text-slate-500 dark:text-white/30 uppercase tracking-wider min-w-[80px]">
                   {account.name}
                 </span>
-                <span className="text-[10px] font-bold text-slate-300 dark:text-white/10">Bs.</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={account.value || ''}
-                  onChange={e => {
-                    const val = Number(e.target.value);
-                    setLocalAccounts(prev => prev.map(a => a.id === account.id ? { ...a, value: val } : a));
-                  }}
-                  placeholder="0.00"
-                  className="flex-1 bg-transparent text-sm font-bold text-slate-800 dark:text-white outline-none placeholder:text-slate-300 dark:placeholder:text-white/15"
-                />
+                <span className="text-[9px] font-bold text-slate-400 dark:text-white/20 uppercase tracking-widest">{account.id}</span>
                 {account.value > 0 && (
-                  <span className="text-[9px] font-bold text-slate-400 dark:text-white/15 whitespace-nowrap">
-                    1 USD = Bs.{account.value.toFixed(2)}
+                  <span className="ml-auto text-[10px] font-bold text-slate-400 dark:text-white/30 whitespace-nowrap">
+                    Bs.{account.value.toFixed(2)}
                   </span>
                 )}
               </div>
@@ -146,16 +155,16 @@ const ExchangeRatesSection: React.FC = () => {
               value={newName}
               onChange={e => setNewName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleAddAccount()}
-              placeholder="Nombre de nueva cuenta..."
+              placeholder="Nombre de nueva cuenta (ej: PARALELA)..."
               className="flex-1 px-4 py-3 bg-slate-50 dark:bg-white/[0.03] border border-dashed border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-800 dark:text-white placeholder:text-slate-300 dark:placeholder:text-white/15 focus:ring-2 focus:ring-violet-400/20 outline-none transition-all"
             />
             <button
               onClick={handleAddAccount}
-              disabled={!newName.trim()}
+              disabled={!newName.trim() || saving}
               className="h-11 px-4 rounded-xl text-xs font-black text-white flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 disabled:opacity-20 shadow-md"
               style={{ background: 'linear-gradient(135deg,#7c3aed,#6d28d9)' }}
             >
-              <Plus size={14} />
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={14} />}
               Agregar
             </button>
           </div>

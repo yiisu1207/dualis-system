@@ -510,7 +510,9 @@ const PosContent = () => {
       try {
         const qp = query(collection(db, `businesses/${empresa_id}/products`));
         const snap = await getDocs(qp);
-        setProducts(snap.docs.map(d => {
+        setProducts(snap.docs
+          .filter(d => d.data().status !== 'pending_review')
+          .map(d => {
           const data = d.data();
           const stockByAlmacen: Record<string, number> = data.stockByAlmacen || {};
           const almacenStock = stockByAlmacen[selectedAlmacenId] ?? Number(data.stock || 0);
@@ -987,6 +989,19 @@ const PosContent = () => {
                       </p>
                     </td>
                     <td className="px-2 sm:px-5 py-2.5 sm:py-3.5">
+                      {item.unitType && item.unitType !== 'unidad' ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <input
+                            type="number"
+                            step="0.001"
+                            min="0.001"
+                            value={item.qty}
+                            onChange={e => { const v = parseFloat(e.target.value); if (v > 0) updateQty(item.id, v); }}
+                            className="w-16 text-center text-sm font-black text-slate-900 dark:text-white bg-slate-100 dark:bg-white/[0.07] rounded-lg border border-slate-200 dark:border-white/[0.08] outline-none focus:ring-2 focus:ring-indigo-400/20 py-1"
+                          />
+                          <span className="text-[9px] font-bold text-slate-400 dark:text-white/30 uppercase">{item.unitType}</span>
+                        </div>
+                      ) : (
                       <div className="flex items-center justify-center gap-1 sm:gap-2">
                         <button onClick={() => updateQty(item.id, item.qty - 1)}
                           className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors">
@@ -998,6 +1013,7 @@ const PosContent = () => {
                           <Plus size={12} strokeWidth={3} />
                         </button>
                       </div>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500 dark:text-white/50 hidden sm:table-cell">
                       ${item.priceUsd.toFixed(2)}

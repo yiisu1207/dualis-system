@@ -16,6 +16,7 @@ export type CartItem = {
   ivaRate: number;
   stock: number;
   tipoTasa?: string; // 'BCV' | customRate.id
+  unitType?: string; // 'unidad' | 'kg' | 'g' | 'ton' | 'lt' | 'ml' | 'lb'
 };
 
 type CartTotals = {
@@ -141,6 +142,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         ivaRate: resolveIvaRate(data),
         stock: Number(data.stock || 0),
         tipoTasa: productTipoTasa,
+        unitType: String(data.unitType || 'unidad'),
       };
 
       if (itemsRef.current.length === 0) {

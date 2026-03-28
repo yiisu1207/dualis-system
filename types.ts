@@ -1,7 +1,7 @@
 
 export interface User {
   username: string;
-  role: 'owner' | 'admin' | 'ventas' | 'auditor' | 'pending' | 'staff' | 'member';
+  role: 'owner' | 'admin' | 'ventas' | 'auditor' | 'pending' | 'staff' | 'member' | 'almacenista' | 'inventario';
   name: string;
   pin?: string;
   phone?: string;
@@ -65,6 +65,8 @@ export interface InventoryItem {
   minStock: number;
 }
 
+export type UnitType = 'unidad' | 'kg' | 'g' | 'ton' | 'lt' | 'ml' | 'lb';
+
 export interface Movement {
   id: string;
   entityId: string;
@@ -79,7 +81,7 @@ export interface Movement {
   movementType: MovementType;
   accountType: AccountType;
   rateUsed: number;
-  reference?: string; 
+  reference?: string;
   productId?: string;
   isSupplierMovement?: boolean;
   expenseCategory?: string;
@@ -87,6 +89,41 @@ export interface Movement {
   metodoPago?: 'Efectivo' | 'Transferencia' | string;
   montoCalculado?: number;
   originalAmount?: number;
+  // Nota de Entrega
+  esNotaEntrega?: boolean;
+  estadoNDE?: 'pendiente_despacho' | 'despachado' | 'parcial' | 'rechazado';
+  almacenId?: string;
+  bultos?: number;
+  comisionVendedor?: number;
+  comisionAlmacenista?: number;
+  despachoPor?: string;
+  despachoAt?: string;
+  despachoNotas?: string;
+  despachoItems?: {
+    id: string;
+    nombre: string;
+    qtyPedida: number;
+    qtyDespachada: number;
+  }[];
+}
+
+export interface CommissionConfig {
+  enabled: boolean;
+  perBulto: number;
+  target: 'vendedor' | 'almacenista' | 'both';
+  splitVendedor?: number;
+  splitAlmacenista?: number;
+}
+
+export interface NDEConfig {
+  enabled: boolean;
+  defaultMode: boolean;
+  footerMessage?: string;
+  showLogo: boolean;
+  showPoweredBy: boolean;
+  rejectionReasons: string[];
+  requireRejectionReason: boolean;
+  autoNotifyVendedor: boolean;
 }
 
 export interface AppConfig {

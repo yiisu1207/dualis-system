@@ -15,6 +15,7 @@ import {
 import { db } from '../firebase/config';
 import { logAudit } from '../utils/auditLogger';
 import HelpTooltip from './HelpTooltip';
+import { useAuth } from '../context/AuthContext';
 
 /* ────────────────────────────────────────────────────────────
    TYPES
@@ -190,8 +191,8 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
   advances,
   rates,
 }) => {
-  /* ── Isolation mode ── */
-  const isolationMode = localStorage.getItem('operation_isolation_mode') || 'shared';
+  /* ── Isolation mode from AuthContext (Firestore real-time) ── */
+  const { isolationMode } = useAuth();
   const isIndividual = isolationMode === 'individual';
 
   /* ── Vouchers (fetched internally for RRHH comparison) ── */

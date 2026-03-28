@@ -106,6 +106,8 @@ export default function AdminPosManager() {
   const { rates } = useRates();
   const businessId = userProfile?.businessId;
   const isAdmin = userProfile?.role === 'owner' || userProfile?.role === 'admin';
+  const isCajero = userProfile?.role === 'ventas' || userProfile?.role === 'staff' || userProfile?.role === 'member';
+  const assignedCajaId = userProfile?.assignedCajaId;
 
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,6 +170,14 @@ export default function AdminPosManager() {
     return () => unsub();
   }, [businessId]);
 
+  // ── Auto-redirect cajero to assigned terminal ─────────────────────────────────
+  useEffect(() => {
+    if (!isCajero || !assignedCajaId || loading) return;
+    const assigned = terminals.find(t => t.id === assignedCajaId);
+    if (!assigned || assigned.estado !== 'abierta' || !assigned.sessionToken) return;
+    window.location.replace(`/caja/${assigned.sessionToken}`);
+  }, [terminals, loading, isCajero, assignedCajaId]);
+
   // ── Arqueo history listener ───────────────────────────────────────────────────
   useEffect(() => {
     if (!businessId) return;
@@ -211,10 +221,13 @@ export default function AdminPosManager() {
     return { totalUSD, totalBS, activeCount, totalMovs };
   }, [terminals, rates]);
 
-  const filteredTerminals = useMemo(
-    () => terminals.filter(t => t.tipo === activeTab && activeTab !== 'historial'),
-    [terminals, activeTab]
-  );
+  const filteredTerminals = useMemo(() => {
+    let list = terminals.filter(t => t.tipo === activeTab && activeTab !== 'historial');
+    if (isCajero && assignedCajaId) {
+      list = list.filter(t => t.id === assignedCajaId);
+    }
+    return list;
+  }, [terminals, activeTab, isCajero, assignedCajaId]);
   const filteredArqueos = useMemo(() =>
     historyFilter === 'all' ? arqueoHistory : arqueoHistory.filter(a => a.terminalType === historyFilter),
     [arqueoHistory, historyFilter]
@@ -456,6 +469,22 @@ export default function AdminPosManager() {
       <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0a0f1e]">
         <Loader2 className="animate-spin text-slate-900 dark:text-white mb-4" size={36} />
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">Cargando Cajas...</p>
+      </div>
+    );
+  }
+
+  if (isCajero && !assignedCajaId) {
+    return (
+      <div className="min-h-full bg-slate-50 dark:bg-[#0a0f1e] flex items-center justify-center p-6">
+        <div className="max-w-sm text-center">
+          <div className="h-20 w-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-6">
+            <Lock size={36} className="text-amber-400" />
+          </div>
+          <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2">Sin caja asignada</h2>
+          <p className="text-sm text-slate-400 dark:text-white/40 leading-relaxed">
+            Tu administrador aún no te ha asignado una caja. Contacta al administrador para que te asigne tu terminal de trabajo.
+          </p>
+        </div>
       </div>
     );
   }

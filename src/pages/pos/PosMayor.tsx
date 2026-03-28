@@ -7,7 +7,7 @@ import { useCart, CartProvider, DiscountType, CartItem } from '../../context/Car
 import { useRates } from '../../context/RatesContext';
 import {
   collection, getDocs, query, where, addDoc, doc, updateDoc,
-  increment, getDoc, runTransaction,
+  increment, getDoc, runTransaction, onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
@@ -17,9 +17,10 @@ import {
   Scan, ShoppingCart, Search, Trash2, Plus, Minus, Receipt,
   Package, CheckCircle2, AlertTriangle, LogOut, X, Banknote,
   Smartphone, Layers, ArrowLeftRight, User, Clock, Camera, History,
-  Tag, MessageCircle, Printer, WifiOff, Pause, Play, CreditCard,
+  Tag, MessageCircle, Printer, WifiOff, Pause, Play, CreditCard, Truck, ClipboardList,
 } from 'lucide-react';
 import ReceiptModal from '../../components/ReceiptModal';
+import NDEReceiptModal from '../../components/NDEReceiptModal';
 import { getNextNroControl } from '../../utils/facturaUtils';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import SaleHistoryPanel from '../../components/SaleHistoryPanel';
@@ -512,6 +513,13 @@ const PosContent = () => {
   const [almacenes, setAlmacenes] = useState<{ id: string; nombre: string; activo: boolean }[]>([]);
   const [selectedAlmacenId, setSelectedAlmacenId] = useState<string>('principal');
 
+  // NDE (Nota de Entrega) mode
+  const [ndeConfig, setNdeConfig] = useState<{ enabled: boolean; defaultMode: boolean; showLogo?: boolean; showPoweredBy?: boolean; footerMessage?: string }>({ enabled: false, defaultMode: false, showLogo: true, showPoweredBy: true });
+  const [commissions, setCommissions] = useState<{ enabled: boolean; perBulto: number; target: string; splitVendedor?: number; splitAlmacenista?: number }>({ enabled: false, perBulto: 0, target: 'vendedor' });
+  const [modoNDE, setModoNDE] = useState(false);
+  const [itemBultos, setItemBultos] = useState<Record<string, number>>({});
+  const [lastNDE, setLastNDE] = useState<any>(null);
+
   // Live clock
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -563,6 +571,21 @@ const PosContent = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresa_id]);
 
+  // Load businessConfigs (NDE config + commissions) in real-time
+  useEffect(() => {
+    if (!empresa_id) return;
+    const unsub = onSnapshot(doc(db, 'businessConfigs', empresa_id), snap => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      if (data.ndeConfig) {
+        setNdeConfig(prev => ({ ...prev, ...data.ndeConfig }));
+        if (data.ndeConfig.defaultMode) setModoNDE(true);
+      }
+      if (data.commissions) setCommissions(data.commissions);
+    }, () => {});
+    return () => unsub();
+  }, [empresa_id]);
+
   // Load products + clients
   useEffect(() => {
     if (!empresa_id) return;
@@ -570,7 +593,9 @@ const PosContent = () => {
       try {
         const qp = query(collection(db, `businesses/${empresa_id}/products`));
         const snap = await getDocs(qp);
-        setProducts(snap.docs.map(d => {
+        setProducts(snap.docs
+          .filter(d => d.data().status !== 'pending_review')
+          .map(d => {
           const data = d.data();
           const mayorPrice = Number(data.precioMayor || data.wholesalePrice || 0);
           // Merge legacy fields into preciosCuenta
@@ -833,6 +858,14 @@ const PosContent = () => {
         pagado: true,
         estadoPago: 'PAGADO',
         esVentaContado: true,
+        // NDE fields
+        ...(modoNDE && {
+          esNotaEntrega: true,
+          estadoNDE: 'pendiente_despacho',
+          almacenId: selectedAlmacenId,
+          bultos: totalBultos,
+          comisionVendedor: calcComisionVendedor(totalBultos),
+        }),
       };
 
       await addDoc(collection(db, 'movements'), movementPayload);
@@ -869,14 +902,19 @@ const PosContent = () => {
         });
       }
 
-      setLastMovement(movementPayload);
+      if (modoNDE) {
+        setLastNDE(movementPayload);
+      } else {
+        setLastMovement(movementPayload);
+      }
       clearCart();
+      setItemBultos({});
       setCustomer(null);
       setClientQuery('');
       setConsumidorFinal(false);
       setPaymentCondition('contado');
       setShowPaymentModal(false);
-      setSuccess('Venta registrada!');
+      setSuccess(modoNDE ? 'Nota de Entrega generada!' : 'Venta registrada!');
       setTimeout(() => setSuccess(''), 3500);
     } catch (err) {
       console.error(err);
@@ -970,11 +1008,19 @@ const PosContent = () => {
         pagado: false,
         estadoPago: 'PENDIENTE',
         esVentaContado: false,
+        // NDE fields
+        ...(modoNDE && {
+          esNotaEntrega: true,
+          estadoNDE: 'pendiente_despacho',
+          almacenId: selectedAlmacenId,
+          bultos: totalBultos,
+          comisionVendedor: calcComisionVendedor(totalBultos),
+        }),
       };
 
       await addDoc(collection(db, 'movements'), movementPayload);
 
-      // Update stock — floor at 0, never negative
+      // Update stock — floor at 0, never negative (NDE reserves stock immediately)
       const almacenKey = almacenes.length > 0 ? selectedAlmacenId : 'principal';
       for (const item of items) {
         await runTransaction(db, async (txn) => {
@@ -1006,13 +1052,18 @@ const PosContent = () => {
         });
       }
 
-      setLastMovement(movementPayload);
+      if (modoNDE) {
+        setLastNDE(movementPayload);
+      } else {
+        setLastMovement(movementPayload);
+      }
       clearCart();
+      setItemBultos({});
       setCustomer(null);
       setClientQuery('');
       setConsumidorFinal(false);
       setPaymentCondition('contado');
-      setSuccess('Venta a crédito registrada!');
+      setSuccess(modoNDE ? 'Nota de Entrega (crédito) generada!' : 'Venta a crédito registrada!');
       setTimeout(() => setSuccess(''), 3500);
     } catch (err) {
       console.error(err);
@@ -1021,6 +1072,15 @@ const PosContent = () => {
     } finally {
       setPaymentLoading(false);
     }
+  };
+
+  const totalBultos = useMemo(() => Object.values(itemBultos).reduce((s: number, v: number) => s + (v || 0), 0), [itemBultos]);
+
+  const calcComisionVendedor = (bultos: number): number => {
+    if (!commissions.enabled || !bultos) return 0;
+    if (commissions.target === 'almacenista') return 0;
+    const base = bultos * commissions.perBulto;
+    return commissions.target === 'both' ? base * ((commissions.splitVendedor ?? 50) / 100) : base;
   };
 
   const canChargeContado = items.length > 0 && (!!customer || consumidorFinal);
@@ -1185,6 +1245,18 @@ const PosContent = () => {
             </div>
           )}
 
+          {/* NDE mode toggle */}
+          {ndeConfig.enabled && (
+            <button
+              onClick={() => setModoNDE(v => !v)}
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-black uppercase tracking-wider transition-all ${modoNDE ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-white/[0.04] border-white/10 text-slate-400 hover:border-white/20'}`}
+              title={modoNDE ? 'Modo Nota de Entrega activo' : 'Activar modo Nota de Entrega'}
+            >
+              <Truck size={11} />
+              {modoNDE ? 'Modo NDE' : 'Cobro Directo'}
+            </button>
+          )}
+
         </div>
       </header>
 
@@ -1273,6 +1345,7 @@ const PosContent = () => {
                 <tr>
                   <th className="px-3 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07]">Producto</th>
                   <th className="px-2 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-center">Cant.</th>
+                  {modoNDE && <th className="px-2 sm:px-3 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-center text-amber-400">Bultos</th>}
                   <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right hidden sm:table-cell">P/U</th>
                   <th className="px-3 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right">Total</th>
                   <th className="px-2 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] w-8 sm:w-auto" />
@@ -1281,7 +1354,7 @@ const PosContent = () => {
               <tbody className="divide-y divide-slate-50">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-5 py-16 sm:py-24 text-center pointer-events-none select-none">
+                    <td colSpan={modoNDE ? 6 : 5} className="px-5 py-16 sm:py-24 text-center pointer-events-none select-none">
                       <div className="inline-flex h-14 w-14 sm:h-16 sm:w-16 rounded-3xl bg-slate-50 dark:bg-slate-800/50 items-center justify-center mb-3 sm:mb-4">
                         <ShoppingCart size={24} className="text-slate-300 sm:hidden" />
                         <ShoppingCart size={28} className="text-slate-300 hidden sm:block" />
@@ -1299,6 +1372,19 @@ const PosContent = () => {
                       </p>
                     </td>
                     <td className="px-2 sm:px-5 py-2.5 sm:py-3.5">
+                      {item.unitType && item.unitType !== 'unidad' ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <input
+                            type="number"
+                            step="0.001"
+                            min="0.001"
+                            value={item.qty}
+                            onChange={e => { const v = parseFloat(e.target.value); if (v > 0) updateQty(item.id, v); }}
+                            className="w-16 text-center text-sm font-black text-slate-900 dark:text-white bg-slate-100 dark:bg-white/[0.07] rounded-lg border border-slate-200 dark:border-white/[0.08] outline-none focus:ring-2 focus:ring-violet-400/20 py-1"
+                          />
+                          <span className="text-[9px] font-bold text-slate-400 dark:text-white/30 uppercase">{item.unitType}</span>
+                        </div>
+                      ) : (
                       <div className="flex items-center justify-center gap-1 sm:gap-2">
                         <button onClick={() => updateQty(item.id, item.qty - 1)}
                           className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors">
@@ -1310,7 +1396,18 @@ const PosContent = () => {
                           <Plus size={12} strokeWidth={3} />
                         </button>
                       </div>
+                      )}
                     </td>
+                    {modoNDE && (
+                      <td className="px-2 sm:px-3 py-2.5 sm:py-3.5">
+                        <input
+                          type="number" min="0" step="1"
+                          value={itemBultos[item.id] ?? 0}
+                          onChange={e => setItemBultos(prev => ({ ...prev, [item.id]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                          className="w-12 text-center bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs font-black text-amber-300 outline-none focus:ring-1 focus:ring-amber-500 py-1"
+                        />
+                      </td>
+                    )}
                     <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500 dark:text-white/50 hidden sm:table-cell">
                       ${item.priceUsd.toFixed(2)}
                     </td>
@@ -1586,20 +1683,31 @@ const PosContent = () => {
                 )}
               </div>
 
+              {/* NDE mode indicator */}
+              {modoNDE && (
+                <div className="rounded-xl p-2.5 bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 mb-1">
+                  <Truck size={12} className="text-amber-400 shrink-0" />
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-400">Modo Nota de Entrega</p>
+                    {totalBultos > 0 && <p className="text-[9px] text-amber-300/70">{totalBultos} bulto{totalBultos !== 1 ? 's' : ''} · Stock se reserva ahora</p>}
+                  </div>
+                </div>
+              )}
+
               {/* Action buttons: Cobrar (contado) or Registrar Crédito */}
               {isCredit ? (
                 <button
                   disabled={!canChargeCredit || paymentLoading}
                   onClick={handleCreditSale}
-                  className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canChargeCredit && !paymentLoading ? 'bg-white text-violet-900 hover:bg-amber-400 hover:text-slate-900 shadow-xl hover:scale-[1.02]' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
-                  {paymentLoading ? 'Procesando...' : <><CreditCard size={16} />Registrar Venta a Crédito</>}
+                  className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canChargeCredit && !paymentLoading ? (modoNDE ? 'bg-amber-400 text-slate-900 hover:bg-amber-300 shadow-xl hover:scale-[1.02]' : 'bg-white text-violet-900 hover:bg-amber-400 hover:text-slate-900 shadow-xl hover:scale-[1.02]') : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
+                  {paymentLoading ? 'Procesando...' : modoNDE ? <><ClipboardList size={16} />Generar NDE a Crédito</> : <><CreditCard size={16} />Registrar Venta a Crédito</>}
                 </button>
               ) : (
                 <button
                   disabled={!canChargeContado}
                   onClick={() => setShowPaymentModal(true)}
-                  className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canChargeContado ? 'bg-white text-violet-900 hover:bg-emerald-400 hover:text-white shadow-xl hover:scale-[1.02]' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
-                  <Receipt size={16} />Cobrar
+                  className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canChargeContado ? (modoNDE ? 'bg-amber-400 text-slate-900 hover:bg-amber-300 shadow-xl hover:scale-[1.02]' : 'bg-white text-violet-900 hover:bg-emerald-400 hover:text-white shadow-xl hover:scale-[1.02]') : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
+                  {modoNDE ? <><ClipboardList size={16} />Generar NDE</> : <><Receipt size={16} />Cobrar</>}
                 </button>
               )}
               {items.length > 0 && (
@@ -1663,6 +1771,17 @@ const PosContent = () => {
           config={{ companyName: userProfile?.fullName || 'Mi Negocio' } as any}
           customerPhone={!consumidorFinal ? (customer?.telefono || customer?.phone || '') : ''}
           onClose={() => setLastMovement(null)}
+        />
+      )}
+
+      {/* ── NDE RECEIPT MODAL ──────────────────────────────────────────────── */}
+      {lastNDE && (
+        <NDEReceiptModal
+          movement={lastNDE}
+          businessId={empresa_id}
+          customerPhone={customer?.telefono || customer?.phone || ''}
+          ndeConfig={ndeConfig}
+          onClose={() => setLastNDE(null)}
         />
       )}
 

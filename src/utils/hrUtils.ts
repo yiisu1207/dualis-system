@@ -48,7 +48,7 @@ function calcDateRange(frequency: string, refDate?: Date): { from: string; to: s
 }
 
 /** Imprimir hoja de vales de un empleado */
-export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi Negocio') {
+export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi Negocio', businessLogo = '') {
   const w = window.open('', '_blank', 'width=794,height=1123');
   if (!w) return;
   const pending = vouchers.filter((v: any) => v.status === 'PENDIENTE');
@@ -77,7 +77,12 @@ export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi 
   .sigs{display:grid;grid-template-columns:1fr 1fr;gap:60px;margin-top:50px}
   .sig-line{border-top:1px solid #111;padding-top:6px;font-size:10px;color:#666;text-align:center}
   .sig-sub{text-align:center;font-size:9px;color:#aaa;margin-top:3px}
-  .footer{margin-top:32px;text-align:center;font-size:9px;color:#ccc;letter-spacing:.08em;text-transform:uppercase}
+  .footer{margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center}
+  .footer-brand{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:6px}
+  .footer-logo{height:24px;object-fit:contain}
+  .footer-icon{width:24px;height:24px;border-radius:6px;background:#4f46e5;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:900;flex-shrink:0}
+  .footer-biz{font-size:13px;font-weight:900;color:#1e293b}
+  .footer-sub{font-size:10px;color:#94a3b8;margin:0}
   @media print{body{padding:18px}}
 </style></head><body>
 <div class="header">
@@ -111,8 +116,8 @@ export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi 
       <td class="tc"><span class="badge ${v.status==='PENDIENTE'?'bp':v.status==='CORREGIDO'?'bc':'bd'}">${v.status}</span></td>
     </tr>`).join('')}
     <tr class="total-row">
-      <td colspan="3">TOTALES PENDIENTES (${pending.length} vales)</td>
-      <td class="tr">${totalUSD>0?'$'+fmtHR(totalUSD):''}${totalUSD>0&&totalBs>0?' / ':''}${totalBs>0?'Bs '+fmtHR(totalBs):''}</td>
+      <td colspan="3">TOTALES PENDIENTES (${pending.length} vales)${totalUSD>0||totalBs>0?`<br><span style="font-size:9px;font-weight:400;color:#666">${totalUSD>0?'$'+fmtHR(totalUSD)+' USD':''}${totalUSD>0&&totalBs>0?' &nbsp;·&nbsp; ':''}${totalBs>0?'Bs '+fmtHR(totalBs):''}</span>`:''}</td>
+      <td></td>
       <td></td>
       <td class="tr">$${fmtHR(totalEquivUSD)}</td>
       <td></td>
@@ -123,7 +128,16 @@ export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi 
   <div><div class="sig-line">Firma del Empleado</div><div class="sig-sub">${emp.fullName} · ${emp.cedula||'S/N'}</div></div>
   <div><div class="sig-line">Autorizado por</div><div class="sig-sub">Administración / RRHH</div></div>
 </div>
-<div class="footer">con tecnología Dualis</div>
+<div class="footer">
+  <div class="footer-brand">
+    ${businessLogo
+      ? `<img src="${businessLogo}" class="footer-logo" alt="${businessName}" />`
+      : `<div class="footer-icon">${businessName[0]?.toUpperCase() || 'D'}</div>`
+    }
+    <span class="footer-biz">${businessName}</span>
+  </div>
+  <p class="footer-sub">Reporte generado con <strong style="color:#6366f1">Dualis ERP</strong> &nbsp;·&nbsp; dualis.app</p>
+</div>
 </body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 400);

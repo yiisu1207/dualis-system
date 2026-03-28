@@ -1,7 +1,22 @@
-import { Movement, MovementType, ExchangeRates, AccountType } from '../../../types';
+import { Movement, MovementType, ExchangeRates, AccountType, CustomRate } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
 
-export type TabFilter = 'ALL' | AccountType;
+export type TabFilter = 'ALL' | string;
+
+export function getDistinctAccounts(movements: Movement[]): string[] {
+  const seen = new Set<string>();
+  movements.forEach((m) => { if (m.accountType) seen.add(m.accountType as string); });
+  return [...seen].sort();
+}
+
+export function buildAccountLabels(
+  accounts: string[],
+  customRates: CustomRate[]
+): Record<string, string> {
+  const base: Record<string, string> = { BCV: 'BCV', GRUPO: 'Grupo', DIVISA: 'Divisa' };
+  customRates.forEach((r) => { base[r.id] = r.name; });
+  return Object.fromEntries(accounts.map((a) => [a, base[a] ?? a]));
+}
 export type RangeFilter = 'ALL' | 'SINCE_ZERO' | 'SINCE_LAST_DEBT' | 'CUSTOM';
 export type ViewStyle = 'dualis' | 'excel';
 

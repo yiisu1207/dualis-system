@@ -10,7 +10,7 @@ interface UserProfile {
   email: string;
   businessId: string; // 👈 LA CLAVE: Esto conecta al usuario con SU empresa
   empresa_id?: string;
-  role: 'owner' | 'admin' | 'ventas' | 'auditor' | 'pending' | 'staff' | 'member';
+  role: 'owner' | 'admin' | 'ventas' | 'auditor' | 'pending' | 'staff' | 'member' | 'almacenista' | 'inventario';
   fullName: string;
   displayName?: string;
   bio?: string;
@@ -23,6 +23,7 @@ interface UserProfile {
   language?: 'es' | 'en' | 'ar' | string;
   status?: 'ACTIVE' | 'PENDING' | string;
   uiVersion?: 'classic' | 'editorial';
+  assignedCajaId?: string;  // caja asignada para rol 'ventas'
 }
 
 // Creamos el contexto
@@ -30,8 +31,9 @@ const AuthContext = createContext<{
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
+  isolationMode: 'individual' | 'shared';
   updateUserProfile: (patch: Partial<UserProfile>) => void;
-}>({ user: null, userProfile: null, loading: true, updateUserProfile: () => undefined });
+}>({ user: null, userProfile: null, loading: true, isolationMode: 'shared', updateUserProfile: () => undefined });
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -45,6 +47,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     userProfile: null,
     loading: true,
   });
+
+  const [isolationMode, setIsolationMode] = useState<'individual' | 'shared'>('shared');
 
   const updateUserProfile = (patch: Partial<UserProfile>) => {
     setAuthState((prev) => ({
@@ -255,12 +259,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [authState.userProfile?.country, authState.userProfile?.language]);
 
+  // Listen to businessConfigs for isolation mode — global real-time sync for all users
+  useEffect(() => {
+    const businessId = authState.userProfile?.businessId;
+    if (!businessId) return;
+    const unsub = onSnapshot(doc(db, 'businessConfigs', businessId), snap => {
+      if (snap.exists()) {
+        const personalBooks = snap.data()?.features?.personalBooks;
+        const mode: 'individual' | 'shared' = personalBooks ? 'individual' : 'shared';
+        setIsolationMode(mode);
+        // Keep localStorage in sync for backward compat
+        localStorage.setItem('operation_isolation_mode', mode);
+      }
+    }, () => {});
+    return () => unsub();
+  }, [authState.userProfile?.businessId]);
+
   return (
-    <AuthContext.Provider value={{ 
-      user: authState.user, 
-      userProfile: authState.userProfile, 
-      loading: authState.loading, 
-      updateUserProfile 
+    <AuthContext.Provider value={{
+      user: authState.user,
+      userProfile: authState.userProfile,
+      loading: authState.loading,
+      isolationMode,
+      updateUserProfile
     }}>
       {!authState.loading && children}
     </AuthContext.Provider>

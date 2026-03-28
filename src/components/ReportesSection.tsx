@@ -189,26 +189,28 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
 
   // Comisiones por vendedor (solo FACTURA, período activo)
   const comisionesPorVendedor = useMemo(() => {
-    const map: Record<string, { nombre: string; ventas: number; count: number }> = {};
+    const map: Record<string, { nombre: string; ventas: number; count: number; comisionBultos: number }> = {};
     filtered
       .filter(m => m.movementType === MovementType.FACTURA && !(m as any).isSupplierMovement)
       .forEach(m => {
         const key = (m as any).vendedorId || 'sin_vendedor';
         const nombre = (m as any).vendedorNombre || 'Sin asignar';
-        if (!map[key]) map[key] = { nombre, ventas: 0, count: 0 };
+        if (!map[key]) map[key] = { nombre, ventas: 0, count: 0, comisionBultos: 0 };
         map[key].ventas += (m.amountInUSD || 0);
         map[key].count += 1;
+        map[key].comisionBultos += ((m as any).comisionVendedor || 0);
       });
     return Object.values(map)
       .sort((a, b) => b.ventas - a.ventas)
       .map(v => ({
         ...v,
         comision: v.ventas * (comisionRate / 100),
+        comisionTotal: v.ventas * (comisionRate / 100) + v.comisionBultos,
       }));
   }, [filtered, comisionRate]);
 
   const totalComisiones = useMemo(
-    () => comisionesPorVendedor.reduce((s, v) => s + v.comision, 0),
+    () => comisionesPorVendedor.reduce((s, v) => s + v.comisionTotal, 0),
     [comisionesPorVendedor],
   );
 
@@ -543,7 +545,9 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
                   <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07]">Vendedor</th>
                   <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07] text-right">Ventas</th>
                   <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07] text-center">Transacciones</th>
-                  <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07] text-right">Comisión ({comisionRate}%)</th>
+                  <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07] text-right">Com. %</th>
+                  <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07] text-right">Com. Bultos</th>
+                  <th className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07] text-right">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -562,7 +566,13 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
                       <span className="text-[11px] font-black text-slate-500 bg-slate-100 dark:bg-white/[0.07] px-2.5 py-1 rounded-xl">{v.count}</span>
                     </td>
                     <td className="px-6 py-3.5 text-right">
-                      <span className="text-[14px] font-black text-amber-600">{fmt(v.comision)}</span>
+                      <span className="text-sm font-black text-slate-600 dark:text-slate-300">{fmt(v.comision)}</span>
+                    </td>
+                    <td className="px-6 py-3.5 text-right">
+                      <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{fmt(v.comisionBultos)}</span>
+                    </td>
+                    <td className="px-6 py-3.5 text-right">
+                      <span className="text-[14px] font-black text-amber-600">{fmt(v.comisionTotal)}</span>
                     </td>
                   </tr>
                 ))}
