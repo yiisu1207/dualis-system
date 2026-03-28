@@ -29,6 +29,7 @@ import { useSubscription } from '../hooks/useSubscription';
 import { VendorProvider } from '../context/VendorContext';
 import { findInvitationByToken } from '../firebase/api';
 import OpsMonitor from '../pages/OpsMonitor';
+import { useSubdomain } from '../context/SubdomainContext';
 import { CartProvider } from '../context/CartContext';
 import PortalGuard from '../portal/PortalGuard';
 import PortalDashboard from '../portal/PortalDashboard';
@@ -50,12 +51,25 @@ function resolveTenantId(profile: { empresa_id?: string; businessId?: string } |
 
 function AuthEntry({ children }: { children: React.ReactNode }) {
   const { user, userProfile, loading } = useAuth();
+  const subdomain = useSubdomain();
 
-  if (loading) {
-    return <div className="h-screen flex items-center justify-center">Cargando...</div>;
+  if (loading || subdomain.loading) {
+    return <div className="h-screen flex items-center justify-center bg-[#070b14]"><div className="w-6 h-6 border-2 border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" /></div>;
   }
 
+  const isSubdomain = !!(subdomain.slug && subdomain.businessId);
+
   if (!user) {
+    // En subdomain: siempre mostrar Login (no landing, no register)
+    if (isSubdomain) {
+      const path = window.location.pathname;
+      if (path === '/login') return <>{children}</>;
+      // Cualquier otra ruta en subdomain → redirect a login
+      return <Navigate to="/login" replace />;
+    }
+    // En main domain: /login ya no existe → redirect a landing
+    const path = window.location.pathname;
+    if (path === '/login') return <Navigate to="/" replace />;
     return <>{children}</>;
   }
 
@@ -82,6 +96,14 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
   }
 
   return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
+}
+
+/** En subdomain: bloquea rutas que no son login ni join */
+function SubdomainGuard({ children, fallback }: { children: React.ReactNode; fallback?: string }) {
+  const subdomain = useSubdomain();
+  const isSubdomain = !!(subdomain.slug && subdomain.businessId);
+  if (isSubdomain) return <Navigate to={fallback || '/login'} replace />;
+  return <>{children}</>;
 }
 
 function OnboardingGate() {
@@ -311,10 +333,10 @@ export default function AppRouter() {
       {/* Rutas públicas */}
       <Route path="/" element={<AuthEntry><LandingPage /></AuthEntry>} />
       <Route path="/login" element={<AuthEntry><Login /></AuthEntry>} />
-      <Route path="/register" element={<AuthEntry><Register /></AuthEntry>} />
+      <Route path="/register" element={<SubdomainGuard><AuthEntry><Register /></AuthEntry></SubdomainGuard>} />
       <Route path="/join" element={<JoinPage />} />
-      <Route path="/terms" element={<Terms />} />
-      <Route path="/privacy" element={<Privacy />} />
+      <Route path="/terms" element={<SubdomainGuard><Terms /></SubdomainGuard>} />
+      <Route path="/privacy" element={<SubdomainGuard><Privacy /></SubdomainGuard>} />
       {/* Internal ops panel — PIN-protected, path from env */}
       <Route path={`/${import.meta.env.VITE_SUPER_ADMIN_PATH ?? 'ctrl-9x7b'}`} element={<SuperAdminPanel />} />
       {/* Ops monitor — passkey-only anonymous access */}

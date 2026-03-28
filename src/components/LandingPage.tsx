@@ -278,7 +278,6 @@ export default function LandingPage() {
                 <span className="text-[9px] font-black text-amber-400">BCV {bcvRate}</span>
               </div>
             )}
-            <button onClick={() => navigate('/login')} className="hidden sm:block px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-white hover:bg-white/[0.06] transition-all">Entrar</button>
             <button onClick={() => navigate('/register')} className="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all hover:-translate-y-0.5 active:scale-95"
               style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', boxShadow: '0 8px 25px -6px rgba(99,102,241,.55)' }}>Empezar gratis</button>
           </div>
@@ -772,7 +771,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-10" data-reveal>
             <span className="text-[10px] font-black uppercase tracking-[0.3em] text-sky-400 block mb-3">Modulos del Sistema</span>
-            <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] text-white">19 modulos. <span className="text-white/[0.18]">Un solo login.</span></h2>
+            <h2 className="text-4xl md:text-5xl font-black tracking-[-0.04em] text-white">19 modulos. <span className="text-white/[0.18]">Una sola plataforma.</span></h2>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {MODULES.map((m, i) => {
@@ -1103,6 +1102,20 @@ export default function LandingPage() {
               Hablar con un asesor <ChevronRight size={18} />
             </a>
           </div>
+        </div>
+      </section>
+
+      {/* ══ ALREADY HAVE AN ACCOUNT BANNER ═════════════════════════════════════ */}
+      <section className="py-14 bg-gradient-to-r from-indigo-950/40 via-[#070b14] to-violet-950/40 border-y border-white/[0.06]">
+        <div className="max-w-3xl mx-auto px-6 text-center">
+          <Building2 size={28} className="text-indigo-400/60 mx-auto mb-3" />
+          <h3 className="text-xl md:text-2xl font-black text-white mb-2">¿Ya tienes cuenta?</h3>
+          <p className="text-white/30 text-sm mb-4">Accede a tu sistema desde el link personalizado de tu empresa.</p>
+          <div className="inline-flex items-center gap-2 px-5 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
+            <Globe size={14} className="text-indigo-400/60" />
+            <span className="text-sm font-mono font-bold text-indigo-400">tuempresa.dualis.online</span>
+          </div>
+          <p className="text-[10px] text-white/15 mt-3">Todos los miembros acceden desde el subdominio de su empresa.</p>
         </div>
       </section>
 

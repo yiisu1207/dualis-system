@@ -182,7 +182,7 @@ function buildWelcomeHtml(name: string, _businessId: string, customUrl?: string)
     </table>
 
     <!-- Acceso -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;margin:0 0 16px;">
       <tr>
         <td style="padding:28px 32px;">
           <p style="margin:0 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:4px;color:rgba(255,255,255,0.22);">C&oacute;mo acceder</p>
@@ -190,8 +190,32 @@ function buildWelcomeHtml(name: string, _businessId: string, customUrl?: string)
             Inicia sesi&oacute;n con tu correo y contrase&ntilde;a
           </p>
           <p style="margin:0;font-size:14px;color:${BRAND.textMuted};">
-            Accede desde tu URL personalizada <a href="${urlHref}" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">${urlDisplay}</a> o desde <a href="https://dualis.online" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">dualis.online</a>.
+            T&uacute; y todo tu equipo acceden <strong>exclusivamente</strong> desde <a href="${urlHref}" style="color:${BRAND.accent};text-decoration:none;font-weight:700;">${urlDisplay}</a>. No hay login en dualis.online.
           </p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Invitar equipo -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;margin:0 0 16px;">
+      <tr>
+        <td style="padding:28px 32px;">
+          <p style="margin:0 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:4px;color:rgba(255,255,255,0.22);">Invitar a tu equipo</p>
+          <p style="margin:0 0 8px;font-size:14px;color:${BRAND.textMuted};line-height:1.7;">
+            Desde <strong style="color:${BRAND.textPrimary};">Configuraci&oacute;n &rarr; Equipo</strong>, env&iacute;a invitaciones por correo. Cada miembro recibir&aacute; un enlace para registrarse y acceder desde <strong style="color:${BRAND.accent};">${urlDisplay}</strong>.
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Reglas -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:20px;">
+      <tr>
+        <td style="padding:28px 32px;">
+          <p style="margin:0 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:4px;color:rgba(255,255,255,0.22);">Importante</p>
+          <p style="margin:0 0 6px;font-size:14px;color:${BRAND.textMuted};line-height:1.7;">&#8226; Tus datos est&aacute;n cifrados y aislados de otras empresas.</p>
+          <p style="margin:0 0 6px;font-size:14px;color:${BRAND.textMuted};line-height:1.7;">&#8226; Prueba gratuita de 30 d&iacute;as con acceso a todos los m&oacute;dulos.</p>
+          <p style="margin:0;font-size:14px;color:${BRAND.textMuted};line-height:1.7;">&#8226; Soporte disponible por WhatsApp y correo en espa&ntilde;ol.</p>
         </td>
       </tr>
     </table>

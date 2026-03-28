@@ -407,7 +407,13 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 </div>
 
                 <button
-                  onClick={() => nav('/login')}
+                  onClick={() => {
+                    if (subdomain.slug) {
+                      window.location.href = `https://${subdomain.slug}.dualis.online/login`;
+                    } else {
+                      nav('/');
+                    }
+                  }}
                   className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all"
                 >
                   Iniciar sesión <ArrowRight size={16} />
@@ -445,10 +451,16 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 </div>
 
                 <button
-                  onClick={() => nav('/login')}
+                  onClick={() => {
+                    if (subdomain.slug) {
+                      window.location.href = `https://${subdomain.slug}.dualis.online/login`;
+                    } else {
+                      nav('/');
+                    }
+                  }}
                   className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all"
                 >
-                  Ir al inicio de sesión <ArrowRight size={16} />
+                  {subdomain.slug ? 'Ir a iniciar sesión' : 'Volver al inicio'} <ArrowRight size={16} />
                 </button>
               </>
             )}
@@ -653,9 +665,15 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 >
                   <MessageCircle size={16} /> Enviar comprobante por WhatsApp
                 </a>
-                <button onClick={() => nav('/login')}
+                <button onClick={() => {
+                    if (successSlug) {
+                      window.location.href = `https://${successSlug}.dualis.online/login`;
+                    } else {
+                      nav('/');
+                    }
+                  }}
                   className="w-full text-xs text-white/20 hover:text-white/40 transition-colors py-2">
-                  Ya envié el comprobante — Ir al login
+                  {successSlug ? `Ya envié — Ir a ${successSlug}.dualis.online` : 'Ya envié el comprobante — Volver al inicio'}
                 </button>
               </>
             ) : (
@@ -691,10 +709,16 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
                 </div>
 
                 <button
-                  onClick={() => nav('/login')}
+                  onClick={() => {
+                    if (successSlug) {
+                      window.location.href = `https://${successSlug}.dualis.online/login`;
+                    } else {
+                      nav('/');
+                    }
+                  }}
                   className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 transition-all"
                 >
-                  Entendido — Iniciar sesión <ArrowRight size={16} />
+                  {successSlug ? <>Ir a {successSlug}.dualis.online <ArrowRight size={16} /></> : <>Volver al inicio <ArrowRight size={16} /></>}
                 </button>
               </>
             )}

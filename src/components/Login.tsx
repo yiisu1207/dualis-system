@@ -5,20 +5,13 @@ import { doc, getDoc } from 'firebase/firestore';
 import { startAuthentication } from '@simplewebauthn/browser';
 import {
   Mail, Lock, Loader2, Building2, Eye, EyeOff, Fingerprint,
-  ArrowRight, Zap, BarChart3, Shield, Users, X, CheckCircle2, ArrowLeft,
+  ArrowRight, X, CheckCircle2,
 } from 'lucide-react';
 import ReCAPTCHA from 'react-google-recaptcha';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSubdomain } from '../context/SubdomainContext';
 import ModeToggle from './ModeToggle';
-
-const FEATURES = [
-  { icon: Zap,        label: 'POS en tiempo real',     desc: 'Factura en segundos, sin cortes' },
-  { icon: BarChart3,  label: 'Dashboard inteligente',  desc: 'KPIs, flujo de caja y métricas en vivo' },
-  { icon: Shield,     label: 'Multi-tenant seguro',    desc: 'Datos aislados y cifrados por empresa' },
-  { icon: Users,      label: 'Roles granulares',       desc: 'Owner, Admin, Ventas, Auditor y más' },
-];
 
 const RATE_KEY  = 'login_rate_limit_v1';
 const MAX_ATT   = 5;
@@ -140,91 +133,51 @@ export default function Login() {
   /* ═══════════════════════════════════════════════════════
      RENDER
   ═══════════════════════════════════════════════════════ */
+  /* ── Si no estamos en subdomain, no debería verse el login ── */
+  if (!isSubdomain) {
+    return (
+      <div className="min-h-screen bg-[#07091a] flex items-center justify-center px-4">
+        <div className="text-center max-w-sm">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto mb-4">
+            <Building2 size={28} className="text-indigo-400" />
+          </div>
+          <h1 className="text-xl font-black text-white mb-2">Accede desde tu empresa</h1>
+          <p className="text-white/35 text-sm mb-6">Ingresa a tu sistema desde el link personalizado de tu empresa:</p>
+          <div className="px-4 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl mb-6">
+            <p className="text-sm font-mono text-indigo-400">tuempresa.dualis.online</p>
+          </div>
+          <button onClick={() => nav('/')} className="text-xs font-bold text-white/30 hover:text-white/50 transition-colors">
+            ← Volver al inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex bg-[#07091a]">
 
-      {/* ── LEFT BRAND PANEL ────────────────────────────── */}
-      <div className="hidden lg:flex w-[52%] flex-col justify-between relative overflow-hidden p-16">
-
-        {/* Atmospheric blobs */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-[20%] -left-[10%]  w-[70%] h-[70%] rounded-full bg-indigo-600/25  blur-[120px]" />
-          <div className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] rounded-full bg-violet-600/20  blur-[100px]" />
-          <div className="absolute top-[38%] left-[28%]    w-[40%] h-[40%] rounded-full bg-blue-600/12    blur-[80px]" />
-        </div>
-
-        {/* Grid */}
-        <div className="absolute inset-0 opacity-[0.035]"
-          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
-
-        {/* Floating dots */}
-        <div className="absolute top-[23%] right-[14%] w-3 h-3 rounded-full bg-indigo-400/50  animate-pulse" />
-        <div className="absolute top-[58%] left-[6%]   w-2 h-2 rounded-full bg-violet-400/50  animate-pulse [animation-delay:1s]" />
-        <div className="absolute bottom-[30%] right-[26%] w-4 h-4 rounded-full bg-blue-400/30 animate-pulse [animation-delay:0.5s]" />
-
-        {/* Logo */}
-        <div className="relative z-10 flex items-center gap-3">
-          <img src="/logo.png" alt="Dualis" className="h-11 w-auto drop-shadow-lg" />
-          <div>
-            <p className="text-white font-black text-xl tracking-tight">Dualis ERP</p>
-            <p className="text-white/25 text-[9px] font-bold uppercase tracking-widest">Sistema Empresarial</p>
-          </div>
-        </div>
-
-        {/* Hero copy */}
-        <div className="relative z-10 space-y-10">
-          <div>
-            <h2 className="text-[3.5rem] font-black text-white leading-[1.05] tracking-tight">
-              Tu empresa.<br />
-              Tu ritmo.<br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-violet-400 to-blue-400">
-                Tu control.
-              </span>
-            </h2>
-            <p className="text-white/35 mt-5 text-sm leading-relaxed max-w-xs">
-              ERP diseñado para PYMEs latinoamericanas. Ventas, inventario, CxC, nómina y más en un solo lugar.
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            {FEATURES.map(({ icon: Icon, label, desc }) => (
-              <div key={label} className="flex items-center gap-4">
-                <div className="h-10 w-10 rounded-xl bg-white dark:bg-slate-900/[0.06] border border-white/10 flex items-center justify-center shrink-0">
-                  <Icon size={17} className="text-indigo-400" />
-                </div>
-                <div>
-                  <p className="text-white font-bold text-sm">{label}</p>
-                  <p className="text-white/35 text-xs">{desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="relative z-10 flex gap-10">
-          {[['500+', 'Empresas'], ['99.9%', 'Uptime'], ['4.9★', 'Calificación']].map(([v, l]) => (
-            <div key={l}>
-              <p className="text-white font-black text-2xl">{v}</p>
-              <p className="text-white/25 text-[9px] uppercase tracking-widest font-bold">{l}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── RIGHT FORM PANEL ────────────────────────────── */}
+      {/* ── CENTERED LOGIN PANEL (subdomain only) ────────── */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-14 relative">
-        <div className="absolute inset-0 lg:hidden pointer-events-none">
-          <div className="absolute -top-[15%] -right-[15%] w-[65%] h-[65%] rounded-full bg-indigo-600/10 blur-[80px]" />
+        {/* Atmospheric background */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute -top-[20%] left-1/2 -translate-x-1/2 w-[60%] h-[60%] rounded-full bg-indigo-600/15 blur-[120px]" />
+          <div className="absolute -bottom-[15%] -right-[10%] w-[50%] h-[50%] rounded-full bg-violet-600/10 blur-[100px]" />
         </div>
 
         {/* Top controls */}
         <div className="absolute top-5 right-5 z-10"><ModeToggle /></div>
-        <button onClick={() => nav('/')} className="absolute top-5 left-5 z-10 flex items-center gap-1.5 text-white/25 hover:text-white/60 text-[10px] font-bold uppercase tracking-widest transition-colors">
-          <ArrowLeft size={13} /> Inicio
-        </button>
 
         <div className="relative z-10 w-full max-w-[390px]">
+
+          {/* Company logo / Dualis logo */}
+          <div className="flex flex-col items-center mb-8">
+            {subdomain.logoUrl ? (
+              <img src={subdomain.logoUrl} alt={subdomain.businessName || ''} className="h-16 w-auto rounded-2xl mb-3" />
+            ) : (
+              <img src="/logo.png" alt="Dualis" className="h-14 w-auto drop-shadow-lg mb-3" />
+            )}
+          </div>
 
           {/* ── RESET SENT ── */}
           {resetSent ? (
@@ -266,30 +219,19 @@ export default function Login() {
           /* ── MAIN LOGIN ── */
           ) : (
             <div className="animate-in fade-in-0 duration-500">
-              {/* Mobile logo */}
-              <div className="lg:hidden flex items-center gap-3 mb-8">
-                <img src="/logo.png" alt="Dualis" className="h-9 w-auto" />
-                <span className="text-white font-black text-lg">Dualis ERP</span>
-              </div>
-
-              <div className="mb-9">
-                <h1 className="text-4xl font-black text-white tracking-tight leading-tight">
-                  {isSubdomain ? <>Bienvenido a<br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">{subdomain.businessName}</span></> : <>Bienvenido<br />de vuelta</>}
+              <div className="mb-9 text-center">
+                <h1 className="text-3xl font-black text-white tracking-tight leading-tight">
+                  Bienvenido a<br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">{subdomain.businessName}</span>
                 </h1>
-                <p className="text-white/35 text-sm mt-2">{isSubdomain ? 'Ingresa con tu cuenta para acceder.' : 'Ingresa a tu panel de control empresarial.'}</p>
+                <p className="text-white/35 text-sm mt-2">Ingresa con tu cuenta para acceder.</p>
               </div>
 
               <form onSubmit={handleLogin} className="space-y-4">
-                {/* Subdomain badge — when accessed via custom URL */}
-                {isSubdomain && (
-                  <div className="flex items-center gap-3 px-4 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
-                    <Building2 size={16} className="text-indigo-400 shrink-0" />
-                    <div>
-                      <p className="text-xs font-black text-white">{subdomain.businessName}</p>
-                      <p className="text-[9px] text-white/30 font-bold">{subdomain.slug}.dualis.online</p>
-                    </div>
-                  </div>
-                )}
+                {/* Subdomain badge */}
+                <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500/8 border border-indigo-500/15 rounded-xl">
+                  <Building2 size={14} className="text-indigo-400/60 shrink-0" />
+                  <p className="text-[10px] text-indigo-400/70 font-bold">{subdomain.slug}.dualis.online</p>
+                </div>
 
                 {/* Email */}
                 <div>
@@ -366,24 +308,12 @@ export default function Login() {
                 </button>
               </form>
 
-              {/* Register link — hidden on subdomain (invite-only) */}
-              {!isSubdomain && (
-              <div className="mt-8 pt-6 border-t border-white/[0.06] text-center">
-                <p className="text-xs text-white/25">
-                  ¿Nuevo en Dualis?{' '}
-                  <button onClick={() => nav('/register')} className="font-black text-indigo-400 hover:text-indigo-300 transition-colors">
-                    Crear cuenta gratis
-                  </button>
-                </p>
-              </div>
-              )}
-              {isSubdomain && (
+              {/* Invite-only notice */}
               <div className="mt-8 pt-6 border-t border-white/[0.06] text-center">
                 <p className="text-[10px] text-white/20">
-                  ¿No tienes cuenta? Contacta al administrador de tu empresa para recibir una invitaci&oacute;n.
+                  ¿No tienes cuenta? Contacta al administrador de tu empresa para recibir una invitación.
                 </p>
               </div>
-              )}
             </div>
           )}
         </div>
