@@ -429,7 +429,8 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
 export default function RecursosHumanos() {
   const { userProfile, isolationMode } = useAuth();
   const toast           = useToast();
-  const { tasaBCV }     = useRates();
+  const { rates: _ratesCtx } = useRates();
+  const tasaBCV = _ratesCtx.tasaBCV;
   const bid             = userProfile?.businessId || '';
 
   // ── Isolation mode comes from AuthContext (Firestore real-time) ──────────────

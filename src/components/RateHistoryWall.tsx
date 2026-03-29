@@ -161,7 +161,8 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
   // Prefer the passed currentUser prop, fall back to the auth profile
   const currentUser = currentUserProp ?? (userProfile?.uid ? { uid: userProfile.uid, displayName: userProfile.displayName ?? null, photoURL: userProfile.photoURL ?? null } : undefined);
   const { success, error, warning } = useToast();
-  const { tasaBCV, updateRates, updateCustomRates } = useRates();
+  const { rates: _rCtx, updateRates, updateCustomRates } = useRates();
+  const tasaBCV = _rCtx.tasaBCV;
   const [entries, setEntries] = useState<RateEntry[]>([]);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [customRateInputs, setCustomRateInputs] = useState<Record<string, string>>({});

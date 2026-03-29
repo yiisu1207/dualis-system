@@ -79,7 +79,8 @@ const Topbar: React.FC<{
   onOpenHelp: () => void;
   onToggleSidebar: () => void;
   bcvRate: number;
-}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, onToggleSidebar, bcvRate }) => (
+  customRates?: { id: string; name: string; value: number }[];
+}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, onToggleSidebar, bcvRate, customRates }) => (
   <header className="h-14 md:h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.08] px-3 md:px-7 flex items-center justify-between sticky top-0 z-50 transition-colors">
     <div className="flex items-center gap-2 md:gap-3 min-w-0">
       {/* Hamburger menu — mobile only */}
@@ -102,11 +103,20 @@ const Topbar: React.FC<{
 
     <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
       <div className="flex items-center gap-2 md:gap-3 bg-slate-50 dark:bg-white/[0.05] border border-slate-200/60 dark:border-white/10 rounded-xl px-2.5 md:px-4 py-1.5">
-        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse hidden sm:block" />
+        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse hidden sm:block shrink-0" />
         <div className="flex flex-col">
           <span className="text-[9px] md:text-[10px] font-black uppercase tracking-tighter text-slate-400 dark:text-slate-500 leading-none">BCV</span>
           <span className="text-[12px] md:text-[13px] font-mono font-bold text-amber-600 dark:text-amber-400">Bs. {bcvRate.toFixed(2)}</span>
         </div>
+        {customRates?.filter(cr => cr.value > 0).map(cr => (
+          <React.Fragment key={cr.id}>
+            <span className="w-px h-5 bg-slate-200 dark:bg-white/10 hidden md:block" />
+            <div className="flex-col hidden md:flex">
+              <span className="text-[9px] font-black uppercase tracking-tighter text-slate-400 dark:text-slate-500 leading-none">{cr.name}</span>
+              <span className="text-[12px] font-mono font-bold text-violet-600 dark:text-violet-400">Bs. {cr.value.toFixed(2)}</span>
+            </div>
+          </React.Fragment>
+        ))}
       </div>
 
       <div className="w-px h-8 bg-slate-100 dark:bg-white/[0.08] mx-0.5 md:mx-1 hidden sm:block" />
@@ -243,7 +253,7 @@ const LockedModule: React.FC<{ moduleName: string; requiredPlan?: string; isAddo
 // ── MainSystem ─────────────────────────────────────────────────────────────────
 const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const { user: firebaseUser, userProfile, updateUserProfile } = useAuth();
-  const { rates, updateRates } = useRates();
+  const { rates, customRates, updateRates } = useRates();
   const toast = useToast();
   const location = useLocation();
   const navigate = useNavigate();
@@ -624,6 +634,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           onOpenHelp={() => setHelpOpen(true)}
           onToggleSidebar={() => setIsSidebarOpen(p => !p)}
           bcvRate={rates.tasaBCV}
+          customRates={customRates}
         />
 
         <main className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-8 relative custom-scroll">
