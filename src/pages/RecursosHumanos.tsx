@@ -4,7 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { db } from '../firebase/config';
 import {
   collection, onSnapshot, query, addDoc, doc, updateDoc,
-  deleteDoc, serverTimestamp, orderBy, writeBatch, getDoc,
+  deleteDoc, serverTimestamp, orderBy, writeBatch, getDoc, limit,
 } from 'firebase/firestore';
 import {
   Users, UserPlus, Pencil, Trash2, X, Save, Loader2, Circle,
@@ -441,6 +441,7 @@ export default function RecursosHumanos() {
   const [employees,      setEmployees]      = useState<Employee[]>([]);
   const [vouchers,       setVouchers]       = useState<Voucher[]>([]);
   const [voucherRates,   setVoucherRates]   = useState<VoucherRate[]>([]);
+  const [bcvHistory,     setBcvHistory]     = useState<{date:string; bcv:number}[]>([]);
   const [loans,          setLoans]          = useState<Loan[]>([]);
   const [timeEntries,    setTimeEntries]    = useState<TimeEntry[]>([]);
   const [payrollHistory, setPayrollHistory] = useState<PayrollRun[]>([]);
@@ -569,7 +570,10 @@ export default function RecursosHumanos() {
       s=>setTimeEntries(s.docs.map(d=>({id:d.id,...d.data()} as TimeEntry)).sort((a,b)=>(b.date||'').localeCompare(a.date||''))), ()=>{});
     const u7 = onSnapshot(query(collection(db,`businesses/${bid}/abonos`),orderBy('createdAt','desc')),
       s=>setAbonos(s.docs.map(d=>({id:d.id,...d.data()} as Abono))), ()=>{});
-    return ()=>{u1();u2();u3();u4();u5();u6();u7();};
+    const u8 = onSnapshot(query(collection(db,`businesses/${bid}/exchange_rates_history`),orderBy('date','desc'),limit(200)),
+      s=>setBcvHistory(s.docs.map(d=>({date:(d.data() as any).date||d.id, bcv:Number((d.data() as any).bcv)||0}))),
+      ()=>{});
+    return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();};
   }, [bid]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -608,6 +612,16 @@ export default function RecursosHumanos() {
     }
     return withDates[withDates.length - 1]?.rate || bcvFallback;
   }, [voucherRates, tasaBCV]);
+
+  // BCV rate lookup from exchange_rates_history by date (for BCV-paid employees)
+  const getBcvRateForDate = useCallback((dateStr: string): number => {
+    const fallback = tasaBCV ?? 0;
+    if (!bcvHistory.length) return fallback;
+    // bcvHistory is already sorted desc by date
+    const match = bcvHistory.find(e => e.date <= dateStr && e.bcv > 0);
+    return match?.bcv ?? bcvHistory[bcvHistory.length - 1]?.bcv ?? fallback;
+  }, [bcvHistory, tasaBCV]);
+
   const pendingVouchers = useMemo(()=>visibleVouchers.filter(v=>v.status==='PENDIENTE'),[visibleVouchers]);
   // For nómina: exclude deferred vales (they apply next period)
   const currentPeriodVouchers = useMemo(()=>pendingVouchers.filter(v=>!v.deferToNextPeriod),[pendingVouchers]);
@@ -756,9 +770,10 @@ export default function RecursosHumanos() {
     setSaving(true);
     const emp = employees.find(x=>x.id===qv.empId);
     const amt = Number(qv.amount);
-    // D: BCV employees use tasaBCV for BS vales; Tasa Interna employees use getRateForDate
+    // D: BCV employees → lookup BCV rate from exchange_rates_history for that date
+    //    Tasa Interna employees → lookup from voucher_rates (getRateForDate)
     const isBcvEmp = emp?.paymentCurrency === 'BS';
-    const rateForDate = qv.currency==='BS' ? (isBcvEmp ? (tasaBCV ?? 0) : getRateForDate(qv.date)) : 0;
+    const rateForDate = qv.currency==='BS' ? (isBcvEmp ? getBcvRateForDate(qv.date) : getRateForDate(qv.date)) : 0;
     try {
       await handleAddVoucher({
         employeeId:qv.empId, employeeName:emp?.fullName||'',
@@ -834,8 +849,9 @@ export default function RecursosHumanos() {
       });
       const emp = employees.find(x=>x.id===v.employeeId);
       const isBcvEmp = emp?.paymentCurrency === 'BS';
+      const _corrDate = newDate || v.voucherDate || new Date().toISOString().slice(0,10);
       const rateForDate = newCurrency==='BS'
-        ? (isBcvEmp ? tasaBCV : getRateForDate(newDate || v.voucherDate || new Date().toISOString().slice(0,10)))
+        ? (isBcvEmp ? getBcvRateForDate(_corrDate) : getRateForDate(_corrDate))
         : 0;
       await addDoc(collection(db,`businesses/${bid}/vouchers`),{
         employeeId:v.employeeId, employeeName:v.employeeName,
@@ -970,7 +986,7 @@ export default function RecursosHumanos() {
     const emp = employees.find(x => x.id === qa.empId);
     const amt = Number(qa.amount);
     const isBcvEmp = emp?.paymentCurrency === 'BS';
-    const rate = qa.currency === 'BS' ? (isBcvEmp ? tasaBCV : currentRate) : 0;
+    const rate = qa.currency === 'BS' ? (isBcvEmp ? getBcvRateForDate(qa.date || new Date().toISOString().slice(0,10)) : currentRate) : 0;
     try {
       await addDoc(collection(db, `businesses/${bid}/abonos`), {
         employeeId: qa.empId, employeeName: emp?.fullName || '',
@@ -1369,7 +1385,7 @@ export default function RecursosHumanos() {
                       {qv.currency==='BS'&&qv.date&&(()=>{
                         const selEmp = employees.find(e=>e.id===qv.empId);
                         const isBcv = selEmp?.paymentCurrency==='BS';
-                        const rate = isBcv ? (tasaBCV ?? 0) : getRateForDate(qv.date);
+                        const rate = isBcv ? getBcvRateForDate(qv.date) : getRateForDate(qv.date);
                         const amt = Number(qv.amount);
                         return <>
                           <span className="text-[8px] text-indigo-400 normal-case">(Tasa: Bs {fmtHR(rate)})</span>
