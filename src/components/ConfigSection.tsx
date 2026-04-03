@@ -723,6 +723,42 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
               </div>
             </div>
 
+            {/* Font Size */}
+            <div className="p-6 rounded-2xl border border-white/[0.07] bg-[#0d1424]">
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-4">Tamaño de Texto</p>
+              <div className="grid grid-cols-5 gap-2">
+                {([
+                  { id: 'xs', label: 'Muy pequeño', sample: 'Aa', size: '11px' },
+                  { id: 'sm', label: 'Pequeño', sample: 'Aa', size: '12px' },
+                  { id: 'base', label: 'Normal', sample: 'Aa', size: '14px' },
+                  { id: 'lg', label: 'Grande', sample: 'Aa', size: '16px' },
+                  { id: 'xl', label: 'Muy grande', sample: 'Aa', size: '18px' },
+                ] as { id: string; label: string; sample: string; size: string }[]).map(f => {
+                  const currentSize = localStorage.getItem('dualis_font_size') || 'base';
+                  const isActive = currentSize === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => {
+                        document.documentElement.setAttribute('data-font', f.id);
+                        localStorage.setItem('dualis_font_size', f.id);
+                      }}
+                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
+                        isActive
+                          ? 'border-emerald-500/40 bg-emerald-500/[0.08]'
+                          : 'border-white/[0.06] hover:border-white/[0.12]'
+                      }`}
+                    >
+                      <span className="font-black text-white/70" style={{ fontSize: f.size }}>{f.sample}</span>
+                      <p className="text-[9px] font-bold text-white/40">{f.label}</p>
+                      {isActive && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[9px] text-white/20 mt-3 font-bold">Escala todo el texto del sistema. Recarga para aplicar completamente.</p>
+            </div>
+
             {/* Density */}
             <div className="p-6 rounded-2xl border border-white/[0.07] bg-[#0d1424]">
               <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-4">Densidad de la Interfaz</p>

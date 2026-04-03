@@ -149,7 +149,9 @@ ${movement.almacenId && movement.almacenId !== 'principal' ? `<div class="meta">
   ${movement.ivaAmount ? `<div class="total-row"><span>Base:</span><span>$${movement.subtotalUSD?.toFixed(2) || '0.00'}</span></div>` : ''}
   ${movement.ivaAmount ? `<div class="total-row"><span>IVA:</span><span>+$${movement.ivaAmount?.toFixed(2)}</span></div>` : ''}
   ${movement.discountAmount ? `<div class="total-row"><span>Descuento:</span><span>-$${movement.discountAmount?.toFixed(2)}</span></div>` : ''}
+  ${(movement as any).earlyPayDiscountPct ? `<div class="total-row" style="color:#10b981"><span>Desc. pronto pago ${(movement as any).earlyPayDiscountPct}%:</span><span>-$${((movement as any).earlyPayDiscountAmt || 0).toFixed(2)}</span></div>` : ''}
   <div class="total-main"><span>TOTAL:</span><span>$${(movement.amountInUSD ?? movement.amount ?? 0).toFixed(2)}</span></div>
+  ${(movement as any).realAmountUSD ? `<div class="total-row" style="margin-top:2px;color:#a78bfa"><span>Neto (con desc.):</span><span>$${(movement as any).realAmountUSD.toFixed(2)}</span></div>` : ''}
   ${movement.rateUsed ? `<div class="total-row" style="margin-top:4px"><span>Bs (tasa ${movement.rateUsed?.toFixed(2)}):</span><span>${((movement.amountInUSD ?? 0) * movement.rateUsed).toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs</span></div>` : ''}
 </div>
 

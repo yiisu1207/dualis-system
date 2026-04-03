@@ -130,6 +130,73 @@
     animation-duration: 0ms !important;
   }
 
+  /* ── FONT SIZE SCALING SYSTEM ────────────────────────────────── */
+  /* Default: "base" — comfortable reading size */
+  :root {
+    --f-micro: 11px;
+    --f-small: 12px;
+    --f-base: 13px;
+    --f-md: 14px;
+    --f-lg: 16px;
+    --f-xl: 18px;
+    --f-2xl: 22px;
+  }
+
+  [data-font="xs"] {
+    --f-micro: 9px;
+    --f-small: 10px;
+    --f-base: 11px;
+    --f-md: 12px;
+    --f-lg: 14px;
+    --f-xl: 16px;
+    --f-2xl: 20px;
+  }
+
+  [data-font="sm"] {
+    --f-micro: 10px;
+    --f-small: 11px;
+    --f-base: 12px;
+    --f-md: 13px;
+    --f-lg: 15px;
+    --f-xl: 17px;
+    --f-2xl: 21px;
+  }
+
+  /* base is the default :root above */
+
+  [data-font="lg"] {
+    --f-micro: 12px;
+    --f-small: 13px;
+    --f-base: 14px;
+    --f-md: 16px;
+    --f-lg: 18px;
+    --f-xl: 20px;
+    --f-2xl: 24px;
+  }
+
+  [data-font="xl"] {
+    --f-micro: 13px;
+    --f-small: 14px;
+    --f-base: 16px;
+    --f-md: 18px;
+    --f-lg: 20px;
+    --f-xl: 22px;
+    --f-2xl: 26px;
+  }
+
+  /* Font scale mapping:
+     text-[8px]  → text-[var(--f-micro)]    (was 8-9px, now scales 9-13px)
+     text-[9px]  → text-[var(--f-micro)]
+     text-[10px] → text-[var(--f-small)]    (was 10px, now scales 10-14px)
+     text-[11px] → text-[var(--f-small)]    (group with 10px)
+     text-[12px] → text-[var(--f-base)]     (was 12px, now scales 11-16px)
+     text-[13px] → text-[var(--f-base)]
+     text-[14px] → text-[var(--f-md)]       (was 14px, now scales 12-18px)
+     text-sm     → text-[var(--f-md)]
+     text-base   → text-[var(--f-lg)]
+     text-lg     → text-[var(--f-xl)]
+  */
+
   body {
     background: var(--ui-bg);
     color: var(--ui-ink);

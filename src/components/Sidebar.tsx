@@ -207,6 +207,16 @@ const Sidebar: React.FC<SidebarProps> = ({
     });
   }, []);
 
+  // ── Auto-close sidebar on resize past lg breakpoint ────────────────────
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const handler = (e: MediaQueryListEvent) => {
+      if (e.matches && isOpen) setIsOpen(false);
+    };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [isOpen, setIsOpen]);
+
   // Auto-open the group that contains the active item
   useEffect(() => {
     for (const group of NAV_GROUPS) {
@@ -271,9 +281,9 @@ const Sidebar: React.FC<SidebarProps> = ({
       <aside
         className={`
           fixed lg:static top-0 left-0 h-full z-50 flex flex-col overflow-hidden
-          transition-all duration-300 ease-in-out
+          transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]
           lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-          w-[260px] sm:w-[240px] ${collapsed ? 'lg:w-[72px]' : 'lg:w-[220px]'}
+          w-[280px] sm:w-[260px] ${collapsed ? 'lg:w-[72px]' : 'lg:w-[230px]'}
           bg-[#070b14] relative
         `}
       >
@@ -293,8 +303,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             <img src="/logo.png" alt="Dualis" className="w-8 h-8 rounded-xl object-contain shrink-0" />
             {!collapsed && (
               <div className="min-w-0">
-                <p className="text-white font-black text-[14px] leading-none tracking-tight">Dualis</p>
-                <p className="text-[8px] font-bold text-white/25 uppercase tracking-[0.18em] mt-0.5">Sistema ERP</p>
+                <p className="text-white font-black text-[15px] leading-none tracking-tight">Dualis</p>
+                <p className="text-[9px] font-bold text-white/25 uppercase tracking-[0.18em] mt-0.5">Sistema ERP</p>
               </div>
             )}
           </div>
@@ -335,7 +345,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 ) : isSimpleGroup ? (
                   // Single-item groups: static label
                   <div className={`${gi > 0 ? 'mt-3' : 'mt-0'} mb-1 px-2`}>
-                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/20">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">
                       {group.label}
                     </p>
                   </div>
@@ -351,7 +361,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
                       <div className={`w-px h-3 rounded-full bg-current opacity-30 ${iconColor}`} />
-                      <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isGroupOpen ? 'text-white/30' : 'text-white/20'} group-hover/gh:text-white/40 transition-colors`}>
+                      <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${isGroupOpen ? 'text-white/30' : 'text-white/20'} group-hover/gh:text-white/40 transition-colors`}>
                         {group.label}
                       </p>
                     </div>
@@ -523,8 +533,8 @@ const Sidebar: React.FC<SidebarProps> = ({
               ${collapsed ? 'w-11 h-11 justify-center' : 'gap-2.5 px-2.5 py-2 w-full'}
             `}
           >
-            <LogOut size={14} strokeWidth={1.8} className="shrink-0" />
-            {!collapsed && <span className="text-[12px] font-medium">Cerrar sesión</span>}
+            <LogOut size={15} strokeWidth={1.8} className="shrink-0" />
+            {!collapsed && <span className="text-[13px] font-medium">Cerrar sesión</span>}
             {collapsed && <Tip>Cerrar sesión</Tip>}
           </button>
 
@@ -549,8 +559,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
             {!collapsed && (
               <div className="min-w-0 flex-1 text-left">
-                <p className="text-[12px] font-black text-white/70 truncate leading-none">{user.name}</p>
-                <p className="text-[9px] font-bold text-white/25 uppercase tracking-[0.15em] mt-0.5">
+                <p className="text-[13px] font-black text-white/70 truncate leading-none">{user.name}</p>
+                <p className="text-[10px] font-bold text-white/25 uppercase tracking-[0.15em] mt-0.5">
                   {roleLabel[user.role] || user.role}
                 </p>
               </div>
@@ -611,7 +621,7 @@ const NavItemRow: React.FC<NavItemRowProps> = ({
         </span>
       )}
     </span>
-    <span className={`text-[12px] font-medium tracking-tight truncate relative z-10 transition-colors ${collapsed ? 'lg:hidden' : ''} ${isActive ? 'text-white' : ''}`}>
+    <span className={`text-[13px] font-medium tracking-tight truncate relative z-10 transition-colors ${collapsed ? 'lg:hidden' : ''} ${isActive ? 'text-white' : ''}`}>
       {item.label}
     </span>
     {collapsed && (

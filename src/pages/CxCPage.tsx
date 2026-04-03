@@ -3,6 +3,7 @@ import type { Customer, Movement, CustomRate, ExchangeRates } from '../../types'
 import { CxCClientList } from '../components/cxc/CxCClientList';
 import { EntityDetail } from '../components/cxc/EntityDetail';
 import { MovementFormPanel } from '../components/cxc/MovementFormPanel';
+import NewClientModal from '../components/cxc/NewClientModal';
 
 interface CxCPageProps {
   customers: Customer[];
@@ -39,6 +40,7 @@ export default function CxCPage({
   const [formType, setFormType] = useState<'FACTURA' | 'ABONO'>('FACTURA');
   const [formAccountPreset, setFormAccountPreset] = useState<string | undefined>();
   const [editingMovement, setEditingMovement] = useState<Movement | null>(null);
+  const [newClientOpen, setNewClientOpen] = useState(false);
 
   const canEdit = ['owner', 'admin'].includes(userRole);
 
@@ -85,16 +87,7 @@ export default function CxCPage({
           customRates={customRates}
           selectedId={selectedClient?.id}
           onSelect={setSelectedClient}
-          onCreateNew={() => {
-            const name = prompt('Nombre del cliente:');
-            if (name?.trim()) {
-              onCreateCustomer({
-                fullName: name.trim(),
-                nombre: name.trim(),
-                businessId,
-              } as any);
-            }
-          }}
+          onCreateNew={() => setNewClientOpen(true)}
         />
       </div>
 
@@ -148,6 +141,16 @@ export default function CxCPage({
           editingMovement={editingMovement || undefined}
         />
       )}
+
+      {/* New Client Modal */}
+      <NewClientModal
+        open={newClientOpen}
+        onClose={() => setNewClientOpen(false)}
+        onSave={async (data) => {
+          await onCreateCustomer({ ...data, businessId } as any);
+        }}
+        existingCustomers={customers}
+      />
     </div>
   );
 }

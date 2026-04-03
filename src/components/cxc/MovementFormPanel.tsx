@@ -1,7 +1,52 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, FileText, CreditCard } from 'lucide-react';
+import { X, FileText, CreditCard, Settings2 } from 'lucide-react';
 import type { Movement, Customer, Supplier, CustomRate, ExchangeRates } from '../../../types';
 import { resolveAccountLabel, resolveAccountColor, resolveRateForAccount } from './cxcHelpers';
+
+export type PanelPosition = 'right' | 'left' | 'center' | 'bottom' | 'top';
+
+const POSITION_LABELS: Record<PanelPosition, string> = {
+  right: 'Derecha',
+  left: 'Izquierda',
+  center: 'Centro',
+  top: 'Arriba',
+  bottom: 'Abajo',
+};
+
+function getPanelPositionClasses(pos: PanelPosition): { container: string; panel: string; animation: string } {
+  switch (pos) {
+    case 'left':
+      return {
+        container: 'justify-start',
+        panel: 'w-full max-w-md h-full border-r border-l-0',
+        animation: 'animate-slide-in-left',
+      };
+    case 'center':
+      return {
+        container: 'items-center justify-center p-4',
+        panel: 'w-full max-w-lg max-h-[90vh] rounded-2xl border shadow-2xl',
+        animation: 'animate-scale-in',
+      };
+    case 'top':
+      return {
+        container: 'items-start justify-center pt-4 px-4',
+        panel: 'w-full max-w-lg max-h-[85vh] rounded-2xl border shadow-2xl',
+        animation: 'animate-slide-in-top',
+      };
+    case 'bottom':
+      return {
+        container: 'items-end justify-center pb-4 px-4',
+        panel: 'w-full max-w-lg max-h-[85vh] rounded-2xl border shadow-2xl',
+        animation: 'animate-slide-in-bottom',
+      };
+    default: // right
+      return {
+        container: 'justify-end',
+        panel: 'w-full max-w-md h-full border-l',
+        animation: 'animate-slide-in-right',
+      };
+  }
+}
 
 interface MovementFormPanelProps {
   mode: 'cxc' | 'cxp';
@@ -55,6 +100,18 @@ export function MovementFormPanel({
   const [referencia, setReferencia] = useState(editingMovement?.referencia || editingMovement?.reference || '');
   const [expenseCategory, setExpenseCategory] = useState(editingMovement?.expenseCategory || '');
   const [saving, setSaving] = useState(false);
+  const [panelPosition, setPanelPosition] = useState<PanelPosition>(() => {
+    try { return (localStorage.getItem('dualis_panel_position') as PanelPosition) || 'right'; } catch { return 'right'; }
+  });
+  const [showPositionMenu, setShowPositionMenu] = useState(false);
+
+  const changePanelPosition = (pos: PanelPosition) => {
+    setPanelPosition(pos);
+    try { localStorage.setItem('dualis_panel_position', pos); } catch {}
+    setShowPositionMenu(false);
+  };
+
+  const posClasses = getPanelPositionClasses(panelPosition);
 
   // All available accounts: BCV + enabled custom rates
   const availableAccounts = useMemo(() => {
@@ -162,12 +219,12 @@ export function MovementFormPanel({
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex justify-end" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className={`fixed inset-0 z-[200] flex ${posClasses.container}`} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Panel */}
-      <div className="relative w-full max-w-md bg-white dark:bg-[#0a0f1c] h-full overflow-y-auto shadow-2xl border-l border-slate-200 dark:border-white/[0.06] animate-slide-in-right">
+      <div className={`relative bg-white dark:bg-[#0a0f1c] overflow-y-auto shadow-2xl border-slate-200 dark:border-white/[0.06] ${posClasses.panel} ${posClasses.animation}`}>
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 bg-white dark:bg-[#0a0f1c] border-b border-slate-100 dark:border-white/[0.06]">
           <div className="flex items-center gap-3">
@@ -176,9 +233,38 @@ export function MovementFormPanel({
               {isEditing ? 'Editar' : 'Nueva'} {movType === 'FACTURA' ? 'Factura' : 'Abono'}
             </h2>
           </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all">
-            <X size={14} className="text-slate-400" />
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Position toggle */}
+            <div className="relative">
+              <button
+                onClick={() => setShowPositionMenu(p => !p)}
+                className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all"
+                title="Cambiar posición del panel"
+              >
+                <Settings2 size={13} className="text-slate-400" />
+              </button>
+              {showPositionMenu && (
+                <div className="absolute right-0 top-10 z-50 bg-white dark:bg-[#141b2d] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-2xl py-1.5 min-w-[140px]">
+                  {(Object.keys(POSITION_LABELS) as PanelPosition[]).map(pos => (
+                    <button
+                      key={pos}
+                      onClick={() => changePanelPosition(pos)}
+                      className={`w-full px-3 py-2 text-left text-[11px] font-bold transition-all ${
+                        panelPosition === pos
+                          ? 'bg-indigo-500/10 text-indigo-400'
+                          : 'text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      {POSITION_LABELS[pos]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all">
+              <X size={14} className="text-slate-400" />
+            </button>
+          </div>
         </div>
 
         <div className="px-5 py-5 space-y-5">

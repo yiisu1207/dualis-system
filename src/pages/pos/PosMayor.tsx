@@ -1030,14 +1030,39 @@ const PosContent = () => {
         vendedorNombre: userProfile?.fullName || 'Vendedor',
         startedAt: startedAt?.toISOString() || isoDate,
         paymentCondition,
-        // Dynamic payment period fields
+        // Dynamic payment period fields + fictitious discount markup
         ...(paymentDays > 0 && (() => {
           const dueDate = new Date(now);
           dueDate.setDate(dueDate.getDate() + paymentDays);
           const dueDateStr = dueDate.toISOString().split('T')[0];
           const activePeriod = paymentPeriods.find(p => p.days === paymentDays);
           const discountPct = activePeriod?.discountPercent ?? 0;
-          const discountAmt = discountPct > 0 ? parseFloat((totals.totalUsd * discountPct / 100).toFixed(2)) : 0;
+
+          // Fictitious discount: inflate total so discount brings it back to real price
+          // Example: real $100, 5% discount → show $105.26, discount -$5.26 = net $100
+          const realTotal = totals.totalUsd;
+          const markupTotal = discountPct > 0 ? parseFloat((realTotal / (1 - discountPct / 100)).toFixed(2)) : realTotal;
+          const discountAmt = discountPct > 0 ? parseFloat((markupTotal - realTotal).toFixed(2)) : 0;
+
+          // Override movement amounts with marked-up values
+          if (discountPct > 0) {
+            movementPayload.amount = markupTotal;
+            movementPayload.amountInUSD = markupTotal;
+            movementPayload.creditMarkupApplied = true;
+            movementPayload.creditMarkupPct = discountPct;
+            movementPayload.realAmountUSD = realTotal;
+            // Inflate item prices proportionally for the receipt
+            const factor = markupTotal / realTotal;
+            movementPayload.items = items.map((i: any) => ({
+              id: i.id,
+              nombre: i.nombre,
+              qty: i.qty,
+              price: parseFloat((i.priceUsd * factor).toFixed(2)),
+              priceReal: i.priceUsd,
+              subtotal: parseFloat((i.qty * i.priceUsd * factor).toFixed(2)),
+            }));
+          }
+
           return {
             paymentDays,
             dueDate: dueDateStr,
@@ -1518,18 +1543,32 @@ const PosContent = () => {
                     );
                   })}
                 </div>
-                {/* Discount preview */}
+                {/* Discount preview — fictitious markup breakdown */}
                 {paymentDays > 0 && (() => {
                   const period = paymentPeriods.find(p => p.days === paymentDays);
                   if (!period || period.discountPercent <= 0) return null;
                   const dueDate = new Date();
                   dueDate.setDate(dueDate.getDate() + paymentDays);
-                  const discountAmt = (totals.totalUsd * period.discountPercent / 100).toFixed(2);
+                  const realTotal = totals.totalUsd;
+                  const markupTotal = parseFloat((realTotal / (1 - period.discountPercent / 100)).toFixed(2));
+                  const discountAmt = parseFloat((markupTotal - realTotal).toFixed(2));
                   return (
-                    <div className="mt-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2">
-                      <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
-                      <p className="text-[10px] font-bold text-emerald-400">
-                        Paga antes del {dueDate.toLocaleDateString('es-VE')} y ahorra ${discountAmt}
+                    <div className="mt-2 p-3 rounded-xl bg-violet-500/[0.06] border border-violet-500/20 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-bold text-slate-500 dark:text-white/40">Precio factura</span>
+                        <span className="font-black text-slate-700 dark:text-white/70">${markupTotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-bold text-emerald-500">Descuento {period.discountPercent}%</span>
+                        <span className="font-black text-emerald-400">-${discountAmt.toFixed(2)}</span>
+                      </div>
+                      <div className="h-px bg-white/[0.06]" />
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-black text-slate-600 dark:text-white/50">Neto a pagar</span>
+                        <span className="font-black text-white">${realTotal.toFixed(2)}</span>
+                      </div>
+                      <p className="text-[9px] text-violet-400/60 font-bold mt-1">
+                        Vence: {dueDate.toLocaleDateString('es-VE')} · El descuento aplica si paga antes
                       </p>
                     </div>
                   );
@@ -1735,6 +1774,27 @@ const PosContent = () => {
                     <span>-${totals.discountUsd.toFixed(2)}</span>
                   </div>
                 )}
+
+                {/* Fictitious markup indicator for credit with discount */}
+                {isCredit && (() => {
+                  const period = paymentPeriods.find(p => p.days === paymentDays);
+                  if (!period || period.discountPercent <= 0) return null;
+                  const realTotal = totals.totalUsd;
+                  const markupTotal = parseFloat((realTotal / (1 - period.discountPercent / 100)).toFixed(2));
+                  const discountAmt = parseFloat((markupTotal - realTotal).toFixed(2));
+                  return (
+                    <div className="mt-1.5 space-y-0.5">
+                      <div className="flex justify-between text-[10px] font-bold text-white/40">
+                        <span>Precio c/financiamiento</span>
+                        <span>${markupTotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px] font-black text-emerald-400">
+                        <span>Desc. {period.discountPercent}%</span>
+                        <span>-${discountAmt.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="text-2xl sm:text-4xl font-black tracking-tight flex items-start gap-1 mt-1">
                   <span className="text-base sm:text-xl mt-0.5 opacity-40">$</span>
