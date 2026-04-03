@@ -88,7 +88,7 @@ export default function Login() {
       } else if ((ud.status || 'ACTIVE') === 'ACTIVE' && bid) {
         nav(`/${bid}/admin/dashboard`, { replace: true });
       } else {
-        nav('/onboarding', { replace: true });
+        nav('/', { replace: true });
       }
       setLoading(false);
     } catch (err: any) {

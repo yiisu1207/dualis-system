@@ -87,7 +87,7 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
 
   if (!tenantId) {
     console.warn('[AuthEntry] tenantId vacío para usuario', user.uid, '— perfil:', userProfile);
-    return <Navigate to="/onboarding" replace />;
+    return <Navigate to="/" replace />;
   }
 
   if (userProfile?.status === 'PENDING_APPROVAL') {
@@ -109,18 +109,6 @@ function SubdomainGuard({ children, fallback }: { children: React.ReactNode; fal
   return <>{children}</>;
 }
 
-function OnboardingGate() {
-  const { user, userProfile, loading } = useAuth();
-
-  if (loading) return <PageSpinner />;
-  if (!user) return <Navigate to="/login" replace />;
-
-  const tenantId = resolveTenantId(userProfile);
-  if (tenantId) return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
-
-  return <Navigate to="/" replace />;
-}
-
 function TenantGuard({ children }: { children: React.ReactNode }) {
   const { user, userProfile, loading } = useAuth();
   const { empresa_id } = useParams();
@@ -135,7 +123,7 @@ function TenantGuard({ children }: { children: React.ReactNode }) {
 
   const tenantId = resolveTenantId(userProfile);
   if (!tenantId) {
-    return <Navigate to="/onboarding" replace />;
+    return <Navigate to="/" replace />;
   }
 
   if (!empresa_id || tenantId !== empresa_id) {
@@ -196,7 +184,7 @@ function LegacyRedirect() {
 
   const tenantId = resolveTenantId(userProfile);
   if (!tenantId) {
-    return <Navigate to="/onboarding" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
@@ -320,7 +308,6 @@ export default function AppRouter() {
         <Route path="/:empresa_id/pending" element={<ProtectedRoute><PendingApprovalWall /></ProtectedRoute>} />
         <Route path="/:empresa_id/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
         <Route path="/:empresa_id/subscribe" element={<ProtectedRoute><SubscriptionWall /></ProtectedRoute>} />
-        <Route path="/onboarding" element={<OnboardingGate />} />
         <Route path="/unauthorized" element={<NotAuthorized />} />
 
         {/* Rutas legacy */}
