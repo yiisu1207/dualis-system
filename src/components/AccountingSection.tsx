@@ -14,7 +14,8 @@ import {
 } from '../../types';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
-import { AlertTriangle, BarChart3, Clock, Copy, Receipt, Info } from 'lucide-react';
+import { AlertTriangle, BarChart3, Clock, Copy, Receipt, Info, LayoutList, Gauge } from 'lucide-react';
+import { calcCreditScore } from './cxc/cxcHelpers';
 import { buildClientStatus } from '../utils/clientStatus';
 import ClientStatusBadge from './ClientStatusBadge';
 import WhatsAppTemplateModal, { TemplateContext } from './WhatsAppTemplateModal';
@@ -88,6 +89,8 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     config.messageTemplates && config.messageTemplates.length > 0
       ? config.messageTemplates
       : DEFAULT_CONFIG.messageTemplates || [];
+
+  const [viewStyle, setViewStyle] = useState<'lista' | 'semaforo'>('lista');
 
   // Abono directo modal
   const [showAbonoModal, setShowAbonoModal] = useState(false);
@@ -276,8 +279,31 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     });
 
     const net = receivable - payable;
-    return { receivable, payable, net, bcvReceivable, grupoReceivable, divisaReceivable };
-  }, [directoryData]);
+
+    // New metrics for KPI cards
+    const now = Date.now();
+    const thisMonthStart = new Date();
+    thisMonthStart.setDate(1);
+    thisMonthStart.setHours(0, 0, 0, 0);
+    const cobradoEsteMes = movements
+      .filter(m => m.movementType === MovementType.ABONO && !m.anulada && new Date(m.date) >= thisMonthStart)
+      .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+
+    const thirtyDaysAgo = now - 30 * 86_400_000;
+    const vencidoMas30d = movements
+      .filter(m => m.movementType === MovementType.FACTURA && !m.anulada && !m.pagado)
+      .filter(m => m.dueDate ? new Date(m.dueDate).getTime() < thirtyDaysAgo : new Date(m.date).getTime() < thirtyDaysAgo)
+      .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+
+    const clientsWithOverdue = new Set(
+      movements
+        .filter(m => m.movementType === MovementType.FACTURA && !m.anulada && !m.pagado)
+        .filter(m => m.dueDate ? new Date(m.dueDate).getTime() < now - 7 * 86_400_000 : new Date(m.date).getTime() < now - 37 * 86_400_000)
+        .map(m => m.entityId)
+    );
+
+    return { receivable, payable, net, bcvReceivable, grupoReceivable, divisaReceivable, cobradoEsteMes, vencidoMas30d, enRiesgo: clientsWithOverdue.size };
+  }, [directoryData, movements, rates]);
 
   // --- LOGIC: DETAIL VIEW (LEVEL 2) ---
   const detailData = useMemo(() => {
@@ -1250,67 +1276,34 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       {/* LEVEL 1: DIRECTORY VIEW */}
       {viewMode === 'DIRECTORY' && (
         <>
-          <div className="app-panel p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="app-panel p-5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* KPI 1 — Total CxC */}
               <div
-                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4 cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20"
-                onClick={() => {
-                  if (onNavigateToCustomers) {
-                    onNavigateToCustomers();
-                    return;
-                  }
-                  setReceivableOnly(true);
-                  setEntityFilter('CLIENTE');
-                  setReceivableAccountFilter('ALL');
-                }}
+                className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.05] dark:bg-rose-500/[0.08] px-5 py-4 cursor-pointer hover:border-rose-500/40 transition-all"
+                onClick={() => { setReceivableOnly(true); setEntityFilter('CLIENTE'); setReceivableAccountFilter('ALL'); }}
               >
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 flex items-center justify-center text-lg">
-                  📉
-                </div>
-                <div className="flex-1">
-                  <div className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Cuentas por Cobrar</div>
-                  <div className="text-2xl font-black text-emerald-600">
-                    {formatCurrency(summaryTotals.receivable, '$')}
-                  </div>
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
-                    {formatCurrency(summaryTotals.receivable * (rates.bcv || 1), 'Bs')}
-                  </div>
-                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-400/70 mb-1">Total CxC</p>
+                <p className="text-2xl font-black text-rose-400">{formatCurrency(summaryTotals.receivable, '$')}</p>
+                <p className="text-[10px] text-rose-400/50 font-semibold mt-0.5">{formatCurrency(summaryTotals.receivable * (rates.bcv || 1), 'Bs')}</p>
               </div>
-              <div
-                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4 cursor-pointer hover:border-slate-300 dark:border-white/15 dark:hover:border-white/20"
-                onClick={() => {
-                  if (onNavigateToSuppliers) {
-                    onNavigateToSuppliers();
-                  }
-                }}
-              >
-                <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 flex items-center justify-center text-lg">
-                  📈
-                </div>
-                <div>
-                  <div className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Cuentas por Pagar</div>
-                  <div className="text-2xl font-black text-rose-600">
-                    {formatCurrency(summaryTotals.payable, '$')}
-                  </div>
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
-                    {formatCurrency(summaryTotals.payable * (rates.bcv || 1), 'Bs')}
-                  </div>
-                </div>
+              {/* KPI 2 — Cobrado este mes */}
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] dark:bg-emerald-500/[0.08] px-5 py-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400/70 mb-1">Cobrado Este Mes</p>
+                <p className="text-2xl font-black text-emerald-400">{formatCurrency(summaryTotals.cobradoEsteMes, '$')}</p>
+                <p className="text-[10px] text-emerald-400/50 font-semibold mt-0.5">Abonos del mes</p>
               </div>
-              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm dark:shadow-black/20 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 flex items-center justify-center text-lg">
-                  ⚖️
-                </div>
-                <div>
-                  <div className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Balance General</div>
-                  <div className={`text-2xl font-black ${summaryTotals.net >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
-                    {formatCurrency(summaryTotals.net, '$')}
-                  </div>
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
-                    {formatCurrency(summaryTotals.net * (rates.bcv || 1), 'Bs')}
-                  </div>
-                </div>
+              {/* KPI 3 — En riesgo */}
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.05] dark:bg-amber-500/[0.08] px-5 py-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/70 mb-1">En Riesgo</p>
+                <p className="text-2xl font-black text-amber-400">{summaryTotals.enRiesgo}</p>
+                <p className="text-[10px] text-amber-400/50 font-semibold mt-0.5">Clientes con deuda vencida</p>
+              </div>
+              {/* KPI 4 — Vencido +30d */}
+              <div className="rounded-2xl border border-orange-500/20 bg-orange-500/[0.05] dark:bg-orange-500/[0.08] px-5 py-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-400/70 mb-1">Vencido +30d</p>
+                <p className="text-2xl font-black text-orange-400">{formatCurrency(summaryTotals.vencidoMas30d, '$')}</p>
+                <p className="text-[10px] text-orange-400/50 font-semibold mt-0.5">Facturas sin cobrar</p>
               </div>
             </div>
           </div>
@@ -1410,9 +1403,90 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                 <option value="none">Orden: Default</option>
                 <option value="debt-desc">Mayor Deuda</option>
               </select>
+
+              {/* View style toggle */}
+              <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 gap-1">
+                <button
+                  onClick={() => setViewStyle('lista')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewStyle === 'lista' ? 'bg-white dark:bg-slate-900 text-slate-700 dark:text-white shadow-sm' : 'text-slate-400'}`}
+                >
+                  <LayoutList size={12} /> Lista
+                </button>
+                <button
+                  onClick={() => setViewStyle('semaforo')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewStyle === 'semaforo' ? 'bg-white dark:bg-slate-900 text-slate-700 dark:text-white shadow-sm' : 'text-slate-400'}`}
+                >
+                  <Gauge size={12} /> Semáforo
+                </button>
+              </div>
             </div>
           </div>
 
+          {/* SEMAFORO VIEW */}
+          {viewStyle === 'semaforo' && (
+            <div className="app-panel p-6 flex-1">
+              {(() => {
+                const clientMovements = movements.filter(m => m.entityId !== 'CONSUMIDOR_FINAL');
+                const clientes = directoryData.filter(e => e.type === 'CLIENTE');
+                const verde = clientes.filter(e => e.globalBalance <= 0.01);
+                const amarillo = clientes.filter(e => e.globalBalance > 0.01 && e.globalBalance <= 500);
+                const rojo = clientes.filter(e => e.globalBalance > 500);
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {([
+                      { label: 'Al Día', color: 'emerald', items: verde },
+                      { label: 'Deuda Moderada', color: 'amber', items: amarillo },
+                      { label: 'Deuda Alta', color: 'rose', items: rojo },
+                    ] as const).map(col => (
+                      <div key={col.label}>
+                        <div className={`flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-${col.color}-500/10 border border-${col.color}-500/20`}>
+                          <div className={`w-3 h-3 rounded-full bg-${col.color}-500`} />
+                          <p className={`text-[11px] font-black uppercase tracking-widest text-${col.color}-400`}>{col.label}</p>
+                          <span className={`ml-auto text-[10px] font-black text-${col.color}-400`}>{col.items.length}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {col.items.map(entity => {
+                            const score = calcCreditScore(clientMovements.filter(m => m.entityId === entity.id));
+                            return (
+                              <div
+                                key={entity.id}
+                                className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.04] cursor-pointer transition-all"
+                                onClick={() => { setSelectedEntityId(entity.id); setViewMode('PROFILE'); }}
+                              >
+                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center text-xs font-black shrink-0">
+                                  {getInitials(entity.id)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-black text-white/80 truncate">{entity.id}</p>
+                                  <p className={`text-xs font-bold ${entity.globalBalance > 0.01 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                    {entity.globalBalance > 0.01 ? formatCurrency(entity.globalBalance, '$') : 'Sin deuda'}
+                                  </p>
+                                </div>
+                                {score && (
+                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                                    score === 'EXCELENTE' ? 'bg-emerald-500/20 text-emerald-400' :
+                                    score === 'BUENO'     ? 'bg-sky-500/20 text-sky-400' :
+                                    score === 'REGULAR'   ? 'bg-amber-500/20 text-amber-400' :
+                                    'bg-rose-500/20 text-rose-400'
+                                  }`}>{score}</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {col.items.length === 0 && (
+                            <p className="text-center py-8 text-white/20 text-xs font-bold">Sin clientes</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* LISTA VIEW */}
+          {viewStyle === 'lista' && (
           <div className="app-panel overflow-hidden flex-1">
             <div className="overflow-y-auto custom-scroll h-full">
               <table className="w-full text-sm text-left">
@@ -1483,6 +1557,13 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
                                       maxTags={1}
                                     />
                                   )}
+                                  {entity.type === 'CLIENTE' && (() => {
+                                    const entMovs = movements.filter(m => m.entityId === entity.id);
+                                    const score = calcCreditScore(entMovs);
+                                    if (!score) return null;
+                                    const cls = score === 'EXCELENTE' ? 'bg-emerald-500/15 text-emerald-400' : score === 'BUENO' ? 'bg-sky-500/15 text-sky-400' : score === 'REGULAR' ? 'bg-amber-500/15 text-amber-400' : 'bg-rose-500/15 text-rose-400';
+                                    return <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${cls}`}>{score}</span>;
+                                  })()}
                                 </div>
                                 <div className="flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-500 font-semibold">
                                   <span className={`w-2 h-2 rounded-full ${isInactive ? 'bg-slate-300' : 'bg-emerald-400'}`}></span>
@@ -1595,6 +1676,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
               </table>
             </div>
           </div>
+          )}
         </>
       )}
 

@@ -182,6 +182,174 @@ export const daysSince = (dateValue?: string) => {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 };
 
+// ── Descuento por pronto pago — expira automáticamente al pasar dueDate ────────
+
+/**
+ * Returns the effective amount owed for a FACTURA movement.
+ * If today <= earlyPayDiscountExpiry, applies the discount.
+ * If the date has passed, returns the full original amount.
+ */
+export function getEffectiveAmount(movement: Movement, asOfDate?: string): number {
+  const today = asOfDate ?? new Date().toISOString().split('T')[0];
+  if (
+    movement.earlyPayDiscountPct &&
+    movement.earlyPayDiscountPct > 0 &&
+    movement.earlyPayDiscountExpiry &&
+    today <= movement.earlyPayDiscountExpiry
+  ) {
+    return (movement.amountInUSD ?? 0) * (1 - movement.earlyPayDiscountPct / 100);
+  }
+  return movement.amountInUSD ?? 0;
+}
+
+/**
+ * Checks if a movement has an active (not yet expired) early pay discount.
+ */
+export function hasActiveDiscount(movement: Movement, asOfDate?: string): boolean {
+  const today = asOfDate ?? new Date().toISOString().split('T')[0];
+  return !!(
+    movement.earlyPayDiscountPct &&
+    movement.earlyPayDiscountPct > 0 &&
+    movement.earlyPayDiscountExpiry &&
+    today <= movement.earlyPayDiscountExpiry
+  );
+}
+
+// ── Score de crédito interno ───────────────────────────────────────────────────
+
+import type { CreditScore } from '../../../types';
+
+/**
+ * Calculates an internal credit score based on payment history.
+ * Compares ABONO dates vs. dueDate of their corresponding FACTURAs.
+ * - EXCELENTE: average payment delay ≤ 0 days (always on time or early)
+ * - BUENO: average delay 1–7 days
+ * - REGULAR: average delay 8–30 days
+ * - RIESGO: average delay > 30 days or has unpaid invoices > 90 days old
+ */
+export function calcCreditScore(movements: Movement[]): CreditScore | null {
+  const invoices = movements.filter(
+    m => m.movementType === 'FACTURA' && !m.anulada && m.dueDate
+  );
+  if (invoices.length === 0) return null;
+
+  // Check for very old unpaid invoices (risk flag)
+  const now = Date.now();
+  const hasOldUnpaid = invoices.some(inv => {
+    if (inv.pagado) return false;
+    const age = Math.floor((now - new Date(inv.date).getTime()) / 86_400_000);
+    return age > 90;
+  });
+  if (hasOldUnpaid) return 'RIESGO';
+
+  // Calculate average delay for paid invoices
+  const paidInvoices = invoices.filter(inv => inv.pagado && inv.dueDate);
+  if (paidInvoices.length === 0) return null;
+
+  const abonos = movements.filter(m => m.movementType === 'ABONO' && !m.anulada);
+
+  const delays: number[] = paidInvoices.map(inv => {
+    // Find closest ABONO after the invoice date
+    const relatedAbono = abonos
+      .filter(a => a.accountType === inv.accountType && a.date >= inv.date)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+
+    if (!relatedAbono || !inv.dueDate) return 0;
+    const due  = new Date(inv.dueDate).getTime();
+    const paid = new Date(relatedAbono.date).getTime();
+    return Math.floor((paid - due) / 86_400_000); // negative = paid early
+  });
+
+  const avgDelay = delays.reduce((s, d) => s + d, 0) / delays.length;
+
+  if (avgDelay <= 0)  return 'EXCELENTE';
+  if (avgDelay <= 7)  return 'BUENO';
+  if (avgDelay <= 30) return 'REGULAR';
+  return 'RIESGO';
+}
+
+// ── Helpers dinámicos para cuentas (no hardcodean GRUPO/DIVISA) ──────────────
+
+/**
+ * Obtiene la tasa de cambio para un accountType dado.
+ * BCV → bcvRate. Custom rates → busca en customRates[].
+ */
+export function resolveRateForAccount(
+  accountType: string,
+  bcvRate: number,
+  customRates: CustomRate[]
+): number {
+  if (accountType === 'BCV') return bcvRate;
+  const cr = customRates.find(r => r.id === accountType);
+  return cr?.value ?? bcvRate;
+}
+
+/**
+ * Obtiene el label legible para un accountType.
+ * BCV → 'BCV'. Custom → su nombre configurado.
+ */
+export function resolveAccountLabel(
+  accountType: string,
+  customRates: CustomRate[]
+): string {
+  if (accountType === 'BCV') return 'BCV';
+  const cr = customRates.find(r => r.id === accountType);
+  return cr?.name ?? accountType;
+}
+
+const ACCOUNT_PALETTE = ['violet', 'emerald', 'amber', 'rose', 'cyan', 'fuchsia'] as const;
+
+/**
+ * Obtiene un color consistente para un accountType.
+ * BCV → indigo. Custom rates → paleta rotativa.
+ */
+export function resolveAccountColor(
+  accountType: string,
+  customRates: CustomRate[],
+  index?: number
+): string {
+  if (accountType === 'BCV') return 'indigo';
+  const idx = index ?? customRates.findIndex(r => r.id === accountType);
+  return ACCOUNT_PALETTE[Math.max(0, idx) % ACCOUNT_PALETTE.length];
+}
+
+/**
+ * Calcula balance por cuenta para una entidad.
+ * Retorna array de cuentas activas con su balance.
+ */
+export function calcAccountBalances(
+  entityMovements: Movement[],
+  bcvRate: number,
+  customRates: CustomRate[],
+  rates: ExchangeRates
+): { accountType: string; label: string; color: string; balance: number; overdue: number; lastDate?: string }[] {
+  const accounts = getDistinctAccounts(entityMovements);
+  return accounts.map((acc, idx) => {
+    const accMovs = entityMovements.filter(m => m.accountType === acc);
+    const balance = sumByAccount(accMovs, acc as any, rates);
+
+    // Overdue: sum of unpaid FACTURAs > 30 days old
+    const now = Date.now();
+    const overdue = accMovs
+      .filter(m => m.movementType === MovementType.FACTURA && !m.pagado && !m.anulada)
+      .filter(m => Math.floor((now - new Date(m.date).getTime()) / 86_400_000) > 30)
+      .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+
+    // Last movement date
+    const sorted = accMovs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const lastDate = sorted[0]?.date;
+
+    return {
+      accountType: acc,
+      label: resolveAccountLabel(acc, customRates),
+      color: resolveAccountColor(acc, customRates, idx),
+      balance,
+      overdue,
+      lastDate,
+    };
+  });
+}
+
 export function resolveRangeLabel(
   range: RangeFilter,
   detailRangeFrom: string,

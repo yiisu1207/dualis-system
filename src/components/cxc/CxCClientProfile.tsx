@@ -28,6 +28,9 @@ import {
   Globe,
   Copy,
   Check,
+  MessageSquare,
+  Save,
+  Tag,
 } from 'lucide-react';
 import {
   getInitials,
@@ -39,7 +42,10 @@ import {
   formatDateTime,
   getDistinctAccounts,
   buildAccountLabels,
+  calcCreditScore,
+  hasActiveDiscount,
 } from './cxcHelpers';
+import { doc, updateDoc } from 'firebase/firestore';
 
 interface Props {
   entityId: string;
@@ -76,6 +82,32 @@ export default function CxCClientProfile({
   const [portalPin, setPortalPin] = useState('');
   const [portalGenerating, setPortalGenerating] = useState(false);
   const [portalCopied, setPortalCopied] = useState(false);
+
+  // Internal notes
+  const [internalNotes, setInternalNotes] = useState(customer?.internalNotes ?? '');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
+
+  const handleSaveNotes = async () => {
+    if (!businessId || !customer) return;
+    setNotesSaving(true);
+    try {
+      await updateDoc(doc(db, 'businesses', businessId, 'customers', customer.id), {
+        internalNotes,
+      });
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 2000);
+    } catch (e) {
+      console.error('[Notes save]', e);
+    } finally {
+      setNotesSaving(false);
+    }
+  };
+
+  // Credit score
+  const creditScore = useMemo(() => calcCreditScore(
+    movements.filter(m => m.entityId === entityId)
+  ), [movements, entityId]);
 
   const handleGeneratePortalAccess = async () => {
     if (portalGenerating) return;
@@ -262,6 +294,16 @@ export default function CxCClientProfile({
                     {entityId}
                   </h2>
                   <ClientStatusBadge tags={clientStatus.tags} maxTags={3} />
+                  {creditScore && (
+                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${
+                      creditScore === 'EXCELENTE' ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' :
+                      creditScore === 'BUENO'     ? 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400' :
+                      creditScore === 'REGULAR'   ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400' :
+                      'bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-400'
+                    }`}>
+                      Score: {creditScore}
+                    </span>
+                  )}
                 </div>
                 <p className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-0.5">
                   Hoja de Vida Financiera
@@ -571,14 +613,33 @@ export default function CxCClientProfile({
                     {isInvoice ? <FileText size={14} /> : <Receipt size={14} />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
-                      {mov.concept}
-                    </p>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
+                        {mov.concept}
+                      </p>
+                      {mov.nroControl && (
+                        <span className="text-[8px] font-black text-slate-400 dark:text-white/25">#{mov.nroControl}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap text-[10px] text-slate-400">
                       <span>{formatDateTime(mov.createdAt || mov.date)}</span>
                       <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.07]">
                         {mov.accountType}
                       </span>
+                      {isInvoice && mov.dueDate && (
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                          new Date(mov.dueDate) < new Date()
+                            ? 'bg-rose-100 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                            : 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400'
+                        }`}>
+                          Vence: {new Date(mov.dueDate).toLocaleDateString('es-VE')}
+                        </span>
+                      )}
+                      {isInvoice && hasActiveDiscount(mov) && (
+                        <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                          -{mov.earlyPayDiscountPct}% dto. vigente
+                        </span>
+                      )}
                     </div>
                   </div>
                   <span
@@ -592,6 +653,31 @@ export default function CxCClientProfile({
               );
             })
           )}
+        </div>
+      </div>
+
+      {/* INTERNAL NOTES */}
+      <div className="app-panel p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <MessageSquare size={14} className="text-slate-400" />
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Notas Internas</h3>
+          <span className="text-[9px] text-slate-300 dark:text-slate-600 font-bold">(Solo visible para el equipo)</span>
+        </div>
+        <textarea
+          value={internalNotes}
+          onChange={e => setInternalNotes(e.target.value)}
+          placeholder="Notas sobre este cliente: preferencias, historial de comunicación, alertas internas..."
+          rows={3}
+          className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none resize-none placeholder:text-slate-300 dark:placeholder:text-white/20 font-medium"
+        />
+        <div className="mt-2 flex justify-end">
+          <button
+            onClick={handleSaveNotes}
+            disabled={notesSaving}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 transition-all disabled:opacity-50"
+          >
+            {notesSaved ? <><Check size={12} /> Guardado</> : <><Save size={12} /> Guardar Notas</>}
+          </button>
         </div>
       </div>
 

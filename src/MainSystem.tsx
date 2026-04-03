@@ -30,6 +30,7 @@ import VisionLab from './components/VisionLab';
 import BooksComparePanel from './components/BooksComparePanel';
 import UserProfileModalComp from './components/UserProfileModal';
 import CustomerViewer from './components/CustomerViewer';
+import CxCPage from './pages/CxCPage';
 import DataImporter from './components/DataImporter';
 import SmartCalculatorWidget from './components/SmartCalculatorWidget';
 import HelpCenter from './components/HelpCenter';
@@ -720,18 +721,20 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
             {activeTab === 'clientes' && (
               canAccess('clientes') ? (
-                <CustomerViewer
+                <CxCPage
                   customers={customers}
                   movements={movements}
                   rates={legacyRates as any}
-                  config={{} as any}
-                  onAddMovement={handleRegisterMovement}
+                  bcvRate={rates.tasaBCV}
+                  customRates={customRates ?? []}
+                  businessId={businessId}
+                  userRole={user?.role || 'member'}
+                  onSaveMovement={handleRegisterMovement}
                   onUpdateMovement={updateMovement}
                   onDeleteMovement={deleteMovement}
-                  onRegisterCustomer={handleRegisterCustomer}
+                  onCreateCustomer={handleRegisterCustomer as any}
                   onUpdateCustomer={handleUpdateCustomer}
                   onDeleteCustomer={handleDeleteCustomer}
-                  getSmartRate={async () => rates.tasaBCV}
                 />
               ) : <LockedModule moduleName="Clientes / CxC" requiredPlan="starter" />
             )}

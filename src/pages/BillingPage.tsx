@@ -14,21 +14,24 @@ import { PLANS as PLAN_CONFIG, PAYMENT_INFO, type PayMethod } from '../utils/pla
 
 // ─── Plan data (enriched from planConfig) ─────────────────────────────────────
 interface Plan {
-  id: 'starter' | 'negocio' | 'enterprise';
+  id: string;
   name: string;
-  monthlyPrice: number;
+  monthlyPrice: number | null;
   Icon: React.FC<{ size?: number; className?: string }>;
   color: string;
   gradient: string;
   shadow: string;
   features: string[];
   popular?: boolean;
+  isEnterprise?: boolean;
 }
 
 const PLAN_STYLES: { Icon: React.FC<{ size?: number; className?: string }>; color: string; gradient: string; shadow: string }[] = [
-  { Icon: Zap,       color: 'sky',    gradient: 'from-sky-500 to-blue-600',      shadow: 'shadow-sky-500/25' },
-  { Icon: Building2, color: 'indigo', gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/25' },
-  { Icon: Crown,     color: 'violet', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/25' },
+  { Icon: Zap,       color: 'slate',  gradient: 'from-slate-500 to-slate-600',   shadow: 'shadow-slate-500/25' },
+  { Icon: Zap,       color: 'sky',    gradient: 'from-sky-500 to-blue-600',      shadow: 'shadow-sky-500/25'   },
+  { Icon: Building2, color: 'indigo', gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/25'},
+  { Icon: Crown,     color: 'violet', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/25'},
+  { Icon: Crown,     color: 'amber',  gradient: 'from-amber-500 to-orange-600',  shadow: 'shadow-amber-500/25' },
 ];
 
 const PLANS: Plan[] = PLAN_CONFIG.map((p, i) => ({
@@ -37,7 +40,8 @@ const PLANS: Plan[] = PLAN_CONFIG.map((p, i) => ({
   monthlyPrice: p.price,
   features: p.features,
   popular: p.popular,
-  ...PLAN_STYLES[i],
+  isEnterprise: p.isEnterprise,
+  ...(PLAN_STYLES[i] ?? PLAN_STYLES[PLAN_STYLES.length - 1]),
 }));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

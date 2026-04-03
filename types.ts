@@ -8,11 +8,10 @@ export interface User {
   phoneCountryCode?: string;
 }
 
-export enum AccountType {
-  BCV = 'BCV',
-  GRUPO = 'GRUPO',
-  DIVISA = 'DIVISA'
-}
+// BCV es la única cuenta fija. Todo lo demás viene de customRates[].id
+export type AccountType = 'BCV' | string;
+// Constantes de compatibilidad (los nuevos componentes NO las usan)
+export const AccountType = { BCV: 'BCV' as const, GRUPO: 'GRUPO' as const, DIVISA: 'DIVISA' as const };
 
 export enum MovementType {
   FACTURA = 'FACTURA',
@@ -28,13 +27,18 @@ export type DeviceMode = 'pc' | 'tablet' | 'mobile';
 
 export interface ExchangeRates {
   bcv: number;
-  grupo: number;
-  divisa: number;
+  grupo?: number;   // @deprecated — usar customRates[].value
+  divisa?: number;  // @deprecated — usar customRates[].value
   lastUpdated?: string;
 }
 
+export type CreditScore = 'EXCELENTE' | 'BUENO' | 'REGULAR' | 'RIESGO';
+
 export interface Customer {
   id: string;
+  nombre?: string;
+  fullName?: string;
+  rif?: string;
   cedula: string;
   telefono: string;
   direccion: string;
@@ -44,6 +48,16 @@ export interface Customer {
   ownerId?: string;
   creditLimit?: number;
   defaultAccountType?: AccountType;
+  // Credit management
+  creditApproved?: boolean;
+  defaultPaymentDays?: number;
+  creditScore?: CreditScore;
+  internalNotes?: string;
+  // Portal de clientes
+  portalEnabled?: boolean;
+  portalEmail?: string;
+  portalUserId?: string;
+  portalActivatedAt?: string;
 }
 
 export interface Supplier {
@@ -72,23 +86,53 @@ export interface Movement {
   entityId: string;
   date: string;
   createdAt?: string;
+  startedAt?: string;
   businessId?: string;
   ownerId?: string;
   concept: string;
   amount: number;
   amountInUSD: number;
+  originalAmount?: number;
+  subtotalUSD?: number;
+  ivaAmount?: number;
+  igtfAmount?: number;
+  igtfRate?: number;
+  discountAmount?: number;
   currency: PaymentCurrency | string;
-  movementType: MovementType;
-  accountType: AccountType;
+  movementType: MovementType | string;
+  accountType: AccountType | string;
   rateUsed: number;
   reference?: string;
+  referencia?: string;
+  nroControl?: string;
   productId?: string;
   isSupplierMovement?: boolean;
   expenseCategory?: string;
   invoiceImage?: string;
   metodoPago?: 'Efectivo' | 'Transferencia' | string;
   montoCalculado?: number;
-  originalAmount?: number;
+  // POS fields
+  pagado?: boolean;
+  estadoPago?: 'PAGADO' | 'PENDIENTE' | string;
+  esVentaContado?: boolean;
+  anulada?: boolean;
+  cajaId?: string;
+  vendedorId?: string;
+  vendedorNombre?: string;
+  paymentCondition?: string;   // legacy: 'credito15' | 'credito30' | 'credito45'
+  items?: { id: string; nombre: string; qty: number; price: number; subtotal: number }[];
+  pagos?: Record<string, number>;
+  esPagoMixto?: boolean;
+  // Credit period + early pay discount (new)
+  paymentDays?: number;              // e.g. 30
+  dueDate?: string;                  // ISO date: date + paymentDays
+  earlyPayDiscountPct?: number;      // e.g. 1.0 (%)
+  earlyPayDiscountExpiry?: string;   // = dueDate
+  earlyPayDiscountAmt?: number;      // USD amount saved if paid on time
+  // Portal payment confirmation
+  portalComprobante?: string;        // URL comprobante subido por cliente
+  portalComprobanteAt?: string;
+  portalPaymentStatus?: 'pending_review' | 'confirmed' | 'rejected';
   // Nota de Entrega
   esNotaEntrega?: boolean;
   estadoNDE?: 'pendiente_despacho' | 'despachado' | 'parcial' | 'rechazado';
@@ -105,6 +149,42 @@ export interface Movement {
     qtyPedida: number;
     qtyDespachada: number;
   }[];
+}
+
+// ── Períodos de pago configurables ─────────────────────────────────────────
+
+export interface PaymentPeriod {
+  days: number;
+  label: string;
+  discountPercent: number;  // 0 = no discount
+}
+
+// ── Portal de Invitación ────────────────────────────────────────────────────
+
+export interface PortalInvite {
+  id?: string;
+  customerId: string;
+  customerName: string;
+  businessId: string;
+  email: string;
+  token: string;
+  expiresAt: string;
+  used: boolean;
+  createdAt: string;
+}
+
+// ── Programa Embajador ──────────────────────────────────────────────────────
+
+export interface Referral {
+  id?: string;
+  referrerId: string;          // businessId del referidor
+  refereeBusinessId?: string;  // businessId del nuevo negocio
+  referralSlug: string;        // slug usado en el link
+  refereeEmail?: string;
+  registeredAt: string;
+  firstPurchaseAt?: string;    // cuando compra su primer plan
+  activatedAt?: string;        // 30d activos + pagó → descuento activo
+  status: 'pending' | 'qualified' | 'active' | 'churned';
 }
 
 export interface CommissionConfig {
@@ -147,6 +227,9 @@ export interface AppConfig {
     // darkMode eliminado: solo modo claro
     deviceMode: DeviceMode;
     uiVersion?: 'classic' | 'editorial';
+    accentFrom?: string;    // CSS var --accent-from (e.g. '#4f46e5')
+    accentTo?: string;      // CSS var --accent-to   (e.g. '#7c3aed')
+    density?: 'compact' | 'normal' | 'spacious';
   };
   system: { // Nuevo bloque de sistema
     alertThreshold: number; // Días para alerta de deuda
@@ -179,6 +262,7 @@ export interface AppConfig {
     zoherEnabled?: boolean; // Extensión de tasas personalizadas con precios dinámicos
   };
   creditPolicy?: CreditPolicy;
+  paymentPeriods?: PaymentPeriod[];  // configurable credit terms for POS Mayor
   operation?: {
     isolationMode: 'individual' | 'shared';  // individual = libros aislados, shared = libro compartido
   };

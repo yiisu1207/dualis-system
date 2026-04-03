@@ -48,7 +48,7 @@ type QuickProduct = {
 
 type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'transferencia' | 'pago_movil' | 'punto' | 'mixto';
 
-type PaymentCondition = 'contado' | 'credito15' | 'credito30' | 'credito45';
+type PaymentCondition = 'contado' | string; // dynamic: 'contado' | '<days>d'
 
 type HeldCart = {
   id: string;
@@ -99,12 +99,27 @@ const METHOD_ICONS: Record<PaymentMethod, React.ReactNode> = {
   mixto: <Layers size={15} />,
 };
 
-const CONDITION_LABELS: Record<PaymentCondition, string> = {
-  contado: 'Contado',
-  credito15: 'Crédito 15d',
-  credito30: 'Crédito 30d',
-  credito45: 'Crédito 45d',
-};
+// Payment periods — read from localStorage (set by Configuración → Períodos de Pago)
+// Falls back to classic hardcoded periods if not configured
+interface PaymentPeriodCfg { days: number; label: string; discountPercent: number; }
+const DEFAULT_PERIODS: PaymentPeriodCfg[] = [
+  { days: 0,  label: 'Contado',   discountPercent: 0 },
+  { days: 15, label: 'Crédito 15d', discountPercent: 2 },
+  { days: 30, label: 'Crédito 30d', discountPercent: 0 },
+  { days: 45, label: 'Crédito 45d', discountPercent: 0 },
+];
+function loadPaymentPeriods(): PaymentPeriodCfg[] {
+  try {
+    const raw = localStorage.getItem('payment_periods');
+    if (raw) {
+      const parsed = JSON.parse(raw) as PaymentPeriodCfg[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return [{ days: 0, label: 'Contado', discountPercent: 0 }, ...parsed];
+      }
+    }
+  } catch {}
+  return DEFAULT_PERIODS;
+}
 
 // ─── PAYMENT MODAL ────────────────────────────────────────────────────────────
 interface PaymentModalProps {
@@ -466,8 +481,18 @@ const PosContent = () => {
   const [consumidorFinal, setConsumidorFinal] = useState(false);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
 
-  // Payment condition
-  const [paymentCondition, setPaymentCondition] = useState<PaymentCondition>('contado');
+  // Payment periods (dynamic from config)
+  const [paymentPeriods] = useState<PaymentPeriodCfg[]>(loadPaymentPeriods);
+
+  // Payment condition — now identified by days (0 = contado)
+  const [paymentDays, setPaymentDays] = useState<number>(0);
+  const paymentCondition: PaymentCondition = paymentDays === 0 ? 'contado' : `credito${paymentDays}`;
+  const setPaymentCondition = (cond: PaymentCondition) => {
+    if (cond === 'contado') { setPaymentDays(0); return; }
+    const match = cond.match(/credito(\d+)/);
+    if (match) { setPaymentDays(parseInt(match[1])); return; }
+    setPaymentDays(0);
+  };
 
   // Account type (BCV / GRUPO / DIVISA)
   const [accountType, setAccountType] = useState<AccountType>('BCV');
@@ -1005,6 +1030,22 @@ const PosContent = () => {
         vendedorNombre: userProfile?.fullName || 'Vendedor',
         startedAt: startedAt?.toISOString() || isoDate,
         paymentCondition,
+        // Dynamic payment period fields
+        ...(paymentDays > 0 && (() => {
+          const dueDate = new Date(now);
+          dueDate.setDate(dueDate.getDate() + paymentDays);
+          const dueDateStr = dueDate.toISOString().split('T')[0];
+          const activePeriod = paymentPeriods.find(p => p.days === paymentDays);
+          const discountPct = activePeriod?.discountPercent ?? 0;
+          const discountAmt = discountPct > 0 ? parseFloat((totals.totalUsd * discountPct / 100).toFixed(2)) : 0;
+          return {
+            paymentDays,
+            dueDate: dueDateStr,
+            earlyPayDiscountPct:    discountPct > 0 ? discountPct : null,
+            earlyPayDiscountExpiry: discountPct > 0 ? dueDateStr  : null,
+            earlyPayDiscountAmt:    discountAmt > 0 ? discountAmt : null,
+          };
+        })()),
         pagado: false,
         estadoPago: 'PENDIENTE',
         esVentaContado: false,
@@ -1451,17 +1492,48 @@ const PosContent = () => {
               </div>
               )}
 
-              {/* Payment Condition Selector */}
+              {/* Payment Condition Selector — dynamic from config.paymentPeriods */}
               <div>
                 <label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest mb-2 block">Condición de Pago</label>
-                <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl p-1 border border-slate-200 dark:border-white/[0.08]">
-                  {(Object.keys(CONDITION_LABELS) as PaymentCondition[]).map(cond => (
-                    <button key={cond} onClick={() => setPaymentCondition(cond)}
-                      className={`flex-1 px-2 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all text-center ${paymentCondition === cond ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-md shadow-violet-500/25' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white/70'}`}>
-                      {CONDITION_LABELS[cond]}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {paymentPeriods.map(period => {
+                    const isActive = paymentDays === period.days;
+                    return (
+                      <button
+                        key={period.days}
+                        onClick={() => setPaymentDays(period.days)}
+                        className={`flex flex-col items-center px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                          isActive
+                            ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-md shadow-violet-500/25 border-transparent'
+                            : 'text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/[0.08] hover:border-violet-400/50'
+                        }`}
+                      >
+                        <span>{period.label}</span>
+                        {period.discountPercent > 0 && (
+                          <span className={`text-[8px] font-bold mt-0.5 ${isActive ? 'text-violet-200' : 'text-emerald-500'}`}>
+                            -{period.discountPercent}% desc.
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
+                {/* Discount preview */}
+                {paymentDays > 0 && (() => {
+                  const period = paymentPeriods.find(p => p.days === paymentDays);
+                  if (!period || period.discountPercent <= 0) return null;
+                  const dueDate = new Date();
+                  dueDate.setDate(dueDate.getDate() + paymentDays);
+                  const discountAmt = (totals.totalUsd * period.discountPercent / 100).toFixed(2);
+                  return (
+                    <div className="mt-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2">
+                      <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
+                      <p className="text-[10px] font-bold text-emerald-400">
+                        Paga antes del {dueDate.toLocaleDateString('es-VE')} y ahorra ${discountAmt}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Consumidor Final toggle — hidden for credit */}
@@ -1613,7 +1685,7 @@ const PosContent = () => {
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Total a Pagar</p>
                   {isCredit && (
                     <span className="text-[8px] font-black uppercase tracking-widest px-2 py-1 bg-amber-400/20 text-amber-300 rounded-lg">
-                      {CONDITION_LABELS[paymentCondition]}
+                      {paymentPeriods.find(p => p.days === paymentDays)?.label ?? paymentCondition}
                     </span>
                   )}
                 </div>
@@ -1843,7 +1915,7 @@ const PosContent = () => {
                         </span>
                         {held.paymentCondition !== 'contado' && (
                           <span className="text-[8px] font-black uppercase px-1.5 py-0.5 bg-violet-100 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400 rounded">
-                            {CONDITION_LABELS[held.paymentCondition]}
+                            {held.paymentCondition === 'contado' ? 'Contado' : held.paymentCondition}
                           </span>
                         )}
                       </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { NavLink, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { User, AppConfig } from '../../types';
 import { type RolePermissions, type ModuleId } from '../hooks/useRolePermissions';
@@ -29,6 +29,7 @@ import {
   Zap,
   TrendingUp,
   Truck,
+  History,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -53,6 +54,7 @@ type NavItem = {
 };
 
 type NavGroup = {
+  id: string;
   label: string;
   items: NavItem[];
 };
@@ -60,51 +62,56 @@ type NavGroup = {
 // ─── NAV DATA ─────────────────────────────────────────────────────────────────
 const NAV_GROUPS: NavGroup[] = [
   {
+    id: 'dashboard',
     label: 'Dashboard',
     items: [
-      { id: 'resumen',      label: 'Dashboard',       Icon: LayoutDashboard, path: 'dashboard'     },
+      { id: 'resumen',      label: 'Dashboard',        Icon: LayoutDashboard, path: 'dashboard'    },
     ],
   },
   {
+    id: 'operaciones',
     label: 'Operaciones',
     items: [
-      { id: 'inventario',   label: 'Inventario',      Icon: Package,         path: 'inventario'    },
-      { id: 'cajas',        label: 'Ventas / Cajas',  Icon: ShoppingCart,    path: 'cajas'         },
-      { id: 'despacho',     label: 'Panel Despacho',  Icon: Truck,           path: 'despacho'      },
-      { id: 'tasas',        label: 'Tasas Cambiarias', Icon: TrendingUp,     path: 'tasas'         },
-      { id: 'historial',    label: 'Historial',       Icon: FileText,        path: 'historial'     },
+      { id: 'inventario',   label: 'Inventario',       Icon: Package,         path: 'inventario'   },
+      { id: 'cajas',        label: 'Ventas / Cajas',   Icon: ShoppingCart,    path: 'cajas'        },
+      { id: 'despacho',     label: 'Panel Despacho',   Icon: Truck,           path: 'despacho'     },
+      { id: 'tasas',        label: 'Tasas Cambiarias', Icon: TrendingUp,      path: 'tasas'        },
+      { id: 'historial',    label: 'Libro Movimientos',Icon: History,         path: 'historial'    },
     ],
   },
   {
+    id: 'finanzas',
     label: 'Finanzas',
     items: [
-      { id: 'clientes',     label: 'Deudores / CxC',  Icon: Wallet,          path: 'cobranzas'     },
-      { id: 'proveedores',  label: 'Gastos / CxP',    Icon: Receipt,         path: 'cxp'           },
-      { id: 'contabilidad', label: 'Contabilidad',    Icon: BookOpen,        path: 'contabilidad'  },
-      { id: 'conciliacion', label: 'Conciliación',    Icon: Landmark,        path: 'conciliacion'  },
-      { id: 'solicitudes',  label: 'Solicitudes Abono', Icon: ClipboardCheck, path: 'solicitudes'   },
+      { id: 'clientes',     label: 'Deudores / CxC',   Icon: Wallet,          path: 'cobranzas'    },
+      { id: 'proveedores',  label: 'Gastos / CxP',     Icon: Receipt,         path: 'cxp'          },
+      { id: 'contabilidad', label: 'Contabilidad',     Icon: BookOpen,        path: 'contabilidad' },
+      { id: 'conciliacion', label: 'Conciliación',     Icon: Landmark,        path: 'conciliacion' },
     ],
   },
   {
+    id: 'equipo',
     label: 'Equipo',
     items: [
-      { id: 'rrhh',         label: 'RRHH / Nómina',  Icon: Users,           path: 'rrhh'          },
-      { id: 'sucursales',   label: 'Sucursales',      Icon: MapPin,          path: 'sucursales'    },
+      { id: 'rrhh',         label: 'RRHH / Nómina',    Icon: Users,           path: 'rrhh'         },
+      { id: 'sucursales',   label: 'Sucursales',       Icon: MapPin,          path: 'sucursales'   },
     ],
   },
   {
+    id: 'inteligencia',
     label: 'Inteligencia',
     items: [
-      { id: 'reportes',     label: 'Estadísticas',    Icon: BarChart3,       path: 'reportes'      },
-      { id: 'vision',       label: 'Auditoría IA',    Icon: ClipboardList,   path: 'vision'        },
-      { id: 'comparar',     label: 'Comparar Libros', Icon: ArrowLeftRight,  path: 'comparar'      },
+      { id: 'reportes',     label: 'Estadísticas',     Icon: BarChart3,       path: 'reportes'     },
+      { id: 'vision',       label: 'Auditoría IA',     Icon: ClipboardList,   path: 'vision'       },
+      { id: 'comparar',     label: 'Comparar Libros',  Icon: ArrowLeftRight,  path: 'comparar'     },
     ],
   },
   {
+    id: 'sistema',
     label: 'Sistema',
     items: [
-      { id: 'config',       label: 'Configuración',   Icon: Settings2,       path: 'configuracion' },
-      { id: 'help',         label: 'Ayuda',           Icon: HelpCircle,      path: 'help'          },
+      { id: 'config',       label: 'Configuración',    Icon: Settings2,       path: 'configuracion'},
+      { id: 'help',         label: 'Ayuda',            Icon: HelpCircle,      path: 'help'         },
     ],
   },
 ];
@@ -114,10 +121,19 @@ const moduleMap: Record<string, string> = {
   proveedores:  'cxp',
   contabilidad: 'ledger',
   conciliacion: 'reconciliation',
-  solicitudes:  'cxc',
   rrhh:         'nomina',
   vision:       'vision',
 };
+
+// Accent colors per group index for icons
+const GROUP_ICON_COLOR = [
+  'text-indigo-400',   // Dashboard
+  'text-sky-400',      // Operaciones
+  'text-emerald-400',  // Finanzas
+  'text-sky-400',      // Equipo
+  'text-violet-400',   // Inteligencia
+  'text-slate-400',    // Sistema
+];
 
 // ─── TOOLTIP helper (collapsed mode) ─────────────────────────────────────────
 const Tip: React.FC<{ children: React.ReactNode; alignBottom?: boolean }> = ({ children, alignBottom }) => (
@@ -151,16 +167,15 @@ const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onOpenProfile,
 }) => {
-  const location  = useLocation();
+  const location     = useLocation();
   const { empresa_id } = useParams();
-  const navigate = useNavigate();
+  const navigate     = useNavigate();
   const { moduleHidden, moduleForced } = useVendor();
 
-  // Subscription status for license badge
   const businessId = (config as any)?.companyName || '';
   const { subscription, trialDaysLeft, planDaysLeft, graceDaysLeft, inGracePeriod, isExpired } = useSubscription(businessId);
 
-  // Persist collapsed state across sessions
+  // ── Sidebar collapse (icon-only mode) ──────────────────────────────────────
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem('dualis_sidebar_collapsed') === 'true'; } catch { return false; }
   });
@@ -171,13 +186,48 @@ const Sidebar: React.FC<SidebarProps> = ({
     try { localStorage.setItem('dualis_sidebar_collapsed', String(next)); } catch { /* ignore */ }
   };
 
+  // ── Group collapse (folder-style) ──────────────────────────────────────────
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('dualis_sidebar_groups');
+      return saved ? new Set(JSON.parse(saved)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+
+  const toggleGroup = useCallback((groupId: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      try { localStorage.setItem('dualis_sidebar_groups', JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  // Auto-open the group that contains the active item
+  useEffect(() => {
+    for (const group of NAV_GROUPS) {
+      const hasActive = group.items.some(item => item.id === activeTab);
+      if (hasActive && collapsedGroups.has(group.id)) {
+        setCollapsedGroups(prev => {
+          const next = new Set(prev);
+          next.delete(group.id);
+          try { localStorage.setItem('dualis_sidebar_groups', JSON.stringify([...next])); } catch { /* ignore */ }
+          return next;
+        });
+      }
+    }
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const base   = empresa_id ? `/${empresa_id}/admin` : '';
   const toPath = (p: string) => `${base}/${p}`;
 
   const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
 
-  const isVisible = (item: NavItem) => {
-    // Vendor-level hard hide (super-admin decision, overrides everything)
+  const isVisible = (item: NavItem): boolean => {
     if (moduleHidden(item.id)) return false;
     if (item.id === 'help') return true;
 
@@ -186,16 +236,12 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (item.id === 'comparar' && !canCompare && !moduleForced(item.id)) return false;
 
     if (isOwnerOrAdmin) return true;
-
-    // Vendor forced-on overrides role permissions
     if (moduleForced(item.id)) return true;
 
-    // Non-admin: check rolePermissions
     const role = user.role as keyof RolePermissions;
     if (rolePermissions && role in rolePermissions) {
       return rolePermissions[role][item.id as ModuleId] === true;
     }
-    // Despacho panel: always visible for almacenista and inventario roles
     if (item.id === 'despacho' && (user.role === 'almacenista' || user.role === 'inventario')) return true;
     return item.id === 'cajas';
   };
@@ -211,16 +257,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     almacenista: 'Almacenista',
     inventario:  'Jefe Inv.',
   };
-
-  // Accent colors per group index for icons
-  const groupIconColor = [
-    'text-indigo-400',   // Dashboard
-    'text-sky-400',      // Operaciones
-    'text-emerald-400',  // Finanzas
-    'text-sky-400',      // Equipo
-    'text-violet-400',   // Inteligencia
-    'text-slate-400',    // Sistema
-  ];
 
   return (
     <>
@@ -241,15 +277,12 @@ const Sidebar: React.FC<SidebarProps> = ({
           bg-[#070b14] relative
         `}
       >
-        {/* ── Decorative background layers ── */}
-        {/* Top accent line */}
+        {/* Decorative layers */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent pointer-events-none" />
-        {/* Right border gradient */}
         <div className="absolute right-0 inset-y-0 w-px bg-gradient-to-b from-transparent via-indigo-500/20 to-transparent pointer-events-none z-10" />
-        {/* Top glow orb */}
         <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-32 h-32 bg-indigo-600/8 rounded-full blur-3xl pointer-events-none" />
 
-        {/* ── LOGO HEADER ─────────────────────────────────────────── */}
+        {/* ── LOGO ──────────────────────────────────────────────────── */}
         <div
           className={`
             relative z-10 flex items-center border-b border-white/[0.06] shrink-0 h-[60px]
@@ -257,9 +290,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           `}
         >
           <div className="flex items-center gap-3 min-w-0">
-            {/* Logo mark */}
             <img src="/logo.png" alt="Dualis" className="w-8 h-8 rounded-xl object-contain shrink-0" />
-            {/* Brand name (expanded only) */}
             {!collapsed && (
               <div className="min-w-0">
                 <p className="text-white font-black text-[14px] leading-none tracking-tight">Dualis</p>
@@ -267,8 +298,6 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
             )}
           </div>
-
-          {/* Collapse button (expanded only) */}
           {!collapsed && (
             <button
               onClick={toggleCollapsed}
@@ -280,7 +309,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* ── NAV ─────────────────────────────────────────────────── */}
+        {/* ── NAV ───────────────────────────────────────────────────── */}
         <nav
           className={`
             relative z-10 flex-1 overflow-y-auto custom-scroll py-3
@@ -290,79 +319,102 @@ const Sidebar: React.FC<SidebarProps> = ({
           {NAV_GROUPS.map((group, gi) => {
             const visibleItems = group.items.filter(isVisible);
             if (visibleItems.length === 0) return null;
-            const iconColor = groupIconColor[gi] ?? 'text-white/50';
+
+            const iconColor      = GROUP_ICON_COLOR[gi] ?? 'text-white/50';
+            const isGroupOpen    = !collapsedGroups.has(group.id);
+            // Dashboard group has only 1 item and no collapsible header
+            const isSimpleGroup  = group.items.length === 1;
 
             return (
-              <React.Fragment key={group.label}>
-                {/* Group header */}
+              <div key={group.id} className={gi > 0 ? 'mt-1' : ''}>
+
+                {/* ── Group header ── */}
                 {collapsed ? (
-                  gi > 0 && <div className="w-8 h-px bg-white/[0.06] my-2.5 shrink-0" />
-                ) : (
-                  <div className={`${gi > 0 ? 'mt-4' : 'mt-0'} mb-1 px-2`}>
+                  // Icon-only mode: just a separator
+                  gi > 0 && <div className="w-8 h-px bg-white/[0.06] my-2.5 shrink-0 mx-auto" />
+                ) : isSimpleGroup ? (
+                  // Single-item groups: static label
+                  <div className={`${gi > 0 ? 'mt-3' : 'mt-0'} mb-1 px-2`}>
                     <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/20">
                       {group.label}
                     </p>
                   </div>
+                ) : (
+                  // Multi-item groups: clickable folder header
+                  <button
+                    onClick={() => toggleGroup(group.id)}
+                    className={`
+                      w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg
+                      hover:bg-white/[0.03] transition-all duration-150 group/gh
+                      ${gi > 0 ? 'mt-2' : 'mt-0'}
+                    `}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className={`w-px h-3 rounded-full bg-current opacity-30 ${iconColor}`} />
+                      <p className={`text-[9px] font-black uppercase tracking-[0.2em] ${isGroupOpen ? 'text-white/30' : 'text-white/20'} group-hover/gh:text-white/40 transition-colors`}>
+                        {group.label}
+                      </p>
+                    </div>
+                    <ChevronRight
+                      size={10}
+                      className={`text-white/15 group-hover/gh:text-white/30 transition-all duration-200 shrink-0 ${isGroupOpen ? 'rotate-90' : 'rotate-0'}`}
+                    />
+                  </button>
                 )}
 
-                {/* Items */}
-                {visibleItems.map((item) => {
-                  const href     = toPath(item.path);
-                  const isActive = activeTab === item.id || location.pathname === href;
+                {/* ── Group items (animated collapse) ── */}
+                <div
+                  className={`
+                    overflow-hidden transition-all duration-200 ease-in-out
+                    ${collapsed || isSimpleGroup || isGroupOpen
+                      ? 'max-h-[500px] opacity-100'
+                      : 'max-h-0 opacity-0'
+                    }
+                  `}
+                >
+                  {/* Indent line for expanded groups */}
+                  {!collapsed && !isSimpleGroup && isGroupOpen && (
+                    <div className="flex">
+                      <div className="ml-[14px] mr-1 w-px bg-white/[0.05] rounded-full self-stretch my-0.5" />
+                      <div className="flex-1 flex flex-col gap-0">
+                        {visibleItems.map(item => (
+                          <NavItemRow
+                            key={item.id}
+                            item={item}
+                            href={toPath(item.path)}
+                            isActive={activeTab === item.id || location.pathname === toPath(item.path)}
+                            iconColor={iconColor}
+                            badge={badges[item.id] ?? 0}
+                            collapsed={false}
+                            indented
+                            onNavigate={() => setIsOpen(false)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-                  return (
-                    <NavLink
+                  {/* No indent for simple groups or collapsed sidebar */}
+                  {(collapsed || isSimpleGroup) && visibleItems.map(item => (
+                    <NavItemRow
                       key={item.id}
-                      to={href}
-                      onClick={() => setIsOpen(false)}
-                      className={`
-                        relative group flex items-center rounded-xl transition-all duration-200 shrink-0
-                        ${collapsed
-                          ? 'lg:w-11 lg:h-11 lg:justify-center lg:my-0.5 gap-2.5 px-2.5 py-2 w-full mb-0.5'
-                          : 'gap-2.5 px-2.5 py-2 w-full mb-0.5'
-                        }
-                        ${isActive
-                          ? 'bg-gradient-to-r from-indigo-600/[0.18] to-violet-600/[0.08] border border-indigo-500/[0.12] text-white'
-                          : `${iconColor} hover:bg-white/[0.05] hover:text-white`
-                        }
-                      `}
-                    >
-                      {/* Active: left accent bar */}
-                      {isActive && (
-                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full bg-gradient-to-b from-indigo-400 to-violet-400 shadow-[0_0_8px_rgba(99,102,241,0.7)]" />
-                      )}
-
-                      <span className="relative shrink-0">
-                        <item.Icon
-                          size={15}
-                          strokeWidth={isActive ? 2.2 : 1.7}
-                          className="relative z-10"
-                        />
-                        {(badges[item.id] ?? 0) > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 z-20 min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[8px] font-black leading-none shadow-[0_0_6px_rgba(244,63,94,0.5)]">
-                            {badges[item.id]}
-                          </span>
-                        )}
-                      </span>
-
-                      {/* Label — always visible on mobile, hidden when collapsed on lg */}
-                      <span
-                        className={`text-[12px] font-medium tracking-tight truncate relative z-10 transition-colors ${collapsed ? 'lg:hidden' : ''} ${isActive ? 'text-white' : ''}`}
-                      >
-                        {item.label}
-                      </span>
-
-                      {/* Tooltip (collapsed on desktop only) */}
-                      {collapsed && <span className="hidden lg:block"><Tip>{item.label}</Tip></span>}
-                    </NavLink>
-                  );
-                })}
-              </React.Fragment>
+                      item={item}
+                      href={toPath(item.path)}
+                      isActive={activeTab === item.id || location.pathname === toPath(item.path)}
+                      iconColor={iconColor}
+                      badge={badges[item.id] ?? 0}
+                      collapsed={collapsed}
+                      indented={false}
+                      onNavigate={() => setIsOpen(false)}
+                    />
+                  ))}
+                </div>
+              </div>
             );
           })}
         </nav>
 
-        {/* ── BOTTOM ───────────────────────────────────────────────── */}
+        {/* ── BOTTOM ──────────────────────────────────────────────────── */}
         <div
           className={`
             relative z-10 shrink-0 border-t border-white/[0.06] py-3
@@ -382,18 +434,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
           {/* License status badge */}
           {subscription && (() => {
-            const isTrial = subscription.status === 'trial' && !inGracePeriod && !isExpired;
-            const isActivePaid = subscription.status === 'active' && !inGracePeriod && !isExpired;
-            const days = inGracePeriod ? graceDaysLeft
-              : isTrial ? trialDaysLeft
-              : planDaysLeft;
-            const planName = subscription.plan === 'trial' ? 'Trial' : subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1);
-            const billingPath = `/${empresa_id}/billing`;
-
-            // Determine color theme
-            const theme = isExpired || inGracePeriod ? 'rose'
-              : isTrial ? 'amber'
-              : 'emerald';
+            const isTrial       = subscription.status === 'trial' && !inGracePeriod && !isExpired;
+            const isActivePaid  = subscription.status === 'active' && !inGracePeriod && !isExpired;
+            const days          = inGracePeriod ? graceDaysLeft : isTrial ? trialDaysLeft : planDaysLeft;
+            const planName      = subscription.plan === 'trial' ? 'Trial' : subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1);
+            const billingPath   = `/${empresa_id}/billing`;
+            const theme         = isExpired || inGracePeriod ? 'rose' : isTrial ? 'amber' : 'emerald';
 
             if (collapsed) {
               return (
@@ -495,15 +541,12 @@ const Sidebar: React.FC<SidebarProps> = ({
               <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 flex items-center justify-center text-white font-black text-[12px] select-none shadow-[0_0_12px_rgba(245,158,11,0.3)]">
                 {user.name.charAt(0).toUpperCase()}
               </div>
-              {/* Role badge */}
               {collapsed && (
                 <span className="absolute -bottom-1 -right-1 px-1 py-px rounded bg-[#1a2235] border border-white/[0.08] text-[7px] font-black text-white/50 uppercase leading-none">
                   {(roleLabel[user.role] || user.role).slice(0, 3)}
                 </span>
               )}
             </div>
-
-            {/* Name + role (expanded) */}
             {!collapsed && (
               <div className="min-w-0 flex-1 text-left">
                 <p className="text-[12px] font-black text-white/70 truncate leading-none">{user.name}</p>
@@ -512,19 +555,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </p>
               </div>
             )}
-
-            {/* Tooltip (collapsed) */}
             {collapsed && (
-              <span
-                className="
-                  pointer-events-none absolute left-[calc(100%+12px)] bottom-0 z-[200]
-                  flex flex-col gap-0.5
-                  px-3 py-2.5 rounded-xl bg-[#1a2235] border border-white/[0.08]
-                  shadow-2xl shadow-black/50 min-w-[140px]
-                  opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0
-                  transition-all duration-150
-                "
-              >
+              <span className="pointer-events-none absolute left-[calc(100%+12px)] bottom-0 z-[200] flex flex-col gap-0.5 px-3 py-2.5 rounded-xl bg-[#1a2235] border border-white/[0.08] shadow-2xl shadow-black/50 min-w-[140px] opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0 transition-all duration-150">
                 <span className="text-white text-[12px] font-black leading-tight">{user.name}</span>
                 <span className="text-white/40 text-[9px] font-bold uppercase tracking-widest">
                   {roleLabel[user.role] || user.role}
@@ -537,5 +569,60 @@ const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+
+// ─── NAV ITEM ROW (extracted for reuse) ───────────────────────────────────────
+interface NavItemRowProps {
+  item: NavItem;
+  href: string;
+  isActive: boolean;
+  iconColor: string;
+  badge: number;
+  collapsed: boolean;
+  indented: boolean;
+  onNavigate: () => void;
+}
+
+const NavItemRow: React.FC<NavItemRowProps> = ({
+  item, href, isActive, iconColor, badge, collapsed, indented, onNavigate,
+}) => (
+  <NavLink
+    to={href}
+    onClick={onNavigate}
+    className={`
+      relative group flex items-center rounded-xl transition-all duration-200 shrink-0
+      ${collapsed
+        ? 'lg:w-11 lg:h-11 lg:justify-center lg:my-0.5 gap-2.5 px-2.5 py-2 w-full mb-0.5'
+        : `gap-2.5 px-2.5 py-2 w-full mb-0.5 ${indented ? 'pl-2.5' : ''}`
+      }
+      ${isActive
+        ? 'bg-gradient-to-r from-indigo-600/[0.18] to-violet-600/[0.08] border border-indigo-500/[0.12] text-white'
+        : `${iconColor} hover:bg-white/[0.05] hover:text-white`
+      }
+    `}
+  >
+    {isActive && (
+      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full bg-gradient-to-b from-indigo-400 to-violet-400 shadow-[0_0_8px_rgba(99,102,241,0.7)]" />
+    )}
+    <span className="relative shrink-0">
+      <item.Icon size={15} strokeWidth={isActive ? 2.2 : 1.7} className="relative z-10" />
+      {badge > 0 && (
+        <span className="absolute -top-1.5 -right-1.5 z-20 min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[8px] font-black leading-none shadow-[0_0_6px_rgba(244,63,94,0.5)]">
+          {badge}
+        </span>
+      )}
+    </span>
+    <span className={`text-[12px] font-medium tracking-tight truncate relative z-10 transition-colors ${collapsed ? 'lg:hidden' : ''} ${isActive ? 'text-white' : ''}`}>
+      {item.label}
+    </span>
+    {collapsed && (
+      <span className="hidden lg:block">
+        <span className="pointer-events-none absolute left-[calc(100%+12px)] z-[200] flex items-center gap-2 px-3 py-2 rounded-xl bg-[#1a2235] border border-white/[0.08] text-white text-[11px] font-semibold tracking-wide whitespace-nowrap shadow-2xl shadow-black/50 opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0 transition-all duration-150 top-1/2 -translate-y-1/2">
+          <ChevronRight size={9} className="text-indigo-400/60 shrink-0" />
+          {item.label}
+        </span>
+      </span>
+    )}
+  </NavLink>
+);
 
 export default React.memo(Sidebar);
