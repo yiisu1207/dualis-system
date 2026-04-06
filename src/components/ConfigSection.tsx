@@ -86,7 +86,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
   const { customRates, zoherEnabled, updateCustomRates, setZoherEnabled } = useRates();
   const [localConfig, setLocalConfig] = useState<AppConfig>(config);
   const [localCustomRates, setLocalCustomRates] = useState<CustomRate[]>([]);
-  type TabId = 'EMPRESA' | 'USUARIOS' | 'PERSONALIZACION' | 'SISTEMA' | 'FISCAL' | 'CREDITO' | 'MENSAJES' | 'OPERACION' | 'AUDITORIA' | 'DEV' | 'SUSCRIPCION' | 'APARIENCIA' | 'MODULOS' | 'PERIODOS';
+  type TabId = 'EMPRESA' | 'USUARIOS' | 'PERSONALIZACION' | 'SISTEMA' | 'FISCAL' | 'MENSAJES' | 'OPERACION' | 'AUDITORIA' | 'DEV' | 'SUSCRIPCION' | 'APARIENCIA' | 'MODULOS';
   const [activeTab, setActiveTab] = useState<TabId>('EMPRESA');
   const [seedProgress, setSeedProgress] = useState<{ msg: string; pct: number } | null>(null);
   const [seedResult, setSeedResult] = useState<{ products: number; customers: number; suppliers: number; movements: number; terminals: number } | null>(null);
@@ -320,9 +320,7 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
             { id: 'SUSCRIPCION',    icon: Star,         label: 'Suscripción' },
             { id: 'APARIENCIA',     icon: Palette,      label: 'Apariencia' },
             { id: 'MODULOS',        icon: LayoutGrid,   label: 'Módulos' },
-            { id: 'PERIODOS',       icon: Clock,        label: 'Períodos' },
             { id: 'FISCAL',         icon: Calculator,   label: 'Fiscal / POS' },
-            { id: 'CREDITO',        icon: CreditCard,   label: 'Crédito' },
             { id: 'MENSAJES',       icon: MessageSquare,label: 'Mensajes' },
             { id: 'OPERACION',      icon: GitCompare,   label: 'Operación' },
             { id: 'AUDITORIA',      icon: Shield,       label: 'Auditoría',  ownerOnly: true },
@@ -911,121 +909,6 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
           </div>
         )}
 
-        {/* --- TAB: PERIODOS --- */}
-        {activeTab === 'PERIODOS' && (
-          <div className="max-w-2xl mx-auto space-y-6 animate-in zoom-in-95 duration-300">
-            <div className="p-5 rounded-2xl border border-sky-500/20 bg-sky-500/[0.05]">
-              <div className="flex items-start gap-3">
-                <Clock size={14} className="text-sky-400 mt-0.5 shrink-0" />
-                <p className="text-[11px] text-sky-300/70 leading-relaxed">
-                  Define los plazos de crédito disponibles para ventas en POS Mayor. El vendedor seleccionará uno de estos períodos al crear una factura a crédito.
-                  Si un período tiene descuento, el cliente ahorra ese % si paga antes del vencimiento.
-                </p>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/[0.07] bg-[#0d1424] p-6">
-              <div className="flex items-center justify-between mb-5">
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Períodos Configurados</p>
-                <button
-                  onClick={() => setLocalPeriods([...localPeriods, { days: 30, label: '30 días', discountPercent: 0 }])}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 transition-all shadow-md shadow-indigo-500/25"
-                >
-                  <Plus size={11} /> Agregar
-                </button>
-              </div>
-
-              {localPeriods.length === 0 ? (
-                <p className="text-center py-8 text-white/20 text-sm font-bold">No hay períodos configurados. Agrega uno.</p>
-              ) : (
-                <div className="space-y-3">
-                  {localPeriods.map((period, idx) => (
-                    <div key={idx} className="flex items-center gap-3 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
-                      <div className="grid grid-cols-3 gap-3 flex-1">
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1 block">Días</label>
-                          <input
-                            type="number" min="1" max="365"
-                            value={period.days}
-                            onChange={(e) => {
-                              const updated = [...localPeriods];
-                              updated[idx] = { ...period, days: parseInt(e.target.value) || 1 };
-                              setLocalPeriods(updated);
-                            }}
-                            className="w-full px-3 py-2 bg-white/[0.06] border border-white/[0.08] rounded-lg text-sm font-black text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1 block">Etiqueta</label>
-                          <input
-                            value={period.label}
-                            onChange={(e) => {
-                              const updated = [...localPeriods];
-                              updated[idx] = { ...period, label: e.target.value };
-                              setLocalPeriods(updated);
-                            }}
-                            placeholder="Ej: 30 días"
-                            className="w-full px-3 py-2 bg-white/[0.06] border border-white/[0.08] rounded-lg text-sm font-bold text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1 block">Desc. Pronto Pago %</label>
-                          <input
-                            type="number" min="0" max="100" step="0.5"
-                            value={period.discountPercent}
-                            onChange={(e) => {
-                              const updated = [...localPeriods];
-                              updated[idx] = { ...period, discountPercent: parseFloat(e.target.value) || 0 };
-                              setLocalPeriods(updated);
-                            }}
-                            className="w-full px-3 py-2 bg-white/[0.06] border border-white/[0.08] rounded-lg text-sm font-black text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
-                          />
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setLocalPeriods(localPeriods.filter((_, i) => i !== idx))}
-                        className="h-9 w-9 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 flex items-center justify-center transition-all shrink-0"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Preview */}
-              {localPeriods.length > 0 && (
-                <div className="mt-5 p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                  <p className="text-[9px] font-black text-white/25 uppercase tracking-widest mb-3">Vista Previa — Selector en POS Mayor</p>
-                  <div className="flex flex-wrap gap-2">
-                    {[...localPeriods].sort((a, b) => a.days - b.days).map((p, i) => (
-                      <div key={i} className="px-4 py-2.5 rounded-xl border border-white/[0.08] bg-white/[0.04] text-center">
-                        <p className="text-sm font-black text-white">{p.label}</p>
-                        {p.discountPercent > 0 && (
-                          <p className="text-[10px] font-bold text-emerald-400">Ahorra {p.discountPercent}%</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-5">
-                <button
-                  onClick={() => {
-                    onUpdateConfig({ ...localConfig, paymentPeriods: localPeriods });
-                    localStorage.setItem('payment_periods', JSON.stringify(localPeriods));
-                    success('Períodos de pago guardados');
-                  }}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/25"
-                >
-                  <Save size={13} /> Guardar Períodos
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* --- TAB: USUARIOS --- */}
         {activeTab === 'USUARIOS' && (
           <div className="max-w-3xl mx-auto animate-in zoom-in-95 duration-300">
@@ -1236,206 +1119,6 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
           </div>
         )}
 
-        {/* --- TAB: CRÉDITO --- */}
-        {activeTab === 'CREDITO' && (() => {
-          const cp = localConfig.creditPolicy ?? { enabled: false, defaultCreditLimit: 0, earlyPaymentTiers: [], gracePeriodDays: 30, requireAbonoApproval: true };
-          const updateCP = (patch: Partial<typeof cp>) => setLocalConfig({ ...localConfig, creditPolicy: { ...cp, ...patch } });
-          return (
-            <div className="max-w-2xl mx-auto space-y-6 animate-in zoom-in-95 duration-300">
-
-              {/* Enable credit system */}
-              <div className="p-6 bg-violet-50 dark:bg-violet-500/5 rounded-[2rem] border border-violet-100 dark:border-violet-500/20">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="font-black text-violet-800 dark:text-violet-300 text-sm uppercase tracking-widest flex items-center gap-2">
-                      <CreditCard size={16} /> Sistema de Crédito
-                    </h3>
-                    <p className="text-xs text-violet-600 dark:text-violet-400/70 mt-0.5">Habilita ventas a crédito con control de límites y pronto pago</p>
-                  </div>
-                  <button
-                    onClick={() => updateCP({ enabled: !cp.enabled })}
-                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${cp.enabled ? 'bg-gradient-to-r from-violet-500 to-purple-600' : 'bg-slate-200 dark:bg-white/10'}`}
-                  >
-                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${cp.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                  </button>
-                </div>
-              </div>
-
-              {cp.enabled && (
-                <>
-                  {/* Default credit limit */}
-                  <div className="p-6 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-white/10 shadow-sm">
-                    <h3 className="font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest mb-1">Límite de Crédito por Defecto</h3>
-                    <p className="text-[11px] text-slate-400 mb-4">Aplica a clientes nuevos sin límite individual. $0 = sin límite.</p>
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg font-black text-slate-400">$</span>
-                      <input
-                        type="number" min="0" step="100"
-                        value={cp.defaultCreditLimit || ''}
-                        onChange={(e) => updateCP({ defaultCreditLimit: parseFloat(e.target.value) || 0 })}
-                        placeholder="0.00"
-                        className="w-40 px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-lg font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none"
-                      />
-                      <span className="text-xs font-bold text-slate-400">USD</span>
-                    </div>
-                  </div>
-
-                  {/* Grace period */}
-                  <div className="p-6 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-white/10 shadow-sm">
-                    <h3 className="font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest mb-1">Período de Gracia</h3>
-                    <p className="text-[11px] text-slate-400 mb-4">Días después del vencimiento antes de bloquear nuevas ventas a crédito.</p>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="number" min="0" max="365"
-                        value={cp.gracePeriodDays || ''}
-                        onChange={(e) => updateCP({ gracePeriodDays: parseInt(e.target.value) || 0 })}
-                        placeholder="30"
-                        className="w-24 px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-lg font-black text-slate-800 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none text-center"
-                      />
-                      <span className="text-xs font-bold text-slate-400">días</span>
-                    </div>
-                  </div>
-
-                  {/* Early payment tiers */}
-                  <div className="p-6 bg-emerald-50 dark:bg-emerald-500/5 rounded-[2rem] border border-emerald-100 dark:border-emerald-500/20">
-                    <div className="flex items-center justify-between gap-4 mb-4">
-                      <div>
-                        <h3 className="font-black text-emerald-800 dark:text-emerald-300 text-sm uppercase tracking-widest">Descuento por Pronto Pago</h3>
-                        <p className="text-xs text-emerald-600 dark:text-emerald-400/70 mt-0.5">Incentiva pagos anticipados con descuentos automáticos (VEN-NIF legal)</p>
-                      </div>
-                      <button
-                        onClick={() => updateCP({ earlyPaymentTiers: [...cp.earlyPaymentTiers, { maxDays: 7, discountPercent: 3, label: '7 días' }] })}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md shadow-emerald-500/25"
-                      >
-                        <Plus size={12} /> Agregar
-                      </button>
-                    </div>
-
-                    {cp.earlyPaymentTiers.length === 0 ? (
-                      <p className="text-xs text-emerald-500/60 font-bold text-center py-4">No hay tiers configurados. Agrega uno para habilitar descuento por pronto pago.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {cp.earlyPaymentTiers.map((tier, idx) => (
-                          <div key={idx} className="flex items-center gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-emerald-100 dark:border-emerald-500/15">
-                            <div className="flex-1 grid grid-cols-3 gap-3">
-                              <div>
-                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Máx. Días</label>
-                                <input type="number" min="1" value={tier.maxDays}
-                                  onChange={(e) => {
-                                    const tiers = [...cp.earlyPaymentTiers];
-                                    tiers[idx] = { ...tier, maxDays: parseInt(e.target.value) || 7 };
-                                    updateCP({ earlyPaymentTiers: tiers });
-                                  }}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-black text-center" />
-                              </div>
-                              <div>
-                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Descuento %</label>
-                                <input type="number" min="0" max="100" step="0.5" value={tier.discountPercent}
-                                  onChange={(e) => {
-                                    const tiers = [...cp.earlyPaymentTiers];
-                                    tiers[idx] = { ...tier, discountPercent: parseFloat(e.target.value) || 0 };
-                                    updateCP({ earlyPaymentTiers: tiers });
-                                  }}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-black text-center" />
-                              </div>
-                              <div>
-                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Etiqueta</label>
-                                <input value={tier.label}
-                                  onChange={(e) => {
-                                    const tiers = [...cp.earlyPaymentTiers];
-                                    tiers[idx] = { ...tier, label: e.target.value };
-                                    updateCP({ earlyPaymentTiers: tiers });
-                                  }}
-                                  placeholder="Ej: 7 días"
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-bold" />
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => {
-                                const tiers = cp.earlyPaymentTiers.filter((_, i) => i !== idx);
-                                updateCP({ earlyPaymentTiers: tiers });
-                              }}
-                              className="h-9 w-9 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/20 flex items-center justify-center transition-all shrink-0"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {cp.earlyPaymentTiers.length > 0 && (
-                      <div className="mt-4 p-3 bg-emerald-100/50 dark:bg-emerald-500/10 rounded-xl">
-                        <p className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest mb-1">Vista previa</p>
-                        <div className="flex flex-wrap gap-2">
-                          {cp.earlyPaymentTiers.sort((a, b) => a.maxDays - b.maxDays).map((t, i) => (
-                            <span key={i} className="px-3 py-1.5 bg-white dark:bg-slate-900 rounded-lg text-xs font-black text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
-                              ≤{t.maxDays}d → {t.discountPercent}% desc.
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Abono approval toggle */}
-                  <div className="p-6 bg-amber-50 dark:bg-amber-500/5 rounded-[2rem] border border-amber-100 dark:border-amber-500/20">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <h3 className="font-black text-amber-800 dark:text-amber-300 text-sm uppercase tracking-widest flex items-center gap-2">
-                          <Shield size={16} /> Aprobación de Abonos
-                        </h3>
-                        <p className="text-xs text-amber-600 dark:text-amber-400/70 mt-0.5">
-                          Los vendedores registran solicitudes de abono. Un administrador debe aprobar antes de aplicar el pago a la cuenta del cliente.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => updateCP({ requireAbonoApproval: !(cp.requireAbonoApproval ?? true) })}
-                        className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shrink-0 ${(cp.requireAbonoApproval ?? true) ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-slate-200 dark:bg-white/10'}`}
-                      >
-                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(cp.requireAbonoApproval ?? true) ? 'translate-x-6' : 'translate-x-1'}`} />
-                      </button>
-                    </div>
-                    {(cp.requireAbonoApproval ?? true) && (
-                      <div className="mt-3 p-3 bg-amber-100/50 dark:bg-amber-500/10 rounded-xl">
-                        <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 leading-relaxed">
-                          <strong>Flujo:</strong> Vendedor registra abono → Aparece como solicitud pendiente → Admin revisa y aprueba/rechaza → Si aprueba, se crea el movimiento ABONO automáticamente.
-                        </p>
-                      </div>
-                    )}
-                    {!(cp.requireAbonoApproval ?? true) && (
-                      <div className="mt-3 p-3 bg-slate-100 dark:bg-slate-800/50 rounded-xl">
-                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
-                          <strong>Modo directo:</strong> Los vendedores pueden registrar abonos directamente sin aprobación. Solo recomendado si confías plenamente en tu equipo.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Multi-account info */}
-                  <div className="p-6 bg-sky-50 dark:bg-sky-500/5 rounded-[2rem] border border-sky-100 dark:border-sky-500/20">
-                    <h3 className="font-black text-sky-800 dark:text-sky-300 text-sm uppercase tracking-widest flex items-center gap-2 mb-2">
-                      <Info size={16} /> Multi-Cuenta (BCV / Grupo / Divisa)
-                    </h3>
-                    <p className="text-xs text-sky-600 dark:text-sky-400/70 leading-relaxed">
-                      El sistema soporta 3 tipos de cuenta por cliente: <strong>BCV</strong> (tasa oficial), <strong>Grupo</strong> (tasa paralela) y <strong>Divisa</strong> (solo USD).
-                      Cada producto puede tener un precio diferente por cuenta. Los precios se configuran en <strong>Inventario → editar producto</strong>.
-                      Las tasas se gestionan desde <strong>Finanzas → Tasas</strong>.
-                    </p>
-                    <p className="text-[10px] font-bold text-sky-500/70 dark:text-sky-400/50 mt-2 uppercase tracking-widest">
-                      Gestión interna — La factura fiscal siempre muestra tasa BCV (cumplimiento legal)
-                    </p>
-                  </div>
-                </>
-              )}
-
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center">
-                Recuerda guardar los cambios para que apliquen en todo el sistema.
-              </p>
-            </div>
-          );
-        })()}
-
         {/* --- TAB: MENSAJES --- */}
         {activeTab === 'MENSAJES' && (
           <div className="max-w-3xl mx-auto space-y-6 animate-in zoom-in-95 duration-300">
@@ -1464,103 +1147,18 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
         {activeTab === 'OPERACION' && (
           <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="px-6 py-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50">
-              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Modo de Operación — Libros</h3>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Define cómo los usuarios manejan los registros contables y operativos.</p>
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Operación</h3>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Tasas personalizadas y extensiones de operación.</p>
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Mode selector */}
-              <div className="grid sm:grid-cols-2 gap-4">
-                {/* Individual */}
-                <button
-                  onClick={() => setLocalConfig(c => ({ ...c, operation: { ...c.operation, isolationMode: 'individual' } }))}
-                  className={`rounded-2xl border-2 p-5 text-left transition-all ${
-                    localConfig.operation?.isolationMode === 'individual'
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 shadow-lg shadow-indigo-500/10'
-                      : 'border-slate-200 dark:border-white/10 hover:border-indigo-300 dark:hover:border-indigo-500/30'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
-                      localConfig.operation?.isolationMode === 'individual'
-                        ? 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400'
-                        : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400'
-                    }`}>
-                      <Lock size={18} />
-                    </div>
-                    <div>
-                      <p className={`text-sm font-black ${
-                        localConfig.operation?.isolationMode === 'individual' ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-300'
-                      }`}>Modo Individual</p>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">Aislado</p>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Cada usuario opera en su propio libro. No puede ver ni alterar lo que registra otro usuario en el mismo módulo.
-                    Ideal para empresas con múltiples cajeros o áreas contables independientes.
-                  </p>
-                </button>
-
-                {/* Shared */}
-                <button
-                  onClick={() => setLocalConfig(c => ({ ...c, operation: { ...c.operation, isolationMode: 'shared' } }))}
-                  className={`rounded-2xl border-2 p-5 text-left transition-all ${
-                    localConfig.operation?.isolationMode === 'shared' || !localConfig.operation?.isolationMode
-                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 shadow-lg shadow-emerald-500/10'
-                      : 'border-slate-200 dark:border-white/10 hover:border-emerald-300 dark:hover:border-emerald-500/30'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
-                      localConfig.operation?.isolationMode === 'shared' || !localConfig.operation?.isolationMode
-                        ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400'
-                    }`}>
-                      <Unlock size={18} />
-                    </div>
-                    <div>
-                      <p className={`text-sm font-black ${
-                        localConfig.operation?.isolationMode === 'shared' || !localConfig.operation?.isolationMode ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300'
-                      }`}>Modo Compartido</p>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">Colaborativo</p>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Todos los usuarios operan sobre el mismo libro general. Los cambios de cualquier usuario son visibles para todos.
-                    Ideal para equipos pequeños con alta confianza.
-                  </p>
-                </button>
+              {/* Redirect note for Libros Individuales */}
+              <div className="rounded-xl border border-indigo-200 dark:border-indigo-500/20 bg-indigo-50 dark:bg-indigo-500/[0.06] p-4 flex items-center gap-3">
+                <Lock size={15} className="text-indigo-500 shrink-0" />
+                <p className="text-[11px] text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                  <strong>Modo de Operación (Libros Individuales)</strong> se configura ahora desde <strong>Configuración → Despacho/NDE</strong>.
+                </p>
               </div>
-
-              {/* Recommendations */}
-              <div className="rounded-2xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/[0.06] p-5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle size={15} className="text-amber-600 dark:text-amber-400" />
-                  <p className="text-xs font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">Recomendaciones de seguridad</p>
-                </div>
-                <ul className="text-[11px] text-amber-800/80 dark:text-amber-300/70 space-y-2 pl-5 list-disc leading-relaxed">
-                  <li><strong>Modo Individual</strong> es recomendado cuando tienes <strong>más de 2 usuarios</strong> operando el mismo módulo (ej: 2 cajeros, vendedor + admin).</li>
-                  <li>Evita que un usuario con malas intenciones <strong>elimine o modifique cargos</strong> sin que el otro se dé cuenta.</li>
-                  <li>Con modo individual activo, los usuarios pueden <strong>solicitar comparaciones</strong> para detectar discrepancias entre libros.</li>
-                  <li>El <strong>AuditLog</strong> registra todas las operaciones independientemente del modo — úsalo para trazabilidad.</li>
-                  <li>Si cambias de modo, los registros existentes <strong>no se pierden</strong>. Solo cambia cómo se filtran y muestran.</li>
-                </ul>
-              </div>
-
-              {/* Info about Compare feature */}
-              {localConfig.operation?.isolationMode === 'individual' && (
-                <div className="rounded-2xl border border-indigo-200 dark:border-indigo-500/20 bg-indigo-50 dark:bg-indigo-500/[0.06] p-5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Info size={15} className="text-indigo-600 dark:text-indigo-400" />
-                    <p className="text-xs font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-400">Comparar Libros habilitado</p>
-                  </div>
-                  <p className="text-[11px] text-indigo-700/70 dark:text-indigo-300/60 leading-relaxed">
-                    Con el modo individual activo, la sección <strong>"Comparar Libros"</strong> cobra mayor utilidad.
-                    Los usuarios pueden solicitar comparaciones cruzadas, detectar diferencias automáticamente,
-                    chatear sobre discrepancias y exportar reportes. Todo queda registrado en el AuditLog.
-                  </p>
-                </div>
-              )}
 
               {/* ── Extensión de Tasas Personalizadas ── */}
               <div className="border-t border-slate-200 dark:border-white/10 pt-6 mt-2">
@@ -1696,17 +1294,6 @@ const ConfigSection: React.FC<ConfigSectionProps> = ({
                 )}
               </div>
 
-              {/* Save button */}
-              <button
-                onClick={() => {
-                  onUpdateConfig(localConfig);
-                  localStorage.setItem('operation_isolation_mode', localConfig.operation?.isolationMode || 'shared');
-                  success('Modo de operación actualizado');
-                }}
-                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 transition-all shadow-lg shadow-indigo-500/25"
-              >
-                <Save size={13} /> Guardar configuración
-              </button>
             </div>
           </div>
         )}

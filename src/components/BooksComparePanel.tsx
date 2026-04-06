@@ -4,7 +4,7 @@ import {
   ArrowRight, Check, X, Clock, AlertTriangle, MessageSquare,
   ChevronDown, Filter, Download, RefreshCw, Eye, EyeOff,
   CheckCircle2, XCircle, AlertCircle, Minus, Send, FileText,
-  Info,
+  Info, Lock,
 } from 'lucide-react';
 import { CashAdvance, Customer, Employee, ExchangeRates, Movement, Supplier } from '../../types';
 import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
@@ -239,10 +239,11 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
     });
   }, [businessId]);
 
-  const otherUsers = useMemo(() =>
-    bizUsers.filter(u => (u.uid || u.id) !== currentUserId),
-    [bizUsers, currentUserId]
-  );
+  // In individual mode, only admins/owners can compare across users
+  const otherUsers = useMemo(() => {
+    if (isIndividual && !isAdmin) return [];
+    return bizUsers.filter(u => (u.uid || u.id) !== currentUserId);
+  }, [bizUsers, currentUserId, isIndividual, isAdmin]);
 
   const getUserName = (uid: string) => {
     const u = bizUsers.find(x => (x.uid || x.id) === uid);
@@ -986,7 +987,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
             ) : (
               <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 w-fit">
                 <AlertTriangle size={11} className="text-amber-400" />
-                <span className="text-[10px] font-black text-amber-300/80">Modo Compartido — activa el modo individual en Configuración → Operación para aislar libros por usuario.</span>
+                <span className="text-[10px] font-black text-amber-300/80">Modo Compartido — activa el modo individual en Configuración → Despacho/NDE para aislar libros por usuario.</span>
               </div>
             )}
           </div>
@@ -1054,8 +1055,22 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
         </div>
       )}
 
+      {/* ── BLOCKED: Individual mode, non-admin ── */}
+      {requestStatus === 'idle' && isIndividual && !isAdmin && (
+        <div className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.06] dark:bg-violet-950/20 p-6 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-violet-500/15 border border-violet-500/20 flex items-center justify-center mx-auto">
+            <Lock size={20} className="text-violet-400" />
+          </div>
+          <p className="text-sm font-black text-slate-700 dark:text-white/80">Comparación restringida</p>
+          <p className="text-[11px] text-slate-500 dark:text-white/40 max-w-md mx-auto">
+            En modo individual, solo los administradores pueden iniciar sesiones de comparación de libros.
+            Contacta a tu administrador si necesitas cotejar registros.
+          </p>
+        </div>
+      )}
+
       {/* ── IDLE: WIZARD ── */}
-      {requestStatus === 'idle' && (
+      {requestStatus === 'idle' && (!isIndividual || isAdmin) && (
         <div className="rounded-2xl border border-white/[0.07] bg-white dark:bg-[#0d1424]">
           {/* Step indicators */}
           <div className="flex border-b border-white/[0.06]">

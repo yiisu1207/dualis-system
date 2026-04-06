@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -26,6 +26,7 @@ interface EntityDetailProps {
   onEditMovement?: (movement: Movement) => void;
   onDeleteMovement?: (id: string) => void;
   onUpdateEntity?: (id: string, data: Partial<Customer>) => Promise<void>;
+  onCompensate?: (fromAccount: string, toAccount: string, amountUSD: number) => Promise<void>;
   onBack?: () => void;
   canEdit: boolean;
 }
@@ -50,10 +51,16 @@ export function EntityDetail({
   onEditMovement,
   onDeleteMovement,
   onUpdateEntity,
+  onCompensate,
   onBack,
   canEdit,
 }: EntityDetailProps) {
   const [tab, setTab] = useState<Tab>('resumen');
+  const [compOpen, setCompOpen] = useState(false);
+  const [compFrom, setCompFrom] = useState('');
+  const [compTo, setCompTo] = useState('');
+  const [compAmount, setCompAmount] = useState('');
+  const [compSaving, setCompSaving] = useState(false);
 
   const isCxC = mode === 'cxc';
   const customer = isCxC ? (entity as Customer) : null;
@@ -234,6 +241,103 @@ export function EntityDetail({
             ) : (
               <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-8 text-center">
                 <p className="text-sm font-bold text-slate-300 dark:text-white/15">Sin movimientos registrados</p>
+              </div>
+            )}
+
+            {/* Compensation between accounts */}
+            {canEdit && onCompensate && accountBalances.length >= 2 && (
+              <div>
+                {!compOpen ? (
+                  <button
+                    onClick={() => {
+                      setCompFrom(accountBalances[0]?.accountType || '');
+                      setCompTo(accountBalances[1]?.accountType || '');
+                      setCompAmount('');
+                      setCompOpen(true);
+                    }}
+                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    <ArrowLeftRight size={12} /> Compensar entre cuentas
+                  </button>
+                ) : (
+                  <div className="rounded-xl bg-indigo-500/[0.04] border border-indigo-500/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Compensación entre cuentas</p>
+                      <button onClick={() => setCompOpen(false)} className="text-white/30 hover:text-white/60"><ChevronLeft size={14} /></button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 dark:text-white/30">
+                      Transfiere saldo a favor de una cuenta para cubrir deuda en otra.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Desde (saldo a favor)</label>
+                        <select
+                          value={compFrom}
+                          onChange={(e) => setCompFrom(e.target.value)}
+                          className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs dark:text-white outline-none"
+                        >
+                          {accountBalances.map((a) => (
+                            <option key={a.accountType} value={a.accountType}>
+                              {a.label} (${a.balance.toFixed(2)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Hacia (deuda)</label>
+                        <select
+                          value={compTo}
+                          onChange={(e) => setCompTo(e.target.value)}
+                          className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs dark:text-white outline-none"
+                        >
+                          {accountBalances.filter((a) => a.accountType !== compFrom).map((a) => (
+                            <option key={a.accountType} value={a.accountType}>
+                              {a.label} (${a.balance.toFixed(2)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Monto USD</label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={compAmount}
+                        onChange={(e) => setCompAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs dark:text-white outline-none font-mono"
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => setCompOpen(false)}
+                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-white/60"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        disabled={compSaving || !compFrom || !compTo || compFrom === compTo || !(parseFloat(compAmount) > 0)}
+                        onClick={async () => {
+                          setCompSaving(true);
+                          try {
+                            await onCompensate(compFrom, compTo, parseFloat(compAmount));
+                            setCompOpen(false);
+                          } catch (err) {
+                            console.error(err);
+                          } finally {
+                            setCompSaving(false);
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 disabled:opacity-40 transition-all"
+                      >
+                        {compSaving ? <Loader2 size={12} className="animate-spin" /> : <ArrowLeftRight size={12} />}
+                        Compensar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

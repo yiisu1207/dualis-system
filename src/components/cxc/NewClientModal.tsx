@@ -88,10 +88,19 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
     if (!nombre.trim()) errs.nombre = 'El nombre es obligatorio';
     if (!cedulaNum.trim()) errs.cedula = 'La cédula es obligatoria';
     else if (!/^\d+$/.test(cedulaNum.trim())) errs.cedula = 'Solo números después del prefijo';
-    if (rifNum && !/^\d+$/.test(rifNum.trim())) errs.rif = 'Solo números después del prefijo';
+    else if (cedulaNum.trim().length < 6) errs.cedula = 'Mínimo 6 dígitos';
+    else if (cedulaNum.trim().length > 10) errs.cedula = 'Máximo 10 dígitos';
+    if (rifNum) {
+      if (!/^\d+$/.test(rifNum.trim())) errs.rif = 'Solo números después del prefijo';
+      else if (['J', 'G'].includes(rifPrefix) && rifNum.trim().length !== 9) errs.rif = 'RIF jurídico debe tener 9 dígitos';
+      else if (['V', 'E'].includes(rifPrefix) && (rifNum.trim().length < 7 || rifNum.trim().length > 9)) errs.rif = 'RIF personal debe tener 7-9 dígitos';
+    }
+    // Block duplicates
+    if (cedulaDuplicate) errs.cedula = `Ya existe: ${cedulaDuplicate.nombre || cedulaDuplicate.fullName}`;
+    if (rifDuplicate) errs.rif = `Ya existe: ${rifDuplicate.nombre || rifDuplicate.fullName}`;
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [nombre, cedulaNum, rifNum]);
+  }, [nombre, cedulaNum, rifNum, rifPrefix, cedulaDuplicate, rifDuplicate]);
 
   /* -- Save -- */
   const handleSave = async () => {

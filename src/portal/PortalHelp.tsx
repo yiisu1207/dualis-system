@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePortal } from './PortalGuard';
 import { useParams } from 'react-router-dom';
 import {
   HelpCircle, CreditCard, FileText, Receipt, Zap, ChevronDown,
   ChevronRight, CheckCircle2, AlertCircle, Clock, Shield, Phone,
-  Mail, MessageCircle,
+  Mail, MessageCircle, Send, Loader2,
 } from 'lucide-react';
+import { collection, query, orderBy, onSnapshot, addDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 interface FAQItem {
   question: string;
@@ -192,9 +194,52 @@ function GuideCard({ guide }: { guide: Guide }) {
   );
 }
 
+interface ChatMsg {
+  id: string;
+  text: string;
+  sender: 'client' | 'business';
+  senderName: string;
+  createdAt: string;
+}
+
 export default function PortalHelp() {
-  const { customerName, businessName } = usePortal();
-  const [tab, setTab] = useState<'guides' | 'faq'>('guides');
+  const { businessId, customerId, customerName, businessName } = usePortal();
+  const [tab, setTab] = useState<'guides' | 'faq' | 'chat'>('guides');
+  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [chatText, setChatText] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Load chat messages
+  useEffect(() => {
+    if (!businessId || !customerId || tab !== 'chat') return;
+    const q = query(
+      collection(db, `businesses/${businessId}/portalChat/${customerId}/messages`),
+      orderBy('createdAt', 'asc')
+    );
+    return onSnapshot(q, (snap) => {
+      setMsgs(snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMsg)));
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    });
+  }, [businessId, customerId, tab]);
+
+  const handleSendMsg = async () => {
+    if (!chatText.trim() || chatSending) return;
+    setChatSending(true);
+    try {
+      await addDoc(collection(db, `businesses/${businessId}/portalChat/${customerId}/messages`), {
+        text: chatText.trim(),
+        sender: 'client',
+        senderName: customerName,
+        createdAt: new Date().toISOString(),
+      });
+      setChatText('');
+    } catch (err) {
+      console.error('Chat send error:', err);
+    } finally {
+      setChatSending(false);
+    }
+  };
 
   return (
     <div className="space-y-5 animate-in">
@@ -266,7 +311,17 @@ export default function PortalHelp() {
               : 'text-white/40 hover:text-white/60'
           }`}
         >
-          Preguntas Frecuentes
+          FAQ
+        </button>
+        <button
+          onClick={() => setTab('chat')}
+          className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${
+            tab === 'chat'
+              ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md'
+              : 'text-white/40 hover:text-white/60'
+          }`}
+        >
+          <MessageCircle size={11} /> Chat
         </button>
       </div>
 
@@ -288,20 +343,71 @@ export default function PortalHelp() {
         </div>
       )}
 
-      {/* Contact info */}
-      <div className="bg-[#0d1424] rounded-2xl border border-white/[0.07] p-5 shadow-lg">
-        <h3 className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">
-          ¿Necesitas más ayuda?
-        </h3>
-        <p className="text-xs text-white/50 leading-relaxed mb-4">
-          Si tu duda no fue resuelta, contacta al administrador de <span className="text-white/80 font-black">{businessName}</span> para asistencia directa.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <div className="inline-flex items-center gap-2 px-3 py-2 bg-white/[0.04] border border-white/[0.07] rounded-xl text-[10px] font-bold text-white/40">
-            <MessageCircle size={12} /> Contacta a tu administrador
+      {/* Chat */}
+      {tab === 'chat' && (
+        <div className="bg-[#0d1424] rounded-2xl border border-white/[0.07] shadow-lg overflow-hidden flex flex-col" style={{ height: '400px' }}>
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {msgs.length === 0 && (
+              <div className="py-12 text-center">
+                <MessageCircle size={28} className="mx-auto text-white/10 mb-3" />
+                <p className="text-xs font-bold text-white/20">Sin mensajes aún</p>
+                <p className="text-[10px] text-white/15 mt-1">Escribe para iniciar una conversación con {businessName}</p>
+              </div>
+            )}
+            {msgs.map((m) => {
+              const isMe = m.sender === 'client';
+              return (
+                <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
+                    isMe
+                      ? 'bg-indigo-600 text-white rounded-br-md'
+                      : 'bg-white/[0.06] text-white/80 rounded-bl-md'
+                  }`}>
+                    {!isMe && (
+                      <p className="text-[8px] font-black uppercase tracking-widest text-indigo-400/60 mb-0.5">{m.senderName}</p>
+                    )}
+                    <p className="text-xs leading-relaxed">{m.text}</p>
+                    <p className={`text-[8px] mt-1 ${isMe ? 'text-white/40' : 'text-white/20'}`}>
+                      {new Date(m.createdAt).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={chatEndRef} />
+          </div>
+          {/* Input */}
+          <div className="border-t border-white/[0.07] p-3 flex gap-2">
+            <input
+              value={chatText}
+              onChange={(e) => setChatText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMsg(); } }}
+              placeholder="Escribe un mensaje..."
+              className="flex-1 px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs text-white placeholder:text-white/20 outline-none focus:ring-2 focus:ring-indigo-500/40"
+            />
+            <button
+              onClick={handleSendMsg}
+              disabled={!chatText.trim() || chatSending}
+              className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-500 disabled:opacity-30 transition-all active:scale-90 shrink-0"
+            >
+              {chatSending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            </button>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Contact info */}
+      {tab !== 'chat' && (
+        <div className="bg-[#0d1424] rounded-2xl border border-white/[0.07] p-5 shadow-lg">
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">
+            ¿Necesitas más ayuda?
+          </h3>
+          <p className="text-xs text-white/50 leading-relaxed mb-4">
+            Si tu duda no fue resuelta, usa el <button onClick={() => setTab('chat')} className="text-indigo-400 font-black hover:underline">chat</button> para contactar al administrador de <span className="text-white/80 font-black">{businessName}</span>.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,12 +1,12 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import type { Customer, Movement, CustomRate, ExchangeRates } from '../../types';
-import { CxCClientList } from '../components/cxc/CxCClientList';
+import type { Supplier, Movement, CustomRate, ExchangeRates } from '../../types';
+import { CxPSupplierList } from '../components/cxc/CxPSupplierList';
 import { EntityDetail } from '../components/cxc/EntityDetail';
 import { MovementFormPanel } from '../components/cxc/MovementFormPanel';
-import NewClientModal from '../components/cxc/NewClientModal';
+import NewSupplierModal from '../components/cxc/NewSupplierModal';
 
-interface CxCPageProps {
-  customers: Customer[];
+interface CxPPageProps {
+  suppliers: Supplier[];
   movements: Movement[];
   rates: ExchangeRates;
   bcvRate: number;
@@ -18,13 +18,13 @@ interface CxCPageProps {
   onSaveMovement: (data: Partial<Movement>) => Promise<void>;
   onUpdateMovement: (id: string, data: Partial<Movement>) => Promise<void>;
   onDeleteMovement: (id: string) => Promise<void>;
-  onCreateCustomer: (data: Partial<Customer>) => Promise<void>;
-  onUpdateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
-  onDeleteCustomer: (id: string) => Promise<void>;
+  onCreateSupplier: (data: Partial<Supplier>) => Promise<void>;
+  onUpdateSupplier: (id: string, data: Partial<Supplier>) => Promise<void>;
+  onDeleteSupplier: (id: string) => Promise<void>;
 }
 
-export default function CxCPage({
-  customers,
+export default function CxPPage({
+  suppliers,
   movements,
   rates,
   bcvRate,
@@ -36,15 +36,15 @@ export default function CxCPage({
   onSaveMovement,
   onUpdateMovement,
   onDeleteMovement,
-  onCreateCustomer,
-  onUpdateCustomer,
-}: CxCPageProps) {
-  const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
+  onCreateSupplier,
+  onUpdateSupplier,
+}: CxPPageProps) {
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [formType, setFormType] = useState<'FACTURA' | 'ABONO'>('FACTURA');
   const [formAccountPreset, setFormAccountPreset] = useState<string | undefined>();
   const [editingMovement, setEditingMovement] = useState<Movement | null>(null);
-  const [newClientOpen, setNewClientOpen] = useState(false);
+  const [newSupplierOpen, setNewSupplierOpen] = useState(false);
 
   // In individual mode, non-admin users only see their own movements
   const visibleMovements = useMemo(() => {
@@ -83,63 +83,34 @@ export default function CxCPage({
     await onDeleteMovement(id);
   }, [onDeleteMovement]);
 
-  const handleUpdateEntity = useCallback(async (id: string, data: Partial<Customer>) => {
-    await onUpdateCustomer(id, data);
-  }, [onUpdateCustomer]);
-
-  const handleCompensate = useCallback(async (fromAccount: string, toAccount: string, amountUSD: number) => {
-    if (!selectedClient) return;
-    const now = new Date().toISOString();
-    const base = {
-      entityId: selectedClient.id,
-      entityName: (selectedClient as any).fullName || (selectedClient as any).nombre || '',
-      businessId,
-      date: now.slice(0, 10),
-      amountInUSD: amountUSD,
-      amount: amountUSD,
-      currency: 'USD' as const,
-    };
-    // Factura on source account (consume credit / increase debt to net zero)
-    await onSaveMovement({
-      ...base,
-      movementType: 'FACTURA' as any,
-      accountType: fromAccount as any,
-      concept: `Compensación → ${toAccount}`,
-    });
-    // Abono on target account (reduce debt using the transferred amount)
-    await onSaveMovement({
-      ...base,
-      movementType: 'ABONO' as any,
-      accountType: toAccount as any,
-      concept: `Compensación ← ${fromAccount}`,
-    });
-  }, [selectedClient, businessId, onSaveMovement]);
+  const handleUpdateEntity = useCallback(async (id: string, data: Partial<Supplier>) => {
+    await onUpdateSupplier(id, data as any);
+  }, [onUpdateSupplier]);
 
   return (
     <div className="h-full flex">
-      {/* Left Panel — Client List */}
+      {/* Left Panel — Supplier List */}
       <div className={`w-80 shrink-0 border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#060a14] ${
-        selectedClient ? 'hidden lg:flex lg:flex-col' : 'flex flex-col w-full lg:w-80'
+        selectedSupplier ? 'hidden lg:flex lg:flex-col' : 'flex flex-col w-full lg:w-80'
       }`}>
-        <CxCClientList
-          customers={customers}
+        <CxPSupplierList
+          suppliers={suppliers}
           movements={visibleMovements}
           rates={rates}
-          customRates={customRates}
-          selectedId={selectedClient?.id}
-          onSelect={setSelectedClient}
-          onCreateNew={() => setNewClientOpen(true)}
+          selectedId={selectedSupplier?.id}
+          onSelect={setSelectedSupplier}
+          onCreateNew={() => setNewSupplierOpen(true)}
         />
       </div>
 
       {/* Right Panel — Detail */}
       <div className={`flex-1 bg-slate-50/50 dark:bg-[#070b16] ${
-        selectedClient ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
+        selectedSupplier ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
       }`}>
-        {selectedClient ? (
+        {selectedSupplier ? (
           <EntityDetail
-            mode="cxc"
-            entity={selectedClient}
+            mode="cxp"
+            entity={selectedSupplier as any}
             movements={visibleMovements}
             rates={rates}
             bcvRate={bcvRate}
@@ -148,20 +119,19 @@ export default function CxCPage({
             onEditMovement={canEdit ? openEditForm : undefined}
             onDeleteMovement={canEdit ? handleDeleteMovement : undefined}
             onUpdateEntity={canEdit ? handleUpdateEntity : undefined}
-            onCompensate={canEdit ? handleCompensate : undefined}
-            onBack={() => setSelectedClient(null)}
+            onBack={() => setSelectedSupplier(null)}
             canEdit={canEdit}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <div className="w-16 h-16 rounded-2xl bg-indigo-500/[0.06] flex items-center justify-center mx-auto mb-4">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-indigo-300 dark:text-indigo-500/40">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/[0.06] flex items-center justify-center mx-auto mb-4">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-amber-300 dark:text-amber-500/40">
+                  <path d="M3 21h18M3 7v1a3 3 0 0 0 6 0V7m0 0V7a3 3 0 0 0 6 0v0m0 0V7a3 3 0 0 0 6 0V7H3l2-4h14l2 4M5 21V10.87M19 21V10.87" />
                 </svg>
               </div>
-              <p className="text-sm font-black text-slate-300 dark:text-white/15 uppercase tracking-widest">Selecciona un cliente</p>
-              <p className="text-xs font-medium text-slate-300 dark:text-white/10 mt-1">para ver su perfil y movimientos</p>
+              <p className="text-sm font-black text-slate-300 dark:text-white/15 uppercase tracking-widest">Selecciona un proveedor</p>
+              <p className="text-xs font-medium text-slate-300 dark:text-white/10 mt-1">para ver su cuenta y movimientos</p>
             </div>
           </div>
         )}
@@ -170,10 +140,10 @@ export default function CxCPage({
       {/* Movement Form Panel (slide-in) */}
       {formOpen && (
         <MovementFormPanel
-          mode="cxc"
+          mode="cxp"
           type={formType}
-          entity={selectedClient || undefined}
-          entities={customers}
+          entity={selectedSupplier as any || undefined}
+          entities={suppliers as any}
           bcvRate={bcvRate}
           customRates={customRates}
           rates={rates}
@@ -184,14 +154,14 @@ export default function CxCPage({
         />
       )}
 
-      {/* New Client Modal */}
-      <NewClientModal
-        open={newClientOpen}
-        onClose={() => setNewClientOpen(false)}
+      {/* New Supplier Modal */}
+      <NewSupplierModal
+        open={newSupplierOpen}
+        onClose={() => setNewSupplierOpen(false)}
         onSave={async (data) => {
-          await onCreateCustomer({ ...data, businessId } as any);
+          await onCreateSupplier({ ...data, businessId } as any);
         }}
-        existingCustomers={customers}
+        existingSuppliers={suppliers}
       />
     </div>
   );

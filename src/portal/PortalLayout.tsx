@@ -3,7 +3,7 @@ import { NavLink, useParams } from 'react-router-dom';
 import { usePortal } from './PortalGuard';
 import {
   LayoutDashboard, FileText, Zap, CreditCard, Receipt, LogOut,
-  Menu, X, HelpCircle,
+  Menu, X, HelpCircle, Package, CalendarDays, Trophy,
 } from 'lucide-react';
 
 interface Props {
@@ -12,8 +12,17 @@ interface Props {
 
 export default function PortalLayout({ children }: Props) {
   const { slug } = useParams<{ slug: string }>();
-  const { customerName, businessName, businessLogo } = usePortal();
+  const { customerName, businessName, businessLogo, brandColor } = usePortal();
   const [mobileNav, setMobileNav] = useState(false);
+
+  // Convert hex to RGB for CSS variable
+  const brandRgb = brandColor ? (() => {
+    const hex = brandColor.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    return isNaN(r) ? null : `${r} ${g} ${b}`;
+  })() : null;
 
   const basePath = `/portal/${slug}`;
 
@@ -22,6 +31,9 @@ export default function PortalLayout({ children }: Props) {
     { to: `${basePath}/facturas`, label: 'Facturas', icon: FileText },
     { to: `${basePath}/pronto-pago`, label: 'Pronto Pago', icon: Zap },
     { to: `${basePath}/pagar`, label: 'Pagar', icon: CreditCard },
+    { to: `${basePath}/catalogo`, label: 'Catálogo', icon: Package },
+    { to: `${basePath}/citas`, label: 'Citas', icon: CalendarDays },
+    { to: `${basePath}/fidelidad`, label: 'Fidelidad', icon: Trophy },
     { to: `${basePath}/estado-cuenta`, label: 'Estado', icon: Receipt },
   ];
 
@@ -36,7 +48,10 @@ export default function PortalLayout({ children }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-white pb-[68px] md:pb-0">
+    <div
+      className="min-h-screen bg-[#070b14] text-white pb-[68px] md:pb-0"
+      style={brandRgb ? { '--portal-brand': brandRgb } as React.CSSProperties : undefined}
+    >
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#0d1424]/90 backdrop-blur-xl border-b border-white/[0.07]">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between">
@@ -44,8 +59,13 @@ export default function PortalLayout({ children }: Props) {
             {businessLogo ? (
               <img src={businessLogo} alt="" className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover" />
             ) : (
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-xs sm:text-sm font-black">
-                {(businessName || 'P').charAt(0)}
+              <div
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black"
+                style={brandColor ? { background: brandColor } : undefined}
+              >
+                <span className={!brandColor ? 'bg-gradient-to-br from-indigo-500 to-violet-600 w-full h-full rounded-xl flex items-center justify-center' : ''}>
+                  {(businessName || 'P').charAt(0)}
+                </span>
               </div>
             )}
             <div>
@@ -68,10 +88,11 @@ export default function PortalLayout({ children }: Props) {
                 className={({ isActive }) =>
                   `px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all ${
                     isActive
-                      ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25'
+                      ? 'text-white shadow-md' + (brandColor ? '' : ' bg-gradient-to-r from-indigo-600 to-violet-600 shadow-indigo-500/25')
                       : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]'
                   }`
                 }
+                style={({ isActive }) => isActive && brandColor ? { backgroundColor: brandColor, boxShadow: `0 4px 14px ${brandColor}40` } : undefined}
               >
                 <item.icon size={13} /> {item.label}
               </NavLink>

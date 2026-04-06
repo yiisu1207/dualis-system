@@ -30,6 +30,7 @@ import {
   TrendingUp,
   Truck,
   History,
+  CalendarDays,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -41,6 +42,7 @@ interface SidebarProps {
   canCompare?: boolean;
   rolePermissions?: RolePermissions;
   badges?: Record<string, number>;
+  labelOverrides?: Record<string, string>;
   onLogout: () => void;
   onOpenProfile: () => void;
 }
@@ -75,6 +77,9 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'inventario',   label: 'Inventario',       Icon: Package,         path: 'inventario'   },
       { id: 'cajas',        label: 'Ventas / Cajas',   Icon: ShoppingCart,    path: 'cajas'        },
       { id: 'despacho',     label: 'Panel Despacho',   Icon: Truck,           path: 'despacho'     },
+      { id: 'citas',        label: 'Citas',            Icon: CalendarDays,    path: 'citas'        },
+      { id: 'prepedidos',   label: 'Pre-Pedidos',      Icon: Package,         path: 'prepedidos'   },
+      { id: 'reparaciones', label: 'Reparaciones',     Icon: ClipboardCheck,  path: 'reparaciones' },
       { id: 'tasas',        label: 'Tasas Cambiarias', Icon: TrendingUp,      path: 'tasas'        },
       { id: 'historial',    label: 'Libro Movimientos',Icon: History,         path: 'historial'    },
     ],
@@ -123,6 +128,9 @@ const moduleMap: Record<string, string> = {
   conciliacion: 'reconciliation',
   rrhh:         'nomina',
   vision:       'vision',
+  citas:        'citas',
+  prepedidos:   'prepedidos',
+  reparaciones: 'tickets_reparacion',
 };
 
 // Accent colors per group index for icons
@@ -164,6 +172,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   canCompare = false,
   rolePermissions,
   badges = {},
+  labelOverrides = {},
   onLogout,
   onOpenProfile,
 }) => {
@@ -327,7 +336,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           `}
         >
           {NAV_GROUPS.map((group, gi) => {
-            const visibleItems = group.items.filter(isVisible);
+            const visibleItems = group.items.filter(isVisible).map(it =>
+              labelOverrides[it.id] ? { ...it, label: labelOverrides[it.id] } : it,
+            );
             if (visibleItems.length === 0) return null;
 
             const iconColor      = GROUP_ICON_COLOR[gi] ?? 'text-white/50';

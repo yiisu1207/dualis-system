@@ -4,7 +4,7 @@
 
 const CLOUD_NAME = 'doaukggrt';
 
-export type CloudinaryPreset = 'dualis_avatars' | 'dualis_payments';
+export type CloudinaryPreset = 'dualis_avatars' | 'dualis_payments' | 'dualis_products' | 'dualis_kyc';
 
 export interface CloudinaryResult {
   secure_url: string;

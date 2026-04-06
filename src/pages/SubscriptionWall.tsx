@@ -1,30 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Zap, Building2, Crown, Check, ArrowRight, Copy, CheckCheck,
-  Shield, Sparkles, Clock, Loader2, Send, AlertTriangle,
+  Shield, Sparkles, Clock, Loader2, Send, AlertTriangle, Store,
 } from 'lucide-react';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
-import { PLANS as PLAN_CONFIG, PAYMENT_INFO, PERIOD_CONFIG, computePeriodPrice, type PayMethod, type SubscriptionPeriod } from '../utils/planConfig';
+import {
+  PLANS as PLAN_CONFIG, PAYMENT_INFO, PERIOD_CONFIG, computePeriodPrice,
+  type PayMethod, type SubscriptionPeriod, getVerticalPlanInfo,
+} from '../utils/planConfig';
 
 // ─── Plans (UI-enriched from planConfig) ──────────────────────────────────────
-const PLAN_STYLES = [
-  { Icon: Zap,       gradient: 'from-sky-500 to-blue-600',    shadow: 'shadow-sky-500/30',    ring: 'ring-sky-500/40' },
-  { Icon: Building2, gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/30', ring: 'ring-indigo-500/40' },
-  { Icon: Crown,     gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', ring: 'ring-violet-500/40' },
-];
+const PLAN_STYLE_MAP: Record<string, { Icon: React.FC<any>; gradient: string; shadow: string; ring: string }> = {
+  basico:     { Icon: Zap,       gradient: 'from-sky-500 to-blue-600',      shadow: 'shadow-sky-500/30',    ring: 'ring-sky-500/40' },
+  vertical:   { Icon: Store,     gradient: 'from-emerald-500 to-teal-600',  shadow: 'shadow-emerald-500/30',ring: 'ring-emerald-500/40' },
+  negocio:    { Icon: Building2, gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/30', ring: 'ring-indigo-500/40' },
+  pro:        { Icon: Crown,     gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', ring: 'ring-violet-500/40' },
+};
 
-const PLANS = PLAN_CONFIG.map((p, i) => ({
-  id: p.id as 'starter' | 'negocio' | 'enterprise',
-  name: p.name,
-  price: p.price,
-  features: p.features,
-  popular: p.popular,
-  ...PLAN_STYLES[i],
-}));
+const WALL_PLAN_DEFAULT_STYLE = { Icon: Zap, gradient: 'from-slate-500 to-slate-600', shadow: 'shadow-slate-500/30', ring: 'ring-slate-500/40' };
+
+function buildWallPlans(tipoNegocio: string) {
+  // Show: vertical + negocio + pro (skip gratis/basico/enterprise)
+  const showIds = ['vertical', 'negocio', 'pro'];
+  return PLAN_CONFIG.filter(p => showIds.includes(p.id)).map(p => {
+    const style = PLAN_STYLE_MAP[p.id] ?? WALL_PLAN_DEFAULT_STYLE;
+    if (p.id === 'vertical') {
+      const info = getVerticalPlanInfo(tipoNegocio);
+      return { id: p.id, name: info.name, price: info.price, features: info.features, popular: false, ...style };
+    }
+    return { id: p.id, name: p.name, price: p.price, features: p.features, popular: p.popular, ...style };
+  });
+}
 
 // ─── Copy helper ──────────────────────────────────────────────────────────────
 function CopyRow({ label, value, id, copied, onCopy }: { label: string; value: string; id: string; copied: string | null; onCopy: (v: string, id: string) => void }) {
@@ -60,9 +70,19 @@ export default function SubscriptionWall() {
     }
   }, [subLoading, subscription]);
 
+  const [tipoNegocio, setTipoNegocio] = useState('general');
+  useEffect(() => {
+    if (!businessId) return;
+    getDoc(doc(db, 'businesses', businessId)).then(snap => {
+      if (snap.exists() && snap.data()?.tipoNegocio) setTipoNegocio(snap.data().tipoNegocio);
+    }).catch(() => {});
+  }, [businessId]);
+
+  const PLANS = useMemo(() => buildWallPlans(tipoNegocio), [tipoNegocio]);
+
   // UI state
   const [mode, setMode]               = useState<'choose' | 'pay'>('choose');
-  const [selectedPlan, setSelectedPlan] = useState<typeof PLANS[0] | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<ReturnType<typeof buildWallPlans>[0] | null>(null);
   const [period, setPeriod]           = useState<SubscriptionPeriod>('triplePlay');
   const [payMethod, setPayMethod]     = useState<PayMethod>('binance');
   const [reference, setReference]     = useState('');

@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Check, Zap, Crown, Building2, ArrowLeft, Copy, CheckCheck,
   AlertTriangle, Clock, Loader2, Send, ChevronRight, Shield,
-  ImagePlus, X,
+  ImagePlus, X, Store,
 } from 'lucide-react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../context/AuthContext';
 import { uploadToCloudinary } from '../utils/cloudinary';
-import { PLANS as PLAN_CONFIG, PAYMENT_INFO, type PayMethod } from '../utils/planConfig';
+import {
+  PLANS as PLAN_CONFIG, PAYMENT_INFO, type PayMethod,
+  getVerticalPrice, getVerticalPlanInfo,
+} from '../utils/planConfig';
 
 // ─── Plan data (enriched from planConfig) ─────────────────────────────────────
 interface Plan {
@@ -26,23 +29,44 @@ interface Plan {
   isEnterprise?: boolean;
 }
 
-const PLAN_STYLES: { Icon: React.FC<{ size?: number; className?: string }>; color: string; gradient: string; shadow: string }[] = [
-  { Icon: Zap,       color: 'slate',  gradient: 'from-slate-500 to-slate-600',   shadow: 'shadow-slate-500/25' },
-  { Icon: Zap,       color: 'sky',    gradient: 'from-sky-500 to-blue-600',      shadow: 'shadow-sky-500/25'   },
-  { Icon: Building2, color: 'indigo', gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/25'},
-  { Icon: Crown,     color: 'violet', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/25'},
-  { Icon: Crown,     color: 'amber',  gradient: 'from-amber-500 to-orange-600',  shadow: 'shadow-amber-500/25' },
-];
+const PLAN_STYLE_MAP: Record<string, { Icon: React.FC<{ size?: number; className?: string }>; color: string; gradient: string; shadow: string }> = {
+  gratis:     { Icon: Zap,       color: 'slate',   gradient: 'from-slate-500 to-slate-600',     shadow: 'shadow-slate-500/25'  },
+  vertical:   { Icon: Store,     color: 'emerald',  gradient: 'from-emerald-500 to-teal-600',    shadow: 'shadow-emerald-500/25'},
+  basico:     { Icon: Zap,       color: 'sky',      gradient: 'from-sky-500 to-blue-600',        shadow: 'shadow-sky-500/25'    },
+  negocio:    { Icon: Building2, color: 'indigo',   gradient: 'from-indigo-500 to-violet-600',   shadow: 'shadow-indigo-500/25' },
+  pro:        { Icon: Crown,     color: 'violet',   gradient: 'from-violet-500 to-purple-600',   shadow: 'shadow-violet-500/25' },
+  enterprise: { Icon: Crown,     color: 'amber',    gradient: 'from-amber-500 to-orange-600',    shadow: 'shadow-amber-500/25'  },
+};
 
-const PLANS: Plan[] = PLAN_CONFIG.map((p, i) => ({
-  id: p.id,
-  name: p.name,
-  monthlyPrice: p.price,
-  features: p.features,
-  popular: p.popular,
-  isEnterprise: p.isEnterprise,
-  ...(PLAN_STYLES[i] ?? PLAN_STYLES[PLAN_STYLES.length - 1]),
-}));
+const DEFAULT_STYLE = { Icon: Zap, color: 'slate', gradient: 'from-slate-500 to-slate-600', shadow: 'shadow-slate-500/25' };
+
+function buildPlans(tipoNegocio: string): Plan[] {
+  return PLAN_CONFIG.map(p => {
+    const style = PLAN_STYLE_MAP[p.id] ?? DEFAULT_STYLE;
+    // For vertical plan, resolve dynamic price and features
+    if (p.id === 'vertical') {
+      const info = getVerticalPlanInfo(tipoNegocio);
+      return {
+        id: p.id,
+        name: info.name,
+        monthlyPrice: info.price,
+        features: info.features,
+        popular: false,
+        isEnterprise: false,
+        ...style,
+      };
+    }
+    return {
+      id: p.id,
+      name: p.name,
+      monthlyPrice: p.price,
+      features: p.features,
+      popular: p.popular,
+      isEnterprise: p.isEnterprise,
+      ...style,
+    };
+  });
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function StatusBadge({ status, daysLeft }: { status: string; daysLeft: number | null }) {
@@ -62,6 +86,16 @@ export default function BillingPage() {
 
   const { subscription, trialDaysLeft, isExpired } = useSubscription(businessId);
 
+  const [tipoNegocio, setTipoNegocio] = useState('general');
+  useEffect(() => {
+    if (!businessId) return;
+    getDoc(doc(db, 'businesses', businessId)).then(snap => {
+      if (snap.exists() && snap.data()?.tipoNegocio) setTipoNegocio(snap.data().tipoNegocio);
+    }).catch(() => {});
+  }, [businessId]);
+
+  const PLANS = useMemo(() => buildPlans(tipoNegocio), [tipoNegocio]);
+
   const [selectedPlan, setSelectedPlan]   = useState<Plan['id'] | null>(null);
   const [annual, setAnnual]               = useState(false);
   const [payMethod, setPayMethod]         = useState<PayMethod>('binance');
@@ -79,7 +113,7 @@ export default function BillingPage() {
   const plan = PLANS.find(p => p.id === selectedPlan);
   const effectiveMonths = annual ? 12 : months;
   const discount        = annual ? 0.20 : 0;
-  const pricePerMonth   = plan ? plan.monthlyPrice * (1 - discount) : 0;
+  const pricePerMonth   = plan?.monthlyPrice ? plan.monthlyPrice * (1 - discount) : 0;
   const totalUsd        = Math.round(pricePerMonth * effectiveMonths * 100) / 100;
 
   const copyText = async (text: string, key: string) => {

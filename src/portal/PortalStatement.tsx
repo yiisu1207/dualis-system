@@ -3,11 +3,13 @@ import { usePortal } from './PortalGuard';
 import { usePortalData } from './usePortalData';
 import { formatCurrency } from '../utils/formatters';
 import { AccountType, MovementType } from '../../types';
+import { Download, Loader2 } from 'lucide-react';
 
 export default function PortalStatement() {
-  const { businessId, customerId, customerName } = usePortal();
+  const { businessId, customerId, customerName, businessName } = usePortal();
   const { movements, loading, balances } = usePortalData(businessId, customerId);
   const [accountFilter, setAccountFilter] = useState<'ALL' | AccountType>('ALL');
+  const [generating, setGenerating] = useState(false);
 
   const statementData = useMemo(() => {
     let movs = movements.filter((m) => !(m as any).anulada);
@@ -33,6 +35,73 @@ export default function PortalStatement() {
   const totalDebe = statementData.reduce((s, m) => s + m.debe, 0);
   const totalHaber = statementData.reduce((s, m) => s + m.haber, 0);
 
+  const handleDownloadPDF = async () => {
+    setGenerating(true);
+    try {
+      const { default: jsPDF } = await import('jspdf');
+      const { default: autoTable } = await import('jspdf-autotable');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+
+      // Header
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(businessName || 'Estado de Cuenta', 14, 20);
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Cliente: ${customerName}`, 14, 28);
+      pdf.text(`Fecha: ${new Date().toLocaleDateString('es-VE')}`, 14, 34);
+      if (accountFilter !== 'ALL') pdf.text(`Cuenta: ${accountFilter}`, 14, 40);
+
+      // Balance summary
+      const startY = accountFilter !== 'ALL' ? 48 : 42;
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Saldo: $${(totalDebe - totalHaber).toFixed(2)}`, 14, startY);
+
+      // Table
+      autoTable(pdf, {
+        startY: startY + 6,
+        head: [['Fecha', 'Concepto', 'Cuenta', 'Debe ($)', 'Haber ($)', 'Saldo ($)']],
+        body: statementData.map(row => [
+          row.date,
+          row.concept,
+          row.accountType,
+          row.debe > 0 ? row.debe.toFixed(2) : '',
+          row.haber > 0 ? row.haber.toFixed(2) : '',
+          row.saldo.toFixed(2),
+        ]),
+        foot: [['', 'TOTALES', '', totalDebe.toFixed(2), totalHaber.toFixed(2), (totalDebe - totalHaber).toFixed(2)]],
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+        footStyles: { fillColor: [240, 240, 250], textColor: [30, 30, 30], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 248, 255] },
+        columnStyles: {
+          0: { cellWidth: 22 },
+          3: { halign: 'right' },
+          4: { halign: 'right' },
+          5: { halign: 'right' },
+        },
+      });
+
+      // Footer
+      const pageCount = pdf.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(150);
+        pdf.text(`Generado desde Portal de Clientes — ${new Date().toLocaleString('es-VE')}`, 14, 272);
+        pdf.text(`Página ${i} de ${pageCount}`, 190, 272, { align: 'right' });
+      }
+
+      pdf.save(`Estado_Cuenta_${customerName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error('PDF generation error:', err);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -43,9 +112,22 @@ export default function PortalStatement() {
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-in">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Estado de Cuenta</h1>
-        <p className="text-xs sm:text-sm text-white/40 font-bold mt-1">{customerName}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Estado de Cuenta</h1>
+          <p className="text-xs sm:text-sm text-white/40 font-bold mt-1">{customerName}</p>
+        </div>
+        {statementData.length > 0 && (
+          <button
+            onClick={handleDownloadPDF}
+            disabled={generating}
+            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-[0.97] disabled:opacity-50 shrink-0"
+          >
+            {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            <span className="hidden sm:inline">Descargar PDF</span>
+            <span className="sm:hidden">PDF</span>
+          </button>
+        )}
       </div>
 
       {/* Balance summary */}

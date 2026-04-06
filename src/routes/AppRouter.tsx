@@ -39,6 +39,9 @@ const PortalProntoPago = lazy(() => import('../portal/PortalProntoPago'));
 const PortalAbonoForm  = lazy(() => import('../portal/PortalAbonoForm'));
 const PortalStatement  = lazy(() => import('../portal/PortalStatement'));
 const PortalHelp       = lazy(() => import('../portal/PortalHelp'));
+const PortalCatalog    = lazy(() => import('../portal/PortalCatalog'));
+const PortalBooking    = lazy(() => import('../portal/PortalBooking'));
+const PortalLoyalty    = lazy(() => import('../portal/PortalLoyalty'));
 // Páginas públicas SEO
 const PreciosPage      = lazy(() => import('../pages/public/PreciosPage'));
 const FuncionesPage    = lazy(() => import('../pages/public/FuncionesPage'));
@@ -370,6 +373,9 @@ export default function AppRouter() {
           <Route path="pronto-pago" element={<PortalProntoPago />} />
           <Route path="pagar" element={<PortalAbonoForm />} />
           <Route path="estado-cuenta" element={<PortalStatement />} />
+          <Route path="catalogo" element={<PortalCatalog />} />
+          <Route path="citas" element={<PortalBooking />} />
+          <Route path="fidelidad" element={<PortalLoyalty />} />
           <Route path="ayuda" element={<PortalHelp />} />
         </Route>
 

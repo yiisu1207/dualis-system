@@ -1,19 +1,86 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { usePortal } from './PortalGuard';
 import { usePortalData } from './usePortalData';
 import { formatCurrency } from '../utils/formatters';
 import { AccountType, MovementType } from '../../types';
-import { FileText, Receipt, Filter, Search } from 'lucide-react';
+import { FileText, Receipt, Filter, Search, PenTool, Check, X, Loader2 } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 type StatusFilter = 'ALL' | 'PENDIENTE' | 'PAGADO';
 type AcctFilter = 'ALL' | AccountType;
 
 export default function PortalInvoices() {
-  const { businessId, customerId } = usePortal();
+  const { businessId, customerId, customerName } = usePortal();
   const { movements, loading } = usePortalData(businessId, customerId);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [acctFilter, setAcctFilter] = useState<AcctFilter>('ALL');
   const [search, setSearch] = useState('');
+
+  // Signature state
+  const [sigMovId, setSigMovId] = useState<string | null>(null);
+  const [sigSaving, setSigSaving] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawingRef = useRef(false);
+  const hasDrawnRef = useRef(false);
+
+  const startDraw = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    drawingRef.current = true;
+    hasDrawnRef.current = true;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left;
+    const y = ('touches' in e ? e.touches[0].clientY : e.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x * (canvas.width / rect.width), y * (canvas.height / rect.height));
+  }, []);
+
+  const draw = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    if (!drawingRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left;
+    const y = ('touches' in e ? e.touches[0].clientY : e.clientY) - rect.top;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#a5b4fc';
+    ctx.lineTo(x * (canvas.width / rect.width), y * (canvas.height / rect.height));
+    ctx.stroke();
+  }, []);
+
+  const stopDraw = useCallback(() => { drawingRef.current = false; }, []);
+
+  const clearSig = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hasDrawnRef.current = false;
+  }, []);
+
+  const handleSignSubmit = useCallback(async () => {
+    if (!sigMovId || !canvasRef.current || !hasDrawnRef.current) return;
+    setSigSaving(true);
+    try {
+      const sigData = canvasRef.current.toDataURL('image/png');
+      await updateDoc(doc(db, 'movements', sigMovId), {
+        clienteSignature: sigData,
+        clienteSignedAt: new Date().toISOString(),
+        clienteSignedBy: customerName,
+      });
+      setSigMovId(null);
+    } catch (err) {
+      console.error('Signature save error:', err);
+    } finally {
+      setSigSaving(false);
+    }
+  }, [sigMovId, customerName]);
 
   const filtered = useMemo(() => {
     let result = movements.filter((m) => !(m as any).anulada);
@@ -157,6 +224,11 @@ export default function PortalInvoices() {
                           Pend.
                         </span>
                       )}
+                      {(mov as any).clienteSignature && (
+                        <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 text-[7px] font-black uppercase rounded shrink-0">
+                          Firmado
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-[9px] text-white/30 font-bold mt-0.5">
                       <span>{mov.date}</span>
@@ -166,19 +238,86 @@ export default function PortalInvoices() {
                       </span>
                     </div>
                   </div>
-                  <span
-                    className={`text-sm sm:text-base font-black font-mono shrink-0 ${
-                      isInvoice ? 'text-rose-400' : 'text-emerald-400'
-                    }`}
-                  >
-                    {isInvoice ? '+' : '-'}{formatCurrency(amount, '$')}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* Sign button for unsigned NDE invoices */}
+                    {isInvoice && (mov as any).estadoNDE && !(mov as any).clienteSignature && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSigMovId(mov.id); hasDrawnRef.current = false; }}
+                        className="w-7 h-7 rounded-lg bg-indigo-500/15 text-indigo-400 flex items-center justify-center hover:bg-indigo-500/25 active:scale-90 transition-all"
+                        title="Firmar recepción"
+                      >
+                        <PenTool size={12} />
+                      </button>
+                    )}
+                    <span
+                      className={`text-sm sm:text-base font-black font-mono ${
+                        isInvoice ? 'text-rose-400' : 'text-emerald-400'
+                      }`}
+                    >
+                      {isInvoice ? '+' : '-'}{formatCurrency(amount, '$')}
+                    </span>
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* ── Signature Modal ── */}
+      {sigMovId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setSigMovId(null)} />
+          <div className="relative bg-[#0d1424] rounded-2xl border border-white/[0.07] p-5 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <PenTool size={15} className="text-indigo-400" />
+                <h3 className="text-sm font-black text-white uppercase tracking-widest">Firma de Recepción</h3>
+              </div>
+              <button onClick={() => setSigMovId(null)} className="text-white/30 hover:text-white/60"><X size={16} /></button>
+            </div>
+            <p className="text-[10px] text-white/30 mb-3">Dibuja tu firma para confirmar que recibiste la mercancía.</p>
+
+            <div className="bg-white rounded-xl overflow-hidden mb-3 touch-none">
+              <canvas
+                ref={canvasRef}
+                width={340}
+                height={180}
+                className="w-full h-[140px] cursor-crosshair"
+                onMouseDown={startDraw}
+                onMouseMove={draw}
+                onMouseUp={stopDraw}
+                onMouseLeave={stopDraw}
+                onTouchStart={startDraw}
+                onTouchMove={draw}
+                onTouchEnd={stopDraw}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <button onClick={clearSig} className="text-[10px] font-bold text-white/30 hover:text-white/50 transition-colors">
+                Limpiar
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSigMovId(null)}
+                  className="px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-white/60 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSignSubmit}
+                  disabled={sigSaving}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                >
+                  {sigSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                  Firmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

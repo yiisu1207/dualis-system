@@ -13,6 +13,7 @@ import { useToast } from './context/ToastContext';
 import { useBusinessData } from './hooks/useBusinessData';
 import { useRolePermissions } from './hooks/useRolePermissions';
 import { useVendor } from './context/VendorContext';
+import { getPreset } from './data/businessPresets';
 import { getCustomization } from './customizations/index';
 import { fireWebhook } from './utils/webhookTrigger';
 import { useTranslation } from 'react-i18next';
@@ -31,12 +32,16 @@ import BooksComparePanel from './components/BooksComparePanel';
 import UserProfileModalComp from './components/UserProfileModal';
 import CustomerViewer from './components/CustomerViewer';
 import CxCPage from './pages/CxCPage';
+import CxPPage from './pages/CxPPage';
 import DataImporter from './components/DataImporter';
 import SmartCalculatorWidget from './components/SmartCalculatorWidget';
 import HelpCenter from './components/HelpCenter';
 import WidgetLaunchpad from './components/WidgetLaunchpad';
 import AdminPosManager from './pages/AdminPosManager';
 import DespachoPanel from './pages/DespachoPanel';
+import CitasPanel from './pages/CitasPanel';
+import PrePedidosPanel from './components/inventory/PrePedidosPanel';
+import RepairTicketsPanel from './components/inventory/RepairTicketsPanel';
 import SucursalesManager from './pages/SucursalesManager';
 import TrialBanner from './components/TrialBanner';
 import NotificationCenter from './components/NotificationCenter';
@@ -253,7 +258,7 @@ const LockedModule: React.FC<{ moduleName: string; requiredPlan?: string; isAddo
 
 // ── MainSystem ─────────────────────────────────────────────────────────────────
 const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
-  const { user: firebaseUser, userProfile, updateUserProfile } = useAuth();
+  const { user: firebaseUser, userProfile, updateUserProfile, isolationMode } = useAuth();
   const { rates, customRates, updateRates } = useRates();
   const toast = useToast();
   const location = useLocation();
@@ -273,6 +278,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [pendingJoinCount, setPendingJoinCount] = useState(0);
   const [pendingCompareCount, setPendingCompareCount] = useState(0);
   const [pendingProductsCount, setPendingProductsCount] = useState(0);
+  const [tipoNegocio, setTipoNegocio] = useState('general');
   const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('dualis_dismissed_notifs');
@@ -325,6 +331,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     conciliacion:  `${adminBase}/conciliacion`,
     cajas:         `${adminBase}/cajas`,
     despacho:      `${adminBase}/despacho`,
+    citas:         `${adminBase}/citas`,
+    prepedidos:    `${adminBase}/prepedidos`,
+    reparaciones:  `${adminBase}/reparaciones`,
     sucursales:    `${adminBase}/sucursales`,
     fiscal:        `${adminBase}/fiscal`,
     libroventas:   `${adminBase}/libroventas`,
@@ -371,6 +380,18 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     const unsub = onSnapshot(q, snap => setPendingProductsCount(snap.size));
     return unsub;
   }, [businessId, userProfile?.role]);
+
+  // ── Listener: tipo de negocio (para UI adaptativa) ─────────────────────────
+  useEffect(() => {
+    if (!businessId) return;
+    const unsub = onSnapshot(doc(db, 'businesses', businessId), snap => {
+      const data = snap.data();
+      if (data?.tipoNegocio) setTipoNegocio(data.tipoNegocio);
+    });
+    return unsub;
+  }, [businessId]);
+
+  const preset = useMemo(() => getPreset(tipoNegocio), [tipoNegocio]);
 
   // ── Listener: solicitudes de Comparar Libros pendientes ──────────────────────
   useEffect(() => {
@@ -598,14 +619,23 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
   const legacyRates = { bcv: rates.tasaBCV, grupo: rates.tasaGrupo, divisa: rates.tasaDivisa || rates.tasaGrupo - 1, lastUpdated: rates.lastUpdated };
 
-  const tabTitles: Record<string, string> = {
+  const tabTitles: Record<string, string> = useMemo(() => ({
     resumen: 'Resumen', clientes: 'Clientes', contabilidad: 'Contabilidad',
-    proveedores: 'Proveedores', rrhh: 'RRHH', inventario: 'Inventario',
+    proveedores: 'Proveedores', rrhh: 'RRHH',
+    inventario: preset.hasServices ? 'Servicios y Productos' : 'Inventario',
     reportes: 'Reportes', vision: 'VisionLab', widgets: 'Herramientas',
     comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
-    cajas: 'Cajas', despacho: 'Panel Despacho', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Libro de Ventas',
+    cajas: 'Cajas', despacho: 'Panel Despacho', citas: 'Citas',
+    prepedidos: 'Pre-Pedidos', reparaciones: 'Reparaciones', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Libro de Ventas',
     config: 'Configuración', help: 'Ayuda',
-  };
+  }), [preset]);
+
+  const sidebarLabelOverrides = useMemo(() => {
+    const o: Record<string, string> = {};
+    if (preset.hasServices) o.inventario = 'Servicios y Productos';
+    if (preset.hasAppointments) o.citas = 'Citas';
+    return o;
+  }, [preset]);
 
   return (
     <div className="h-screen w-full flex bg-slate-50 dark:bg-[#0a0f1e] overflow-hidden font-inter transition-colors">
@@ -619,6 +649,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           rolePermissions={rolePermissions}
           canCompare={canAccess('comparar')}
           badges={{ comparar: pendingCompareCount }}
+          labelOverrides={sidebarLabelOverrides}
           onLogout={() => auth.signOut()}
           onOpenProfile={() => setIsProfileOpen(true)}
         />
@@ -670,6 +701,19 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             )}
             {activeTab === 'despacho' && (
               <DespachoPanel businessId={businessId} />
+            )}
+            {activeTab === 'citas' && (
+              <CitasPanel
+                businessId={businessId}
+                currentUserId={userProfile?.id || firebaseUser?.uid || ''}
+                currentUserName={userProfile?.fullName || 'Admin'}
+              />
+            )}
+            {activeTab === 'prepedidos' && (
+              <PrePedidosPanel businessId={businessId} currentUserName={userProfile?.fullName || 'Admin'} />
+            )}
+            {activeTab === 'reparaciones' && (
+              <RepairTicketsPanel businessId={businessId} currentUserName={userProfile?.fullName || 'Admin'} />
             )}
             {activeTab === 'rrhh' && (
               !canView('rrhh') ? <NoAccess /> :
@@ -729,6 +773,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                   customRates={customRates ?? []}
                   businessId={businessId}
                   userRole={user?.role || 'member'}
+                  isolationMode={isolationMode}
+                  currentUserId={firebaseUser?.uid}
                   onSaveMovement={handleRegisterMovement}
                   onUpdateMovement={updateMovement}
                   onDeleteMovement={deleteMovement}
@@ -756,23 +802,22 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
             {activeTab === 'proveedores' && (
               canAccess('proveedores') ? (
-                <SupplierSection
+                <CxPPage
                   suppliers={suppliers}
                   movements={movements}
                   rates={legacyRates as any}
-                  onRegisterMovement={handleRegisterMovement}
+                  bcvRate={rates.tasaBCV}
+                  customRates={customRates ?? []}
+                  businessId={businessId}
+                  userRole={user?.role || 'member'}
+                  isolationMode={isolationMode}
+                  currentUserId={firebaseUser?.uid}
+                  onSaveMovement={handleRegisterMovement}
                   onUpdateMovement={updateMovement}
                   onDeleteMovement={deleteMovement}
-                  onRegisterSupplier={handleRegisterSupplier}
+                  onCreateSupplier={handleRegisterSupplier as any}
                   onUpdateSupplier={handleUpdateSupplier}
                   onDeleteSupplier={handleDeleteSupplier}
-                  getSmartRate={async () => rates.tasaBCV}
-                  canCreateSupplier={isAdmin}
-                  canEditSupplier={isAdmin}
-                  canDeleteSupplier={isAdmin}
-                  canCreateMovement={true}
-                  canEditMovement={isAdmin}
-                  canDeleteMovement={isAdmin}
                 />
               ) : <LockedModule moduleName="Proveedores / CxP" requiredPlan="negocio" />
             )}

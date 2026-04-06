@@ -6,6 +6,7 @@ import {
   Banknote, Monitor, ArrowRight, CheckCircle2, Loader2,
   Store, Factory, Building2, Phone, Hash, Fingerprint, MapPin,
 } from 'lucide-react';
+import { BUSINESS_PRESETS, PRESET_IDS, type BusinessPreset } from '../../data/businessPresets';
 
 const SETUP_STEPS_META = [
   { icon: Building2,   label: 'Datos del Negocio', desc: 'Nombre, RIF y dirección fiscal',  cls: 'bg-indigo-50  dark:bg-indigo-500/10  text-indigo-600  dark:text-indigo-400'  },
@@ -34,6 +35,7 @@ export default function OnboardingWizard() {
   }, [tenantId, userProfile]);
 
   const [formData, setFormData] = useState({
+    tipoNegocio:  'general',
     companyName:  '',
     rif:          '',
     address:      '',
@@ -139,9 +141,10 @@ export default function OnboardingWizard() {
 
       if (!currentTenantId) throw new Error('No se pudo obtener el ID del negocio.');
 
-      // Update businesses doc with name + fiscal summary
+      // Update businesses doc with name + fiscal summary + business type
       await setDoc(doc(db, 'businesses', currentTenantId), {
         name: formData.companyName.trim() || userProfile?.fullName || user?.email || 'Mi Negocio',
+        tipoNegocio: formData.tipoNegocio,
         tasaBCV: parseFloat(formData.exchangeRate) || 36.5,
         tasaGrupo: parseFloat(formData.exchangeRate) || 36.5,
         setupCompleted: true,
@@ -332,8 +335,50 @@ export default function OnboardingWizard() {
                   <Building2 size={24} />
                 </div>
                 <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Datos del Negocio</h1>
-                <p className="text-slate-400 dark:text-slate-500 font-medium mt-2">¿Cómo aparecerá en tus facturas y recibos?</p>
+                <p className="text-slate-400 dark:text-slate-500 font-medium mt-2">Selecciona tu tipo de negocio y completa tus datos.</p>
               </header>
+
+              {/* Tipo de Negocio grid */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 ml-2">
+                  Tipo de Negocio
+                </label>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {PRESET_IDS.map(pid => {
+                    const preset = BUSINESS_PRESETS[pid];
+                    const selected = formData.tipoNegocio === pid;
+                    return (
+                      <button
+                        key={pid}
+                        type="button"
+                        onClick={() => {
+                          f('tipoNegocio', pid);
+                          // Auto-set IVA based on preset
+                          f('iva', String(preset.iva));
+                          // Auto-set terminal type
+                          f('terminalType', preset.posMode === 'mayor' ? 'mayor' : 'detal');
+                        }}
+                        className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl border-2 transition-all text-center ${
+                          selected
+                            ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 shadow-lg shadow-indigo-500/10'
+                            : 'border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] hover:border-slate-300 dark:hover:border-white/20'
+                        }`}
+                      >
+                        <span className="text-xl">{preset.emoji}</span>
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${selected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                          {preset.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {formData.tipoNegocio !== 'general' && (
+                  <p className="text-[10px] text-indigo-500 dark:text-indigo-400 font-bold ml-2 mt-1">
+                    {BUSINESS_PRESETS[formData.tipoNegocio]?.description}
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-5">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 ml-2">

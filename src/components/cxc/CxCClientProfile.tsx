@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 import {
   Movement,
@@ -82,6 +82,24 @@ export default function CxCClientProfile({
   const [portalPin, setPortalPin] = useState('');
   const [portalGenerating, setPortalGenerating] = useState(false);
   const [portalCopied, setPortalCopied] = useState(false);
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Generate QR code when portal link is created
+  useEffect(() => {
+    if (!portalLink || !qrCanvasRef.current) return;
+    (async () => {
+      try {
+        const QRCode = await import('qrcode');
+        await QRCode.toCanvas(qrCanvasRef.current, portalLink, {
+          width: 160,
+          margin: 2,
+          color: { dark: '#1e1b4b', light: '#ffffff' },
+        });
+      } catch (err) {
+        console.error('QR generation error:', err);
+      }
+    })();
+  }, [portalLink]);
 
   // Internal notes
   const [internalNotes, setInternalNotes] = useState(customer?.internalNotes ?? '');
@@ -719,10 +737,14 @@ export default function CxCClientProfile({
           </button>
         </div>
 
-        {/* Portal link display */}
+        {/* Portal link display + QR */}
         {portalLink && (
           <div className="bg-sky-50 dark:bg-sky-500/5 border border-sky-200 dark:border-sky-500/20 rounded-2xl p-5">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-4">
+              {/* QR Code */}
+              <div className="shrink-0 bg-white rounded-xl p-1.5 shadow-sm border border-sky-100 dark:border-sky-500/20">
+                <canvas ref={qrCanvasRef} className="w-20 h-20 sm:w-24 sm:h-24" />
+              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-2">
                   Acceso Portal Generado
@@ -730,17 +752,118 @@ export default function CxCClientProfile({
                 <p className="text-xs font-mono text-slate-700 dark:text-slate-300 truncate mb-1">
                   {portalLink}
                 </p>
-                <p className="text-xs font-black text-slate-600 dark:text-slate-400">
+                <p className="text-xs font-black text-slate-600 dark:text-slate-400 mb-3">
                   PIN: <span className="text-sky-600 dark:text-sky-400 tracking-widest">{portalPin}</span>
                 </p>
+                <button
+                  onClick={copyPortalLink}
+                  className="px-4 py-2.5 rounded-xl bg-sky-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-sky-600 transition-all"
+                >
+                  {portalCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+                </button>
               </div>
-              <button
-                onClick={copyPortalLink}
-                className="px-4 py-2.5 rounded-xl bg-sky-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-sky-600 transition-all shrink-0"
-              >
-                {portalCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
-              </button>
             </div>
+            <p className="text-[10px] text-sky-500/60 dark:text-sky-400/40 mt-3 text-center">
+              Escanea el QR o comparte el enlace + PIN con tu cliente
+            </p>
+          </div>
+        )}
+
+        {/* ── Loyalty Tier + Segments ── */}
+        {(customer?.loyaltyTier || customer?.segments?.length) && (
+          <div className="flex flex-wrap gap-2">
+            {customer.loyaltyTier && (
+              <span className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                {customer.loyaltyTier === 'bronce' ? '🥉' : customer.loyaltyTier === 'plata' ? '🥈' : customer.loyaltyTier === 'oro' ? '🥇' : customer.loyaltyTier === 'platino' ? '💎' : customer.loyaltyTier === 'diamante' ? '💠' : '👑'} {customer.loyaltyTier}
+                {customer.loyaltyPoints ? ` — ${customer.loyaltyPoints.toLocaleString()} pts` : ''}
+              </span>
+            )}
+            {customer.segments?.map(seg => (
+              <span key={seg} className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                {seg}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* ── KYC Verification Status ── */}
+        {customer?.kycStatus && (
+          <div className={`rounded-2xl border p-5 ${
+            customer.kycStatus === 'verified'
+              ? 'bg-emerald-50 dark:bg-emerald-500/5 border-emerald-200 dark:border-emerald-500/20'
+              : customer.kycStatus === 'pending'
+              ? 'bg-amber-50 dark:bg-amber-500/5 border-amber-200 dark:border-amber-500/20'
+              : 'bg-rose-50 dark:bg-rose-500/5 border-rose-200 dark:border-rose-500/20'
+          }`}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-white/30">
+                Verificación KYC
+              </p>
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                customer.kycStatus === 'verified'
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                  : customer.kycStatus === 'pending'
+                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+              }`}>
+                {customer.kycStatus === 'verified' ? 'Verificado' : customer.kycStatus === 'pending' ? 'Pendiente' : 'Rechazado'}
+              </span>
+            </div>
+
+            {/* Cedula images */}
+            {(customer.cedulaFrontalUrl || customer.cedulaTraseraUrl) && (
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                {customer.cedulaFrontalUrl && (
+                  <div>
+                    <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 mb-1">Frente</p>
+                    <a href={customer.cedulaFrontalUrl} target="_blank" rel="noopener noreferrer">
+                      <img src={customer.cedulaFrontalUrl} alt="Cédula frente" className="w-full rounded-lg border border-white/10 hover:opacity-80 transition-opacity" />
+                    </a>
+                  </div>
+                )}
+                {customer.cedulaTraseraUrl && (
+                  <div>
+                    <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 mb-1">Reverso</p>
+                    <a href={customer.cedulaTraseraUrl} target="_blank" rel="noopener noreferrer">
+                      <img src={customer.cedulaTraseraUrl} alt="Cédula reverso" className="w-full rounded-lg border border-white/10 hover:opacity-80 transition-opacity" />
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {customer.kycSubmittedAt && (
+              <p className="text-[10px] text-slate-400 dark:text-white/20 mb-3">
+                Enviado: {new Date(customer.kycSubmittedAt).toLocaleDateString('es-VE')}
+              </p>
+            )}
+
+            {/* Approve/Reject buttons for pending */}
+            {customer.kycStatus === 'pending' && (
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    await updateDoc(doc(db, 'customers', entityId), {
+                      kycStatus: 'verified',
+                      kycVerifiedAt: new Date().toISOString(),
+                    });
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all"
+                >
+                  Aprobar
+                </button>
+                <button
+                  onClick={async () => {
+                    await updateDoc(doc(db, 'customers', entityId), {
+                      kycStatus: 'rejected',
+                    });
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-rose-600 transition-all"
+                >
+                  Rechazar
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

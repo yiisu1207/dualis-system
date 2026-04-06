@@ -56,6 +56,9 @@ import {
   FolderEdit,
   CheckCheck,
   Info,
+  Truck,
+  Camera,
+  ImageIcon,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { db } from '../firebase/config';
@@ -63,6 +66,10 @@ import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { useRates } from '../context/RatesContext';
 import { computeDynamicPrices, isDynamicProduct, findCustomRate } from '../utils/dynamicPricing';
+import { uploadToCloudinary } from '../utils/cloudinary';
+import type { Supplier, Movement } from '../../types';
+import RecepcionModal from '../components/inventory/RecepcionModal';
+import ExpirationAlerts from '../components/inventory/ExpirationAlerts';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Product = {
@@ -94,6 +101,9 @@ type Product = {
   status?: 'active' | 'pending_review';
   pendingBy?: string;
   unitType?: 'unidad' | 'kg' | 'g' | 'ton' | 'lt' | 'ml' | 'lb';
+  imageUrl?: string;
+  fechaVencimiento?: string;  // ISO date YYYY-MM-DD
+  lote?: string;
 };
 
 type StockMovement = {
@@ -150,7 +160,7 @@ const initialProduct: Omit<Product, 'id'> = {
 };
 
 // ─── IMPORT AUTO-DETECTION ────────────────────────────────────────────────────
-const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuenta' | 'stockByAlmacen' | 'status' | 'pendingBy' | 'unitType'> | 'margen', string[]> = {
+const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuenta' | 'stockByAlmacen' | 'status' | 'pendingBy' | 'unitType' | 'imageUrl' | 'fechaVencimiento' | 'lote'> | 'margen', string[]> = {
   codigo:       ['código','codigo','code','sku','barcode','cod','upc','ean','referencia','ref'],
   nombre:       ['nombre','name','producto','descripción','descripcion','description','item','artículo','articulo','denominacion'],
   categoria:    ['categoría','categoria','category','grupo','tipo','type','familia','rubro'],
@@ -301,6 +311,7 @@ export default function Inventario() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(initialProduct);
   const [quickMode, setQuickMode] = useState(true);
+  const [showExtras, setShowExtras] = useState(false);
   const [mayorManual, setMayorManual] = useState(false);
   const [customMarginDetal, setCustomMarginDetal] = useState('');
   const [customMarginMayor, setCustomMarginMayor] = useState('');
@@ -309,6 +320,8 @@ export default function Inventario() {
     return saved ? parseFloat(saved) : 30;
   });
   const [bulkCalc, setBulkCalc] = useState({ costoBulto: 0, unidades: 0 });
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Stock adjustment states
   const [adjModalOpen, setAdjModalOpen] = useState(false);
@@ -316,6 +329,12 @@ export default function Inventario() {
   const [adjData, setAdjData] = useState({ type: 'AJUSTE', quantity: 0, reason: '' });
   const [adjUpdatePrices, setAdjUpdatePrices] = useState(false);
   const [adjPrices, setAdjPrices] = useState<Record<string, number>>({ costoUSD: 0, precioDetal: 0, precioMayor: 0 });
+  const [adjCostoUSD, setAdjCostoUSD] = useState(0);
+  const [adjSupplierId, setAdjSupplierId] = useState('');
+
+  // Suppliers (for stock adjustment + recepción)
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [showRecepcion, setShowRecepcion] = useState(false);
 
   // Delete confirmation state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -483,6 +502,15 @@ export default function Inventario() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
+  // Load suppliers for stock adjustment proveedor dropdown
+  useEffect(() => {
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, `businesses/${tenantId}/suppliers`), (snap) => {
+      setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier)));
+    });
+    return () => unsub();
+  }, [tenantId]);
+
   const handleSaveAlmacen = async () => {
     if (!tenantId || !almacenForm.nombre.trim()) return;
     setAlmacenSaving(true);
@@ -594,6 +622,40 @@ export default function Inventario() {
     setModalOpen(false);
     setForm(initialProduct);
     setEditingId(null);
+  };
+
+  const handleImageUpload = async (file: File) => {
+    if (!file || uploadingImage) return;
+    setUploadingImage(true);
+    try {
+      // Client-side compression: resize to max 800px and convert to JPEG
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+      const maxSize = 800;
+      let { width, height } = img;
+      if (width > maxSize || height > maxSize) {
+        if (width > height) { height = (height / width) * maxSize; width = maxSize; }
+        else { width = (width / height) * maxSize; height = maxSize; }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      ctx?.drawImage(img, 0, 0, width, height);
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+      if (!blob) throw new Error('Failed to compress image');
+      const compressedFile = new File([blob], 'product.jpg', { type: 'image/jpeg' });
+      const result = await uploadToCloudinary(compressedFile, 'dualis_products');
+      setForm(f => ({ ...f, imageUrl: result.secure_url }));
+    } catch (err) {
+      console.error('Image upload error:', err);
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const applyMargin = (pct: number) => {
@@ -745,31 +807,51 @@ export default function Inventario() {
 
   const handleAdjustStock = async () => {
     if (!tenantId || !selectedProduct) return;
-    const newStock = selectedProduct.stock + Number(adjData.quantity);
+    const addedQty = Number(adjData.quantity);
+    const newStock = selectedProduct.stock + addedQty;
     const updatePayload: Record<string, any> = { stock: newStock };
+
+    // Costo promedio ponderado — siempre activo en entradas
+    const oldStock = selectedProduct.stock;
+    const oldCost = selectedProduct.costoUSD || 0;
+    const newCostInput = adjCostoUSD;
+    if (adjData.type === 'AJUSTE' && addedQty > 0 && newCostInput > 0) {
+      const weightedCost = (oldStock > 0 && newStock > 0)
+        ? parseFloat(((oldStock * oldCost + addedQty * newCostInput) / newStock).toFixed(4))
+        : newCostInput;
+      updatePayload.costoUSD = weightedCost;
+      updatePayload.previousCostoUSD = oldCost;
+    }
+
+    // Optional: actualizar precios de venta si el usuario expande esa sección
     if (adjUpdatePrices && adjData.type === 'AJUSTE') {
-      updatePayload.costoUSD = Number(adjPrices.costoUSD) || 0;
       updatePayload.precioDetal = Number(adjPrices.precioDetal) || 0;
       updatePayload.precioMayor = Number(adjPrices.precioMayor) || 0;
-      // Dynamic account prices
       const pc: Record<string, number> = {};
       for (const rate of customRates) {
         pc[rate.id] = Number(adjPrices[`cuenta_${rate.id}`]) || 0;
       }
       updatePayload.preciosCuenta = pc;
-      // Legacy compat
       updatePayload.precioBCV = pc.BCV || 0;
       updatePayload.precioGrupo = pc.GRUPO || 0;
       updatePayload.precioDivisa = pc.DIVISA || 0;
     }
+
     await setDoc(doc(db, `businesses/${tenantId}/products`, selectedProduct.id), updatePayload, { merge: true });
+
+    const supplierInfo = adjSupplierId
+      ? suppliers.find(s => s.id === adjSupplierId)
+      : null;
+
     await addDoc(collection(db, `businesses/${tenantId}/stock_movements`), {
       productId: selectedProduct.id,
       productName: selectedProduct.nombre,
       type: adjData.type,
-      quantity: Number(adjData.quantity),
+      quantity: addedQty,
       reason: adjData.reason,
-      ...(adjUpdatePrices && adjData.type === 'AJUSTE' ? { pricesUpdated: true, newPrices: { ...adjPrices } } : {}),
+      ...(adjData.type === 'AJUSTE' && newCostInput > 0 ? { weightedAvgCost: updatePayload.costoUSD, previousCost: oldCost, newCostInput } : {}),
+      ...(adjUpdatePrices ? { pricesUpdated: true, newPrices: { ...adjPrices } } : {}),
+      ...(supplierInfo ? { proveedorId: supplierInfo.id, proveedorNombre: supplierInfo.contacto || supplierInfo.rif } : {}),
       userName: userProfile?.fullName || 'Admin',
       createdAt: serverTimestamp()
     });
@@ -777,6 +859,8 @@ export default function Inventario() {
     setSelectedProduct(null);
     setAdjData({ type: 'AJUSTE', quantity: 0, reason: '' });
     setAdjUpdatePrices(false);
+    setAdjCostoUSD(0);
+    setAdjSupplierId('');
   };
 
   // 4. EXPORT HANDLER
@@ -1186,12 +1270,21 @@ export default function Inventario() {
             ))}
           </div>
           {canRegisterNew && (
-          <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setCustomMarginDetal(''); setCustomMarginMayor(''); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
-            className="flex items-center justify-center gap-2.5 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
-            <Plus size={16} /> Registrar Mercancía
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowRecepcion(true)}
+              className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-emerald-500/25 active:scale-95">
+              <Truck size={16} /> Recibir Mercancía
+            </button>
+            <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setCustomMarginDetal(''); setCustomMarginMayor(''); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
+              className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
+              <Plus size={16} /> Nuevo Producto
+            </button>
+          </div>
           )}
         </div>
+
+        {/* EXPIRATION ALERTS (farmacia, etc.) */}
+        <ExpirationAlerts products={products} />
 
         {/* CONTENT AREA */}
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.07] rounded-2xl shadow-lg shadow-black/10 overflow-hidden min-h-[600px] animate-in fade-in slide-in-from-bottom-8 duration-700">
@@ -1943,7 +2036,7 @@ export default function Inventario() {
                 {!editingId && (
                   <button
                     type="button"
-                    onClick={() => setQuickMode(q => !q)}
+                    onClick={() => { setQuickMode(q => !q); setShowExtras(quickMode); }}
                     className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${quickMode ? 'border-indigo-300 dark:border-indigo-500/40 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.05]'}`}
                   >
                     {quickMode ? '⚡ Rápido' : '📋 Completo'}
@@ -1984,6 +2077,32 @@ export default function Inventario() {
                     className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                   />
                 </div>
+              </div>
+
+              {/* ── IMAGE UPLOAD ── */}
+              <div className="flex items-center gap-3">
+                <input ref={imageInputRef} type="file" accept="image/*" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = ''; }} />
+                {form.imageUrl ? (
+                  <div className="relative group">
+                    <img src={form.imageUrl} alt="" className="h-16 w-16 rounded-xl object-cover border-2 border-slate-200 dark:border-white/10" />
+                    <button type="button" onClick={() => imageInputRef.current?.click()}
+                      className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <Camera size={16} className="text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => imageInputRef.current?.click()}
+                    className="h-16 w-16 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/15 flex flex-col items-center justify-center gap-1 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all shrink-0">
+                    {uploadingImage
+                      ? <Loader2 size={16} className="text-indigo-500 animate-spin" />
+                      : <><ImageIcon size={16} className="text-slate-300 dark:text-white/20" /><span className="text-[7px] font-bold text-slate-400 dark:text-white/20 uppercase">Foto</span></>}
+                  </button>
+                )}
+                {form.imageUrl && (
+                  <button type="button" onClick={() => setForm(f => ({ ...f, imageUrl: '' }))}
+                    className="text-[9px] font-bold text-rose-400 hover:text-rose-500 uppercase tracking-widest">Quitar</button>
+                )}
               </div>
 
               {/* ── ROW 2: PRECIOS ── */}
@@ -2353,8 +2472,19 @@ export default function Inventario() {
                 </div>
               </div>
 
-              {/* ── CAMPOS ADICIONALES (siempre visibles) ── */}
-              <div className="space-y-3 border-t border-slate-100 dark:border-white/[0.07] pt-4">
+              {/* ── CAMPOS ADICIONALES (colapsable en modo rápido) ── */}
+              <div className="border-t border-slate-100 dark:border-white/[0.07] pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExtras(v => !v)}
+                  className="w-full flex items-center justify-between py-2 group"
+                >
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 group-hover:text-slate-600 dark:group-hover:text-white/50 transition-colors">
+                    Campos adicionales — marca, unidad, IVA, proveedor, ubicación
+                  </span>
+                  <ChevronDown size={14} className={`text-slate-400 dark:text-white/30 transition-transform duration-200 ${showExtras ? 'rotate-180' : ''}`} />
+                </button>
+                {showExtras && <div className="space-y-3 pt-1 animate-in fade-in zoom-in-95 duration-200">
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Marca</label>
@@ -2425,6 +2555,21 @@ export default function Inventario() {
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                 </div>
+
+                {/* Vencimiento y Lote */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Fecha Vencimiento</label>
+                    <input type="date" value={(form as any).fechaVencimiento || ''} onChange={e => setForm(f => ({ ...f, fechaVencimiento: e.target.value || undefined }))}
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Lote</label>
+                    <input type="text" value={(form as any).lote || ''} onChange={e => setForm(f => ({ ...f, lote: e.target.value || undefined }))} placeholder="LOT-001"
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  </div>
+                </div>
+              </div>}
               </div>
             </form>
 
@@ -2471,6 +2616,47 @@ export default function Inventario() {
                 </div>
                 {adjData.type === 'AJUSTE' && !isAlmacenista && (
                   <div className="space-y-3">
+                    {/* Proveedor — siempre visible */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Proveedor</label>
+                      <select
+                        value={adjSupplierId}
+                        onChange={e => setAdjSupplierId(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      >
+                        <option value="">— Sin proveedor —</option>
+                        {suppliers.map(s => (
+                          <option key={s.id} value={s.id}>{s.contacto || s.rif}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* Nuevo Costo USD — siempre visible (costo ponderado automático) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nuevo Costo USD</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={adjCostoUSD || ''}
+                        onChange={e => setAdjCostoUSD(Number(e.target.value))}
+                        onFocus={() => { if (adjCostoUSD === 0 && selectedProduct) setAdjCostoUSD(selectedProduct.costoUSD || 0); }}
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        placeholder={`Actual: $${(selectedProduct?.costoUSD || 0).toFixed(2)}`}
+                      />
+                    </div>
+                    {/* Costo promedio ponderado preview — siempre visible */}
+                    {selectedProduct && adjCostoUSD > 0 && Number(adjData.quantity) > 0 && (
+                      <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/[0.08] border border-indigo-200 dark:border-indigo-500/20">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-1.5">Costo Promedio Ponderado</p>
+                        <div className="flex items-center gap-3 text-xs flex-wrap">
+                          <span className="text-slate-500 dark:text-white/40">({selectedProduct.stock} × ${(selectedProduct.costoUSD || 0).toFixed(2)}) + ({Number(adjData.quantity)} × ${adjCostoUSD.toFixed(2)}) ÷ {selectedProduct.stock + Number(adjData.quantity)}</span>
+                          <span className="font-black text-indigo-600 dark:text-indigo-400">
+                            = ${selectedProduct.stock + Number(adjData.quantity) > 0 ? ((selectedProduct.stock * (selectedProduct.costoUSD || 0) + Number(adjData.quantity) * adjCostoUSD) / (selectedProduct.stock + Number(adjData.quantity))).toFixed(4) : '0'}
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-indigo-400/70 mt-1">Se recalcula automáticamente en cada entrada</p>
+                      </div>
+                    )}
+                    {/* Precios de venta — opcional, expandible */}
                     <button
                       type="button"
                       onClick={() => {
@@ -2478,11 +2664,9 @@ export default function Inventario() {
                         setAdjUpdatePrices(next);
                         if (next && selectedProduct) {
                           const basePrices: Record<string, number> = {
-                            costoUSD: selectedProduct.costoUSD || 0,
                             precioDetal: selectedProduct.precioDetal || 0,
                             precioMayor: selectedProduct.precioMayor || 0,
                           };
-                          // Add dynamic account prices
                           if (hasDynamicPricing) {
                             for (const rate of customRates) {
                               basePrices[`cuenta_${rate.id}`] = selectedProduct.preciosCuenta?.[rate.id] || 0;
@@ -2494,31 +2678,32 @@ export default function Inventario() {
                       className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-all"
                     >
                       <div className="text-left">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300">Actualizar costos y precios</p>
-                        <p className="text-[9px] text-slate-400 mt-0.5">Opcional: actualiza los precios del producto al recibir mercancía</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300">Actualizar precios de venta</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Opcional: modifica detal, mayor y precios por cuenta</p>
                       </div>
                       <ChevronDown size={14} className={`text-slate-400 transition-transform duration-300 ${adjUpdatePrices ? 'rotate-180' : ''}`} />
                     </button>
                     {adjUpdatePrices && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
-                        {([
-                          { key: 'costoUSD', label: 'Costo USD' },
-                          { key: 'precioDetal', label: 'Precio Detal' },
-                          { key: 'precioMayor', label: 'Precio Mayor' },
-                          ...(hasDynamicPricing ? customRates.map(r => ({ key: `cuenta_${r.id}`, label: `Precio ${r.name}` })) : []),
-                        ]).map(f => (
-                          <div key={f.key} className="space-y-1.5">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">{f.label}</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={adjPrices[f.key] || 0}
-                              onChange={e => setAdjPrices(prev => ({ ...prev, [f.key]: Number(e.target.value) }))}
-                              className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                              placeholder="0.00"
-                            />
-                          </div>
-                        ))}
+                      <div className="space-y-3 pt-1">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {([
+                            { key: 'precioDetal', label: 'Precio Detal' },
+                            { key: 'precioMayor', label: 'Precio Mayor' },
+                            ...(hasDynamicPricing ? customRates.map(r => ({ key: `cuenta_${r.id}`, label: `Precio ${r.name}` })) : []),
+                          ]).map(f => (
+                            <div key={f.key} className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">{f.label}</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={adjPrices[f.key] || 0}
+                                onChange={e => setAdjPrices(prev => ({ ...prev, [f.key]: Number(e.target.value) }))}
+                                className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                placeholder="0.00"
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2529,7 +2714,7 @@ export default function Inventario() {
                 </div>
               </div>
               <div className="flex gap-4">
-                <button onClick={() => { setAdjModalOpen(false); setAdjUpdatePrices(false); }} className="flex-1 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:text-slate-400 transition-colors">Cerrar</button>
+                <button onClick={() => { setAdjModalOpen(false); setAdjUpdatePrices(false); setAdjCostoUSD(0); setAdjSupplierId(''); }} className="flex-1 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:text-slate-400 transition-colors">Cerrar</button>
                 <button onClick={handleAdjustStock} className="flex-[2] py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-md shadow-indigo-500/25 active:scale-95">Ejecutar Ajuste</button>
               </div>
             </div>
@@ -2978,6 +3163,53 @@ export default function Inventario() {
           </div>
         </div>
       )}
+
+      {/* ═══════════════ MODAL: RECEPCIÓN DE MERCANCÍA ═══════════════ */}
+      <RecepcionModal
+        open={showRecepcion}
+        onClose={() => setShowRecepcion(false)}
+        suppliers={suppliers}
+        products={products}
+        bcvRate={rates.tasaBCV}
+        customRates={customRates}
+        businessId={tenantId || ''}
+        currentUserId={userProfile?.id || ''}
+        currentUserName={userProfile?.fullName || 'Admin'}
+        onSaveMovement={async (data) => {
+          // Save CxP movement directly to Firestore
+          await addDoc(collection(db, `businesses/${tenantId}/movements`), {
+            ...data,
+            businessId: tenantId,
+            ownerId: userProfile?.id,
+            vendedorId: userProfile?.id,
+            vendedorNombre: userProfile?.fullName || 'Admin',
+            createdAt: new Date().toISOString(),
+          });
+        }}
+        onAdjustStock={async (productId, qty, newCosto, proveedorId, proveedorNombre, nroFactura) => {
+          const product = products.find(p => p.id === productId);
+          if (!product || !tenantId) return;
+          const newStock = product.stock + qty;
+          await setDoc(doc(db, `businesses/${tenantId}/products`, productId), {
+            stock: newStock,
+            costoUSD: newCosto,
+            previousCostoUSD: product.costoUSD || 0,
+          }, { merge: true });
+          await addDoc(collection(db, `businesses/${tenantId}/stock_movements`), {
+            productId,
+            productName: product.nombre,
+            type: 'AJUSTE',
+            quantity: qty,
+            reason: `Recepción${nroFactura ? ` #${nroFactura}` : ''}`,
+            weightedAvgCost: newCosto,
+            previousCost: product.costoUSD || 0,
+            proveedorId,
+            proveedorNombre,
+            userName: userProfile?.fullName || 'Admin',
+            createdAt: serverTimestamp(),
+          });
+        }}
+      />
     </div>
   );
 }

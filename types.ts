@@ -58,6 +58,18 @@ export interface Customer {
   portalEmail?: string;
   portalUserId?: string;
   portalActivatedAt?: string;
+  // KYC
+  cedulaFrontalUrl?: string;
+  cedulaTraseraUrl?: string;
+  kycStatus?: 'pending' | 'verified' | 'rejected';
+  kycVerifiedAt?: string;
+  kycSubmittedAt?: string;
+  termsAcceptedAt?: string;
+  // Fidelidad
+  loyaltyTier?: LoyaltyTier;
+  loyaltyPoints?: number;
+  segments?: CustomerSegment[];
+  priceListId?: string;
 }
 
 export interface Supplier {
@@ -439,4 +451,169 @@ export interface PortalPayment {
   reviewedAt?: string;
   reviewedBy?: string;
   reviewNote?: string;
+}
+
+// ─── Appointments (Citas) ─────────────────────────────────────────────────────
+
+export interface Service {
+  id: string;
+  name: string;
+  duration: number;          // minutos
+  price: number;             // USD
+  staffIds: string[];
+  category?: string;
+  imageUrl?: string;
+  requiresDeposit?: boolean;
+  depositAmount?: number;
+  active?: boolean;
+  businessId?: string;
+}
+
+export interface StaffSchedule {
+  staffId: string;
+  staffName: string;
+  weeklyHours: Record<number, { start: string; end: string } | null>; // 0=dom...6=sáb
+  breaks: { start: string; end: string }[];
+  bufferMinutes: number;
+  daysOff: string[];         // ISO dates
+  businessId?: string;
+}
+
+export type AppointmentStatus = 'confirmed' | 'pending' | 'completed' | 'cancelled' | 'no_show';
+export type AppointmentSource = 'portal' | 'walk_in' | 'manual';
+
+export interface Appointment {
+  id: string;
+  businessId: string;
+  customerId?: string;
+  customerName: string;
+  customerPhone: string;
+  serviceId: string;
+  serviceName: string;
+  staffId: string;
+  staffName: string;
+  date: string;              // ISO date YYYY-MM-DD
+  startTime: string;         // "10:30"
+  endTime: string;           // "11:00"
+  status: AppointmentStatus;
+  source: AppointmentSource;
+  notes?: string;
+  depositPaid?: boolean;
+  recurrenceId?: string;     // for recurring appointments
+  createdAt: string;
+}
+
+// ─── Pre-orders (Panadería/Repostería) ────────────────────────────────────────
+
+export type PreOrderStatus = 'pending' | 'confirmed' | 'in_progress' | 'ready' | 'delivered' | 'cancelled';
+
+export interface PreOrder {
+  id: string;
+  businessId: string;
+  customerName: string;
+  customerPhone: string;
+  customerId?: string;
+  items: PreOrderItem[];
+  deliveryDate: string;       // ISO date
+  deliveryTime?: string;      // "14:00"
+  totalUSD: number;
+  depositUSD: number;
+  depositPaid: boolean;
+  status: PreOrderStatus;
+  notes?: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface PreOrderItem {
+  productId?: string;
+  name: string;
+  quantity: number;
+  priceUSD: number;
+  notes?: string;             // "con chispas de chocolate"
+}
+
+// ─── Repair Tickets (Tecnología) ──────────────────────────────────────────────
+
+export type TicketStatus = 'received' | 'diagnosing' | 'waiting_parts' | 'in_repair' | 'ready' | 'delivered' | 'cancelled';
+
+export interface RepairTicket {
+  id: string;
+  businessId: string;
+  ticketNumber: string;
+  customerName: string;
+  customerPhone: string;
+  customerId?: string;
+  deviceType: string;         // "Laptop", "Teléfono", "Impresora"
+  deviceBrand?: string;
+  deviceModel?: string;
+  serialNumber?: string;
+  issueDescription: string;
+  diagnosis?: string;
+  estimatedCostUSD?: number;
+  finalCostUSD?: number;
+  status: TicketStatus;
+  receivedBy: string;
+  assignedTo?: string;
+  receivedAt: string;
+  estimatedReadyDate?: string;
+  deliveredAt?: string;
+  createdAt: string;
+}
+
+// ─── Loyalty / Fidelidad ────────────────────────────────────────────���─────────
+
+export type LoyaltyTier = 'bronce' | 'plata' | 'oro' | 'platino' | 'diamante' | 'elite';
+
+export interface LoyaltyConfig {
+  enabled: boolean;
+  pointsPerDollar: number;         // puntos por cada $1 facturado y pagado
+  earlyPaymentBonus: number;       // puntos extra por pagar antes del vencimiento
+  tierThresholds: Record<LoyaltyTier, number>; // puntos acumulados para subir de tier
+  tierBenefits: Record<LoyaltyTier, TierBenefit>;
+}
+
+export interface TierBenefit {
+  creditLimitBonus: number;        // % extra de límite de crédito
+  graceDaysBonus: number;          // días extra de gracia
+  discountPercent: number;         // % descuento general
+  badge: string;                   // emoji o ícono
+}
+
+export interface LoyaltyAccount {
+  customerId: string;
+  businessId: string;
+  totalPoints: number;             // puntos acumulados históricamente
+  currentPoints: number;           // puntos disponibles (sin canjear)
+  tier: LoyaltyTier;
+  tierUpdatedAt: string;
+  lastEarnedAt?: string;
+}
+
+export type LoyaltyEventType = 'earn_purchase' | 'earn_early_payment' | 'earn_bonus' | 'redeem' | 'expire' | 'adjust';
+
+export interface LoyaltyEvent {
+  id: string;
+  customerId: string;
+  businessId: string;
+  type: LoyaltyEventType;
+  points: number;                  // positivo = ganó, negativo = gastó/expiró
+  description: string;
+  movementId?: string;             // referencia al movimiento CxC
+  createdAt: string;
+}
+
+export type CustomerSegment = 'vip' | 'mayorista' | 'moroso' | 'nuevo' | 'recurrente' | 'inactivo';
+
+export interface PriceList {
+  id: string;
+  businessId: string;
+  name: string;                    // "Lista VIP", "Precios Mayorista"
+  type: 'tier' | 'segment' | 'custom';
+  targetTier?: LoyaltyTier;
+  targetSegment?: CustomerSegment;
+  discountPercent?: number;        // descuento global
+  productOverrides?: Record<string, number>; // productId → precio especial USD
+  active: boolean;
+  createdAt: string;
 }

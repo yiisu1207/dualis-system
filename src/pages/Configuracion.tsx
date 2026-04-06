@@ -8,7 +8,9 @@ import {
 } from '../hooks/useRolePermissions';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { AppConfig } from '../../types';
+import { AppConfig, Service, StaffSchedule, LoyaltyConfig } from '../../types';
+import { DEFAULT_LOYALTY_CONFIG, TIER_ORDER, TIER_LABELS } from '../utils/loyaltyEngine';
+import { BUSINESS_PRESETS, PRESET_IDS } from '../data/businessPresets';
 import {
   getBusinessConfig,
   listUsers,
@@ -66,17 +68,28 @@ import {
   BadgeCheck,
   Eye,
   EyeOff,
+  Shield,
+  Info,
+  Bell,
+  DollarSign,
+  Lock,
+  Unlock,
+  Smartphone,
+  BarChart3,
+  CalendarDays,
+  Trophy,
 } from 'lucide-react';
 import { updatePassword, updateProfile, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { acceptRequest, rejectRequest } from '../firebase/api';
 import { seedTestData } from '../utils/seedTestData';
 
-type SectionType = 'perfil' | 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'devtest';
+type SectionType = 'perfil' | 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'servicios' | 'fidelidad' | 'devtest';
 
 interface ConfigData {
+  tipoNegocio: string;
   companyName: string;
   companyRif: string;
   companyPhone: string;
@@ -187,6 +200,31 @@ const Configuracion: React.FC = () => {
   });
   const [savingNde, setSavingNde] = useState(false);
 
+  // Payment periods (credit days + discount)
+  const [paymentPeriods, setPaymentPeriods] = useState<{ days: number; label: string; discountPercent: number }[]>([]);
+
+  // Credit policy config
+  const [creditConfig, setCreditConfig] = useState({
+    enabled: false,
+    defaultCreditLimit: 0,
+    creditBlockMode: 'alert' as 'block' | 'alert',
+    creditAlertPct: 90,
+    autoMarkup: true,
+    requireApproval: false,
+    maxDaysNoApproval: 30,
+    gracePeriodDays: 30,
+    requireAbonoApproval: true,
+    // Portal de clientes (preparar para Fase 4)
+    portalEnabled: false,
+    portalAllowComprobantes: false,
+    portalAllowAutoPedido: false,
+    portalPinLength: 4 as 4 | 6,
+    // Recordatorios
+    sendReminderBeforeExpiry: false,
+    reminderDaysBefore: 3,
+    notifyVendedorOverdue: false,
+  });
+
   // Commissions config
   const [commissions, setCommissions] = useState({
     enabled: false,
@@ -194,8 +232,35 @@ const Configuracion: React.FC = () => {
     target: 'vendedor' as 'vendedor' | 'almacenista' | 'both',
     splitVendedor: 50,
     splitAlmacenista: 50,
+    // Comisiones por venta
+    salesCommissionEnabled: false,
+    salesCommissionPct: 0,
+    salesCommissionTarget: 'vendedor' as 'vendedor' | 'almacenista' | 'both',
+    salesCommissionOnlyPaid: false,
   });
   const [savingCommissions, setSavingCommissions] = useState(false);
+
+  // Loyalty config
+  const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
+  const [savingLoyalty, setSavingLoyalty] = useState(false);
+
+  // Services & Schedules (Citas)
+  const [svcList, setSvcList] = useState<Service[]>([]);
+  const [scheduleList, setScheduleList] = useState<StaffSchedule[]>([]);
+  const [editingSvc, setEditingSvc] = useState<Partial<Service> | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<Partial<StaffSchedule> | null>(null);
+  const [savingSvc, setSavingSvc] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+
+  // POS config
+  const [posConfig, setPosConfig] = useState({
+    allowManualDiscount: true,
+    maxDiscountWithoutApproval: 10,
+    requireClientAboveAmount: false,
+    requireClientMinAmount: 100,
+    showStockInPOS: true,
+    enableBultoColumn: true,
+  });
 
   // Profile state
   const [profileDisplayName, setProfileDisplayName] = useState('');
@@ -227,6 +292,7 @@ const Configuracion: React.FC = () => {
   const [newPinValue, setNewPinValue] = useState('');
 
   const [configData, setConfigData] = useState<ConfigData>({
+    tipoNegocio: 'general',
     companyName: '',
     companyRif: '',
     companyPhone: '',
@@ -252,17 +318,21 @@ const Configuracion: React.FC = () => {
       if (!businessId) return;
       setLoading(true);
       try {
-        const [configSnap, usersSnap, featuresSnap] = await Promise.all([
+        const [configSnap, usersSnap, featuresSnap, bizSnap] = await Promise.all([
           getBusinessConfig(businessId),
           listUsers(businessId),
           getDoc(doc(db, 'businessConfigs', businessId)).then(d => d.exists() ? d.data() : null),
+          getDoc(doc(db, 'businesses', businessId)).then(d => d.exists() ? d.data() : null),
         ]);
         if (configSnap) {
           setConfigData(prev => ({
             ...prev,
             ...configSnap,
             defaultIva: Number(configSnap.defaultIva || 16),
+            tipoNegocio: bizSnap?.tipoNegocio || prev.tipoNegocio,
           }));
+        } else if (bizSnap?.tipoNegocio) {
+          setConfigData(prev => ({ ...prev, tipoNegocio: bizSnap.tipoNegocio }));
         }
         setUsers(usersSnap);
         if (featuresSnap?.features) {
@@ -275,8 +345,23 @@ const Configuracion: React.FC = () => {
         if (featuresSnap?.ndeConfig) {
           setNdeConfig(prev => ({ ...prev, ...featuresSnap.ndeConfig }));
         }
+        if (featuresSnap?.paymentPeriods) {
+          setPaymentPeriods(featuresSnap.paymentPeriods);
+        } else {
+          // Fallback: try localStorage
+          try {
+            const stored = localStorage.getItem('payment_periods');
+            if (stored) setPaymentPeriods(JSON.parse(stored));
+          } catch {}
+        }
+        if (featuresSnap?.creditConfig) {
+          setCreditConfig(prev => ({ ...prev, ...featuresSnap.creditConfig }));
+        }
         if (featuresSnap?.commissions) {
           setCommissions(prev => ({ ...prev, ...featuresSnap.commissions }));
+        }
+        if (featuresSnap?.posConfig) {
+          setPosConfig(prev => ({ ...prev, ...featuresSnap.posConfig }));
         }
         if (featuresSnap?.rolePermissions) {
           setRolePerms(prev => ({ ...prev, ...featuresSnap.rolePermissions }));
@@ -365,6 +450,98 @@ const Configuracion: React.FC = () => {
     if (!businessId || !isAdmin) return;
     listInvitations(businessId).then(setInvitations).catch(() => {});
   }, [businessId, isAdmin]);
+
+  // Load loyalty config
+  useEffect(() => {
+    if (!businessId) return;
+    getDoc(doc(db, `businesses/${businessId}/config`, 'loyalty')).then(snap => {
+      if (snap.exists()) setLoyaltyConfig({ ...DEFAULT_LOYALTY_CONFIG, ...snap.data() as LoyaltyConfig });
+    }).catch(() => {});
+  }, [businessId]);
+
+  const handleSaveLoyalty = async () => {
+    if (!businessId) return;
+    setSavingLoyalty(true);
+    try {
+      await setDoc(doc(db, `businesses/${businessId}/config`, 'loyalty'), loyaltyConfig);
+      toast.success('Configuración de fidelidad guardada');
+    } catch {
+      toast.error('Error al guardar');
+    } finally {
+      setSavingLoyalty(false);
+    }
+  };
+
+  // Load services & staff schedules (for Citas section)
+  useEffect(() => {
+    if (!businessId) return;
+    const unsubs = [
+      onSnapshot(collection(db, `businesses/${businessId}/services`), snap => {
+        setSvcList(snap.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
+      }),
+      onSnapshot(collection(db, `businesses/${businessId}/staffSchedules`), snap => {
+        setScheduleList(snap.docs.map(d => ({ staffId: d.id, ...d.data() } as StaffSchedule)));
+      }),
+    ];
+    return () => unsubs.forEach(u => u());
+  }, [businessId]);
+
+  // ── Service CRUD handlers ─────────────────────────────────────────────────
+  const handleSaveSvc = async () => {
+    if (!businessId || !editingSvc?.name || savingSvc) return;
+    setSavingSvc(true);
+    try {
+      const payload = {
+        name: editingSvc.name,
+        duration: editingSvc.duration || 30,
+        price: editingSvc.price || 0,
+        staffIds: editingSvc.staffIds || [],
+        category: editingSvc.category || '',
+        active: editingSvc.active !== false,
+        businessId,
+      };
+      if (editingSvc.id) {
+        await updateDoc(doc(db, `businesses/${businessId}/services`, editingSvc.id), payload);
+      } else {
+        await addDoc(collection(db, `businesses/${businessId}/services`), payload);
+      }
+      setEditingSvc(null);
+      toast.success(editingSvc.id ? 'Servicio actualizado' : 'Servicio creado');
+    } catch {
+      toast.error('Error al guardar servicio');
+    } finally {
+      setSavingSvc(false);
+    }
+  };
+
+  const handleDeleteSvc = async (id: string) => {
+    if (!businessId) return;
+    await deleteDoc(doc(db, `businesses/${businessId}/services`, id));
+    toast.success('Servicio eliminado');
+  };
+
+  // ── Staff Schedule handlers ───────────────────────────────────────────────
+  const handleSaveSchedule = async () => {
+    if (!businessId || !editingSchedule?.staffId || savingSchedule) return;
+    setSavingSchedule(true);
+    try {
+      const payload = {
+        staffName: editingSchedule.staffName || '',
+        weeklyHours: editingSchedule.weeklyHours || {},
+        breaks: editingSchedule.breaks || [],
+        bufferMinutes: editingSchedule.bufferMinutes || 10,
+        daysOff: editingSchedule.daysOff || [],
+        businessId,
+      };
+      await setDoc(doc(db, `businesses/${businessId}/staffSchedules`, editingSchedule.staffId), payload, { merge: true });
+      setEditingSchedule(null);
+      toast.success('Horario guardado');
+    } catch {
+      toast.error('Error al guardar horario');
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
 
   const handleSendInvite = async () => {
     if (!businessId || !userProfile?.uid || !inviteEmail.trim()) return;
@@ -478,6 +655,7 @@ const Configuracion: React.FC = () => {
       const docRef = doc(db, 'businessConfigs', businessId);
       await setDoc(docRef, {
         ...configData,
+        posConfig,
         updatedAt: new Date().toISOString(),
         updatedBy: userProfile.uid,
       }, { merge: true });
@@ -571,11 +749,17 @@ const Configuracion: React.FC = () => {
     if (!businessId) return;
     setSavingNde(true);
     try {
-      await setDoc(doc(db, 'businessConfigs', businessId), { ndeConfig }, { merge: true });
-      toast.success('Configuración de NDE guardada');
+      await setDoc(doc(db, 'businessConfigs', businessId), {
+        ndeConfig,
+        paymentPeriods,
+        creditConfig,
+      }, { merge: true });
+      // Also sync periods to localStorage for POS quick access
+      localStorage.setItem('payment_periods', JSON.stringify(paymentPeriods));
+      toast.success('Configuración de Despacho y Crédito guardada');
     } catch (e) {
       console.error(e);
-      toast.error('Error al guardar configuración NDE');
+      toast.error('Error al guardar configuración');
     } finally {
       setSavingNde(false);
     }
@@ -633,6 +817,8 @@ const Configuracion: React.FC = () => {
         { id: 'facturacion',label: 'Facturación y POS',    icon: Receipt },
         { id: 'despacho',   label: 'Despacho / NDE',       icon: Truck },
         { id: 'comisiones', label: 'Comisiones',            icon: Package },
+        { id: 'servicios', label: 'Servicios y Citas',     icon: CalendarDays },
+        { id: 'fidelidad', label: 'Fidelidad',             icon: Trophy },
         { id: 'equipo',     label: 'Equipo y Permisos',    icon: Users2 },
       ],
     },
@@ -975,6 +1161,48 @@ const Configuracion: React.FC = () => {
                       <p className="text-xs text-slate-400 dark:text-white/30 font-medium leading-relaxed max-w-xs">Aparecerá en facturas, tickets y correos. SVG o PNG transparente.</p>
                     </div>
                   </div>
+                  {/* Tipo de Negocio */}
+                  <div className="mb-6 space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Negocio</label>
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                      {PRESET_IDS.map(pid => {
+                        const preset = BUSINESS_PRESETS[pid];
+                        const selected = configData.tipoNegocio === pid;
+                        return (
+                          <button
+                            key={pid}
+                            type="button"
+                            onClick={async () => {
+                              setConfigData(prev => ({ ...prev, tipoNegocio: pid }));
+                              // Persist immediately
+                              if (businessId) {
+                                try {
+                                  await setDoc(doc(db, 'businesses', businessId), { tipoNegocio: pid }, { merge: true });
+                                  toast.success(`Tipo: ${preset.label}`);
+                                } catch { toast.error('Error al guardar tipo'); }
+                              }
+                            }}
+                            className={`flex flex-col items-center gap-1 px-1.5 py-2.5 rounded-xl border-2 transition-all text-center ${
+                              selected
+                                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 shadow-md'
+                                : 'border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] hover:border-slate-300'
+                            }`}
+                          >
+                            <span className="text-lg">{preset.emoji}</span>
+                            <span className={`text-[8px] font-black uppercase tracking-widest leading-tight ${selected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+                              {preset.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {configData.tipoNegocio !== 'general' && (
+                      <p className="text-[10px] text-indigo-500 dark:text-indigo-400 font-bold ml-2">
+                        {BUSINESS_PRESETS[configData.tipoNegocio]?.description}
+                      </p>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 flex items-center gap-2"><Globe size={12} /> Nombre Comercial</label>
@@ -1028,6 +1256,71 @@ const Configuracion: React.FC = () => {
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 flex items-center gap-2"><MessageSquare size={12} /> Mensaje al Pie del Ticket</label>
                       <textarea rows={3} value={configData.ticketFooter} onChange={e => setConfigData({ ...configData, ticketFooter: e.target.value })} className={`${inputClasses} py-5 resize-none`} placeholder="Gracias por preferirnos..." />
                     </div>
+                  </div>
+                </div>
+
+                {/* ═══ OPCIONES DEL POS ═══ */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <Monitor size={15} className="text-indigo-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Opciones del POS</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Controles adicionales para el punto de venta</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {[
+                      { key: 'showStockInPOS',     label: 'Mostrar stock disponible en el POS',            sub: 'El vendedor ve la cantidad disponible junto a cada producto' },
+                      { key: 'enableBultoColumn',  label: 'Facturar por bultos y unidades',                sub: 'Habilita la columna de bultos en POS Mayor' },
+                      { key: 'allowManualDiscount', label: 'Permitir descuentos manuales en POS',          sub: 'El vendedor puede aplicar descuentos línea por línea' },
+                      { key: 'requireClientAboveAmount', label: 'Requerir selección de cliente para ventas grandes', sub: 'Obliga a seleccionar un cliente cuando la venta supera un monto' },
+                    ].map(({ key, label, sub }) => (
+                      <div key={key} className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-50 dark:border-white/[0.04] last:border-0">
+                        <div>
+                          <p className="text-sm font-bold text-slate-700 dark:text-white/80">{label}</p>
+                          <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">{sub}</p>
+                        </div>
+                        <button
+                          onClick={() => setPosConfig(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))}
+                          className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${(posConfig as any)[key] ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                        >
+                          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${(posConfig as any)[key] ? 'left-5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Max discount without approval */}
+                    {posConfig.allowManualDiscount && (
+                      <div className="pl-4 border-l-2 border-indigo-200 dark:border-indigo-500/30">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Descuento máximo sin aprobación</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number" min="0" max="100"
+                            value={posConfig.maxDiscountWithoutApproval}
+                            onChange={e => setPosConfig(prev => ({ ...prev, maxDiscountWithoutApproval: parseInt(e.target.value) || 0 }))}
+                            className="w-20 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                          <span className="text-[11px] text-slate-400">% — Descuentos mayores requieren aprobación de admin</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Min amount for client requirement */}
+                    {posConfig.requireClientAboveAmount && (
+                      <div className="pl-4 border-l-2 border-indigo-200 dark:border-indigo-500/30">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Monto mínimo que requiere cliente</label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-black text-slate-400">$</span>
+                          <input
+                            type="number" min="0" step="10"
+                            value={posConfig.requireClientMinAmount}
+                            onChange={e => setPosConfig(prev => ({ ...prev, requireClientMinAmount: parseFloat(e.target.value) || 0 }))}
+                            className="w-28 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                          <span className="text-[11px] text-slate-400">USD</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1660,14 +1953,423 @@ const Configuracion: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex justify-end">
+                {/* ═══ CONDICIONES DE CRÉDITO Y DESCUENTO ═══ */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <Clock size={15} className="text-sky-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Períodos de Crédito y Descuento</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Plazos de crédito disponibles en POS Mayor. Si un período tiene descuento, el sistema aplica un markup ficticio al precio y muestra el descuento — el neto queda igual.</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {/* Info banner about markup */}
+                    <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-500/[0.06] border border-sky-100 dark:border-sky-500/15">
+                      <div className="flex items-start gap-2">
+                        <Info size={13} className="text-sky-500 mt-0.5 shrink-0" />
+                        <p className="text-[11px] text-sky-600 dark:text-sky-300/70 leading-relaxed">
+                          <strong>¿Cómo funciona?</strong> Si configuras 30 días con 5% de descuento, al facturar a crédito el sistema sube el precio un 5.26% y muestra "Descuento pronto pago: -5%". El cliente paga el precio real si paga a tiempo. Esto es legal bajo VEN-NIF como financiamiento comercial.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Periods table */}
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-white/30">Períodos Configurados</p>
+                      <button
+                        onClick={() => setPaymentPeriods([...paymentPeriods, { days: 30, label: '30 días', discountPercent: 0 }])}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-md shadow-indigo-500/25"
+                      >
+                        <Plus size={11} /> Agregar período
+                      </button>
+                    </div>
+
+                    {paymentPeriods.length === 0 ? (
+                      <p className="text-center py-6 text-slate-400 dark:text-white/20 text-sm font-bold">No hay períodos configurados. Agrega uno para habilitar ventas a crédito con plazos.</p>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {paymentPeriods.map((period, idx) => (
+                          <div key={idx} className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-100 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                            <div className="grid grid-cols-3 gap-3 flex-1">
+                              <div>
+                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25 mb-1 block">Días</label>
+                                <input
+                                  type="number" min="1" max="365"
+                                  value={period.days}
+                                  onChange={(e) => {
+                                    const updated = [...paymentPeriods];
+                                    updated[idx] = { ...period, days: parseInt(e.target.value) || 1 };
+                                    setPaymentPeriods(updated);
+                                  }}
+                                  className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25 mb-1 block">Etiqueta</label>
+                                <input
+                                  value={period.label}
+                                  onChange={(e) => {
+                                    const updated = [...paymentPeriods];
+                                    updated[idx] = { ...period, label: e.target.value };
+                                    setPaymentPeriods(updated);
+                                  }}
+                                  placeholder="Ej: 30 días"
+                                  className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25 mb-1 block">Descuento %</label>
+                                <input
+                                  type="number" min="0" max="100" step="0.5"
+                                  value={period.discountPercent}
+                                  onChange={(e) => {
+                                    const updated = [...paymentPeriods];
+                                    updated[idx] = { ...period, discountPercent: parseFloat(e.target.value) || 0 };
+                                    setPaymentPeriods(updated);
+                                  }}
+                                  className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => setPaymentPeriods(paymentPeriods.filter((_, i) => i !== idx))}
+                              className="h-9 w-9 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 flex items-center justify-center transition-all shrink-0"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Preview */}
+                    {paymentPeriods.length > 0 && (
+                      <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.06]">
+                        <p className="text-[9px] font-black text-slate-400 dark:text-white/25 uppercase tracking-widest mb-2.5">Vista Previa — Selector en POS Mayor</p>
+                        <div className="flex flex-wrap gap-2">
+                          {[...paymentPeriods].sort((a, b) => a.days - b.days).map((p, i) => (
+                            <div key={i} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] text-center">
+                              <p className="text-sm font-black text-slate-900 dark:text-white">{p.label}</p>
+                              {p.discountPercent > 0 && (
+                                <p className="text-[10px] font-bold text-emerald-500">Ahorra {p.discountPercent}%</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ═══ FACTURACIÓN A CRÉDITO ═══ */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <CreditCard size={15} className="text-violet-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Facturación a Crédito</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Controles generales para ventas a crédito</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {[
+                      { key: 'enabled',          label: 'Permitir ventas a crédito',                          sub: 'Habilita la opción de venta a crédito en POS Mayor' },
+                      { key: 'autoMarkup',        label: 'Aplicar markup ficticio automáticamente',            sub: 'Al facturar a crédito con descuento, sube el precio y muestra el dto. El neto queda igual' },
+                      { key: 'requireApproval',   label: 'Requerir aprobación de admin para crédito largo',    sub: 'Ventas a crédito que excedan los días máximos requieren aprobación' },
+                      { key: 'requireAbonoApproval', label: 'Requerir aprobación de admin para abonos',        sub: 'Los vendedores registran solicitudes — un admin debe aprobar antes de aplicar el pago' },
+                    ].map(({ key, label, sub }) => (
+                      <div key={key} className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-50 dark:border-white/[0.04] last:border-0">
+                        <div>
+                          <p className="text-sm font-bold text-slate-700 dark:text-white/80">{label}</p>
+                          <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">{sub}</p>
+                        </div>
+                        <button
+                          onClick={() => setCreditConfig(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))}
+                          className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${(creditConfig as any)[key] ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                        >
+                          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${(creditConfig as any)[key] ? 'left-5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Max days without approval */}
+                    {creditConfig.requireApproval && (
+                      <div className="pl-4 border-l-2 border-indigo-200 dark:border-indigo-500/30">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Días máximos sin aprobación</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number" min="1" max="365"
+                            value={creditConfig.maxDaysNoApproval}
+                            onChange={e => setCreditConfig(prev => ({ ...prev, maxDaysNoApproval: parseInt(e.target.value) || 30 }))}
+                            className="w-24 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                          <span className="text-[11px] text-slate-400">días</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 dark:text-white/25 mt-1">Créditos de hasta {creditConfig.maxDaysNoApproval} días se procesan sin aprobación</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ═══ LÍMITES DE CRÉDITO ═══ */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <DollarSign size={15} className="text-emerald-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Límites de Crédito</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Controla cuánto crédito puede tener cada cliente</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {/* Default credit limit */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Límite de crédito por defecto (clientes nuevos)</label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-black text-slate-400">$</span>
+                        <input
+                          type="number" min="0" step="100"
+                          value={creditConfig.defaultCreditLimit || ''}
+                          onChange={e => setCreditConfig(prev => ({ ...prev, defaultCreditLimit: parseFloat(e.target.value) || 0 }))}
+                          placeholder="0 = sin límite"
+                          className="w-40 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                        <span className="text-[11px] text-slate-400">USD · $0 = sin límite</span>
+                      </div>
+                    </div>
+
+                    {/* Block mode */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Cuando se excede el límite</label>
+                      <div className="flex gap-2">
+                        {[
+                          { value: 'block', label: 'Bloquear venta', icon: Lock, desc: 'No permite la venta' },
+                          { value: 'alert', label: 'Alertar y permitir', icon: AlertTriangle, desc: 'Muestra advertencia pero permite con override' },
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setCreditConfig(prev => ({ ...prev, creditBlockMode: opt.value as 'block' | 'alert' }))}
+                            className={`flex-1 p-3 rounded-xl border text-left transition-all ${creditConfig.creditBlockMode === opt.value
+                              ? 'border-indigo-300 dark:border-indigo-500/40 bg-indigo-50 dark:bg-indigo-500/10'
+                              : 'border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] hover:bg-slate-50 dark:hover:bg-white/[0.04]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <opt.icon size={13} className={creditConfig.creditBlockMode === opt.value ? 'text-indigo-500' : 'text-slate-400'} />
+                              <p className={`text-sm font-bold ${creditConfig.creditBlockMode === opt.value ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-white/60'}`}>{opt.label}</p>
+                            </div>
+                            <p className="text-[10px] text-slate-400 dark:text-white/25">{opt.desc}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Alert threshold */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">% de utilización para alerta</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number" min="50" max="100"
+                          value={creditConfig.creditAlertPct}
+                          onChange={e => setCreditConfig(prev => ({ ...prev, creditAlertPct: parseInt(e.target.value) || 90 }))}
+                          className="w-20 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                        <span className="text-[11px] text-slate-400">% — Muestra alerta amarilla en CxC cuando el cliente usa este % de su límite</span>
+                      </div>
+                    </div>
+
+                    {/* Grace period */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Período de gracia</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number" min="0" max="365"
+                          value={creditConfig.gracePeriodDays}
+                          onChange={e => setCreditConfig(prev => ({ ...prev, gracePeriodDays: parseInt(e.target.value) || 0 }))}
+                          className="w-20 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                        <span className="text-[11px] text-slate-400">días después del vencimiento antes de bloquear nuevas ventas a crédito</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ═══ RECORDATORIOS DE VENCIMIENTO ═══ */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <Bell size={15} className="text-amber-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Recordatorios de Vencimiento</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Notificaciones automáticas sobre facturas próximas a vencer</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {/* Send reminder before expiry */}
+                    <div className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-50 dark:border-white/[0.04]">
+                      <div>
+                        <p className="text-sm font-bold text-slate-700 dark:text-white/80">Enviar recordatorio antes de vencimiento</p>
+                        <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">Notificación interna cuando una factura está por vencer</p>
+                      </div>
+                      <button
+                        onClick={() => setCreditConfig(prev => ({ ...prev, sendReminderBeforeExpiry: !prev.sendReminderBeforeExpiry }))}
+                        className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${creditConfig.sendReminderBeforeExpiry ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                      >
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${creditConfig.sendReminderBeforeExpiry ? 'left-5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+
+                    {creditConfig.sendReminderBeforeExpiry && (
+                      <div className="pl-4 border-l-2 border-indigo-200 dark:border-indigo-500/30">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Días antes del vencimiento</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number" min="1" max="30"
+                            value={creditConfig.reminderDaysBefore}
+                            onChange={e => setCreditConfig(prev => ({ ...prev, reminderDaysBefore: parseInt(e.target.value) || 3 }))}
+                            className="w-20 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                          <span className="text-[11px] text-slate-400">días</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Notify vendedor overdue */}
+                    <div className="flex items-center justify-between gap-4 py-2.5">
+                      <div>
+                        <p className="text-sm font-bold text-slate-700 dark:text-white/80">Notificar al vendedor cuando su cliente tiene facturas vencidas</p>
+                        <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">El vendedor recibe alerta cuando un cliente asignado tiene deuda vencida</p>
+                      </div>
+                      <button
+                        onClick={() => setCreditConfig(prev => ({ ...prev, notifyVendedorOverdue: !prev.notifyVendedorOverdue }))}
+                        className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${creditConfig.notifyVendedorOverdue ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                      >
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${creditConfig.notifyVendedorOverdue ? 'left-5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ═══ PORTAL DE CLIENTES ═══ */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <Smartphone size={15} className="text-indigo-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Portal de Clientes</h3>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/10 text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">Próximamente</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Permite a tus clientes ver su estado de cuenta, hacer pedidos y subir comprobantes de pago</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {[
+                      { key: 'portalEnabled',            label: 'Habilitar portal de clientes',          sub: 'Los clientes acceden con cédula/RIF + PIN para ver su cuenta' },
+                      { key: 'portalAllowComprobantes',  label: 'Permitir que clientes suban comprobantes', sub: 'El cliente sube foto del comprobante y un admin aprueba el abono' },
+                      { key: 'portalAllowAutoPedido',    label: 'Permitir auto-pedido desde portal',      sub: 'El cliente arma su pedido desde el catálogo y lo envía para aprobación' },
+                    ].map(({ key, label, sub }) => (
+                      <div key={key} className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-50 dark:border-white/[0.04] last:border-0">
+                        <div>
+                          <p className="text-sm font-bold text-slate-700 dark:text-white/80">{label}</p>
+                          <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">{sub}</p>
+                        </div>
+                        <button
+                          onClick={() => setCreditConfig(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))}
+                          className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${(creditConfig as any)[key] ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                        >
+                          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${(creditConfig as any)[key] ? 'left-5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* PIN length */}
+                    {creditConfig.portalEnabled && (
+                      <div className="pl-4 border-l-2 border-indigo-200 dark:border-indigo-500/30">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Longitud del PIN de acceso</label>
+                        <div className="flex gap-2">
+                          {([4, 6] as const).map(n => (
+                            <button
+                              key={n}
+                              onClick={() => setCreditConfig(prev => ({ ...prev, portalPinLength: n }))}
+                              className={`px-4 py-2 rounded-xl text-sm font-black transition-all ${creditConfig.portalPinLength === n
+                                ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-500/40'
+                                : 'bg-white dark:bg-white/[0.04] text-slate-500 dark:text-white/40 border border-slate-200 dark:border-white/[0.08] hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                              }`}
+                            >
+                              {n} dígitos
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ═══ MODO DE OPERACIÓN ═══ */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <Lock size={15} className="text-violet-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Modo de Operación — Libros Individuales</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Controla si cada vendedor opera con su propio libro o comparte datos con el equipo</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-bold text-slate-700 dark:text-white/80">Libros Individuales</p>
+                        <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">Cada vendedor opera en su propio libro y solo ve sus movimientos</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setFeatures(prev => ({ ...prev, personalBooks: false }))}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition-all border ${
+                            !features.personalBooks
+                              ? 'bg-emerald-100 dark:bg-emerald-500/15 border-emerald-300 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                              : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-400 dark:text-white/30 hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          <Unlock size={12} /> Compartido
+                        </button>
+                        <button
+                          onClick={() => setFeatures(prev => ({ ...prev, personalBooks: true }))}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition-all border ${
+                            features.personalBooks
+                              ? 'bg-violet-100 dark:bg-violet-500/15 border-violet-300 dark:border-violet-500/30 text-violet-600 dark:text-violet-400'
+                              : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-400 dark:text-white/30 hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          <Lock size={12} /> Individual
+                        </button>
+                      </div>
+                    </div>
+
+                    {features.personalBooks && (
+                      <div className="bg-violet-50 dark:bg-violet-500/[0.06] border border-violet-200 dark:border-violet-500/20 rounded-xl p-4 space-y-2">
+                        <p className="text-xs font-black text-violet-700 dark:text-violet-300">En modo individual:</p>
+                        <ul className="text-[11px] text-violet-600 dark:text-violet-400/80 space-y-1.5 list-none">
+                          <li className="flex items-start gap-2"><span className="mt-0.5 w-1 h-1 rounded-full bg-violet-400 shrink-0" /> CxC/CxP: ve todos los clientes pero solo sus propios movimientos</li>
+                          <li className="flex items-start gap-2"><span className="mt-0.5 w-1 h-1 rounded-full bg-violet-400 shrink-0" /> RRHH: solo ve sus vales y registros de tiempo</li>
+                          <li className="flex items-start gap-2"><span className="mt-0.5 w-1 h-1 rounded-full bg-violet-400 shrink-0" /> Comparación de libros habilitada para admins</li>
+                          <li className="flex items-start gap-2"><span className="mt-0.5 w-1 h-1 rounded-full bg-violet-400 shrink-0" /> Owner y Admin siempre ven todo</li>
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  {/* Save features (personal books) separately */}
+                  <button
+                    onClick={handleSaveFeatures}
+                    disabled={savingFeatures}
+                    className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-black text-sm shadow-md shadow-violet-500/25 hover:opacity-90 transition-all disabled:opacity-50"
+                  >
+                    {savingFeatures ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                    Guardar Modo Operación
+                  </button>
                   <button
                     onClick={handleSaveNde}
                     disabled={savingNde}
-                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-sm shadow-md shadow-indigo-500/25 hover:opacity-90 transition-all disabled:opacity-50"
+                    className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-sm shadow-md shadow-indigo-500/25 hover:opacity-90 transition-all disabled:opacity-50"
                   >
                     {savingNde ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                    Guardar Configuración NDE
+                    Guardar Despacho y Crédito
                   </button>
                 </div>
               </div>
@@ -1774,6 +2476,95 @@ const Configuracion: React.FC = () => {
                                 </div>
                               )}
                             </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ═══ COMISIONES POR VENTA ═══ */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <BarChart3 size={15} className="text-violet-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Comisiones por Venta</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Porcentaje del monto facturado como comisión</p>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    {/* Enable toggle */}
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-bold text-slate-700 dark:text-white/80">Activar comisión por venta</p>
+                        <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">Calcula un % del monto total facturado como comisión</p>
+                      </div>
+                      <button
+                        onClick={() => setCommissions(prev => ({ ...prev, salesCommissionEnabled: !prev.salesCommissionEnabled }))}
+                        className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${commissions.salesCommissionEnabled ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                      >
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${commissions.salesCommissionEnabled ? 'left-5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+
+                    {commissions.salesCommissionEnabled && (
+                      <div className="space-y-4 pl-4 border-l-2 border-violet-200 dark:border-violet-500/30">
+                        {/* Percentage */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Porcentaje de comisión</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number" min="0" max="100" step="0.5"
+                              value={commissions.salesCommissionPct || ''}
+                              onChange={e => setCommissions(prev => ({ ...prev, salesCommissionPct: parseFloat(e.target.value) || 0 }))}
+                              placeholder="0"
+                              className="w-24 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                            <span className="text-[11px] text-slate-400">% del monto facturado</span>
+                          </div>
+                        </div>
+
+                        {/* Target */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Aplica a</label>
+                          <div className="flex gap-2">
+                            {(['vendedor', 'almacenista', 'both'] as const).map(t => (
+                              <button
+                                key={t}
+                                onClick={() => setCommissions(prev => ({ ...prev, salesCommissionTarget: t }))}
+                                className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${commissions.salesCommissionTarget === t
+                                  ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 border border-violet-300 dark:border-violet-500/40'
+                                  : 'bg-white dark:bg-white/[0.04] text-slate-500 dark:text-white/40 border border-slate-200 dark:border-white/[0.08]'
+                                }`}
+                              >
+                                {t === 'both' ? 'Ambos' : t === 'vendedor' ? 'Vendedor' : 'Almacenista'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Only paid */}
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-bold text-slate-700 dark:text-white/80">Solo contar ventas cobradas</p>
+                            <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">La comisión se genera solo cuando el cliente paga</p>
+                          </div>
+                          <button
+                            onClick={() => setCommissions(prev => ({ ...prev, salesCommissionOnlyPaid: !prev.salesCommissionOnlyPaid }))}
+                            className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${commissions.salesCommissionOnlyPaid ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                          >
+                            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${commissions.salesCommissionOnlyPaid ? 'left-5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+
+                        {/* Preview */}
+                        {commissions.salesCommissionPct > 0 && (
+                          <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3 border border-slate-100 dark:border-white/[0.07]">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-2">Ejemplo: venta de $1,000</p>
+                            <p className="text-xs text-slate-600 dark:text-slate-300">
+                              Comisión: <span className="font-black text-slate-900 dark:text-white">${(1000 * commissions.salesCommissionPct / 100).toFixed(2)}</span>
+                              {commissions.salesCommissionOnlyPaid && <span className="text-slate-400"> (solo si el cliente paga)</span>}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -2055,6 +2846,363 @@ const Configuracion: React.FC = () => {
                   </button>
                 </div>
 
+              </div>
+            )}
+
+            {/* ── SECTION: SERVICIOS Y CITAS ── */}
+            {activeSection === 'servicios' && (
+              <div className="space-y-6 animate-in fade-in">
+                {/* ── Services CRUD ── */}
+                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800 dark:text-white">Servicios</h3>
+                      <p className="text-xs text-slate-500 dark:text-white/30 mt-0.5">Define los servicios que ofreces y sus precios</p>
+                    </div>
+                    <button
+                      onClick={() => setEditingSvc({ name: '', duration: 30, price: 0, staffIds: [], active: true })}
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/25 flex items-center gap-2"
+                    >
+                      <Plus size={14} /> Nuevo Servicio
+                    </button>
+                  </div>
+
+                  {svcList.length === 0 ? (
+                    <p className="text-xs text-white/20 text-center py-8">No hay servicios configurados</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {svcList.map(svc => (
+                        <div key={svc.id} className="flex items-center justify-between bg-slate-50 dark:bg-white/[0.03] rounded-xl px-4 py-3 border border-slate-100 dark:border-white/[0.06]">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-slate-800 dark:text-white">{svc.name}</p>
+                              {svc.active === false && (
+                                <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400">Inactivo</span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-500 dark:text-white/30">
+                              {svc.duration} min — ${svc.price}
+                              {svc.category && ` — ${svc.category}`}
+                            </p>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => setEditingSvc(svc)} className="p-2 rounded-lg hover:bg-white/[0.06] transition-all text-white/30 hover:text-white/60">
+                              <Sliders size={14} />
+                            </button>
+                            <button onClick={() => handleDeleteSvc(svc.id)} className="p-2 rounded-lg hover:bg-rose-500/10 transition-all text-white/30 hover:text-rose-400">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Inline service editor */}
+                  {editingSvc && (
+                    <div className="bg-slate-100 dark:bg-white/[0.04] rounded-xl p-5 border border-slate-200 dark:border-white/[0.08] space-y-4">
+                      <p className="text-xs font-black uppercase tracking-widest text-white/30">{editingSvc.id ? 'Editar Servicio' : 'Nuevo Servicio'}</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="col-span-2">
+                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Nombre</label>
+                          <input value={editingSvc.name || ''} onChange={e => setEditingSvc({ ...editingSvc, name: e.target.value })}
+                            className={inputClasses} placeholder="Corte Fade" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Duración (min)</label>
+                          <input type="number" value={editingSvc.duration || ''} onChange={e => setEditingSvc({ ...editingSvc, duration: +e.target.value })}
+                            className={inputClasses} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Precio USD</label>
+                          <input type="number" step="0.01" value={editingSvc.price || ''} onChange={e => setEditingSvc({ ...editingSvc, price: +e.target.value })}
+                            className={inputClasses} />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Categoría</label>
+                          <input value={editingSvc.category || ''} onChange={e => setEditingSvc({ ...editingSvc, category: e.target.value })}
+                            className={inputClasses} placeholder="Cortes, Barba, Color..." />
+                        </div>
+                        <div className="flex items-end gap-3">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" checked={editingSvc.active !== false}
+                              onChange={e => setEditingSvc({ ...editingSvc, active: e.target.checked })}
+                              className="w-4 h-4 rounded border-white/20 bg-white/5 text-indigo-500" />
+                            <span className="text-xs font-bold text-white/40">Activo</span>
+                          </label>
+                        </div>
+                      </div>
+                      {/* Staff assignment */}
+                      {users.length > 0 && (
+                        <div>
+                          <label className="text-[10px] font-bold text-white/20 mb-2 block">Asignar a empleados</label>
+                          <div className="flex flex-wrap gap-2">
+                            {users.filter(u => u.status !== 'PENDING_APPROVAL').map(u => {
+                              const selected = (editingSvc.staffIds || []).includes(u.id);
+                              return (
+                                <button key={u.id}
+                                  onClick={() => {
+                                    const ids = editingSvc.staffIds || [];
+                                    setEditingSvc({ ...editingSvc, staffIds: selected ? ids.filter(i => i !== u.id) : [...ids, u.id] });
+                                  }}
+                                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                    selected ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' : 'border-white/[0.08] text-white/30 hover:bg-white/[0.03]'
+                                  }`}
+                                >
+                                  {u.displayName || u.fullName || u.email}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setEditingSvc(null)} className="px-4 py-2 rounded-xl border border-white/10 text-white/40 text-xs font-bold hover:bg-white/[0.04]">Cancelar</button>
+                        <button onClick={handleSaveSvc} disabled={!editingSvc.name || savingSvc}
+                          className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold disabled:opacity-40 flex items-center gap-2">
+                          {savingSvc ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                          Guardar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Staff Schedules ── */}
+                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 space-y-5">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800 dark:text-white">Horarios del Personal</h3>
+                    <p className="text-xs text-slate-500 dark:text-white/30 mt-0.5">Configura los horarios de trabajo de cada empleado</p>
+                  </div>
+
+                  {users.filter(u => u.status !== 'PENDING_APPROVAL').length === 0 ? (
+                    <p className="text-xs text-white/20 text-center py-8">Agrega empleados en la sección "Equipo" primero</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {users.filter(u => u.status !== 'PENDING_APPROVAL').map(u => {
+                        const schedule = scheduleList.find(s => s.staffId === u.id);
+                        return (
+                          <div key={u.id} className="flex items-center justify-between bg-slate-50 dark:bg-white/[0.03] rounded-xl px-4 py-3 border border-slate-100 dark:border-white/[0.06]">
+                            <div>
+                              <p className="text-sm font-bold text-slate-800 dark:text-white">{u.displayName || u.fullName || u.email}</p>
+                              <p className="text-[10px] text-slate-500 dark:text-white/30">
+                                {schedule ? `Buffer: ${schedule.bufferMinutes} min` : 'Sin horario configurado'}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => setEditingSchedule(schedule || {
+                                staffId: u.id,
+                                staffName: u.displayName || u.fullName || u.email || '',
+                                weeklyHours: {
+                                  1: { start: '08:00', end: '18:00' },
+                                  2: { start: '08:00', end: '18:00' },
+                                  3: { start: '08:00', end: '18:00' },
+                                  4: { start: '08:00', end: '18:00' },
+                                  5: { start: '08:00', end: '18:00' },
+                                  6: { start: '08:00', end: '13:00' },
+                                },
+                                breaks: [{ start: '12:00', end: '13:00' }],
+                                bufferMinutes: 10,
+                                daysOff: [],
+                              })}
+                              className="px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs font-bold text-white/40 hover:bg-white/[0.06] transition-all flex items-center gap-2"
+                            >
+                              <Clock size={13} /> {schedule ? 'Editar' : 'Configurar'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Inline schedule editor */}
+                  {editingSchedule && (
+                    <div className="bg-slate-100 dark:bg-white/[0.04] rounded-xl p-5 border border-slate-200 dark:border-white/[0.08] space-y-4">
+                      <p className="text-xs font-black uppercase tracking-widest text-white/30">
+                        Horario de {editingSchedule.staffName}
+                      </p>
+
+                      {/* Weekly hours */}
+                      <div className="space-y-2">
+                        {(['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as const).map((dayName, dayIdx) => {
+                          const hours = (editingSchedule.weeklyHours || {})[dayIdx];
+                          const isActive = !!hours;
+                          return (
+                            <div key={dayIdx} className="flex items-center gap-3">
+                              <label className="flex items-center gap-2 w-20">
+                                <input type="checkbox" checked={isActive}
+                                  onChange={e => {
+                                    const wh = { ...(editingSchedule.weeklyHours || {}) };
+                                    if (e.target.checked) {
+                                      wh[dayIdx] = { start: '08:00', end: '18:00' };
+                                    } else {
+                                      wh[dayIdx] = null as any;
+                                    }
+                                    setEditingSchedule({ ...editingSchedule, weeklyHours: wh });
+                                  }}
+                                  className="w-3.5 h-3.5 rounded border-white/20 bg-white/5 text-indigo-500" />
+                                <span className={`text-xs font-bold ${isActive ? 'text-white' : 'text-white/20'}`}>{dayName}</span>
+                              </label>
+                              {isActive && hours && (
+                                <div className="flex items-center gap-2">
+                                  <input type="time" value={hours.start}
+                                    onChange={e => {
+                                      const wh = { ...(editingSchedule.weeklyHours || {}) };
+                                      wh[dayIdx] = { ...hours, start: e.target.value };
+                                      setEditingSchedule({ ...editingSchedule, weeklyHours: wh });
+                                    }}
+                                    className="px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-white text-xs font-bold outline-none" />
+                                  <span className="text-white/20 text-xs">a</span>
+                                  <input type="time" value={hours.end}
+                                    onChange={e => {
+                                      const wh = { ...(editingSchedule.weeklyHours || {}) };
+                                      wh[dayIdx] = { ...hours, end: e.target.value };
+                                      setEditingSchedule({ ...editingSchedule, weeklyHours: wh });
+                                    }}
+                                    className="px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-white text-xs font-bold outline-none" />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Buffer */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Buffer entre citas (min)</label>
+                          <input type="number" value={editingSchedule.bufferMinutes || 10}
+                            onChange={e => setEditingSchedule({ ...editingSchedule, bufferMinutes: +e.target.value })}
+                            className={inputClasses} />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setEditingSchedule(null)} className="px-4 py-2 rounded-xl border border-white/10 text-white/40 text-xs font-bold hover:bg-white/[0.04]">Cancelar</button>
+                        <button onClick={handleSaveSchedule} disabled={savingSchedule}
+                          className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold disabled:opacity-40 flex items-center gap-2">
+                          {savingSchedule ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                          Guardar Horario
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── SECTION: FIDELIDAD ── */}
+            {activeSection === 'fidelidad' && (
+              <div className="space-y-6 animate-in fade-in">
+                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800 dark:text-white">Sistema de Fidelidad</h3>
+                      <p className="text-xs text-slate-500 dark:text-white/30 mt-0.5">Puntos, tiers y beneficios para tus clientes</p>
+                    </div>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <span className="text-xs font-bold text-white/40">{loyaltyConfig.enabled ? 'Activo' : 'Inactivo'}</span>
+                      <input type="checkbox" checked={loyaltyConfig.enabled}
+                        onChange={e => setLoyaltyConfig({ ...loyaltyConfig, enabled: e.target.checked })}
+                        className="w-5 h-5 rounded border-white/20 bg-white/5 text-indigo-500" />
+                    </label>
+                  </div>
+
+                  {loyaltyConfig.enabled && (
+                    <div className="space-y-5">
+                      {/* Points config */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Puntos por cada $1</label>
+                          <input type="number" min="1" value={loyaltyConfig.pointsPerDollar}
+                            onChange={e => setLoyaltyConfig({ ...loyaltyConfig, pointsPerDollar: +e.target.value })}
+                            className={inputClasses} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Bonus pronto pago (pts)</label>
+                          <input type="number" min="0" value={loyaltyConfig.earlyPaymentBonus}
+                            onChange={e => setLoyaltyConfig({ ...loyaltyConfig, earlyPaymentBonus: +e.target.value })}
+                            className={inputClasses} />
+                        </div>
+                      </div>
+
+                      {/* Tier thresholds */}
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-3">Umbrales por Tier (puntos acumulados)</p>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                          {TIER_ORDER.map(tier => (
+                            <div key={tier}>
+                              <label className="text-[9px] font-bold text-white/20 mb-1 block">{loyaltyConfig.tierBenefits[tier].badge} {TIER_LABELS[tier]}</label>
+                              <input type="number" min="0" value={loyaltyConfig.tierThresholds[tier]}
+                                onChange={e => setLoyaltyConfig({
+                                  ...loyaltyConfig,
+                                  tierThresholds: { ...loyaltyConfig.tierThresholds, [tier]: +e.target.value },
+                                })}
+                                className="w-full px-2 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white text-xs font-bold text-center outline-none" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Tier benefits */}
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-3">Beneficios por Tier</p>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-[9px] font-black uppercase tracking-widest text-white/20">
+                                <th className="text-left py-2 px-2">Tier</th>
+                                <th className="text-center py-2 px-2">+Crédito %</th>
+                                <th className="text-center py-2 px-2">+Días gracia</th>
+                                <th className="text-center py-2 px-2">Descuento %</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {TIER_ORDER.map(tier => {
+                                const b = loyaltyConfig.tierBenefits[tier];
+                                const updateBenefit = (patch: Partial<typeof b>) =>
+                                  setLoyaltyConfig({
+                                    ...loyaltyConfig,
+                                    tierBenefits: { ...loyaltyConfig.tierBenefits, [tier]: { ...b, ...patch } },
+                                  });
+                                return (
+                                  <tr key={tier} className="border-t border-white/[0.04]">
+                                    <td className="py-2 px-2 font-bold text-white/60">{b.badge} {TIER_LABELS[tier]}</td>
+                                    <td className="py-2 px-2">
+                                      <input type="number" min="0" value={b.creditLimitBonus}
+                                        onChange={e => updateBenefit({ creditLimitBonus: +e.target.value })}
+                                        className="w-16 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] text-white text-xs text-center outline-none mx-auto block" />
+                                    </td>
+                                    <td className="py-2 px-2">
+                                      <input type="number" min="0" value={b.graceDaysBonus}
+                                        onChange={e => updateBenefit({ graceDaysBonus: +e.target.value })}
+                                        className="w-16 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] text-white text-xs text-center outline-none mx-auto block" />
+                                    </td>
+                                    <td className="py-2 px-2">
+                                      <input type="number" min="0" step="0.5" value={b.discountPercent}
+                                        onChange={e => updateBenefit({ discountPercent: +e.target.value })}
+                                        className="w-16 px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.06] text-white text-xs text-center outline-none mx-auto block" />
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <button onClick={handleSaveLoyalty} disabled={savingLoyalty}
+                          className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold disabled:opacity-40 flex items-center gap-2">
+                          {savingLoyalty ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                          Guardar Fidelidad
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

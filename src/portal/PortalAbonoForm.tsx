@@ -5,12 +5,12 @@ import { formatCurrency } from '../utils/formatters';
 import { AccountType, MovementType, PortalPayment } from '../../types';
 import { addDoc, collection } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { CreditCard, Check, AlertCircle, ArrowUpDown, Info } from 'lucide-react';
+import { CreditCard, Check, AlertCircle, ArrowUpDown, Info, Download, Loader2 } from 'lucide-react';
 
 const CUSTOM_COLORS = ['violet', 'emerald', 'amber'] as const;
 
 export default function PortalAbonoForm() {
-  const { businessId, customerId, customerName } = usePortal();
+  const { businessId, customerId, customerName, businessName } = usePortal();
   const { movements, portalPayments, loading, balances, rates } = usePortalData(businessId, customerId);
 
   // Build account options dynamically: BCV + enabled custom rates
@@ -46,6 +46,8 @@ export default function PortalAbonoForm() {
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [lastPayment, setLastPayment] = useState<{ amount: number; method: string; reference: string; account: string; date: string } | null>(null);
+  const [generatingReceipt, setGeneratingReceipt] = useState(false);
 
   const unpaidInvoices = useMemo(
     () =>
@@ -111,6 +113,7 @@ export default function PortalAbonoForm() {
         createdAt: new Date().toISOString(),
       };
       await addDoc(collection(db, 'businesses', businessId, 'portalPayments'), payment);
+      setLastPayment({ amount: amt, method, reference, account: accountType, date: new Date().toLocaleString('es-VE') });
       setSubmitted(true);
     } catch (err) {
       console.error(err);
@@ -128,6 +131,61 @@ export default function PortalAbonoForm() {
     );
   }
 
+  const handleDownloadReceipt = async () => {
+    if (!lastPayment) return;
+    setGeneratingReceipt(true);
+    try {
+      const { default: jsPDF } = await import('jspdf');
+      const pdf = new jsPDF({ unit: 'mm', format: [80, 160] }); // receipt-size
+
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(businessName || 'Recibo de Pago', 40, 14, { align: 'center' });
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Comprobante de Pago — Portal de Clientes', 40, 20, { align: 'center' });
+
+      pdf.setDrawColor(200);
+      pdf.line(8, 24, 72, 24);
+
+      let y = 30;
+      const row = (label: string, value: string) => {
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7);
+        pdf.text(label, 10, y);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(9);
+        pdf.text(value, 10, y + 4);
+        y += 10;
+      };
+
+      row('CLIENTE', customerName);
+      row('FECHA', lastPayment.date);
+      row('MONTO', `$${lastPayment.amount.toFixed(2)}`);
+      row('CUENTA', lastPayment.account);
+      row('MÉTODO', lastPayment.method);
+      if (lastPayment.reference) row('REFERENCIA', lastPayment.reference);
+
+      pdf.line(8, y, 72, y);
+      y += 6;
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('ESTADO: PENDIENTE DE APROBACIÓN', 40, y, { align: 'center' });
+      y += 8;
+      pdf.setFontSize(6);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(150);
+      pdf.text('Generado desde Portal de Clientes', 40, y, { align: 'center' });
+
+      pdf.save(`Recibo_${customerName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error('Receipt PDF error:', err);
+    } finally {
+      setGeneratingReceipt(false);
+    }
+  };
+
   if (submitted) {
     return (
       <div className="max-w-md mx-auto py-16 px-4 text-center animate-in">
@@ -135,21 +193,52 @@ export default function PortalAbonoForm() {
           <Check size={28} />
         </div>
         <h2 className="text-xl font-black text-white mb-2">Pago Registrado</h2>
-        <p className="text-sm text-white/40 mb-6 leading-relaxed">
+        <p className="text-sm text-white/40 mb-4 leading-relaxed">
           Tu pago ha sido enviado para aprobación. Recibirás una notificación cuando sea procesado.
         </p>
-        <button
-          onClick={() => {
-            setSubmitted(false);
-            setSelectedInvoices(new Set());
-            setAmount('');
-            setReference('');
-            setNote('');
-          }}
-          className="px-6 py-3 rounded-xl bg-white/[0.06] border border-white/[0.08] text-xs font-black uppercase tracking-widest text-white/60 hover:bg-white/[0.1] active:scale-[0.97] transition-all"
-        >
-          Registrar otro pago
-        </button>
+        {lastPayment && (
+          <div className="bg-white/[0.03] border border-white/[0.07] rounded-xl p-4 mb-4 text-left space-y-1.5">
+            <div className="flex justify-between text-xs">
+              <span className="text-white/30 font-bold">Monto</span>
+              <span className="text-emerald-400 font-black font-mono">${lastPayment.amount.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-white/30 font-bold">Método</span>
+              <span className="text-white/60 font-bold">{lastPayment.method}</span>
+            </div>
+            {lastPayment.reference && (
+              <div className="flex justify-between text-xs">
+                <span className="text-white/30 font-bold">Ref.</span>
+                <span className="text-white/60 font-mono">{lastPayment.reference}</span>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="flex flex-col gap-2">
+          {lastPayment && (
+            <button
+              onClick={handleDownloadReceipt}
+              disabled={generatingReceipt}
+              className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-widest transition-all active:scale-[0.97] disabled:opacity-50"
+            >
+              {generatingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              Descargar Recibo PDF
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setSubmitted(false);
+              setSelectedInvoices(new Set());
+              setAmount('');
+              setReference('');
+              setNote('');
+              setLastPayment(null);
+            }}
+            className="w-full px-6 py-3 rounded-xl bg-white/[0.06] border border-white/[0.08] text-xs font-black uppercase tracking-widest text-white/60 hover:bg-white/[0.1] active:scale-[0.97] transition-all"
+          >
+            Registrar otro pago
+          </button>
+        </div>
       </div>
     );
   }
