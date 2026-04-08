@@ -1,54 +1,29 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Minus, ArrowRight, Zap } from 'lucide-react';
+import { Check, Minus, ArrowRight, Zap, ChevronDown, Crown, Building2 } from 'lucide-react';
 import SEO from '../../components/SEO';
+import {
+  PLANS, COMPARE_ROWS, ADDON_PRICES,
+  VERTICAL_PRICES, ANNUAL_DISCOUNT,
+  buildQuoteWhatsApp,
+} from '../../utils/planConfig';
 
-const PLANS = [
-  {
-    id: 'starter',
-    name: 'Starter',
-    monthly: 19,
-    annual: 15,
-    desc: 'Ideal para negocios pequeños que arrancan.',
-    features: [
-      '2 usuarios', '100 productos', '1 terminal POS', 'POS Detal',
-      'Inventario básico', 'Libro de ventas', 'Soporte por email',
-    ],
-    missing: ['POS Mayor', 'CxC / CxP', 'RRHH', 'VisionLab IA', 'Tasas custom'],
-    color: 'border-white/10',
-    badge: null,
-  },
-  {
-    id: 'negocio',
-    name: 'Negocio',
-    monthly: 39,
-    annual: 31,
-    desc: 'El más popular. Todo lo que necesita tu empresa.',
-    features: [
-      '5 usuarios', '500 productos', '2 terminales POS', 'POS Detal + Mayor',
-      'Inventario Pro', 'CxC / CxP', 'RRHH & Nómina', 'Contabilidad',
-      'Tasas BCV + Custom', 'Portal de Clientes', 'Dashboard BI',
-      'Soporte WhatsApp',
-    ],
-    missing: ['VisionLab IA', 'Multi-sucursal ilimitada'],
-    color: 'border-indigo-500/50',
-    badge: 'Más popular',
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    monthly: 79,
-    annual: 63,
-    desc: 'Escala sin límites. Todo incluido.',
-    features: [
-      'Usuarios ilimitados', 'Productos ilimitados', 'POS ilimitados',
-      'Todo lo del plan Negocio', 'VisionLab IA', 'Multi-sucursal',
-      'Conciliación bancaria', 'Audit logs avanzados', 'Soporte prioritario',
-    ],
-    missing: [],
-    color: 'border-violet-500/50',
-    badge: 'Todo incluido',
-  },
+const VERTICAL_OPTIONS: { value: string; label: string }[] = [
+  { value: 'general',     label: 'General / Otro' },
+  { value: 'peluqueria',  label: 'Peluquería' },
+  { value: 'barberia',    label: 'Barbería' },
+  { value: 'boutique',    label: 'Boutique' },
+  { value: 'bodega',      label: 'Bodega' },
+  { value: 'floristeria', label: 'Floristería' },
+  { value: 'licoreria',   label: 'Licorería' },
+  { value: 'ferreteria',  label: 'Ferretería' },
+  { value: 'panaderia',   label: 'Panadería' },
+  { value: 'reposteria',  label: 'Repostería' },
+  { value: 'tecnologia',  label: 'Tecnología' },
+  { value: 'servicios',   label: 'Servicios' },
+  { value: 'veterinaria', label: 'Veterinaria' },
+  { value: 'farmacia',    label: 'Farmacia' },
+  { value: 'restaurant',  label: 'Restaurant' },
 ];
 
 const pricingSchema = {
@@ -57,12 +32,12 @@ const pricingSchema = {
   name: 'Dualis ERP',
   description: 'Sistema ERP Cloud para empresas venezolanas.',
   url: 'https://dualis.online/precios',
-  offers: PLANS.map(p => ({
+  offers: PLANS.filter(p => typeof p.price === 'number' && p.price !== null && p.price > 0).map(p => ({
     '@type': 'Offer',
     name: p.name,
-    price: p.monthly,
+    price: p.price,
     priceCurrency: 'USD',
-    description: p.desc,
+    description: p.tagline,
     eligibleDuration: 'P1M',
     url: 'https://dualis.online/register',
   })),
@@ -71,12 +46,31 @@ const pricingSchema = {
 export default function PreciosPage() {
   const navigate = useNavigate();
   const [annual, setAnnual] = useState(false);
+  const [vertical, setVertical] = useState<string>('general');
+  const [openCats, setOpenCats] = useState<Set<string>>(new Set(['Ventas', 'Finanzas']));
+
+  const cats = useMemo(() => [...new Set(COMPARE_ROWS.map(r => r.cat))], []);
+
+  const toggleCat = (cat: string) => setOpenCats(prev => {
+    const n = new Set(prev);
+    n.has(cat) ? n.delete(cat) : n.add(cat);
+    return n;
+  });
+
+  const verticalPrice = VERTICAL_PRICES[vertical] ?? 15;
+
+  const computePrice = (price: number | null) => {
+    if (price === null) return null;
+    if (price === 0)    return 0;
+    if (price === -1)   return annual ? +(verticalPrice * (1 - ANNUAL_DISCOUNT)).toFixed(0) : verticalPrice;
+    return annual ? +(price * (1 - ANNUAL_DISCOUNT)).toFixed(0) : price;
+  };
 
   return (
     <>
       <SEO
-        title="Precios — Dualis ERP | Desde $19/mes"
-        description="Planes de Dualis ERP para empresas venezolanas. Starter desde $19/mes, Negocio $39/mes, Enterprise $79/mes. 30 días gratis, sin tarjeta. POS, inventario, finanzas y más."
+        title="Precios — Dualis ERP | Desde $12/mes"
+        description="Planes de Dualis ERP para empresas venezolanas. Plan vertical desde $12/mes según tu rubro, Negocio $35, Pro $65. 30 días gratis sin tarjeta. POS, inventario, CxC, RRHH y más."
         url="https://dualis.online/precios"
         jsonLd={pricingSchema}
       />
@@ -107,7 +101,7 @@ export default function PreciosPage() {
               Simple. Transparente.<br />Sin sorpresas.
             </h1>
             <p className="text-white/50 text-lg max-w-xl mx-auto">
-              30 días gratis en cualquier plan. Sin tarjeta de crédito. Cancela cuando quieras.
+              30 días gratis del Plan Pro. Sin tarjeta de crédito. Cancela cuando quieras.
             </p>
 
             {/* Toggle anual/mensual */}
@@ -120,64 +114,180 @@ export default function PreciosPage() {
                 <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${annual ? 'left-7' : 'left-1'}`} />
               </button>
               <span className={`text-sm font-bold ${annual ? 'text-white' : 'text-white/40'}`}>
-                Anual <span className="text-emerald-400 text-xs font-black">-20%</span>
+                Anual <span className="text-emerald-400 text-xs font-black">-{Math.round(ANNUAL_DISCOUNT * 100)}%</span>
               </span>
+            </div>
+
+            {/* Vertical selector */}
+            <div className="mt-6 inline-flex flex-col items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-white/30">¿Qué tipo de negocio tienes?</span>
+              <select
+                value={vertical}
+                onChange={e => setVertical(e.target.value)}
+                className="px-4 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm font-bold outline-none focus:border-indigo-500/40"
+              >
+                {VERTICAL_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value} className="bg-[#020710]">{o.label}</option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Cards */}
-          <div className="grid md:grid-cols-3 gap-6 mb-16">
-            {PLANS.map(plan => (
-              <div
-                key={plan.id}
-                className={`relative rounded-2xl border p-8 bg-white/[0.03] ${plan.color} ${plan.badge ? 'ring-1 ring-indigo-500/30' : ''}`}
-              >
-                {plan.badge && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="px-3 py-1 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-full text-[10px] font-black uppercase tracking-widest text-white">
-                      {plan.badge}
-                    </span>
-                  </div>
-                )}
-                <h2 className="text-xl font-black text-white mb-1">{plan.name}</h2>
-                <p className="text-white/40 text-sm mb-6">{plan.desc}</p>
-                <div className="flex items-end gap-1 mb-6">
-                  <span className="text-4xl font-black text-white">${annual ? plan.annual : plan.monthly}</span>
-                  <span className="text-white/40 text-sm mb-1">/mes</span>
-                </div>
-                <button
-                  onClick={() => navigate('/register')}
-                  className="w-full py-3 rounded-xl font-black text-sm mb-8 bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500 transition-all flex items-center justify-center gap-2"
+          {/* Cards de planes */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-16">
+            {PLANS.map(plan => {
+              const price = computePrice(plan.price);
+              const isPopular = plan.popular;
+              const isVertical = plan.isVertical;
+              const isEnterprise = plan.isEnterprise;
+
+              return (
+                <div
+                  key={plan.id}
+                  className={`relative flex flex-col rounded-2xl border p-6 ${
+                    isPopular
+                      ? 'bg-gradient-to-b from-indigo-600/[0.12] to-violet-600/[0.06] border-indigo-500/30 ring-1 ring-indigo-500/30'
+                      : 'bg-white/[0.03] border-white/10'
+                  }`}
                 >
-                  Empezar 30 días gratis <ArrowRight className="w-4 h-4" />
-                </button>
-                <ul className="space-y-3">
-                  {plan.features.map(f => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-white/70">
-                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                  {plan.missing.map(f => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-white/25">
-                      <Minus className="w-4 h-4 shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
+                  {isPopular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <span className="px-3 py-1 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-full text-[9px] font-black uppercase tracking-widest text-white whitespace-nowrap">
+                        Más popular
+                      </span>
+                    </div>
+                  )}
+                  {isVertical && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <span className="px-3 py-1 bg-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest text-white whitespace-nowrap">
+                        Para tu rubro
+                      </span>
+                    </div>
+                  )}
+
+                  <h2 className="text-lg font-black text-white">{plan.name}</h2>
+                  <p className="text-white/40 text-[11px] mb-4 leading-relaxed">{plan.tagline}</p>
+
+                  <div className="mb-5">
+                    {isEnterprise ? (
+                      <p className="text-3xl font-black text-white">Cotización</p>
+                    ) : price === 0 ? (
+                      <p className="text-3xl font-black text-white">Gratis</p>
+                    ) : (
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-black text-white">${price}</span>
+                        <span className="text-white/40 text-xs">/mes</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      isEnterprise
+                        ? window.open(buildQuoteWhatsApp(), '_blank')
+                        : navigate('/register')
+                    }
+                    className={`w-full py-2.5 rounded-xl font-black text-xs mb-5 flex items-center justify-center gap-1.5 transition-all ${
+                      isPopular
+                        ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/20 hover:opacity-90'
+                        : 'bg-white/[0.06] border border-white/[0.08] text-white/70 hover:bg-white/[0.1] hover:text-white'
+                    }`}
+                  >
+                    {isEnterprise ? 'Cotizar' : plan.id === 'gratis' ? 'Empezar gratis' : 'Empezar trial'}
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+
+                  <ul className="space-y-2 flex-1">
+                    {plan.features.map(f => (
+                      <li key={f} className="flex items-start gap-2 text-[11px] text-white/60">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Add-ons */}
+          <div className="mb-16 p-6 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+            <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-5">Add-ons — agrega solo lo que necesitas</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {[
+                { label: 'Portal de Clientes',     price: ADDON_PRICES.portal       },
+                { label: 'Tienda Pública',         price: ADDON_PRICES.tienda       },
+                { label: 'Dualis Pay',             price: ADDON_PRICES.dualisPay    },
+                { label: 'WA/Email Automático',    price: ADDON_PRICES.whatsappAuto },
+                { label: 'Auditoría IA',           price: ADDON_PRICES.auditoria_ia },
+                { label: 'Conciliación bancaria',  price: ADDON_PRICES.conciliacion },
+                { label: 'Sucursal adicional',     price: ADDON_PRICES.sucursalExtra },
+                { label: 'Pack 5 usuarios',        price: ADDON_PRICES.usuariosExtra },
+              ].map(({ label, price }) => (
+                <div key={label} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                  <span className="text-[11px] font-bold text-white/70 truncate">{label}</span>
+                  <span className="text-[11px] font-black text-indigo-400 shrink-0">+${price}/mes</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Comparativa detallada */}
+          <div className="mb-16">
+            <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-4">Comparativa detallada</p>
+            <div className="rounded-2xl overflow-hidden border border-white/[0.07]">
+              <div className="grid grid-cols-7 bg-white/[0.03] border-b border-white/[0.07]">
+                <div className="col-span-2 p-3" />
+                {['Gratis', 'Básico', 'Negocio', 'Pro', 'Ent.'].map(n => (
+                  <div key={n} className="p-3 text-center">
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${n === 'Negocio' ? 'text-indigo-400' : 'text-white/30'}`}>{n}</span>
+                  </div>
+                ))}
               </div>
-            ))}
+
+              {cats.map(cat => (
+                <div key={cat}>
+                  <button
+                    onClick={() => toggleCat(cat)}
+                    className="w-full grid grid-cols-7 px-3 py-2.5 bg-white/[0.02] hover:bg-white/[0.04] transition-all border-b border-white/[0.04]"
+                  >
+                    <div className="col-span-2 flex items-center gap-2">
+                      <ChevronDown size={11} className={`text-white/20 transition-transform ${openCats.has(cat) ? 'rotate-0' : '-rotate-90'}`} />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-white/40">{cat}</span>
+                    </div>
+                  </button>
+                  {openCats.has(cat) && COMPARE_ROWS.filter(r => r.cat === cat).map((row, ri) => (
+                    <div key={ri} className="grid grid-cols-7 border-b border-white/[0.03] hover:bg-white/[0.01] transition-all">
+                      <div className="col-span-2 px-4 py-2.5">
+                        <span className="text-[11px] text-white/50">{row.label}</span>
+                      </div>
+                      {([row.g, row.b, row.n, row.p, row.e] as (boolean | string)[]).map((val, vi) => (
+                        <div key={vi} className="flex items-center justify-center py-2.5">
+                          {val === true ? (
+                            <Check size={13} className="text-emerald-400" />
+                          ) : val === false ? (
+                            <Minus size={11} className="text-white/15" />
+                          ) : (
+                            <span className="text-[10px] font-bold text-white/40 text-center px-1">{val}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* FAQs precios */}
           <div className="max-w-2xl mx-auto">
-            <h2 className="text-2xl font-black text-white text-center mb-8">Preguntas frecuentes sobre precios</h2>
+            <h2 className="text-2xl font-black text-white text-center mb-8">Preguntas frecuentes</h2>
             {[
               { q: '¿Necesito tarjeta para la prueba gratuita?', a: 'No. Los 30 días de prueba son completamente gratuitos y no requieren tarjeta de crédito.' },
               { q: '¿Qué pasa cuando termina el período de prueba?', a: 'Puedes elegir un plan de pago. Tus datos se conservan 30 días adicionales antes de ser eliminados.' },
-              { q: '¿Puedo cambiar de plan?', a: 'Sí, puedes subir o bajar de plan en cualquier momento desde Configuración > Suscripción.' },
+              { q: '¿Puedo cambiar de plan?', a: 'Sí, puedes subir o bajar de plan en cualquier momento desde Configuración → Suscripción.' },
+              { q: '¿Qué es el Plan Vertical?', a: 'Es un plan diseñado para tu tipo específico de negocio (barbería, panadería, farmacia, etc.). Incluye los módulos que más vas a usar a un precio especial desde $12/mes.' },
               { q: '¿Cómo se paga?', a: 'Aceptamos Binance Pay, Pago Móvil, Transferencia bancaria y PayPal.' },
-              { q: '¿Hay descuento para ONG o educación?', a: 'Contáctanos por WhatsApp para consultar planes especiales.' },
             ].map((item, i) => (
               <div key={i} className="border-b border-white/[0.07] py-5">
                 <h3 className="font-black text-white mb-2">{item.q}</h3>

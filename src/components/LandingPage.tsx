@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, Check, Minus, ChevronDown, ChevronRight,
@@ -11,8 +11,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import SEO from './SEO';
 import {
-  PLANS, COMPARE_ROWS, PLAN_PRICES, ADDON_PRICES,
-  DUALIS_WHATSAPP, buildUpgradeWhatsApp, buildQuoteWhatsApp,
+  DUALIS_WHATSAPP, buildQuoteWhatsApp,
 } from '../utils/planConfig';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -246,25 +245,6 @@ export default function LandingPage() {
   // FAQ accordion
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
-  // Plans billing toggle
-  const [annual, setAnnual] = useState(false);
-
-  // Compare table category expand
-  const [openCats, setOpenCats] = useState<Set<string>>(new Set(['Ventas', 'Finanzas']));
-  const toggleCat = (cat: string) => setOpenCats(prev => {
-    const n = new Set(prev);
-    n.has(cat) ? n.delete(cat) : n.add(cat);
-    return n;
-  });
-
-  const cats = [...new Set(COMPARE_ROWS.map(r => r.cat))];
-
-  const planPrice = useCallback((price: number | null) => {
-    if (price === null) return null;
-    if (price === 0) return 0;
-    return annual ? +(price * 0.7).toFixed(0) : price;
-  }, [annual]);
-
   return (
     <div className="min-h-screen bg-[#070b14] text-white font-sans overflow-x-hidden">
       <SEO
@@ -453,187 +433,54 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── PLANS & PRICING ──────────────────────────────────── */}
+      {/* ── PLANS SUMMARY ───────────────────────────────────── */}
       <section id="planes" className="py-20 px-4">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <FadeIn>
             <div className="text-center mb-10">
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Precios transparentes</p>
-              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">Elige tu plan</h2>
-              <p className="text-white/40 mt-3 text-sm">
-                Todos los planes incluyen 30 días gratis del Plan Pro.
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">Planes desde $12/mes</h2>
+              <p className="text-white/40 mt-3 text-sm max-w-xl mx-auto">
+                Plan vertical hecho para tu tipo de negocio, o planes generales que escalan contigo. 30 días gratis del Plan Pro.
               </p>
-
-              {/* Annual toggle */}
-              <div className="flex items-center justify-center gap-3 mt-6">
-                <span className={`text-[12px] font-black ${!annual ? 'text-white' : 'text-white/30'}`}>Mensual</span>
-                <button
-                  onClick={() => setAnnual(a => !a)}
-                  className={`relative w-12 h-6 rounded-full transition-all ${annual ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-white/10'}`}
-                >
-                  <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${annual ? 'left-7' : 'left-1'}`} />
-                </button>
-                <span className={`text-[12px] font-black ${annual ? 'text-white' : 'text-white/30'}`}>
-                  Anual <span className="text-emerald-400 ml-1">30% OFF</span>
-                </span>
-              </div>
             </div>
           </FadeIn>
 
-          {/* Plan cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-10">
-            {PLANS.map((plan, i) => {
-              const style   = PLAN_ICONS[i] ?? PLAN_ICONS[PLAN_ICONS.length - 1];
-              const price   = planPrice(plan.price);
-              const isPopular = plan.popular;
-
-              return (
-                <FadeIn key={plan.id} delay={i * 60}>
-                  <div className={`relative flex flex-col p-5 rounded-2xl border transition-all h-full ${
-                    isPopular
-                      ? 'bg-gradient-to-b from-indigo-600/[0.12] to-violet-600/[0.06] border-indigo-500/30'
-                      : 'bg-white/[0.02] border-white/[0.07] hover:border-white/[0.12]'
-                  }`}>
-                    {isPopular && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[9px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/30 whitespace-nowrap">
-                        Más popular
-                      </div>
-                    )}
-
-                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${style.gradient} ${style.shadow} shadow-lg flex items-center justify-center mb-4`}>
-                      <style.Icon size={17} className="text-white" />
-                    </div>
-
-                    <h3 className="font-black text-[15px] text-white">{plan.name}</h3>
-                    <p className="text-[10px] text-white/30 font-bold mb-3">{plan.id === 'gratis' ? 'Para empezar' : plan.id === 'basico' ? 'Para comenzar en serio' : plan.id === 'negocio' ? 'Para crecer' : plan.id === 'pro' ? 'Para escalar' : 'Operación completa'}</p>
-
-                    <div className="mb-4">
-                      {plan.isEnterprise ? (
-                        <p className="text-2xl font-black text-white">Cotización</p>
-                      ) : price === 0 ? (
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-2xl font-black text-white">Gratis</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-2xl font-black text-white">${price}</span>
-                          <span className="text-[11px] text-white/30 font-bold">/mes</span>
-                          {annual && price !== null && (
-                            <span className="text-[10px] text-emerald-400 font-black ml-1">-30%</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <ul className="space-y-2 flex-1 mb-5">
-                      {plan.features.slice(0, 6).map((f, fi) => (
-                        <li key={fi} className="flex items-start gap-2">
-                          <Check size={12} className="text-emerald-400 shrink-0 mt-0.5" />
-                          <span className="text-[11px] text-white/50">{f}</span>
-                        </li>
-                      ))}
-                      {plan.features.length > 6 && (
-                        <li className="text-[10px] text-white/25 font-bold pl-5">
-                          +{plan.features.length - 6} más…
-                        </li>
-                      )}
-                    </ul>
-
-                    <button
-                      onClick={() => plan.isEnterprise
-                        ? window.open(buildQuoteWhatsApp(), '_blank')
-                        : navigate('/register')
-                      }
-                      className={`w-full h-10 rounded-xl text-[12px] font-black transition-all ${
-                        isPopular
-                          ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/20 hover:opacity-90'
-                          : 'bg-white/[0.06] text-white/60 hover:bg-white/[0.1] hover:text-white border border-white/[0.08]'
-                      }`}
-                    >
-                      {plan.isEnterprise ? 'Cotizar' : plan.id === 'gratis' ? 'Empezar gratis' : 'Empezar trial'}
-                    </button>
-                  </div>
-                </FadeIn>
-              );
-            })}
+          {/* Resumen 4 cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+            {[
+              { name: 'Gratis',     price: '$0',    desc: '1 usuario · 50 productos', gradient: 'from-slate-400 to-slate-500' },
+              { name: 'Tu Negocio', price: 'desde $12', desc: 'Plan vertical · módulos de tu rubro', gradient: 'from-sky-400 to-blue-500' },
+              { name: 'Negocio',    price: '$35',   desc: 'CxC, CxP, contabilidad, multi-cuenta', gradient: 'from-indigo-500 to-violet-600', popular: true },
+              { name: 'Pro',        price: '$65',   desc: 'Portal, Vision IA, embajador, 3 sucursales', gradient: 'from-violet-500 to-purple-600' },
+            ].map(p => (
+              <div key={p.name} className={`relative p-5 rounded-2xl border ${p.popular ? 'bg-gradient-to-b from-indigo-600/[0.12] to-violet-600/[0.06] border-indigo-500/30' : 'bg-white/[0.02] border-white/[0.07]'}`}>
+                {p.popular && (
+                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[8px] font-black uppercase tracking-widest whitespace-nowrap">Más popular</div>
+                )}
+                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${p.gradient} mb-3`} />
+                <h3 className="font-black text-sm text-white">{p.name}</h3>
+                <p className="text-xl font-black text-white mt-1">{p.price}<span className="text-[10px] text-white/30 font-bold ml-1">{p.price !== '$0' ? '/mes' : ''}</span></p>
+                <p className="text-[10px] text-white/40 mt-2 leading-relaxed">{p.desc}</p>
+              </div>
+            ))}
           </div>
 
-          {/* Add-ons */}
-          <FadeIn>
-            <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/25 mb-5">Add-ons — agrega solo lo que necesitas</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {[
-                  { label: 'Portal de Clientes',     price: ADDON_PRICES.portal,        icon: Globe },
-                  { label: 'Tienda Pública',         price: ADDON_PRICES.tienda,        icon: ShoppingCart },
-                  { label: 'Dualis Pay',             price: ADDON_PRICES.dualisPay,     icon: Zap },
-                  { label: 'WA/Email Automático',    price: ADDON_PRICES.whatsappAuto,  icon: MessageSquare },
-                  { label: 'Auditoría IA',           price: ADDON_PRICES.auditoria_ia,  icon: Brain },
-                  { label: 'Sucursal adicional',     price: ADDON_PRICES.sucursalExtra, icon: Building2 },
-                  { label: 'Pack 5 usuarios',        price: ADDON_PRICES.usuariosExtra, icon: Users },
-                  { label: 'Servicios recurrentes',  price: ADDON_PRICES.recurrentes,   icon: Activity },
-                ].map(({ label, price, icon: Icon }) => (
-                  <div key={label} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-                    <Icon size={14} className="text-indigo-400 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-bold text-white/60 truncate">{label}</p>
-                      <p className="text-[10px] font-black text-indigo-400">+${price}/mes</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </FadeIn>
-
-          {/* Comparison table */}
-          <FadeIn delay={100}>
-            <div className="mt-10">
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/25 mb-4">Comparativa detallada</p>
-              <div className="rounded-2xl overflow-hidden border border-white/[0.07]">
-                {/* Header */}
-                <div className="grid grid-cols-7 bg-white/[0.03] border-b border-white/[0.07]">
-                  <div className="col-span-2 p-3" />
-                  {['Gratis', 'Básico', 'Negocio', 'Pro', 'Ent.'].map(n => (
-                    <div key={n} className="p-3 text-center">
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${n === 'Negocio' ? 'text-indigo-400' : 'text-white/30'}`}>{n}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {cats.map(cat => (
-                  <div key={cat}>
-                    <button
-                      onClick={() => toggleCat(cat)}
-                      className="w-full grid grid-cols-7 px-3 py-2.5 bg-white/[0.02] hover:bg-white/[0.04] transition-all border-b border-white/[0.04]"
-                    >
-                      <div className="col-span-2 flex items-center gap-2">
-                        <ChevronDown size={11} className={`text-white/20 transition-transform ${openCats.has(cat) ? 'rotate-0' : '-rotate-90'}`} />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-white/40">{cat}</span>
-                      </div>
-                    </button>
-                    {openCats.has(cat) && COMPARE_ROWS.filter(r => r.cat === cat).map((row, ri) => (
-                      <div key={ri} className="grid grid-cols-7 border-b border-white/[0.03] hover:bg-white/[0.01] transition-all">
-                        <div className="col-span-2 px-4 py-2.5">
-                          <span className="text-[11px] text-white/40">{row.label}</span>
-                        </div>
-                        {([row.g, row.b, row.n, row.p, row.e] as (boolean | string)[]).map((val, vi) => (
-                          <div key={vi} className="flex items-center justify-center py-2.5">
-                            {val === true ? (
-                              <Check size={13} className="text-emerald-400" />
-                            ) : val === false ? (
-                              <Minus size={11} className="text-white/15" />
-                            ) : (
-                              <span className="text-[10px] font-bold text-white/40 text-center px-1">{val}</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </FadeIn>
+          {/* CTA a /precios */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              onClick={() => navigate('/precios')}
+              className="px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-black shadow-lg shadow-indigo-500/25 hover:opacity-90 transition-all flex items-center gap-2"
+            >
+              Ver todos los planes y comparativa <ArrowRight size={14} />
+            </button>
+            <button
+              onClick={() => navigate('/register')}
+              className="px-6 py-3 rounded-xl bg-white/[0.06] border border-white/[0.08] text-white/70 text-sm font-black hover:bg-white/[0.1] hover:text-white transition-all"
+            >
+              Empezar gratis
+            </button>
+          </div>
         </div>
       </section>
 
