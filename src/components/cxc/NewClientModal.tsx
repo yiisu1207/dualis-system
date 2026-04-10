@@ -132,14 +132,14 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
       const data: Partial<Customer> = {
         nombre: nombre.trim(),
         fullName: nombre.trim(),
-        cedula: cedulaNum.trim() ? fullCedula : undefined,
-        rif: fullRif || undefined,
-        telefono: phoneNum ? `${phoneCode}${phoneNum}` : undefined,
-        email: email.trim() || undefined,
-        direccion: direccion.trim() || undefined,
         creditLimit,
-        ...(defaultPaymentDays !== null ? { defaultPaymentDays } : {}),
         creditApproved,
+        ...(defaultPaymentDays !== null ? { defaultPaymentDays } : {}),
+        ...(cedulaNum.trim() ? { cedula: fullCedula } : {}),
+        ...(fullRif ? { rif: fullRif } : {}),
+        ...(phoneNum ? { telefono: `${phoneCode}${phoneNum}` } : {}),
+        ...(email.trim() ? { email: email.trim() } : {}),
+        ...(direccion.trim() ? { direccion: direccion.trim() } : {}),
       };
       await onSave(data);
       onClose();
