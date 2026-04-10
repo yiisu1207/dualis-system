@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, Search, User, Phone, MapPin, Hash, Calendar, Shield, Star } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, User, Phone, MapPin, Hash, Calendar, Shield, Star } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement, PortalAccessToken } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -112,71 +112,6 @@ export function EntityDetail({
   const [pendingOTP, setPendingOTP] = useState<string | null>(null);
   const [otpCopied, setOtpCopied] = useState(false);
 
-  // SENIAT lookup state
-  const [seniatLoading, setSeniatLoading] = useState(false);
-  const [seniatResult, setSeniatResult] = useState<{ nombre: string; rif: string; agente: string; contribuyente: string; tasa: string } | null>(null);
-  const [seniatError, setSeniatError] = useState<string | null>(null);
-
-  // Normalize cédula/RIF for SENIAT query
-  const getSeniatRif = () => {
-    const c = entity as Customer;
-    const rifOrCedula = c.rif || c.cedula;
-    if (!rifOrCedula) return null;
-    let rif = rifOrCedula.replace(/-/g, '').toUpperCase().trim();
-    if (/^\d+$/.test(rif)) rif = 'V' + rif;
-    rif = rif.replace(/^([VEJGP])-?(\d+)$/i, '$1$2');
-    return rif;
-  };
-
-  const handleSeniatLookup = async () => {
-    const rif = getSeniatRif();
-    if (!rif) { setSeniatError('No hay RIF ni cédula registrada'); return; }
-
-    setSeniatLoading(true);
-    setSeniatError(null);
-    setSeniatResult(null);
-
-    try {
-      // SENIAT endpoint has CORS issues — use allorigins JSON wrapper (more reliable than /raw)
-      const seniatUrl = `http://contribuyente.seniat.gob.ve/getContribuyente/getrif?rif=${rif}`;
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(seniatUrl)}`;
-
-      let xmlText = '';
-      try {
-        const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-        if (res.ok) {
-          const json = await res.json();
-          xmlText = json.contents || '';
-        }
-      } catch { /* fallback below */ }
-
-      if (!xmlText) {
-        setSeniatError('No se pudo conectar con el SENIAT. Usa el botón de abajo para consultar manualmente.');
-        return;
-      }
-
-      // Parse XML response
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-      const getTag = (tag: string) => xmlDoc.getElementsByTagName(tag)?.[0]?.textContent?.trim() || '';
-
-      const nombre = getTag('Nombre');
-      if (!nombre) { setSeniatError('RIF/Cédula no encontrado en el SENIAT.'); return; }
-
-      setSeniatResult({
-        nombre,
-        rif: getTag('RIF'),
-        agente: getTag('AgenteRetencionIVA'),
-        contribuyente: getTag('ContribuyenteIVA'),
-        tasa: getTag('Tasa'),
-      });
-    } catch (err) {
-      setSeniatError('Error al consultar. Usa el botón de abajo para consultar manualmente.');
-      console.error('[SENIAT lookup]', err);
-    } finally {
-      setSeniatLoading(false);
-    }
-  };
 
   // Listen for pending OTP code for this customer (real-time)
   useEffect(() => {
@@ -1099,73 +1034,25 @@ export function EntityDetail({
               </div>
             </div>
 
-            {/* ── Consulta SENIAT / CNE ── */}
+            {/* ── Consulta de identidad ── */}
             <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Consulta oficial</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Verificar identidad</p>
               <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-4 space-y-3">
                 <p className="text-[10px] text-slate-500 dark:text-white/30">
-                  Consulta el RIF o cédula en los portales oficiales para verificar datos del contribuyente.
+                  Verifica el nombre completo del cliente consultando su cedula en el portal del CNE. Util para confirmar que los datos registrados coinciden con los oficiales.
                 </p>
 
-                {/* Botón automático */}
-                <button
-                  onClick={handleSeniatLookup}
-                  disabled={seniatLoading || (!customer.rif && !customer.cedula)}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:from-sky-400 hover:to-indigo-400 transition-all shadow-lg shadow-sky-500/25 disabled:opacity-40"
-                >
-                  {seniatLoading ? <><Loader2 size={12} className="animate-spin" /> Consultando...</> : <><Search size={12} /> Consultar SENIAT</>}
-                </button>
-
-                {seniatError && (
-                  <div className="px-3 py-2 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20">
-                    <p className="text-[11px] font-bold text-rose-600 dark:text-rose-400">{seniatError}</p>
-                  </div>
-                )}
-
-                {seniatResult && (
-                  <div className="rounded-xl bg-emerald-50 dark:bg-emerald-500/[0.04] border border-emerald-200 dark:border-emerald-500/20 divide-y divide-emerald-100 dark:divide-emerald-500/10">
-                    {[
-                      { label: 'Nombre registrado', value: seniatResult.nombre },
-                      { label: 'RIF', value: seniatResult.rif },
-                      { label: 'Agente de retención IVA', value: seniatResult.agente === 'SI' ? 'Sí' : 'No' },
-                      { label: 'Contribuyente IVA', value: seniatResult.contribuyente === 'SI' ? 'Sí' : 'No' },
-                      ...(seniatResult.tasa ? [{ label: 'Tasa de retención', value: `${seniatResult.tasa}%` }] : []),
-                    ].map((row, i) => (
-                      <div key={i} className="px-4 py-2.5">
-                        <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-600/60 dark:text-emerald-400/50">{row.label}</p>
-                        <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{row.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Botones de consulta manual — siempre visibles como fallback */}
-                {(customer.rif || customer.cedula) && (
-                  <div>
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/20 mb-2">Consultar manualmente</p>
-                    <div className="flex flex-wrap gap-2">
-                      <a
-                        href={`http://contribuyente.seniat.gob.ve/BuscaRif/BuscaRif.jsp`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-500/10 text-slate-600 dark:text-white/50 text-[10px] font-black uppercase tracking-widest hover:bg-slate-500/20 transition-all"
-                      >
-                        <ExternalLink size={11} /> SENIAT
-                      </a>
-                      <a
-                        href={`https://www.sistemaspnp.com/cedula/`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-500/10 text-slate-600 dark:text-white/50 text-[10px] font-black uppercase tracking-widest hover:bg-slate-500/20 transition-all"
-                      >
-                        <ExternalLink size={11} /> CNE / Cédula
-                      </a>
-                    </div>
-                  </div>
-                )}
-
-                {!customer.rif && !customer.cedula && (
-                  <p className="text-[10px] font-bold text-amber-500">Registra un RIF o cédula para poder consultar.</p>
+                {(customer.rif || customer.cedula) ? (
+                  <a
+                    href="https://www.sistemaspnp.com/cedula/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:from-sky-400 hover:to-indigo-400 transition-all shadow-lg shadow-sky-500/25"
+                  >
+                    <ExternalLink size={12} /> Consultar en CNE
+                  </a>
+                ) : (
+                  <p className="text-[10px] font-bold text-amber-500">Registra un RIF o cedula para poder consultar.</p>
                 )}
               </div>
             </div>
