@@ -760,15 +760,17 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       }
     }
 
-    const payload: any = {
+    const raw: any = {
       ...data,
       businessId,
       createdAt: new Date().toISOString(),
       status: 'committed',
     };
-    if (opts.approvalFlowId) payload.approvalFlowId = opts.approvalFlowId;
-    if (opts.approvedBy) payload.approvedBy = opts.approvedBy;
-    if (opts.migratedFromHistorical) payload.migratedFromHistorical = true;
+    if (opts.approvalFlowId) raw.approvalFlowId = opts.approvalFlowId;
+    if (opts.approvedBy) raw.approvedBy = opts.approvedBy;
+    if (opts.migratedFromHistorical) raw.migratedFromHistorical = true;
+    // Firestore rechaza undefined — limpiar todos los campos undefined
+    const payload = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined));
     const docRef = await addDoc(collection(db, 'movements'), payload);
     logAudit(businessId, uid, 'CREAR', 'MOVIMIENTO', `${data.movementType || 'MOV'} — ${data.description || docRef.id}`);
     // Custom hooks & webhook — fire-and-forget, never block the sale

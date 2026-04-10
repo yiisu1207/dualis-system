@@ -209,7 +209,7 @@ export function MovementFormPanel({
 
       if (movType === 'FACTURA') {
         data.paymentDays = paymentDays;
-        data.dueDate = dueDate || undefined;
+        if (dueDate) data.dueDate = dueDate;
         data.pagado = paymentDays === 0;
         data.estadoPago = paymentDays === 0 ? 'PAGADO' : 'PENDIENTE';
         data.esVentaContado = paymentDays === 0;
