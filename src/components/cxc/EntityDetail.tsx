@@ -15,7 +15,7 @@ import {
 import { AccountCard } from './AccountCard';
 import VerificationBadge from '../VerificationBadge';
 import { LedgerView } from './LedgerView';
-import { collection, query, where, getDocs, addDoc, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { shareViaWhatsApp, shareViaEmail, messageTemplates } from '../../utils/shareLink';
 import { Key } from 'lucide-react';
@@ -545,6 +545,86 @@ export function EntityDetail({
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── KYC Verification Status ── */}
+            {isCxC && customer?.kycStatus && (
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Verificación de identidad</p>
+                <div className={`rounded-xl border p-4 space-y-3 ${
+                  customer.kycStatus === 'verified'
+                    ? 'bg-emerald-50 dark:bg-emerald-500/[0.04] border-emerald-200 dark:border-emerald-500/20'
+                    : customer.kycStatus === 'pending'
+                    ? 'bg-amber-50 dark:bg-amber-500/[0.04] border-amber-200 dark:border-amber-500/20'
+                    : 'bg-rose-50 dark:bg-rose-500/[0.04] border-rose-200 dark:border-rose-500/20'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                      customer.kycStatus === 'verified'
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        : customer.kycStatus === 'pending'
+                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                        : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                    }`}>
+                      {customer.kycStatus === 'verified' ? 'Verificado' : customer.kycStatus === 'pending' ? 'Pendiente de revisión' : 'Rechazado'}
+                    </span>
+                    {customer.kycSubmittedAt && (
+                      <span className="text-[10px] text-slate-400 dark:text-white/20">
+                        {new Date(customer.kycSubmittedAt).toLocaleDateString('es-VE')}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Cedula images */}
+                  {(customer.cedulaFrontalUrl || customer.cedulaTraseraUrl) && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {customer.cedulaFrontalUrl && (
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 mb-1">Frente</p>
+                          <a href={customer.cedulaFrontalUrl} target="_blank" rel="noopener noreferrer">
+                            <img src={customer.cedulaFrontalUrl} alt="Cédula frente" className="w-full rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-80 transition-opacity" />
+                          </a>
+                        </div>
+                      )}
+                      {customer.cedulaTraseraUrl && (
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 mb-1">Reverso</p>
+                          <a href={customer.cedulaTraseraUrl} target="_blank" rel="noopener noreferrer">
+                            <img src={customer.cedulaTraseraUrl} alt="Cédula reverso" className="w-full rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-80 transition-opacity" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Approve/Reject buttons */}
+                  {customer.kycStatus === 'pending' && canEdit && (
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={async () => {
+                          await updateDoc(doc(db, 'customers', entity.id), {
+                            kycStatus: 'verified',
+                            kycVerifiedAt: new Date().toISOString(),
+                          });
+                        }}
+                        className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all"
+                      >
+                        Aprobar
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await updateDoc(doc(db, 'customers', entity.id), {
+                            kycStatus: 'rejected',
+                          });
+                        }}
+                        className="flex-1 py-2.5 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-rose-600 transition-all"
+                      >
+                        Rechazar
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
