@@ -10,7 +10,7 @@ import {
   doc, serverTimestamp, query, orderBy,
 } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { useParams } from 'react-router-dom';
+import { useTenantSafe } from '../context/TenantContext';
 import { logAudit } from '../utils/auditLogger';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -38,9 +38,9 @@ const EMPTY: Omit<Sucursal, 'id' | 'creadaEn'> = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function SucursalesManager() {
-  const { empresa_id } = useParams<{ empresa_id: string }>();
+  const { tenantId } = useTenantSafe();
   const { user } = useAuth();
-  const businessId = empresa_id ?? '';
+  const businessId = tenantId;
 
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [loading, setLoading] = useState(true);

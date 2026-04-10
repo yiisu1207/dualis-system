@@ -4,6 +4,7 @@ import { usePortalData } from './usePortalData';
 import { collection, query, onSnapshot, addDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { AccountType } from '../../types';
+import { getTotalStock } from '../utils/stockHelpers';
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, Send, Check,
   Package, ChevronDown, X, Loader2, Filter,
@@ -17,7 +18,8 @@ interface CatalogProduct {
   marca: string;
   precioDetal: number;
   precioMayor: number;
-  stock: number;
+  stock: number;                              // legacy global stock
+  stockByAlmacen?: Record<string, number>;    // dual-model
   descripcion: string;
   unidad: string;
   unitType?: string;
@@ -54,7 +56,12 @@ export default function PortalCatalog() {
     const q = query(collection(db, `businesses/${businessId}/products`));
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as CatalogProduct))
+        .map((d) => {
+          const raw = { id: d.id, ...d.data() } as CatalogProduct;
+          // Normalize stock so the rest of the file (display, cart caps) reads
+          // the dual-model total instead of the legacy `stock` field directly.
+          return { ...raw, stock: getTotalStock(raw) };
+        })
         .filter((p) => p.stock > 0 && p.precioDetal > 0);
       setProducts(data);
       setLoading(false);
@@ -192,7 +199,7 @@ export default function PortalCatalog() {
           Tu pedido ha sido enviado y está pendiente de aprobación.
         </p>
         <p className="text-xs text-white/30 mb-6">
-          Recibirás una notificación cuando sea procesado y convertido en factura.
+          Recibirás una notificación cuando sea procesado y cargado a tu cuenta.
         </p>
         <button
           onClick={() => setSubmitted(false)}

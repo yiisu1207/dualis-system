@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { doc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { usePortal } from './PortalGuard';
 import { LoyaltyConfig, LoyaltyEvent, LoyaltyAccount } from '../../types';
@@ -19,35 +19,55 @@ export default function PortalLoyalty() {
 
   useEffect(() => {
     if (!businessId || !customerId) return;
-    (async () => {
-      try {
-        // Load config
-        const cfgSnap = await getDoc(doc(db, `businesses/${businessId}/config`, 'loyalty'));
-        const cfg = cfgSnap.exists() ? { ...DEFAULT_LOYALTY_CONFIG, ...cfgSnap.data() as LoyaltyConfig } : DEFAULT_LOYALTY_CONFIG;
+    let loadedConfig = false;
+    let loadedAccount = false;
+    let loadedEvents = false;
+    const checkDone = () => {
+      if (loadedConfig && loadedAccount && loadedEvents) setLoading(false);
+    };
+
+    // Real-time config — el toggle del dueño se refleja sin reload
+    const unsubCfg = onSnapshot(
+      doc(db, `businesses/${businessId}/config`, 'loyalty'),
+      snap => {
+        const cfg = snap.exists()
+          ? { ...DEFAULT_LOYALTY_CONFIG, ...(snap.data() as LoyaltyConfig) }
+          : DEFAULT_LOYALTY_CONFIG;
         setConfig(cfg);
+        loadedConfig = true;
+        checkDone();
+      },
+      err => { console.error('[loyalty] config snapshot', err); loadedConfig = true; checkDone(); },
+    );
 
-        // Load account
-        const accSnap = await getDoc(doc(db, `businesses/${businessId}/loyaltyAccounts`, customerId));
-        if (accSnap.exists()) {
-          setAccount(accSnap.data() as LoyaltyAccount);
-        }
+    // Real-time account — los puntos suben en vivo cuando el POS factura
+    const unsubAcc = onSnapshot(
+      doc(db, `businesses/${businessId}/loyaltyAccounts`, customerId),
+      snap => {
+        setAccount(snap.exists() ? (snap.data() as LoyaltyAccount) : null);
+        loadedAccount = true;
+        checkDone();
+      },
+      err => { console.error('[loyalty] account snapshot', err); loadedAccount = true; checkDone(); },
+    );
 
-        // Load recent events
-        const evSnap = await getDocs(
-          query(
-            collection(db, `businesses/${businessId}/loyaltyEvents`),
-            where('customerId', '==', customerId),
-          )
-        );
-        const evts = evSnap.docs.map(d => ({ id: d.id, ...d.data() } as LoyaltyEvent));
+    // Real-time events
+    const unsubEvts = onSnapshot(
+      query(
+        collection(db, `businesses/${businessId}/loyaltyEvents`),
+        where('customerId', '==', customerId),
+      ),
+      snap => {
+        const evts = snap.docs.map(d => ({ id: d.id, ...d.data() } as LoyaltyEvent));
         evts.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
         setEvents(evts.slice(0, 20));
-      } catch (err) {
-        console.error('Error loading loyalty data:', err);
-      } finally {
-        setLoading(false);
-      }
-    })();
+        loadedEvents = true;
+        checkDone();
+      },
+      err => { console.error('[loyalty] events snapshot', err); loadedEvents = true; checkDone(); },
+    );
+
+    return () => { unsubCfg(); unsubAcc(); unsubEvts(); };
   }, [businessId, customerId]);
 
   if (!config.enabled) {

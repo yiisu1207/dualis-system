@@ -468,7 +468,7 @@ const DataImporter: React.FC<DataImporterProps> = ({
                 className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700"
               >
                 <option value="AUTO">Auto</option>
-                <option value={MovementType.FACTURA}>Factura</option>
+                <option value={MovementType.FACTURA}>Venta / Cargo</option>
                 <option value={MovementType.ABONO}>Abono</option>
               </select>
               <select

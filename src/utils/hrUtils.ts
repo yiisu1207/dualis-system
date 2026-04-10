@@ -128,6 +128,10 @@ export function printVoucherSheet(emp: any, vouchers: any[], businessName = 'Mi 
   <div><div class="sig-line">Firma del Empleado</div><div class="sig-sub">${emp.fullName} · ${emp.cedula||'S/N'}</div></div>
   <div><div class="sig-line">Autorizado por</div><div class="sig-sub">Administración / RRHH</div></div>
 </div>
+<div style="margin-top:20px;padding:8px;border:1px dashed #666;font-size:8px;text-align:center;color:#555;line-height:1.4">
+  DOCUMENTO INTERNO ADMINISTRATIVO &middot; NO ES RECIBO FISCAL &middot; SIN VALOR TRIBUTARIO<br/>
+  Sistema administrativo no homologado ante el SENIAT.
+</div>
 <div class="footer">
   <div class="footer-brand">
     ${businessLogo
@@ -289,7 +293,11 @@ export function printPayslip(
   </div>
 </div>
 
-<div class="footer">con tecnología Dualis</div>
+<div style="margin-top:16px;padding:8px;border:1px dashed #666;font-size:8px;text-align:center;color:#555;line-height:1.4">
+  DOCUMENTO INTERNO ADMINISTRATIVO &middot; NO ES RECIBO FISCAL &middot; SIN VALOR TRIBUTARIO<br/>
+  Sistema administrativo no homologado ante el SENIAT.
+</div>
+<div class="footer" style="margin-top:10px">con tecnología Dualis</div>
 </body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 400);
@@ -454,6 +462,10 @@ export function printPayrollRunPDF(
   <div><div class="sig-line">Aprobado por</div><div class="sig-sub">Dirección</div></div>
 </div>
 
+<div style="margin-top:16px;padding:8px;border:1px dashed #666;font-size:8px;text-align:center;color:#555;line-height:1.4">
+  DOCUMENTO INTERNO ADMINISTRATIVO &middot; NO ES CORTE FISCAL &middot; SIN VALOR TRIBUTARIO<br/>
+  Sistema administrativo no homologado ante el SENIAT.
+</div>
 <div class="powered">Generado con tecnología Dualis · ${new Date().toLocaleDateString('es-VE')} ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</div>
 </body></html>`);
   w.document.close();

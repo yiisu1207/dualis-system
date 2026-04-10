@@ -3,7 +3,8 @@ import { NavLink, useParams } from 'react-router-dom';
 import { usePortal } from './PortalGuard';
 import {
   LayoutDashboard, FileText, Zap, CreditCard, Receipt, LogOut,
-  Menu, X, HelpCircle, Package, CalendarDays, Trophy,
+  Menu, X, HelpCircle, Package, CalendarDays, Trophy, ShoppingBag, Wrench, AlertTriangle,
+  MoreHorizontal, MessageCircle,
 } from 'lucide-react';
 
 interface Props {
@@ -14,6 +15,7 @@ export default function PortalLayout({ children }: Props) {
   const { slug } = useParams<{ slug: string }>();
   const { customerName, businessName, businessLogo, brandColor } = usePortal();
   const [mobileNav, setMobileNav] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // Convert hex to RGB for CSS variable
   const brandRgb = brandColor ? (() => {
@@ -28,7 +30,7 @@ export default function PortalLayout({ children }: Props) {
 
   const mainNavItems = [
     { to: basePath, label: 'Inicio', icon: LayoutDashboard, end: true },
-    { to: `${basePath}/facturas`, label: 'Facturas', icon: FileText },
+    { to: `${basePath}/facturas`, label: 'Movimientos', icon: FileText },
     { to: `${basePath}/pronto-pago`, label: 'Pronto Pago', icon: Zap },
     { to: `${basePath}/pagar`, label: 'Pagar', icon: CreditCard },
     { to: `${basePath}/catalogo`, label: 'Catálogo', icon: Package },
@@ -37,9 +39,17 @@ export default function PortalLayout({ children }: Props) {
     { to: `${basePath}/estado-cuenta`, label: 'Estado', icon: Receipt },
   ];
 
+  const moreNavItems: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean }[] = [
+    { to: `${basePath}/chat`, label: 'Chat', icon: MessageCircle },
+    { to: `${basePath}/pedidos`, label: 'Pedidos', icon: ShoppingBag },
+    { to: `${basePath}/reparaciones`, label: 'Reparaciones', icon: Wrench },
+    { to: `${basePath}/reclamo`, label: 'Reclamo', icon: AlertTriangle },
+    { to: `${basePath}/ayuda`, label: 'Ayuda', icon: HelpCircle },
+  ];
+
   const allNavItems = [
     ...mainNavItems,
-    { to: `${basePath}/ayuda`, label: 'Ayuda', icon: HelpCircle },
+    ...moreNavItems,
   ];
 
   const handleLogout = () => {
@@ -146,25 +156,49 @@ export default function PortalLayout({ children }: Props) {
               )}
             </NavLink>
           ))}
-          <NavLink
-            to={`${basePath}/ayuda`}
-            className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[52px] transition-all ${
-                isActive ? 'text-indigo-400' : 'text-white/30 active:text-white/50'
-              }`
-            }
+          <button
+            onClick={() => setMoreOpen(true)}
+            className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[52px] transition-all text-white/30 active:text-white/50"
           >
-            {({ isActive }) => (
-              <>
-                <div className={`p-1.5 rounded-lg transition-all ${isActive ? 'bg-indigo-500/15' : ''}`}>
-                  <HelpCircle size={18} />
-                </div>
-                <span className="text-[8px] font-black uppercase tracking-wider">Ayuda</span>
-              </>
-            )}
-          </NavLink>
+            <div className="p-1.5 rounded-lg transition-all">
+              <MoreHorizontal size={18} />
+            </div>
+            <span className="text-[8px] font-black uppercase tracking-wider">Más</span>
+          </button>
         </div>
       </nav>
+
+      {/* Mobile "Más" sheet */}
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-[60] flex items-end" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full bg-[#0d1424] border-t border-white/[0.07] rounded-t-3xl p-4 pb-8 safe-area-bottom"
+          >
+            <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+            <div className="grid grid-cols-4 gap-2">
+              {moreNavItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMoreOpen(false)}
+                  className={({ isActive }) =>
+                    `flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all ${
+                      isActive
+                        ? 'bg-indigo-500/15 text-indigo-400'
+                        : 'bg-white/[0.04] text-white/60 active:bg-white/[0.08]'
+                    }`
+                  }
+                >
+                  <item.icon size={22} />
+                  <span className="text-[9px] font-black uppercase tracking-wider text-center">{item.label}</span>
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

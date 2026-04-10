@@ -1,11 +1,16 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowRight, Check, Minus, ChevronDown, ChevronRight,
+  ArrowRight, Check, ChevronDown, ChevronRight,
   ShoppingCart, Package, TrendingUp, Wallet, Receipt, BookOpen,
   Users, BarChart3, Brain, Globe, Landmark, Shield, Zap,
   MessageSquare, Star, Sparkles, Crown, Building2, Rocket,
-  Send, Loader2, CheckCircle2, Award, Activity, Lock, X,
+  Send, Loader2, CheckCircle2, Award, Lock,
+  Scan, Printer, Calculator, Tag, FileText, CalendarDays,
+  Wrench, Heart, Bell, Search, RefreshCw, CreditCard,
+  Smartphone, QrCode, ClipboardCheck, Truck, RotateCcw,
+  PenTool, LayoutGrid, Layers, KeyRound, Activity, Eye,
+  PieChart, Banknote, Download, Upload, Palette, Moon,
 } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -16,7 +21,7 @@ import {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function useInView(threshold = 0.15) {
+function useInView(threshold = 0.12) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -45,88 +50,219 @@ function FadeIn({ children, delay = 0, className = '' }: { children: React.React
   );
 }
 
-const HERO_WORDS = ['tu inventario.', 'tus ventas.', 'tu nómina.', 'tus finanzas.', 'tu negocio.'];
+const HERO_WORDS = ['tu inventario.', 'tus ventas.', 'tu nomina.', 'tus finanzas.', 'tu negocio.'];
 
-const FEATURES = [
+// ─── Feature categories with ALL v1 features ─────────────────────────────────
+
+const FEATURE_CATEGORIES = [
   {
-    icon: Globe, color: 'emerald',
+    id: 'pos',
+    icon: ShoppingCart,
+    color: 'indigo',
+    title: 'Punto de Venta',
+    subtitle: 'Mayor y Detal',
+    features: [
+      { icon: Building2, text: 'POS Mayor con plazos de credito configurables (7-60 dias)' },
+      { icon: ShoppingCart, text: 'POS Detal con grid de favoritos y modo venta continua' },
+      { icon: Scan, text: 'Scanner de codigos de barras USB + camara del movil' },
+      { icon: Calculator, text: 'Descuento ficticio por pronto pago (auto-calculo de markup)' },
+      { icon: Printer, text: 'Impresion termica 80mm + recibos A4 con QR' },
+      { icon: ClipboardCheck, text: 'Arqueo de caja fisico con grid de denominaciones USD/VES' },
+      { icon: RotateCcw, text: 'Devoluciones parciales o totales con saldo a favor' },
+      { icon: PenTool, text: 'Firma digital del cliente al despachar mercancia' },
+      { icon: LayoutGrid, text: 'Modo kiosco fullscreen para tablets de mostrador' },
+      { icon: Layers, text: 'Bultos y unidades (1 bulto = N unidades, stock real)' },
+    ],
+  },
+  {
+    id: 'inv',
+    icon: Package,
+    color: 'emerald',
+    title: 'Inventario',
+    subtitle: 'Multi-almacen avanzado',
+    features: [
+      { icon: Package, text: 'Multi-almacen con stock por ubicacion y transferencias' },
+      { icon: Layers, text: 'Variantes de producto (talla, color, modelo)' },
+      { icon: Tag, text: 'Kits y combos con descuento de componentes automatico' },
+      { icon: Scan, text: 'Codigos de barras con generacion y scanner integrado' },
+      { icon: Calculator, text: 'Costo promedio ponderado automatico al recibir mercancia' },
+      { icon: TrendingUp, text: 'Alertas de reposicion inteligente basadas en velocidad de venta' },
+      { icon: CalendarDays, text: 'Lotes con vencimiento y despacho FEFO automatico' },
+      { icon: ClipboardCheck, text: 'Conteo fisico con ajuste de merma automatico' },
+      { icon: Truck, text: 'Transferencias entre almacenes con estados' },
+      { icon: Eye, text: 'Galeria de fotos por producto con Cloudinary optimizado' },
+    ],
+  },
+  {
+    id: 'finanzas',
+    icon: Wallet,
+    color: 'sky',
+    title: 'Finanzas',
+    subtitle: 'CxC, CxP y Tesoreria',
+    features: [
+      { icon: Wallet, text: 'Cuentas por Cobrar con quorum de aprobacion multi-firma' },
+      { icon: Receipt, text: 'Cuentas por Pagar con layout dual (proveedores + ledger)' },
+      { icon: Landmark, text: 'Tesoreria con 27 bancos venezolanos + Zelle + Binance' },
+      { icon: CreditCard, text: 'Verificacion de llegada al banco por cada cobro' },
+      { icon: FileText, text: 'Cotizaciones con PDF, envio por email y conversion a venta' },
+      { icon: RefreshCw, text: 'Ventas recurrentes automaticas (semanal/mensual/anual)' },
+      { icon: TrendingUp, text: 'Tasas BCV automaticas + tasas personalizadas en tiempo real' },
+      { icon: PieChart, text: 'Flujo de caja proyectado a 30/60/90 dias' },
+      { icon: BarChart3, text: 'Analisis Pareto 80/20 de productos y clientes' },
+      { icon: Banknote, text: 'Conciliacion bancaria rapida con CSV del banco' },
+    ],
+  },
+  {
+    id: 'portal',
+    icon: Globe,
+    color: 'violet',
     title: 'Portal de Clientes',
-    desc: 'Tus clientes consultan su estado de cuenta, descargan facturas y reportan pagos sin llamarte.',
+    subtitle: 'Tu negocio 24/7 online',
+    features: [
+      { icon: Globe, text: 'Portal white-label con logo y colores de tu negocio' },
+      { icon: CreditCard, text: 'Pagos online con voucher, dedupe automatico y validaciones' },
+      { icon: QrCode, text: 'QR en recibos que abre el portal directo en la factura' },
+      { icon: MessageSquare, text: 'Chat en tiempo real entre cliente y administrador' },
+      { icon: Heart, text: 'Panel de fidelidad con puntos, tier y beneficios visibles' },
+      { icon: FileText, text: 'Estado de cuenta PDF descargable por el cliente' },
+      { icon: ShoppingCart, text: 'Auto-pedidos desde catalogo del portal' },
+      { icon: Wrench, text: 'Seguimiento de reparaciones en linea' },
+      { icon: KeyRound, text: 'Acceso seguro con OTP por email (sin passwords)' },
+      { icon: Smartphone, text: 'Mobile-first: funciona perfecto desde cualquier celular' },
+    ],
   },
   {
-    icon: Award, color: 'amber',
-    title: 'Programa Embajador',
-    desc: 'Tu sistema promociona Dualis a tus propios clientes y tú ganas descuento en tu suscripción por cada referido activo.',
+    id: 'crm',
+    icon: Heart,
+    color: 'rose',
+    title: 'CRM y Fidelidad',
+    subtitle: 'Clientes que vuelven',
+    features: [
+      { icon: Crown, text: 'Tiers de fidelidad Bronce a Elite con beneficios reales' },
+      { icon: Tag, text: 'Listas de precios automaticas por tier del cliente' },
+      { icon: Heart, text: 'Bonificacion extra por pronto pago (puntos loyalty)' },
+      { icon: CalendarDays, text: 'Auto-felicitacion de cumpleanos por email' },
+      { icon: MessageSquare, text: 'Historial de comunicaciones (llamadas, visitas, WhatsApp)' },
+      { icon: Bell, text: 'Recordatorios de cobranza progresivos (5d, dia, +5, +15, +30)' },
+      { icon: CalendarDays, text: 'Agenda de cobranza con calendario de vencimientos' },
+      { icon: Tag, text: 'Segmentacion por tags (#VIP, #moroso, #mayorista)' },
+      { icon: MessageSquare, text: 'Click-to-WhatsApp con plantillas por cliente' },
+      { icon: Activity, text: 'Score de riesgo crediticio automatico' },
+    ],
   },
   {
-    icon: ShoppingCart, color: 'indigo',
-    title: 'POS Mayor con Crédito',
-    desc: 'Plazos configurables (7, 15, 30, 45, 60 días) con descuentos automáticos por pronto pago que expiran solos.',
+    id: 'operaciones',
+    icon: CalendarDays,
+    color: 'amber',
+    title: 'Operaciones',
+    subtitle: 'Citas, pre-pedidos, reparaciones',
+    features: [
+      { icon: CalendarDays, text: 'Agenda de citas conectada al POS y comisiones' },
+      { icon: Package, text: 'Pre-pedidos con deposito, entrega y decremento de stock' },
+      { icon: Wrench, text: 'Tickets de reparacion con facturacion y portal cliente' },
+      { icon: Users, text: 'RRHH completo: nomina, vales, cortes, historial salarial' },
+      { icon: Truck, text: 'Panel de despacho con firma digital del receptor' },
+      { icon: Calculator, text: 'Reporte de comisiones por empleado y servicio' },
+      { icon: BarChart3, text: 'Estadisticas y KPIs del negocio en tiempo real' },
+      { icon: BookOpen, text: 'Libro de movimientos con filtros avanzados' },
+      { icon: Download, text: 'Backup completo descargable en ZIP (CSVs)' },
+      { icon: Upload, text: 'Migrador Excel robusto con mapeo de columnas y validacion' },
+    ],
   },
   {
-    icon: Brain, color: 'violet',
-    title: 'Auditoría IA',
-    desc: 'Detecta anomalías, ventas inusuales y patrones sospechosos. Pregúntale al sistema: "¿por qué bajaron las ventas?"',
+    id: 'seguridad',
+    icon: Shield,
+    color: 'teal',
+    title: 'Seguridad Enterprise',
+    subtitle: 'Tu data protegida',
+    features: [
+      { icon: Shield, text: 'Firestore Security Rules con aislamiento por negocio' },
+      { icon: Lock, text: 'Permisos granulares por rol (owner, admin, cajero, vendedor)' },
+      { icon: KeyRound, text: 'Bloqueo rapido con PIN (Ctrl+L) sin cerrar sesion' },
+      { icon: Activity, text: 'Audit log completo con diff de cada cambio critico' },
+      { icon: Eye, text: 'Rate limiting contra fuerza bruta (login, OTP, PIN)' },
+      { icon: Shield, text: 'CSP headers grado A + HSTS + X-Frame-Options DENY' },
+      { icon: Lock, text: 'Timeout de sesion configurable (5-30 min)' },
+      { icon: Download, text: 'Derecho al olvido: elimina tu cuenta y todos tus datos' },
+      { icon: Activity, text: 'ErrorBoundary global + Sentry para monitoreo de errores' },
+      { icon: RefreshCw, text: 'PWA instalable con Service Worker y modo offline basico' },
+    ],
   },
   {
-    icon: TrendingUp, color: 'sky',
-    title: 'Tasas en tiempo real',
-    desc: 'BCV automático + tasas personalizadas. Los precios se recalculan solos en el POS Mayor.',
-  },
-  {
-    icon: Landmark, color: 'rose',
-    title: 'Conciliación Bancaria',
-    desc: 'Importa tu estado de cuenta y el sistema concilia automáticamente contra tus cobros registrados.',
+    id: 'ux',
+    icon: Palette,
+    color: 'pink',
+    title: 'Experiencia de Usuario',
+    subtitle: 'Bonito y rapido',
+    features: [
+      { icon: Smartphone, text: 'Mobile-first: 100% responsive en Android, iOS y tablets' },
+      { icon: Search, text: 'Busqueda global Cmd+K en toda la app (clientes, productos, ventas)' },
+      { icon: Bell, text: 'Centro de notificaciones en tiempo real (stock, vencimientos, pagos)' },
+      { icon: Palette, text: 'Tema oscuro y claro con selector + escala de fuente accesible' },
+      { icon: LayoutGrid, text: 'Tour guiado interactivo para nuevos usuarios' },
+      { icon: Moon, text: 'Atajos de teclado configurables (F9 cobrar, Ctrl+N nuevo...)' },
+      { icon: Building2, text: 'Multi-empresa: cambia de negocio sin cerrar sesion' },
+      { icon: Brain, text: 'Auditoria IA: preguntale al sistema sobre tus datos' },
+      { icon: TrendingUp, text: 'Calculadora de rentabilidad al crear producto' },
+      { icon: Globe, text: 'Onboarding inteligente con presets por tipo de negocio' },
+    ],
   },
 ];
 
+const STATS = [
+  { value: '70+', label: 'Funciones' },
+  { value: '27', label: 'Bancos VE' },
+  { value: '6', label: 'Tiers fidelidad' },
+  { value: '24/7', label: 'Portal online' },
+];
+
 const STEPS = [
-  { num: '01', title: 'Crea tu cuenta', desc: 'Registro en 2 minutos. Sin tarjeta. 30 días de acceso completo al Plan Pro.' },
-  { num: '02', title: 'Configura tu negocio', desc: 'Agrega tu logo, tasas, productos y el sistema está listo para vender.' },
-  { num: '03', title: 'Empieza a vender', desc: 'POS funcionando desde el primer día. Datos en la nube, acceso desde cualquier dispositivo.' },
+  { num: '01', title: 'Crea tu cuenta', desc: 'Registro en 2 minutos. Sin tarjeta. 30 dias de acceso completo.' },
+  { num: '02', title: 'Configura tu negocio', desc: 'Elige tu tipo de negocio y el sistema carga categorias, unidades e IVA automaticamente.' },
+  { num: '03', title: 'Empieza a vender', desc: 'POS funcionando desde el primer dia. Datos en la nube, acceso desde cualquier dispositivo.' },
 ];
 
 const FAQS = [
   {
-    q: '¿Necesito tarjeta de crédito para el trial?',
-    a: 'No. Los 30 días son completamente gratis, sin tarjeta. Al vencer puedes elegir el plan que más te convenga o quedarte en el plan Gratis con funciones básicas.',
+    q: 'Necesito tarjeta de credito para el trial?',
+    a: 'No. Los 30 dias son completamente gratis, sin tarjeta. Al vencer puedes elegir el plan que mas te convenga o quedarte en el plan Gratis con funciones basicas.',
   },
   {
-    q: '¿Cómo activo un plan de pago?',
-    a: 'Por ahora el proceso es manual. Contáctanos por WhatsApp, acuerda el método de pago (Pagomovil, Zelle, Binance) y activamos tu plan en cuestión de minutos.',
+    q: 'Como activo un plan de pago?',
+    a: 'Por ahora el proceso es manual. Contactanos por WhatsApp, acuerda el metodo de pago (Pagomovil, Zelle, Binance) y activamos tu plan en cuestion de minutos.',
   },
   {
-    q: '¿Mis datos están seguros?',
-    a: 'Sí. Todo está almacenado en Firebase (Google) con encriptación en tránsito y en reposo. Tu información nunca se comparte ni se elimina aunque tu plan venza.',
+    q: 'Mis datos estan seguros?',
+    a: 'Si. Todo esta almacenado en Firebase (Google) con encriptacion en transito y en reposo. Firestore Security Rules aislan cada negocio. Tu informacion nunca se comparte.',
   },
   {
-    q: '¿Funciona sin internet?',
-    a: 'Estamos desarrollando el Modo Offline (PWA) que permitirá al POS funcionar sin conexión y sincronizar al reconectar. Muy próximamente.',
+    q: 'Funciona en el telefono?',
+    a: 'Si. Dualis es mobile-first y funciona perfecto en Android, iOS y tablets. Ademas es una PWA instalable: agregala a tu pantalla de inicio y usala como app nativa.',
   },
   {
-    q: '¿Puedo tener varias sucursales?',
-    a: 'Sí. Desde el Plan Negocio tienes 1 sucursal incluida. Con el Plan Pro tienes 3, y con Enterprise puedes tener ilimitadas.',
+    q: 'Puedo tener varias sucursales?',
+    a: 'Si. Desde el Plan Negocio tienes 1 sucursal incluida. Con el Plan Pro tienes 3, y con Enterprise puedes tener ilimitadas.',
   },
   {
-    q: '¿Qué es el Programa Embajador?',
-    a: 'Puedes activarlo en Configuración. Tus comunicaciones con clientes incluirán un enlace discreto a Dualis. Si un cliente tuyo se registra y paga su primer plan, tú recibes un descuento permanente en tu suscripción.',
+    q: 'Que es el Programa Embajador?',
+    a: 'Puedes activarlo en Configuracion. Tus comunicaciones con clientes incluiran un enlace discreto a Dualis. Si un cliente tuyo se registra y paga su primer plan, tu recibes un descuento permanente en tu suscripcion.',
   },
   {
-    q: '¿Puedo agregar funciones extra sin cambiar de plan?',
-    a: 'Sí. Tenemos add-ons individuales: Portal de Clientes, Tienda Pública, WhatsApp Automático, Auditoría IA, entre otros. Pagas solo lo que necesitas.',
+    q: 'Puedo agregar funciones extra sin cambiar de plan?',
+    a: 'Si. Tenemos add-ons individuales: Portal de Clientes, Tienda Publica, WhatsApp Automatico, Auditoria IA, entre otros. Pagas solo lo que necesitas.',
   },
   {
-    q: '¿Cómo es la facturación legal para SENIAT?',
-    a: 'Estamos desarrollando la Factura Legal SENIAT (RIF emisor/receptor, número de control oficial, retenciones IVA/ISLR para contribuyentes especiales). Disponible muy pronto.',
+    q: 'Dualis emite facturas fiscales ante el SENIAT?',
+    a: 'No. Dualis es un sistema administrativo y de gestion interna, NO es un sistema de facturacion homologado por el SENIAT. Los comprobantes que genera son documentos internos sin valor fiscal. Tu negocio debe mantener su medio de emision fiscal externo.',
   },
-];
-
-const PLAN_ICONS = [
-  { Icon: Zap,       gradient: 'from-slate-400 to-slate-500',   shadow: 'shadow-slate-500/20'   },
-  { Icon: Zap,       gradient: 'from-sky-400 to-blue-500',      shadow: 'shadow-sky-500/20'     },
-  { Icon: Building2, gradient: 'from-indigo-500 to-violet-600', shadow: 'shadow-indigo-500/20'  },
-  { Icon: Crown,     gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/20'  },
-  { Icon: Crown,     gradient: 'from-amber-400 to-orange-500',  shadow: 'shadow-amber-500/20'   },
+  {
+    q: 'Puedo importar mis datos desde Excel?',
+    a: 'Si. El migrador Excel te permite importar clientes, productos, proveedores y movimientos historicos con mapeo de columnas, validacion fila por fila y preview antes de confirmar.',
+  },
+  {
+    q: 'Que pasa si se me va el internet?',
+    a: 'Dualis detecta la desconexion y muestra un banner informativo. Al reconectar, Firebase sincroniza automaticamente. Estamos desarrollando el modo offline completo para proximas versiones.',
+  },
 ];
 
 // ─── Contact form ─────────────────────────────────────────────────────────────
@@ -144,7 +280,6 @@ function ContactForm() {
       await addDoc(collection(db, 'contactRequests'), { ...form, createdAt: serverTimestamp() });
       setSent(true);
     } catch {
-      // Fallback to WhatsApp
       const msg = encodeURIComponent(`Hola, soy ${form.name} de ${form.company}. ${form.needs}`);
       window.open(`https://wa.me/${DUALIS_WHATSAPP}?text=${msg}`, '_blank');
     } finally {
@@ -158,8 +293,8 @@ function ContactForm() {
         <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
           <CheckCircle2 size={28} className="text-emerald-400" />
         </div>
-        <h3 className="text-lg font-black text-white">¡Mensaje enviado!</h3>
-        <p className="text-sm text-white/40 max-w-xs">Te contactamos en menos de 24 horas. También puedes escribirnos directamente por WhatsApp.</p>
+        <h3 className="text-lg font-black text-white">Mensaje enviado!</h3>
+        <p className="text-sm text-white/40 max-w-xs">Te contactamos en menos de 24 horas.</p>
         <a
           href={`https://wa.me/${DUALIS_WHATSAPP}`}
           target="_blank"
@@ -175,10 +310,10 @@ function ContactForm() {
   return (
     <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {[
-        { key: 'name',    label: 'Tu nombre*',       placeholder: 'Juan García',        span: false },
+        { key: 'name',    label: 'Tu nombre*',       placeholder: 'Juan Garcia',        span: false },
         { key: 'company', label: 'Empresa',           placeholder: 'Distribuidora XYZ',  span: false },
         { key: 'phone',   label: 'WhatsApp*',         placeholder: '+58 412 000 0000',   span: false },
-        { key: 'needs',   label: '¿Qué necesitas?',  placeholder: 'Describe brevemente...', span: true },
+        { key: 'needs',   label: 'Que necesitas?',   placeholder: 'Describe brevemente...', span: true },
       ].map(({ key, label, placeholder, span }) => (
         <div key={key} className={span ? 'sm:col-span-2' : ''}>
           <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-1.5">{label}</label>
@@ -208,7 +343,7 @@ function ContactForm() {
           className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-black disabled:opacity-40 hover:opacity-90 transition-all shadow-lg shadow-indigo-500/25"
         >
           {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-          {sending ? 'Enviando…' : 'Enviar mensaje'}
+          {sending ? 'Enviando...' : 'Enviar mensaje'}
         </button>
         <a
           href={`https://wa.me/${DUALIS_WHATSAPP}`}
@@ -222,6 +357,19 @@ function ContactForm() {
     </form>
   );
 }
+
+// ─── Color helpers ────────────────────────────────────────────────────────────
+
+const COLOR_MAP: Record<string, { icon: string; bg: string; border: string; glow: string; gradient: string }> = {
+  indigo:  { icon: 'text-indigo-400',  bg: 'bg-indigo-500/10',  border: 'border-indigo-500/20',  glow: 'shadow-indigo-500/10',  gradient: 'from-indigo-500 to-blue-600' },
+  emerald: { icon: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', glow: 'shadow-emerald-500/10', gradient: 'from-emerald-500 to-teal-600' },
+  sky:     { icon: 'text-sky-400',     bg: 'bg-sky-500/10',     border: 'border-sky-500/20',     glow: 'shadow-sky-500/10',     gradient: 'from-sky-500 to-cyan-600' },
+  violet:  { icon: 'text-violet-400',  bg: 'bg-violet-500/10',  border: 'border-violet-500/20',  glow: 'shadow-violet-500/10',  gradient: 'from-violet-500 to-purple-600' },
+  rose:    { icon: 'text-rose-400',    bg: 'bg-rose-500/10',    border: 'border-rose-500/20',    glow: 'shadow-rose-500/10',    gradient: 'from-rose-500 to-pink-600' },
+  amber:   { icon: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20',   glow: 'shadow-amber-500/10',   gradient: 'from-amber-500 to-orange-600' },
+  teal:    { icon: 'text-teal-400',    bg: 'bg-teal-500/10',    border: 'border-teal-500/20',    glow: 'shadow-teal-500/10',    gradient: 'from-teal-500 to-cyan-600' },
+  pink:    { icon: 'text-pink-400',    bg: 'bg-pink-500/10',    border: 'border-pink-500/20',    glow: 'shadow-pink-500/10',    gradient: 'from-pink-500 to-rose-600' },
+};
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
@@ -242,44 +390,44 @@ export default function LandingPage() {
     return () => clearInterval(t);
   }, []);
 
+  // Feature expand
+  const [expandedCat, setExpandedCat] = useState<string | null>(null);
+
   // FAQ accordion
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-white font-sans overflow-x-hidden">
+    <div className="min-h-screen bg-[#060a13] text-white font-sans overflow-x-hidden">
       <SEO
         title="Dualis — Sistema ERP para negocios venezolanos"
-        description="POS, Inventario, CxC, CxP, RRHH, Portal de Clientes y más. 30 días gratis sin tarjeta."
+        description="POS, Inventario, CxC, CxP, Tesoreria, RRHH, Portal de Clientes, Fidelidad y 70+ funciones. 30 dias gratis."
       />
 
       {/* ── TOPBAR ───────────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/[0.05] bg-[#070b14]/80 backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/[0.05] bg-[#060a13]/80 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <img src="/logo.png" alt="Dualis" className="w-8 h-8 rounded-xl object-contain" />
             <span className="font-black text-[15px] tracking-tight">Dualis</span>
           </div>
           <nav className="hidden md:flex items-center gap-6">
-            {['Características', 'Planes', 'Embajador', 'FAQ', 'Contacto'].map(label => (
-              <a
-                key={label}
-                href={`#${label.toLowerCase()}`}
-                className="text-[12px] font-bold text-white/40 hover:text-white/80 transition-colors"
-              >
-                {label}
-              </a>
+            {[
+              { label: 'Funciones', href: '#funciones' },
+              { label: 'Planes', href: '#planes' },
+              { label: 'Embajador', href: '#embajador' },
+              { label: 'FAQ', href: '#faq' },
+              { label: 'Contacto', href: '#contacto' },
+            ].map(n => (
+              <a key={n.label} href={n.href} className="text-[12px] font-bold text-white/40 hover:text-white/80 transition-colors">{n.label}</a>
             ))}
           </nav>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/login')}
-              className="text-[12px] font-black text-white/40 hover:text-white transition-colors"
-            >
-              Iniciar sesión
+            <button onClick={() => navigate('/login')} className="text-[12px] font-black text-white/40 hover:text-white transition-colors">
+              Iniciar sesion
             </button>
             <button
               onClick={() => navigate('/register')}
-              className="h-9 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[12px] font-black shadow-lg shadow-indigo-500/25 hover:opacity-90 transition-all"
+              className="h-9 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[12px] font-black shadow-lg shadow-indigo-500/25 hover:opacity-90 transition-all"
             >
               Empezar gratis
             </button>
@@ -288,34 +436,36 @@ export default function LandingPage() {
       </header>
 
       {/* ── HERO ─────────────────────────────────────────────── */}
-      <section className="relative pt-32 pb-24 px-4 overflow-hidden">
-        {/* BG orbs */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-indigo-600/8 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute top-20 right-0 w-[300px] h-[300px] bg-violet-600/6 rounded-full blur-[100px] pointer-events-none" />
+      <section className="relative pt-32 pb-28 px-4 overflow-hidden">
+        {/* Ambient orbs */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-indigo-600/[0.07] rounded-full blur-[140px] pointer-events-none" />
+        <div className="absolute top-32 right-0 w-[400px] h-[400px] bg-violet-600/[0.05] rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-sky-600/[0.04] rounded-full blur-[100px] pointer-events-none" />
 
-        <div className="relative max-w-4xl mx-auto text-center">
+        <div className="relative max-w-5xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[11px] font-black uppercase tracking-widest mb-8">
-            <Sparkles size={11} /> 30 días gratis · Sin tarjeta · Sin compromiso
+            <Sparkles size={11} /> 30 dias gratis &middot; Sin tarjeta &middot; 70+ funciones
           </div>
 
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-black leading-tight mb-4 tracking-tight">
-            Dualis controla
+          <h1 className="text-4xl sm:text-5xl md:text-7xl font-black leading-[1.1] mb-6 tracking-tight">
+            El ERP que controla
             <br />
             <span
-              className={`bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-400 bg-clip-text text-transparent transition-all duration-300 ${heroFade ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}`}
+              className={`bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-400 bg-clip-text text-transparent transition-all duration-300 inline-block ${heroFade ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-3'}`}
             >
               {HERO_WORDS[heroIdx]}
             </span>
           </h1>
 
-          <p className="text-base sm:text-lg text-white/40 max-w-2xl mx-auto mb-10 leading-relaxed">
-            El sistema de gestión empresarial más completo para negocios venezolanos. POS, inventario, finanzas, nómina, portal de clientes y mucho más — todo en uno.
+          <p className="text-lg sm:text-xl text-white/40 max-w-3xl mx-auto mb-10 leading-relaxed">
+            POS, inventario, finanzas, tesoreria, portal de clientes, fidelidad, RRHH
+            y mucho mas. Disenado para la realidad del negocio venezolano.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
             <button
               onClick={() => navigate('/register')}
-              className="w-full sm:w-auto h-14 px-8 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-black text-[15px] shadow-xl shadow-indigo-500/30 hover:opacity-90 hover:scale-105 transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto h-14 px-10 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-black text-[15px] shadow-xl shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
             >
               Comenzar gratis <ArrowRight size={18} />
             </button>
@@ -329,70 +479,114 @@ export default function LandingPage() {
             </a>
           </div>
 
-          <p className="text-[11px] text-white/20 mt-5">
-            Plan Pro completo por 30 días · No se requiere tarjeta · Cancela cuando quieras
+          <p className="text-[11px] text-white/20">
+            Plan Pro completo por 30 dias &middot; No se requiere tarjeta &middot; Cancela cuando quieras
           </p>
         </div>
       </section>
 
-      {/* ── FEATURES ─────────────────────────────────────────── */}
-      <section id="características" className="py-20 px-4">
-        <div className="max-w-6xl mx-auto">
+      {/* ── STATS BAR ────────────────────────────────────────── */}
+      <section className="border-y border-white/[0.05] bg-white/[0.01]">
+        <div className="max-w-5xl mx-auto px-4 py-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {STATS.map(s => (
+              <FadeIn key={s.label}>
+                <div className="text-center">
+                  <p className="text-3xl sm:text-4xl font-black bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">{s.value}</p>
+                  <p className="text-[11px] font-bold text-white/30 uppercase tracking-widest mt-1">{s.label}</p>
+                </div>
+              </FadeIn>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FEATURES MEGA SECTION ────────────────────────────── */}
+      <section id="funciones" className="py-24 px-4">
+        <div className="max-w-7xl mx-auto">
           <FadeIn>
-            <div className="text-center mb-14">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Lo que nos diferencia</p>
-              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-                Funciones que nadie más tiene
+            <div className="text-center mb-16">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Todo lo que necesitas</p>
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight">
+                70+ funciones en un solo sistema
               </h2>
-              <p className="text-white/40 mt-3 text-base max-w-xl mx-auto">
-                Diseñado específicamente para la realidad del negocio venezolano.
+              <p className="text-white/40 mt-4 text-base sm:text-lg max-w-2xl mx-auto">
+                Desde el punto de venta hasta la tesoreria. Cada modulo esta conectado
+                con los demas: cero datos aislados, cero duplicacion.
               </p>
             </div>
           </FadeIn>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {FEATURES.map((f, i) => {
-              const colorMap: Record<string, string> = {
-                emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-                amber:   'text-amber-400   bg-amber-500/10   border-amber-500/20',
-                indigo:  'text-indigo-400  bg-indigo-500/10  border-indigo-500/20',
-                violet:  'text-violet-400  bg-violet-500/10  border-violet-500/20',
-                sky:     'text-sky-400     bg-sky-500/10     border-sky-500/20',
-                rose:    'text-rose-400    bg-rose-500/10    border-rose-500/20',
-              };
-              const cls = colorMap[f.color];
+          {/* Category cards grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {FEATURE_CATEGORIES.map((cat, ci) => {
+              const c = COLOR_MAP[cat.color];
+              const isOpen = expandedCat === cat.id;
+
               return (
-                <FadeIn key={f.title} delay={i * 60}>
-                  <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] hover:bg-white/[0.04] transition-all group">
-                    <div className={`w-11 h-11 rounded-xl border flex items-center justify-center mb-4 ${cls}`}>
-                      <f.icon size={19} />
+                <FadeIn key={cat.id} delay={ci * 50} className={isOpen ? 'md:col-span-2 xl:col-span-4' : ''}>
+                  <div
+                    className={`rounded-2xl border transition-all duration-300 cursor-pointer group ${
+                      isOpen
+                        ? `${c.bg} ${c.border} shadow-lg ${c.glow}`
+                        : 'bg-white/[0.02] border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.04]'
+                    }`}
+                    onClick={() => setExpandedCat(isOpen ? null : cat.id)}
+                  >
+                    {/* Header */}
+                    <div className="p-6 flex items-start gap-4">
+                      <div className={`w-12 h-12 rounded-xl border flex items-center justify-center shrink-0 ${c.icon} ${c.bg} ${c.border}`}>
+                        <cat.icon size={22} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-black text-[16px] text-white">{cat.title}</h3>
+                        <p className="text-[12px] text-white/40 mt-0.5">{cat.subtitle}</p>
+                        <p className="text-[11px] text-white/20 mt-2">{cat.features.length} funciones</p>
+                      </div>
+                      <ChevronDown size={16} className={`text-white/20 shrink-0 mt-1 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
                     </div>
-                    <h3 className="font-black text-[15px] text-white mb-2">{f.title}</h3>
-                    <p className="text-[13px] text-white/40 leading-relaxed">{f.desc}</p>
+
+                    {/* Expanded features */}
+                    {isOpen && (
+                      <div className="px-6 pb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                          {cat.features.map((f, fi) => (
+                            <div key={fi} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+                              <f.icon size={15} className={`${c.icon} shrink-0 mt-0.5`} />
+                              <span className="text-[12px] text-white/60 leading-relaxed">{f.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </FadeIn>
               );
             })}
           </div>
 
-          {/* Module grid */}
-          <FadeIn delay={200}>
+          {/* Quick module badges */}
+          <FadeIn delay={300}>
             <div className="mt-10 p-6 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/25 mb-5">Todos los módulos incluidos</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/25 mb-5">Modulos incluidos</p>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
                 {[
                   { Icon: ShoppingCart, label: 'POS Detal' },
-                  { Icon: Building2,   label: 'POS Mayor' },
-                  { Icon: Package,     label: 'Inventario' },
-                  { Icon: Wallet,      label: 'CxC' },
-                  { Icon: Receipt,     label: 'CxP' },
-                  { Icon: BookOpen,    label: 'Contabilidad' },
-                  { Icon: TrendingUp,  label: 'Tasas' },
-                  { Icon: Users,       label: 'RRHH' },
-                  { Icon: BarChart3,   label: 'Estadísticas' },
-                  { Icon: Globe,       label: 'Portal Clientes' },
-                  { Icon: Landmark,    label: 'Conciliación' },
-                  { Icon: Brain,       label: 'Auditoría IA' },
+                  { Icon: Building2,    label: 'POS Mayor' },
+                  { Icon: Package,      label: 'Inventario' },
+                  { Icon: Wallet,       label: 'CxC' },
+                  { Icon: Receipt,      label: 'CxP' },
+                  { Icon: Landmark,     label: 'Tesoreria' },
+                  { Icon: TrendingUp,   label: 'Tasas BCV' },
+                  { Icon: Users,        label: 'RRHH' },
+                  { Icon: Globe,        label: 'Portal' },
+                  { Icon: Heart,        label: 'Fidelidad' },
+                  { Icon: CalendarDays, label: 'Citas' },
+                  { Icon: BarChart3,    label: 'Estadisticas' },
+                  { Icon: Brain,        label: 'Auditoria IA' },
+                  { Icon: FileText,     label: 'Cotizaciones' },
+                  { Icon: Truck,        label: 'Despacho' },
+                  { Icon: Shield,       label: 'Seguridad' },
                 ].map(({ Icon, label }) => (
                   <div key={label} className="flex flex-col items-center gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-indigo-500/20 hover:bg-indigo-500/5 transition-all">
                     <Icon size={16} className="text-white/30" />
@@ -405,22 +599,65 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ─────────────────────────────────────── */}
+      {/* ── HIGHLIGHT FEATURES (top 3 unique) ────────────────── */}
       <section className="py-20 px-4 bg-white/[0.01]">
+        <div className="max-w-6xl mx-auto">
+          <FadeIn>
+            <div className="text-center mb-14">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Lo que nos diferencia</p>
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">Hecho para Venezuela</h2>
+            </div>
+          </FadeIn>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+              {
+                icon: TrendingUp, color: 'sky',
+                title: 'Tasas BCV automaticas',
+                desc: 'El sistema actualiza la tasa BCV solo. Soporta tasas paralelas y personalizadas. Reportes con conversion multi-tasa historica para que tus numeros tengan sentido a pesar de la inflacion.',
+              },
+              {
+                icon: Globe, color: 'violet',
+                title: 'Portal de clientes 24/7',
+                desc: 'Tu cliente consulta su estado de cuenta, sube comprobantes de pago con voucher, chatea contigo en tiempo real y descarga PDFs. Con tu logo y colores. Funciona perfecto desde el celular.',
+              },
+              {
+                icon: Landmark, color: 'emerald',
+                title: 'Tesoreria con 27 bancos VE',
+                desc: 'Banesco, Mercantil, BDV, Provincial y todos los demas. Pago movil, Zelle, Binance. Verificacion de llegada al banco, conciliacion rapida y saldo virtual por cuenta.',
+              },
+            ].map((f, i) => {
+              const c = COLOR_MAP[f.color];
+              return (
+                <FadeIn key={f.title} delay={i * 80}>
+                  <div className={`p-7 rounded-2xl border transition-all hover:scale-[1.02] ${c.bg} ${c.border}`}>
+                    <div className={`w-12 h-12 rounded-xl border flex items-center justify-center mb-5 ${c.icon} ${c.bg} ${c.border}`}>
+                      <f.icon size={22} />
+                    </div>
+                    <h3 className="font-black text-[17px] text-white mb-3">{f.title}</h3>
+                    <p className="text-[13px] text-white/50 leading-relaxed">{f.desc}</p>
+                  </div>
+                </FadeIn>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ─────────────────────────────────────── */}
+      <section className="py-20 px-4">
         <div className="max-w-4xl mx-auto">
           <FadeIn>
             <div className="text-center mb-14">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Arrancar es fácil</p>
-              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-                3 pasos y estás vendiendo
-              </h2>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Arrancar es facil</p>
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">3 pasos y estas vendiendo</h2>
             </div>
           </FadeIn>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {STEPS.map((s, i) => (
               <FadeIn key={s.num} delay={i * 100}>
-                <div className="relative p-6 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-                  <div className="text-[48px] font-black text-white/[0.04] leading-none mb-4 select-none">{s.num}</div>
+                <div className="relative p-6 rounded-2xl bg-white/[0.02] border border-white/[0.06] hover:border-indigo-500/20 transition-all">
+                  <div className="text-[56px] font-black text-white/[0.03] leading-none mb-3 select-none">{s.num}</div>
                   <h3 className="font-black text-white text-[16px] mb-2">{s.title}</h3>
                   <p className="text-[13px] text-white/40 leading-relaxed">{s.desc}</p>
                   {i < STEPS.length - 1 && (
@@ -434,39 +671,39 @@ export default function LandingPage() {
       </section>
 
       {/* ── PLANS SUMMARY ───────────────────────────────────── */}
-      <section id="planes" className="py-20 px-4">
+      <section id="planes" className="py-20 px-4 bg-white/[0.01]">
         <div className="max-w-5xl mx-auto">
           <FadeIn>
             <div className="text-center mb-10">
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Precios transparentes</p>
               <h2 className="text-3xl sm:text-4xl font-black tracking-tight">Planes desde $12/mes</h2>
               <p className="text-white/40 mt-3 text-sm max-w-xl mx-auto">
-                Plan vertical hecho para tu tipo de negocio, o planes generales que escalan contigo. 30 días gratis del Plan Pro.
+                Plan vertical hecho para tu tipo de negocio, o planes generales que escalan contigo.
               </p>
             </div>
           </FadeIn>
 
-          {/* Resumen 4 cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
             {[
-              { name: 'Gratis',     price: '$0',    desc: '1 usuario · 50 productos', gradient: 'from-slate-400 to-slate-500' },
-              { name: 'Tu Negocio', price: 'desde $12', desc: 'Plan vertical · módulos de tu rubro', gradient: 'from-sky-400 to-blue-500' },
-              { name: 'Negocio',    price: '$35',   desc: 'CxC, CxP, contabilidad, multi-cuenta', gradient: 'from-indigo-500 to-violet-600', popular: true },
-              { name: 'Pro',        price: '$65',   desc: 'Portal, Vision IA, embajador, 3 sucursales', gradient: 'from-violet-500 to-purple-600' },
+              { name: 'Gratis',     price: '$0',    desc: '1 usuario, 50 productos, POS basico', gradient: 'from-slate-400 to-slate-500' },
+              { name: 'Tu Negocio', price: 'desde $12', desc: 'Plan vertical con modulos de tu rubro', gradient: 'from-sky-400 to-blue-500' },
+              { name: 'Negocio',    price: '$35',   desc: 'CxC, CxP, tesoreria, multi-cuenta, portal', gradient: 'from-indigo-500 to-violet-600', popular: true },
+              { name: 'Pro',        price: '$65',   desc: 'Vision IA, embajador, 3 sucursales, todo', gradient: 'from-violet-500 to-purple-600' },
             ].map(p => (
-              <div key={p.name} className={`relative p-5 rounded-2xl border ${p.popular ? 'bg-gradient-to-b from-indigo-600/[0.12] to-violet-600/[0.06] border-indigo-500/30' : 'bg-white/[0.02] border-white/[0.07]'}`}>
-                {p.popular && (
-                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[8px] font-black uppercase tracking-widest whitespace-nowrap">Más popular</div>
-                )}
-                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${p.gradient} mb-3`} />
-                <h3 className="font-black text-sm text-white">{p.name}</h3>
-                <p className="text-xl font-black text-white mt-1">{p.price}<span className="text-[10px] text-white/30 font-bold ml-1">{p.price !== '$0' ? '/mes' : ''}</span></p>
-                <p className="text-[10px] text-white/40 mt-2 leading-relaxed">{p.desc}</p>
-              </div>
+              <FadeIn key={p.name}>
+                <div className={`relative p-5 rounded-2xl border h-full ${(p as any).popular ? 'bg-gradient-to-b from-indigo-600/[0.12] to-violet-600/[0.06] border-indigo-500/30' : 'bg-white/[0.02] border-white/[0.07]'}`}>
+                  {(p as any).popular && (
+                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[8px] font-black uppercase tracking-widest whitespace-nowrap">Mas popular</div>
+                  )}
+                  <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${p.gradient} mb-3`} />
+                  <h3 className="font-black text-sm text-white">{p.name}</h3>
+                  <p className="text-xl font-black text-white mt-1">{p.price}<span className="text-[10px] text-white/30 font-bold ml-1">{p.price !== '$0' ? '/mes' : ''}</span></p>
+                  <p className="text-[10px] text-white/40 mt-2 leading-relaxed">{p.desc}</p>
+                </div>
+              </FadeIn>
             ))}
           </div>
 
-          {/* CTA a /precios */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
               onClick={() => navigate('/precios')}
@@ -485,29 +722,26 @@ export default function LandingPage() {
       </section>
 
       {/* ── PROGRAMA EMBAJADOR ───────────────────────────────── */}
-      <section id="embajador" className="py-20 px-4 bg-white/[0.01]">
+      <section id="embajador" className="py-20 px-4">
         <div className="max-w-4xl mx-auto">
           <FadeIn>
             <div className="text-center mb-12">
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-400 mb-3">Crecimiento viral</p>
-              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-                Gana mientras usas el sistema
-              </h2>
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">Gana mientras usas el sistema</h2>
               <p className="text-white/40 mt-3 text-sm max-w-xl mx-auto">
-                Activa el Programa Embajador y cada comunicación tuya con tus clientes le presenta Dualis a nuevos negocios. Tú ganas descuento, ellos ganan el mejor sistema de Venezuela.
+                Activa el Programa Embajador y cada comunicacion tuya con tus clientes le presenta Dualis a nuevos negocios.
               </p>
             </div>
           </FadeIn>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
-            {/* Flow */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <FadeIn>
               <div className="space-y-4">
                 {[
-                  { step: '1', title: 'Activas el programa', desc: 'Un toggle en Configuración. Tu negocio empieza a aparecer en las comunicaciones.' },
-                  { step: '2', title: 'Tu cliente descubre Dualis', desc: 'Nota de entrega, portal, emails — todo incluye un link de referido con tu nombre.' },
-                  { step: '3', title: 'Se registra y paga su primer plan', desc: 'Después de 30 días activos y su primera compra, se activa tu beneficio.' },
-                  { step: '4', title: 'Ganas descuento permanente', desc: '5% por cada referido activo, acumulable hasta 25%. 10 referidos = mes gratis cada trimestre.' },
+                  { step: '1', title: 'Activas el programa', desc: 'Un toggle en Configuracion. Tu negocio empieza a aparecer en las comunicaciones.' },
+                  { step: '2', title: 'Tu cliente descubre Dualis', desc: 'Nota de entrega, portal, emails: todo incluye un link de referido.' },
+                  { step: '3', title: 'Se registra y paga su primer plan', desc: 'Despues de 30 dias activos, se activa tu beneficio.' },
+                  { step: '4', title: 'Ganas descuento permanente', desc: '5% por referido activo, acumulable hasta 25%. 10 referidos = mes gratis cada trimestre.' },
                 ].map(({ step, title, desc }) => (
                   <div key={step} className="flex gap-4">
                     <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-black text-[12px] shrink-0">
@@ -522,7 +756,6 @@ export default function LandingPage() {
               </div>
             </FadeIn>
 
-            {/* Rewards */}
             <FadeIn delay={100}>
               <div className="p-6 rounded-2xl bg-amber-500/[0.04] border border-amber-500/[0.12]">
                 <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/60 mb-5">Beneficios por referidos activos</p>
@@ -542,19 +775,14 @@ export default function LandingPage() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/15">
-                  <p className="text-[11px] text-amber-400/80 font-bold">
-                    El referido debe tener 30 días activos <strong>y</strong> haber realizado su primera compra de plan para activar tu beneficio.
-                  </p>
-                </div>
               </div>
             </FadeIn>
           </div>
         </div>
       </section>
 
-      {/* ── TESTIMONIALS placeholder ─────────────────────────── */}
-      <section className="py-16 px-4">
+      {/* ── TESTIMONIAL ──────────────────────────────────────── */}
+      <section className="py-16 px-4 bg-white/[0.01]">
         <div className="max-w-4xl mx-auto">
           <FadeIn>
             <div className="p-8 rounded-2xl bg-indigo-500/[0.04] border border-indigo-500/[0.10] text-center">
@@ -564,7 +792,8 @@ export default function LandingPage() {
                 ))}
               </div>
               <p className="text-lg text-white/60 font-bold italic max-w-xl mx-auto mb-4">
-                "Dualis transformó la manera en que manejamos nuestras cuentas por cobrar. El portal de clientes nos ahorró horas de WhatsApp cada semana."
+                "Dualis transformo la manera en que manejamos nuestras cuentas por cobrar.
+                El portal de clientes nos ahorro horas de WhatsApp cada semana."
               </p>
               <p className="text-[12px] font-black text-white/30 uppercase tracking-widest">
                 Beta tester — Distribuidora Caracas
@@ -575,18 +804,18 @@ export default function LandingPage() {
       </section>
 
       {/* ── FAQ ──────────────────────────────────────────────── */}
-      <section id="faq" className="py-20 px-4 bg-white/[0.01]">
+      <section id="faq" className="py-20 px-4">
         <div className="max-w-3xl mx-auto">
           <FadeIn>
             <div className="text-center mb-12">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">¿Tienes dudas?</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Tienes dudas?</p>
               <h2 className="text-3xl sm:text-4xl font-black tracking-tight">Preguntas frecuentes</h2>
             </div>
           </FadeIn>
 
           <div className="space-y-2">
             {FAQS.map((faq, i) => (
-              <FadeIn key={i} delay={i * 40}>
+              <FadeIn key={i} delay={i * 30}>
                 <div className={`rounded-xl border transition-all ${openFaq === i ? 'border-indigo-500/20 bg-indigo-500/[0.04]' : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.1]'}`}>
                   <button
                     onClick={() => setOpenFaq(openFaq === i ? null : i)}
@@ -608,17 +837,17 @@ export default function LandingPage() {
       </section>
 
       {/* ── CONTACT ──────────────────────────────────────────── */}
-      <section id="contacto" className="py-20 px-4">
+      <section id="contacto" className="py-20 px-4 bg-white/[0.01]">
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
             <FadeIn>
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Hablemos</p>
                 <h2 className="text-3xl sm:text-4xl font-black tracking-tight mb-4">
-                  ¿Necesitas una cotización o tienes preguntas?
+                  Necesitas una cotizacion o tienes preguntas?
                 </h2>
                 <p className="text-white/40 text-sm leading-relaxed mb-8">
-                  Escríbenos y te respondemos en menos de 24 horas. También puedes escribirnos directamente por WhatsApp para una respuesta inmediata.
+                  Escribenos y te respondemos en menos de 24 horas.
                 </p>
 
                 <div className="space-y-4">
@@ -646,7 +875,7 @@ export default function LandingPage() {
 
             <FadeIn delay={100}>
               <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/[0.07]">
-                <p className="text-[13px] font-black text-white/60 mb-5">Envíanos un mensaje</p>
+                <p className="text-[13px] font-black text-white/60 mb-5">Envianos un mensaje</p>
                 <ContactForm />
               </div>
             </FadeIn>
@@ -658,19 +887,20 @@ export default function LandingPage() {
       <section className="py-20 px-4">
         <div className="max-w-3xl mx-auto text-center">
           <FadeIn>
-            <div className="relative p-10 rounded-3xl bg-gradient-to-b from-indigo-600/[0.12] to-violet-600/[0.06] border border-indigo-500/20 overflow-hidden">
-              <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-48 h-48 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
-              <Rocket size={28} className="text-indigo-400 mx-auto mb-4 relative" />
-              <h2 className="text-3xl font-black tracking-tight mb-3 relative">
-                Empieza hoy — es gratis
+            <div className="relative p-10 sm:p-14 rounded-3xl bg-gradient-to-b from-indigo-600/[0.12] to-violet-600/[0.06] border border-indigo-500/20 overflow-hidden">
+              <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-56 h-56 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
+              <Rocket size={32} className="text-indigo-400 mx-auto mb-5 relative" />
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight mb-4 relative">
+                Empieza hoy. Es gratis.
               </h2>
               <p className="text-white/40 text-sm mb-8 relative max-w-lg mx-auto">
-                30 días de acceso completo al Plan Pro. Sin tarjeta, sin compromiso. Cancela o cambia de plan en cualquier momento.
+                30 dias de acceso completo al Plan Pro con las 70+ funciones.
+                Sin tarjeta, sin compromiso. Cancela o cambia de plan cuando quieras.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative">
                 <button
                   onClick={() => navigate('/register')}
-                  className="w-full sm:w-auto h-14 px-10 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-black text-[15px] shadow-xl shadow-indigo-500/30 hover:opacity-90 hover:scale-105 transition-all flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto h-14 px-10 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-black text-[15px] shadow-xl shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
                 >
                   Crear cuenta gratis <ArrowRight size={18} />
                 </button>
@@ -700,25 +930,30 @@ export default function LandingPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-6">
-            {['Características', 'Planes', 'Embajador', 'FAQ', 'Contacto'].map(label => (
-              <a key={label} href={`#${label.toLowerCase()}`} className="text-[11px] font-bold text-white/30 hover:text-white/60 transition-colors">
-                {label}
-              </a>
+            {[
+              { label: 'Funciones', href: '#funciones' },
+              { label: 'Planes', href: '#planes' },
+              { label: 'Embajador', href: '#embajador' },
+              { label: 'FAQ', href: '#faq' },
+              { label: 'Contacto', href: '#contacto' },
+            ].map(n => (
+              <a key={n.label} href={n.href} className="text-[11px] font-bold text-white/30 hover:text-white/60 transition-colors">{n.label}</a>
             ))}
           </div>
 
           <div className="flex items-center gap-4">
             <a href="mailto:hola@dualis.app" className="text-[11px] text-white/20 hover:text-white/40 transition-colors">hola@dualis.app</a>
-            <span className="text-white/10">·</span>
+            <span className="text-white/10">&middot;</span>
             <a href={`https://wa.me/${DUALIS_WHATSAPP}`} target="_blank" rel="noopener noreferrer" className="text-[11px] text-white/20 hover:text-white/40 transition-colors">WhatsApp</a>
           </div>
         </div>
 
         <div className="max-w-6xl mx-auto mt-6 pt-6 border-t border-white/[0.04] flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-[10px] text-white/15">© {new Date().getFullYear()} Dualis. Todos los derechos reservados.</p>
+          <p className="text-[10px] text-white/15">&copy; {new Date().getFullYear()} Dualis. Todos los derechos reservados.</p>
           <div className="flex gap-4">
-            <a href="/terminos" className="text-[10px] text-white/15 hover:text-white/30 transition-colors">Términos</a>
-            <a href="/privacidad" className="text-[10px] text-white/15 hover:text-white/30 transition-colors">Privacidad</a>
+            <a href="/terms" className="text-[10px] text-white/15 hover:text-white/30 transition-colors">Terminos</a>
+            <a href="/privacy" className="text-[10px] text-white/15 hover:text-white/30 transition-colors">Privacidad</a>
+            <a href="/changelog" className="text-[10px] text-white/15 hover:text-white/30 transition-colors">Changelog</a>
           </div>
         </div>
       </footer>

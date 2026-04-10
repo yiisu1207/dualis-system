@@ -12,6 +12,7 @@ import {
   formatDateTime,
   hasActiveDiscount,
 } from './cxcHelpers';
+import VerificationBadge from '../VerificationBadge';
 
 interface LedgerViewProps {
   movements: Movement[];
@@ -112,7 +113,7 @@ export function LedgerView({
         {/* Type pills */}
         <div className="flex gap-1.5">
           <button onClick={() => setTypeFilter('ALL')} className={pill(typeFilter === 'ALL')}>Todos</button>
-          <button onClick={() => setTypeFilter('FACTURA')} className={pill(typeFilter === 'FACTURA', 'rose')}>Facturas</button>
+          <button onClick={() => setTypeFilter('FACTURA')} className={pill(typeFilter === 'FACTURA', 'rose')}>Cargos</button>
           <button onClick={() => setTypeFilter('ABONO')} className={pill(typeFilter === 'ABONO', 'emerald')}>Abonos</button>
         </div>
         <div className="w-px h-6 bg-slate-200 dark:bg-white/[0.06] self-center" />
@@ -189,7 +190,10 @@ export function LedgerView({
                     </td>
                     <td className="px-3 py-2.5 text-[11px] font-mono text-slate-400 dark:text-white/30">{m.nroControl || '-'}</td>
                     <td className="px-3 py-2.5">
-                      <p className="text-xs font-bold text-slate-700 dark:text-white/70 line-clamp-1 max-w-[200px]">{m.concept || '-'}</p>
+                      <div className="flex items-center gap-1.5 min-w-0 max-w-[240px]">
+                        <p className="text-xs font-bold text-slate-700 dark:text-white/70 line-clamp-1">{m.concept || '-'}</p>
+                        <VerificationBadge movement={m} size="xs" />
+                      </div>
                       {discount && <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-500/10 text-emerald-500 uppercase">Dto. activo</span>}
                     </td>
                     <td className="px-3 py-2.5">

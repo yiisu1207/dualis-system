@@ -34,7 +34,11 @@ import { Movement, Customer, MovementType } from '../../types';
 interface ReportesSectionProps {
   movements: Movement[];
   customers: Customer[];
+  /** Current BCV rate for multi-tasa historical display (D.7) */
+  bcvRate?: number;
 }
+
+type DisplayMode = 'usd' | 'ves_today' | 'ves_historical';
 
 type Period = 'today' | 'week' | 'month' | 'year' | 'all';
 
@@ -71,10 +75,22 @@ function fmt(n: number, symbol = '$') {
 
 const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers }) => {
+const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers, bcvRate = 1 }) => {
   const [period, setPeriod] = useState<Period>('month');
   const [movType, setMovType] = useState<'ALL' | 'FACTURA' | 'ABONO'>('ALL');
   const [comisionRate, setComisionRate] = useState(3);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('usd');
+
+  /** D.7 — convert amount based on display mode */
+  const convertAmount = (m: Movement): number => {
+    const usd = m.amountInUSD || 0;
+    if (displayMode === 'usd') return usd;
+    if (displayMode === 'ves_today') return usd * bcvRate;
+    // ves_historical: use the rate at the time of the movement
+    const historicalRate = (m as any).tasaBCV || (m as any).tasaCustom || bcvRate;
+    return usd * historicalRate;
+  };
+  const displaySymbol = displayMode === 'usd' ? '$' : 'Bs';
 
   const startDate = useMemo(() => getStartDate(period), [period]);
 
@@ -94,17 +110,17 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
     const facturas = movements.filter(m => m.movementType === MovementType.FACTURA && (!startDate || (m.date || '') >= startDate));
     const abonos = movements.filter(m => m.movementType === MovementType.ABONO && (!startDate || (m.date || '') >= startDate));
 
-    const totalFacturado = facturas.reduce((s, m) => s + (m.amountInUSD || 0), 0);
-    const totalCobrado = abonos.reduce((s, m) => s + (m.amountInUSD || 0), 0);
+    const totalFacturado = facturas.reduce((s, m) => s + convertAmount(m), 0);
+    const totalCobrado = abonos.reduce((s, m) => s + convertAmount(m), 0);
     const balance = totalCobrado - totalFacturado;
 
     // CxC: unique clients with movements
     const clientIds = new Set(filtered.filter(m => !m.isSupplierMovement).map(m => m.entityId));
     const supplierMovs = filtered.filter(m => m.isSupplierMovement);
-    const totalGastos = supplierMovs.reduce((s, m) => s + (m.amountInUSD || 0), 0);
+    const totalGastos = supplierMovs.reduce((s, m) => s + convertAmount(m), 0);
 
     return { totalFacturado, totalCobrado, balance, clientIds: clientIds.size, totalGastos };
-  }, [movements, filtered, startDate]);
+  }, [movements, filtered, startDate, displayMode, bcvRate]);
 
   // Monthly chart data (current year)
   const monthlyData = useMemo(() => {
@@ -114,13 +130,13 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
       const prefix = `${year}-${month}`;
       const facturas = movements
         .filter(m => m.movementType === MovementType.FACTURA && (m.date || '').startsWith(prefix))
-        .reduce((s, m) => s + (m.amountInUSD || 0), 0);
+        .reduce((s, m) => s + convertAmount(m), 0);
       const abonos = movements
         .filter(m => m.movementType === MovementType.ABONO && (m.date || '').startsWith(prefix))
-        .reduce((s, m) => s + (m.amountInUSD || 0), 0);
+        .reduce((s, m) => s + convertAmount(m), 0);
       return { label, Facturado: +facturas.toFixed(2), Cobrado: +abonos.toFixed(2) };
     });
-  }, [movements]);
+  }, [movements, displayMode, bcvRate]);
 
   // Top clientes por deuda
   const topClientes = useMemo(() => {
@@ -130,30 +146,30 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
         const c = customers.find(c => c.id === m.entityId);
         map[m.entityId] = { name: (c as any)?.fullName || (c as any)?.nombre || m.entityId, deuda: 0 };
       }
-      if (m.movementType === MovementType.FACTURA) map[m.entityId].deuda += (m.amountInUSD || 0);
-      if (m.movementType === MovementType.ABONO) map[m.entityId].deuda -= (m.amountInUSD || 0);
+      if (m.movementType === MovementType.FACTURA) map[m.entityId].deuda += convertAmount(m);
+      if (m.movementType === MovementType.ABONO) map[m.entityId].deuda -= convertAmount(m);
     });
     return Object.values(map)
       .filter(c => c.deuda > 0)
       .sort((a, b) => b.deuda - a.deuda)
       .slice(0, 5);
-  }, [movements, customers]);
+  }, [movements, customers, displayMode, bcvRate]);
 
   // Estado de Resultados (P&L) del período
   const pnl = useMemo(() => {
     const ventas = filtered
       .filter(m => m.movementType === MovementType.FACTURA && !m.isSupplierMovement)
-      .reduce((s, m) => s + (m.amountInUSD || 0), 0);
+      .reduce((s, m) => s + convertAmount(m), 0);
 
     // IVA recaudado (solo movimientos POS que guardaron ivaAmount)
     const ivaRecaudado = filtered
       .filter(m => m.movementType === MovementType.FACTURA && !m.isSupplierMovement)
-      .reduce((s, m) => s + ((m as any).ivaAmount || 0), 0);
+      .reduce((s, m) => s + ((m as any).ivaAmount || 0) * (displayMode === 'usd' ? 1 : displayMode === 'ves_today' ? bcvRate : ((m as any).tasaBCV || bcvRate)), 0);
 
     // IGTF recaudado
     const igtfRecaudado = filtered
       .filter(m => m.movementType === MovementType.FACTURA && !m.isSupplierMovement)
-      .reduce((s, m) => s + ((m as any).igtfAmount || 0), 0);
+      .reduce((s, m) => s + ((m as any).igtfAmount || 0) * (displayMode === 'usd' ? 1 : displayMode === 'ves_today' ? bcvRate : ((m as any).tasaBCV || bcvRate)), 0);
 
     // Ventas netas (excluye impuestos recaudados)
     const ventasNetas = ventas - ivaRecaudado - igtfRecaudado;
@@ -161,7 +177,7 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
     // Gastos (CxP: proveedor facturas)
     const gastos = filtered
       .filter(m => m.isSupplierMovement && m.movementType === MovementType.FACTURA)
-      .reduce((s, m) => s + (m.amountInUSD || 0), 0);
+      .reduce((s, m) => s + convertAmount(m), 0);
 
     // Gastos por categoría
     const gastosCat: Record<string, number> = {};
@@ -169,7 +185,7 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
       .filter(m => m.isSupplierMovement && m.movementType === MovementType.FACTURA)
       .forEach(m => {
         const cat = (m as any).expenseCategory || 'Sin categoría';
-        gastosCat[cat] = (gastosCat[cat] || 0) + (m.amountInUSD || 0);
+        gastosCat[cat] = (gastosCat[cat] || 0) + convertAmount(m);
       });
 
     const utilidadBruta = ventasNetas - gastos;
@@ -185,7 +201,7 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
       utilidadBruta,
       margenBruto,
     };
-  }, [filtered]);
+  }, [filtered, displayMode, bcvRate]);
 
   // Comisiones por vendedor (solo FACTURA, período activo)
   const comisionesPorVendedor = useMemo(() => {
@@ -284,31 +300,55 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers 
                   : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.06]'
               }`}
             >
-              {t === 'ALL' ? 'Todos' : t === 'FACTURA' ? 'Facturas' : 'Abonos'}
+              {t === 'ALL' ? 'Todos' : t === 'FACTURA' ? 'Ventas' : 'Abonos'}
             </button>
           ))}
         </div>
+
+        {/* D.7 — Multi-tasa display mode toggle */}
+        {bcvRate > 1 && (
+          <div className="flex items-center gap-1 bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.07] rounded-xl p-1">
+            <DollarSign size={13} className="text-slate-400 dark:text-white/30 ml-2 mr-1" />
+            {([
+              { id: 'usd' as DisplayMode, label: 'USD' },
+              { id: 'ves_today' as DisplayMode, label: 'Bs hoy' },
+              { id: 'ves_historical' as DisplayMode, label: 'Bs del momento' },
+            ]).map(d => (
+              <button
+                key={d.id}
+                onClick={() => setDisplayMode(d.id)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all ${
+                  displayMode === d.id
+                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-500/25'
+                    : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/[0.06]'
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           label="Facturado"
-          value={fmt(kpis.totalFacturado)}
+          value={fmt(kpis.totalFacturado, displaySymbol)}
           icon={<FileText size={16} className="text-violet-600" />}
           bg="bg-violet-50"
           trend="neutral"
         />
         <KpiCard
           label="Cobrado"
-          value={fmt(kpis.totalCobrado)}
+          value={fmt(kpis.totalCobrado, displaySymbol)}
           icon={<CheckCircle2 size={16} className="text-emerald-600" />}
           bg="bg-emerald-50"
           trend="up"
         />
         <KpiCard
           label="CxC Pendiente"
-          value={fmt(Math.max(0, kpis.totalFacturado - kpis.totalCobrado))}
+          value={fmt(Math.max(0, kpis.totalFacturado - kpis.totalCobrado), displaySymbol)}
           icon={<Clock size={16} className="text-amber-600" />}
           bg="bg-amber-50"
           trend="down"

@@ -24,7 +24,7 @@ const COLOR_MAP: Record<string, { bg: string; border: string; dot: string; text:
   fuchsia: { bg: 'bg-fuchsia-500/[0.06]', border: 'border-fuchsia-500/20', dot: 'bg-fuchsia-500', text: 'text-fuchsia-400', hoverBg: 'hover:bg-fuchsia-500/[0.1]' },
 };
 
-export function AccountCard({
+export const AccountCard: React.FC<AccountCardProps> = ({
   label,
   color,
   balanceUSD,
@@ -33,7 +33,7 @@ export function AccountCard({
   onClick,
   onRegisterAbono,
   compact,
-}: AccountCardProps) {
+}) => {
   const c = COLOR_MAP[color] ?? COLOR_MAP.indigo;
   const days = daysSince(lastMovementDate);
   const isZero = Math.abs(balanceUSD) < 0.01;
@@ -103,4 +103,4 @@ export function AccountCard({
       )}
     </div>
   );
-}
+};

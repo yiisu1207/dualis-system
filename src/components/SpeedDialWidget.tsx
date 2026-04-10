@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { collection, addDoc, doc, setDoc } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
+import { collection, addDoc, doc, setDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { useRates } from '../context/RatesContext';
@@ -107,6 +107,31 @@ function CustomerPanel({ businessId, userId, onDone }: { businessId: string; use
     if (!name.trim()) { toast.warning('Ingresa el nombre del cliente'); return; }
     setSaving(true);
     try {
+      // Duplicate check: cédula or phone (normalized)
+      const norm = (s: string) => s.replace(/[\s.-]/g, '').toUpperCase();
+      const phoneDigits = phone.replace(/\D/g, '');
+      const cedulaNorm = cedula.trim() ? norm(cedula.trim()) : '';
+      const snap = await getDocs(query(collection(db, 'customers'), where('businessId', '==', businessId)));
+      let dup: any = null;
+      snap.forEach(d => {
+        if (dup) return;
+        const data: any = d.data();
+        if (cedulaNorm && data.cedula && norm(String(data.cedula)) === cedulaNorm) {
+          dup = data;
+          return;
+        }
+        if (phoneDigits.length >= 7) {
+          const od = String(data.telefono || data.phone || '').replace(/\D/g, '');
+          if (od.length >= 7 && od.slice(-7) === phoneDigits.slice(-7)) {
+            dup = data;
+          }
+        }
+      });
+      if (dup) {
+        toast.warning(`Ya existe: ${dup.nombre || dup.fullName || dup.displayName || 'cliente'}`);
+        setSaving(false);
+        return;
+      }
       await addDoc(collection(db, 'customers'), {
         businessId,
         cedula: cedula.trim() || name.trim(),
@@ -114,6 +139,8 @@ function CustomerPanel({ businessId, userId, onDone }: { businessId: string; use
         direccion: '',
         email: '',
         displayName: name.trim(),
+        nombre: name.trim(),
+        fullName: name.trim(),
         createdAt: new Date().toISOString(),
         source: 'speed_dial',
       });
@@ -156,7 +183,6 @@ const SpeedDialWidget: React.FC<Props> = ({
 }) => {
   const { userProfile, user: firebaseUser } = useAuth();
   const navigate = useNavigate();
-  const { empresa_id } = useParams();
   const toast = useToast();
   const [panel, setPanel] = useState<ActivePanel>(null);
   const [syncing, setSyncing] = useState(false);
@@ -182,7 +208,7 @@ const SpeedDialWidget: React.FC<Props> = ({
   };
 
   const goToPOS = () => {
-    navigate(`/${empresa_id}/pos/detal`);
+    navigate('/pos/detal');
     onClose();
   };
 

@@ -209,6 +209,18 @@ service cloud.firestore {
         allow list, create, update, delete: if isAdmin(bid);
       }
 
+      // Movimientos pendientes de aprobación (quórum multi-firma — Fase D.0)
+      // - create: cualquier miembro del business
+      // - read: cualquier miembro (validadores + creator + UI compartida)
+      // - update: miembros (append approvals / rejections / cancel)
+      // - delete: admin (garbage collection manual)
+      match /pendingMovements/{pendingId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
       // Pagos enviados desde el Portal de Clientes
       match /portalPayments/{payId} {
         // Público: clientes crean pagos (validación por token en app)
@@ -259,6 +271,18 @@ service cloud.firestore {
     match /subscriptions/{docId} {
       allow read: if isOpsUser() || isSuperAdmin() || (isSignedIn() && belongsToMe(resource.data));
       allow write: if isSuperAdmin();
+    }
+
+    // ERROR LOGS (ErrorBoundary + captura global)
+    // Cualquier usuario autenticado puede escribir (sin requisito businessId —
+    // el log puede ocurrir durante login antes de que myBID() esté disponible).
+    // Solo super-admin / ops lee (para no filtrar data sensible entre tenants).
+    // Fase A.1 + A.2 del SUPERPLAN.
+    match /errorLogs/{docId} {
+      // Sólo usuarios autenticados pueden loggear (evita spam público).
+      // No requerimos businessId — el error puede ocurrir en flujos pre-login.
+      allow create: if isSignedIn();
+      allow read, update, delete: if isSuperAdmin() || isOpsUser();
     }
 
     // COLECCIONES OPERATIVAS EN RAÍZ

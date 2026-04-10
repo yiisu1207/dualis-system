@@ -1,16 +1,18 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
-import { useSearchParams, useParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { useTenantSafe } from '../../context/TenantContext';
 
 // ─── KIOSK CONTEXT (import from PosDetal) ────────────────────────────────────
 import { PosKioskContext } from './PosDetal';
-import { useCart, CartProvider, DiscountType, CartItem } from '../../context/CartContext';
+import { useCart, CartProvider, DiscountType, CartItem, effectiveStockQty } from '../../context/CartContext';
 import { useRates } from '../../context/RatesContext';
 import {
   collection, getDocs, query, where, addDoc, doc, updateDoc,
-  increment, getDoc, runTransaction, onSnapshot,
+  increment, getDoc, runTransaction, onSnapshot, setDoc,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
+import { useRolePermissions } from '../../hooks/useRolePermissions';
 import { useSubscription } from '../../hooks/useSubscription';
 import { TenantProvider } from '../../context/TenantContext';
 import {
@@ -18,6 +20,7 @@ import {
   Package, CheckCircle2, AlertTriangle, LogOut, X, Banknote,
   Smartphone, Layers, ArrowLeftRight, User, Clock, Camera, History,
   Tag, MessageCircle, Printer, WifiOff, Pause, Play, CreditCard, Truck, ClipboardList,
+  Maximize2, Minimize2,
 } from 'lucide-react';
 import ReceiptModal from '../../components/ReceiptModal';
 import NDEReceiptModal from '../../components/NDEReceiptModal';
@@ -25,11 +28,27 @@ import { getNextNroControl } from '../../utils/facturaUtils';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import SaleHistoryPanel from '../../components/SaleHistoryPanel';
 import HelpTooltip from '../../components/HelpTooltip';
+// Modal compartido con CxC — antes POS Mayor tenía un NewClientModal local
+// "lite" (sin RIF, sin días de pago, sin crédito aprobado) que divergía del
+// form canónico de Deudores. Usuario reportó 2026-04-09 "cables sueltos" →
+// unificado a una sola fuente de verdad. Ver src/components/cxc/NewClientModal.tsx
+import CxcNewClientModal from '../../components/cxc/NewClientModal';
 import { auth } from '../../firebase/config';
 // Dynamic pricing imports removed — prices come directly from product fields per account type
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type AccountType = string; // 'BCV' or any customRate.id (dynamic)
+
+type ProductVariant = {
+  id: string;
+  sku: string;
+  values: Record<string, string>;
+  stock: number;
+  precioDetal?: number;
+  precioMayor?: number;
+  costoUSD?: number;
+  barcode?: string;
+};
 
 type QuickProduct = {
   id: string;
@@ -44,6 +63,10 @@ type QuickProduct = {
   costoUSD?: number;
   margenMayor?: number;
   margenDetal?: number;
+  hasVariants?: boolean;
+  variantAttributes?: string[];
+  variants?: ProductVariant[];
+  pricesByTier?: Record<string, { precioDetal?: number; precioMayor?: number }>;
 };
 
 type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'transferencia' | 'pago_movil' | 'punto' | 'mixto';
@@ -99,7 +122,7 @@ const METHOD_ICONS: Record<PaymentMethod, React.ReactNode> = {
   mixto: <Layers size={15} />,
 };
 
-// Payment periods — read from localStorage (set by Configuración → Períodos de Pago)
+// Payment periods — synced via Firestore (businessConfigs.paymentPeriods)
 // Falls back to classic hardcoded periods if not configured
 interface PaymentPeriodCfg { days: number; label: string; discountPercent: number; }
 const DEFAULT_PERIODS: PaymentPeriodCfg[] = [
@@ -108,18 +131,6 @@ const DEFAULT_PERIODS: PaymentPeriodCfg[] = [
   { days: 30, label: 'Crédito 30d', discountPercent: 0 },
   { days: 45, label: 'Crédito 45d', discountPercent: 0 },
 ];
-function loadPaymentPeriods(): PaymentPeriodCfg[] {
-  try {
-    const raw = localStorage.getItem('payment_periods');
-    if (raw) {
-      const parsed = JSON.parse(raw) as PaymentPeriodCfg[];
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return [{ days: 0, label: 'Contado', discountPercent: 0 }, ...parsed];
-      }
-    }
-  } catch {}
-  return DEFAULT_PERIODS;
-}
 
 // ─── PAYMENT MODAL ────────────────────────────────────────────────────────────
 interface PaymentModalProps {
@@ -291,7 +302,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Monto Entregado (USD)</label>
-                <input autoFocus type="number" min="0" step="0.01"
+                <input autoFocus type="number" min="0" step="0.01" inputMode="decimal" enterKeyHint="done"
                   value={cashInput}
                   onChange={e => setCashInput(e.target.value)}
                   placeholder={`Mínimo: $${grandUsd.toFixed(2)}`}
@@ -319,7 +330,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Monto Entregado (BS)</label>
-                <input autoFocus type="number" min="0" step="0.01"
+                <input autoFocus type="number" min="0" step="0.01" inputMode="decimal" enterKeyHint="done"
                   value={cashInput}
                   onChange={e => setCashInput(e.target.value)}
                   placeholder={`Mínimo: ${totalBs.toFixed(2)} Bs`}
@@ -362,7 +373,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Efectivo (USD)</label>
-                <input autoFocus type="number" min="0" step="0.01"
+                <input autoFocus type="number" min="0" step="0.01" inputMode="decimal" enterKeyHint="next"
                   value={mixCash}
                   onChange={e => setMixCash(e.target.value)}
                   placeholder="0.00"
@@ -371,7 +382,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
               </div>
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Transferencia (USD)</label>
-                <input type="number" min="0" step="0.01"
+                <input type="number" min="0" step="0.01" inputMode="decimal" enterKeyHint="done"
                   value={mixTransfer}
                   onChange={e => setMixTransfer(e.target.value)}
                   placeholder="0.00"
@@ -432,8 +443,8 @@ const AccessDenied = () => (
 const PosContent = () => {
   const [searchParams] = useSearchParams();
   const kioskCtx = useContext(PosKioskContext);
-  const params = useParams();
-  const empresa_id = kioskCtx?.businessId ?? params.empresa_id ?? '';
+  const { tenantId } = useTenantSafe();
+  const empresa_id = kioskCtx?.businessId ?? tenantId ?? '';
   const cajaId = kioskCtx?.cajaId ?? searchParams.get('cajaId');
   const urlToken = kioskCtx?.token ?? searchParams.get('token');
   const { userProfile } = useAuth();
@@ -441,7 +452,13 @@ const PosContent = () => {
   const { canAccess } = useSubscription(empresa_id);
   const hasDynamicPricing = canAccess('precios_dinamicos');
 
-  const { items, addProductByCode, updateQty, updateItemPrices, removeItem, totals, rateValue, setRateValue, clearCart, discountType, discountValue, setDiscount, startedAt, loadCart } = useCart();
+  // Fase C.5 — ACL granular por capability
+  const { can: canDo, maxDescPct: aclMaxDesc } = useRolePermissions(empresa_id, (userProfile as any)?.role || 'member');
+  const canSeeCosts = canDo('verCostos');
+  const canGiveDiscounts = canDo('darDescuentos');
+  const canVoidSales = canDo('anularVentas');
+
+  const { items, addProductByCode, addProductByBarcode, setItemSellMode, updateQty, updateItemPrices, removeItem, totals, rateValue, setRateValue, clearCart, discountType, discountValue, setDiscount, startedAt, loadCart } = useCart();
 
   // ─── Token validation (kiosk mode) ────────────────────────────────────────
   const [tokenValid, setTokenValid] = useState<boolean | null>(null); // null = loading
@@ -481,8 +498,8 @@ const PosContent = () => {
   const [consumidorFinal, setConsumidorFinal] = useState(false);
   const [showNewClientModal, setShowNewClientModal] = useState(false);
 
-  // Payment periods (dynamic from config)
-  const [paymentPeriods] = useState<PaymentPeriodCfg[]>(loadPaymentPeriods);
+  // Payment periods (dynamic, synced from Firestore businessConfigs.paymentPeriods)
+  const [paymentPeriods, setPaymentPeriods] = useState<PaymentPeriodCfg[]>(DEFAULT_PERIODS);
 
   // Payment condition — now identified by days (0 = contado)
   const [paymentDays, setPaymentDays] = useState<number>(0);
@@ -530,6 +547,8 @@ const PosContent = () => {
   // Ventas en espera
   const [heldCarts, setHeldCarts] = useState<HeldCart[]>([]);
   const [showHeld, setShowHeld] = useState(false);
+  const [isKiosk, setIsKiosk] = useState(false);
+  const [variantPickerProduct, setVariantPickerProduct] = useState<QuickProduct | null>(null);
 
   // Terminal info
   const [terminalInfo, setTerminalInfo] = useState<{ nombre: string; cajeroNombre: string } | null>(null);
@@ -539,8 +558,10 @@ const PosContent = () => {
   const [selectedAlmacenId, setSelectedAlmacenId] = useState<string>('principal');
 
   // NDE (Nota de Entrega) mode
-  const [ndeConfig, setNdeConfig] = useState<{ enabled: boolean; defaultMode: boolean; showLogo?: boolean; showPoweredBy?: boolean; footerMessage?: string }>({ enabled: false, defaultMode: false, showLogo: true, showPoweredBy: true });
+  const [ndeConfig, setNdeConfig] = useState<{ enabled: boolean; defaultMode: boolean; showLogo?: boolean; footerMessage?: string; receiptSize?: 'a4' | '80mm' }>({ enabled: false, defaultMode: false, showLogo: true, receiptSize: 'a4' });
+  const [ticketFooter, setTicketFooter] = useState<string>('');
   const [commissions, setCommissions] = useState<{ enabled: boolean; perBulto: number; target: string; splitVendedor?: number; splitAlmacenista?: number }>({ enabled: false, perBulto: 0, target: 'vendedor' });
+  const [posConfig, setPosConfig] = useState<{ showStockInPOS: boolean; enableBultoColumn: boolean; allowManualDiscount: boolean; maxDiscountWithoutApproval: number }>({ showStockInPOS: true, enableBultoColumn: true, allowManualDiscount: true, maxDiscountWithoutApproval: 10 });
   const [modoNDE, setModoNDE] = useState(false);
   const [itemBultos, setItemBultos] = useState<Record<string, number>>({});
   const [lastNDE, setLastNDE] = useState<any>(null);
@@ -550,6 +571,21 @@ const PosContent = () => {
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(t);
+  }, []);
+
+  // Fullscreen / Kiosk mode listener
+  useEffect(() => {
+    const onFsChange = () => setIsKiosk(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const toggleKiosk = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
   }, []);
 
   // Sync rate based on account type (dynamic from customRates)
@@ -596,17 +632,55 @@ const PosContent = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresa_id]);
 
-  // Load businessConfigs (NDE config + commissions) in real-time
+  // Load businessConfigs (NDE config + commissions + paymentPeriods) in real-time
   useEffect(() => {
     if (!empresa_id) return;
+    let migrationDone = false;
     const unsub = onSnapshot(doc(db, 'businessConfigs', empresa_id), snap => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      if (data.ndeConfig) {
-        setNdeConfig(prev => ({ ...prev, ...data.ndeConfig }));
-        if (data.ndeConfig.defaultMode) setModoNDE(true);
+      const data = snap.exists() ? snap.data() : {};
+      if (data.ndeConfig || data.ticketFooter) {
+        setNdeConfig(prev => ({
+          ...prev,
+          ...(data.ndeConfig || {}),
+          // Use top-level ticketFooter if ndeConfig.footerMessage is not set
+          footerMessage: data.ndeConfig?.footerMessage ?? data.ticketFooter ?? prev.footerMessage,
+        }));
+        if (data.ndeConfig?.defaultMode) setModoNDE(true);
       }
+      if (typeof data.ticketFooter === 'string') setTicketFooter(data.ticketFooter);
       if (data.commissions) setCommissions(data.commissions);
+      if (data.posConfig) setPosConfig(prev => ({ ...prev, ...data.posConfig }));
+
+      // Payment periods sync — Firestore is source of truth
+      if (Array.isArray(data.paymentPeriods) && data.paymentPeriods.length > 0) {
+        const hasContado = data.paymentPeriods.some((p: PaymentPeriodCfg) => p.days === 0);
+        const periods = hasContado
+          ? data.paymentPeriods
+          : [{ days: 0, label: 'Contado', discountPercent: 0 }, ...data.paymentPeriods];
+        setPaymentPeriods(periods);
+        // Once Firestore has data, purge stale localStorage
+        try { localStorage.removeItem('payment_periods'); } catch {}
+      } else if (!migrationDone) {
+        migrationDone = true;
+        // Firestore vacío → si hay data en localStorage, migrar una vez
+        try {
+          const raw = localStorage.getItem('payment_periods');
+          if (raw) {
+            const parsed = JSON.parse(raw) as PaymentPeriodCfg[];
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const noContado = parsed.filter(p => p.days !== 0);
+              setPaymentPeriods([{ days: 0, label: 'Contado', discountPercent: 0 }, ...noContado]);
+              setDoc(
+                doc(db, 'businessConfigs', empresa_id),
+                { paymentPeriods: noContado },
+                { merge: true },
+              ).then(() => {
+                try { localStorage.removeItem('payment_periods'); } catch {}
+              }).catch(() => {});
+            }
+          }
+        } catch {}
+      }
     }, () => {});
     return () => unsub();
   }, [empresa_id]);
@@ -643,16 +717,32 @@ const PosContent = () => {
             costoUSD: Number(data.costoUSD || 0),
             margenMayor: Number(data.margenMayor || 0),
             margenDetal: Number(data.margenDetal || 0),
+            hasVariants: !!data.hasVariants,
+            variantAttributes: data.variantAttributes || [],
+            variants: data.variants || [],
+            pricesByTier: data.pricesByTier || undefined,
           };
         }));
 
-        const qc = query(collection(db, 'customers'), where('businessId', '==', empresa_id));
-        const snapC = await getDocs(qc);
-        setClients(snapC.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch { setError('Error cargando datos'); }
       finally { setLoading(false); }
     };
     loadData();
+  }, [empresa_id]);
+
+  // ── Clientes en vivo ───────────────────────────────────────────
+  // onSnapshot para que los clientes creados desde CxC (o cualquier
+  // otro módulo) aparezcan automáticamente en el buscador del POS sin
+  // recargar la página. Antes usaba getDocs one-shot → invisible hasta
+  // refresh. Usuario reportó 2026-04-09 que "Cristiano Ronaldo" creado
+  // en Deudores no aparecía en POS Mayor buscando cliente.
+  useEffect(() => {
+    if (!empresa_id) return;
+    const qc = query(collection(db, 'customers'), where('businessId', '==', empresa_id));
+    const unsub = onSnapshot(qc, snap => {
+      setClients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    return () => unsub();
   }, [empresa_id]);
 
   const filteredClients = useMemo(() => {
@@ -726,22 +816,50 @@ const PosContent = () => {
     })();
   }, [customer, isCredit, empresa_id]);
 
+  // ── Loyalty tier pricing helper ─────────────────────────────────
+  const getMayorTierPrice = useCallback((product: QuickProduct): { price: number; tierLabel: string | null } => {
+    const tier = (customer as any)?.loyaltyTier as string | undefined;
+    if (tier && product.pricesByTier?.[tier]?.precioMayor) {
+      return { price: product.pricesByTier[tier].precioMayor!, tierLabel: tier };
+    }
+    return { price: product.preciosCuenta[accountType] || product.price, tierLabel: null };
+  }, [customer, accountType]);
+
   const handleAddProduct = useCallback(async (product: QuickProduct) => {
-    // Use the price for the current account type
-    const price = product.preciosCuenta[accountType] || product.price;
-    const priceOverride = price > 0 ? price : undefined;
+    // Fase 9.4: si tiene variantes, abrir picker
+    if (product.hasVariants && (product.variants || []).length > 0) {
+      setVariantPickerProduct(product);
+      return;
+    }
+    // Use tier price if available, otherwise account type price
+    const { price, tierLabel } = getMayorTierPrice(product);
+    const fallbackPrice = product.preciosCuenta[accountType] || product.price;
+    const finalPrice = tierLabel ? price : fallbackPrice;
+    const priceOverride = finalPrice > 0 ? finalPrice : undefined;
 
     const ok = await addProductByCode(product.codigo, currentPriceTier, priceOverride);
     if (!ok) {
       setError(`Producto no encontrado: ${product.name}`);
       setTimeout(() => setError(''), 3000);
     }
-  }, [addProductByCode, currentPriceTier, accountType]);
+  }, [addProductByCode, currentPriceTier, accountType, getMayorTierPrice]);
+
+  const handleAddVariant = useCallback(async (product: QuickProduct, variant: ProductVariant) => {
+    setVariantPickerProduct(null);
+    const { price: tierPrice, tierLabel } = getMayorTierPrice(product);
+    const varPrice = variant.precioMayor ?? (tierLabel ? tierPrice : (product.preciosCuenta[accountType] ?? product.price));
+    const ok = await addProductByCode(variant.sku || product.codigo, currentPriceTier, varPrice > 0 ? varPrice : undefined);
+    if (!ok) {
+      setError(`Variante no encontrada: ${variant.sku}`);
+      setTimeout(() => setError(''), 3000);
+    }
+  }, [addProductByCode, currentPriceTier, accountType, getMayorTierPrice]);
 
   const handleScan = async () => {
     const code = searchQuery.trim();
     if (!code) return;
-    const ok = await addProductByCode(code, currentPriceTier);
+    // Fase B: intenta primero barcode → fallback código
+    const ok = await addProductByBarcode(code, currentPriceTier);
     if (ok) {
       setSearchQuery('');
     } else {
@@ -750,13 +868,78 @@ const PosContent = () => {
     }
   };
 
+  // Fase B.6: feedback audible al escanear. WebAudio oscillator corto (no asset).
+  // Beep corto 1000Hz/60ms en éxito, 300Hz/150ms en error. Sin librerías.
+  const playBeep = useCallback((kind: 'ok' | 'err') => {
+    try {
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = kind === 'ok' ? 1000 : 300;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (kind === 'ok' ? 0.06 : 0.15));
+      osc.start();
+      osc.stop(ctx.currentTime + (kind === 'ok' ? 0.08 : 0.18));
+      osc.onended = () => ctx.close();
+    } catch { /* silent */ }
+  }, []);
+
+  // Fase B: listener global de scanner USB — captura teclado a nivel documento.
+  // Los scanners envían caracteres rápidos + Enter. Buffer de teclas recientes;
+  // si llegan 5+ chars en < 80ms y terminan con Enter, dispara addProductByBarcode.
+  useEffect(() => {
+    let buffer = '';
+    let lastKeyTime = 0;
+    const handler = (e: KeyboardEvent) => {
+      // Ignorar si el foco está en un input/textarea (usuario escribiendo manualmente)
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) return;
+      const now = Date.now();
+      if (now - lastKeyTime > 80) buffer = '';
+      lastKeyTime = now;
+      if (e.key === 'Enter') {
+        if (buffer.length >= 4) {
+          const code = buffer;
+          buffer = '';
+          e.preventDefault();
+          addProductByBarcode(code, currentPriceTier).then(ok => {
+            if (ok) {
+              playBeep('ok');
+              setSuccess(`Escaneado: ${code}`);
+              setTimeout(() => setSuccess(''), 1500);
+            } else {
+              playBeep('err');
+              setError(`Código no encontrado: ${code}`);
+              setTimeout(() => setError(''), 2000);
+            }
+          });
+        } else {
+          buffer = '';
+        }
+        return;
+      }
+      if (e.key.length === 1 && /[\w\-]/.test(e.key)) {
+        buffer += e.key;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [addProductByBarcode, currentPriceTier, playBeep]);
+
   const handleCameraScan = async (code: string) => {
     setShowCameraScanner(false);
     const ok = await addProductByCode(code, currentPriceTier);
     if (ok) {
+      playBeep('ok');
       setSuccess(`Escaneado: ${code}`);
       setTimeout(() => setSuccess(''), 2000);
     } else {
+      playBeep('err');
       setError(`Código no encontrado: ${code}`);
       setTimeout(() => setError(''), 2500);
     }
@@ -866,6 +1049,8 @@ const PosContent = () => {
         rateUsed: isDivisa ? null : rateValue,
         metodoPago: METHOD_LABELS[method],
         esPagoMixto: method === 'mixto',
+        // K.9 — vincular ventas Efectivo USD a la caja chica para que aparezcan en Tesorería
+        ...(method === 'efectivo_usd' && { bankAccountId: 'efectivo_usd_default' }),
         pagos,
         referencia: reference || null,
         cashGiven: cashGiven || null,
@@ -873,7 +1058,10 @@ const PosContent = () => {
         changeBs: isDivisa ? null : (changeBs || null),
         mixCash: method === 'mixto' ? mixCash : null,
         mixTransfer: method === 'mixto' ? mixTransfer : null,
-        items: items.map(i => ({ id: i.id, nombre: i.nombre, qty: i.qty, price: i.priceUsd, subtotal: i.qty * i.priceUsd })),
+        items: items.map(i => {
+          const realQty = effectiveStockQty(i);
+          return { id: i.id, nombre: i.nombre, qty: realQty, price: i.priceUsd, subtotal: realQty * i.priceUsd, sellMode: i.sellMode || 'unidad', unidadesPorBulto: i.unidadesPorBulto || 1 };
+        }),
         cajaId: cajaId || 'principal',
         cajaName: terminalLabel,
         vendedorId: userProfile?.uid || 'sistema',
@@ -896,24 +1084,71 @@ const PosContent = () => {
       await addDoc(collection(db, 'movements'), movementPayload);
 
       // Update stock — floor at 0, never negative
+      // Fase G: si el producto es un kit (isKit + kitComponents), descontamos los componentes
+      // (no el kit). Stock del kit es informativo. Cantidad real por componente = compQty × kitQty.
       const almacenKey = almacenes.length > 0 ? selectedAlmacenId : 'principal';
       for (const item of items) {
+        const realQty = effectiveStockQty(item); // Fase B: bulto → qty × unidadesPorBulto
+        // Fase 9.4: variant items have id = "productId__v_variantId"
+        const isVariantItem = item.id.includes('__v_');
+        const realProductId = isVariantItem ? item.id.split('__v_')[0] : item.id;
+        const variantId = isVariantItem ? item.id.split('__v_')[1] : null;
+
         await runTransaction(db, async (txn) => {
-          const ref = doc(db, `businesses/${empresa_id}/products`, item.id);
+          const ref = doc(db, `businesses/${empresa_id}/products`, realProductId);
           const snap = await txn.get(ref);
           if (!snap.exists()) return;
           const data = snap.data();
+
+          // Fase 9.4: variant stock decrement
+          if (variantId && data.hasVariants && Array.isArray(data.variants)) {
+            const updatedVariants = data.variants.map((v: any) => {
+              if (v.id === variantId) return { ...v, stock: Math.max(0, (v.stock || 0) - realQty) };
+              return v;
+            });
+            txn.update(ref, { variants: updatedVariants });
+            return;
+          }
+
+          // ── Kit path ─────────────────────────────────────────────
+          if (data.isKit && Array.isArray(data.kitComponents) && data.kitComponents.length > 0) {
+            const compRefs = data.kitComponents.map((c: any) =>
+              doc(db, `businesses/${empresa_id}/products`, c.productId),
+            );
+            const compSnaps = await Promise.all(compRefs.map((r: any) => txn.get(r)));
+            // Decrementar cada componente
+            compSnaps.forEach((cSnap: any, i: number) => {
+              if (!cSnap.exists()) return;
+              const cData = cSnap.data();
+              const compQty = Number(data.kitComponents[i].qty || 1) * realQty;
+              const cStockByAlm: Record<string, number> = cData.stockByAlmacen || {};
+              if (cStockByAlm[almacenKey] !== undefined) {
+                const curA = Number(cStockByAlm[almacenKey] ?? 0);
+                const curT = Number(cData.stock ?? 0);
+                txn.update(compRefs[i], {
+                  [`stockByAlmacen.${almacenKey}`]: Math.max(0, curA - compQty),
+                  stock: Math.max(0, curT - compQty),
+                });
+              } else {
+                const cur = Number(cData.stock ?? 0);
+                txn.update(compRefs[i], { stock: Math.max(0, cur - compQty) });
+              }
+            });
+            return; // No tocar el stock del kit
+          }
+
+          // ── Producto simple ──────────────────────────────────────
           const stockByAlmacen: Record<string, number> = data.stockByAlmacen || {};
           if (stockByAlmacen[almacenKey] !== undefined) {
             const curAlmacen = Number(stockByAlmacen[almacenKey] ?? 0);
             const curTotal = Number(data.stock ?? 0);
             txn.update(ref, {
-              [`stockByAlmacen.${almacenKey}`]: Math.max(0, curAlmacen - item.qty),
-              stock: Math.max(0, curTotal - item.qty),
+              [`stockByAlmacen.${almacenKey}`]: Math.max(0, curAlmacen - realQty),
+              stock: Math.max(0, curTotal - realQty),
             });
           } else {
             const cur = Number(data.stock ?? 0);
-            txn.update(ref, { stock: Math.max(0, cur - item.qty) });
+            txn.update(ref, { stock: Math.max(0, cur - realQty) });
           }
         });
       }
@@ -939,7 +1174,7 @@ const PosContent = () => {
       setConsumidorFinal(false);
       setPaymentCondition('contado');
       setShowPaymentModal(false);
-      setSuccess(modoNDE ? 'Nota de Entrega generada!' : 'Venta registrada!');
+      setSuccess(modoNDE ? 'Comprobante de Despacho generado!' : 'Venta registrada!');
       setTimeout(() => setSuccess(''), 3500);
     } catch (err) {
       console.error(err);
@@ -995,14 +1230,89 @@ const PosContent = () => {
 
       const { formatted: nroControl } = await getNextNroControl(empresa_id, cajaId || undefined);
 
+      // ── Fase B.4 dual config ────────────────────────────────────────────
+      // Cada paymentPeriod tiene `mode`: 'fictitious' (default legacy) o 'real'.
+      //   • 'fictitious' → inflar el precio un pct% y mostrar el descuento
+      //                     como si fuera pronto pago. El neto no cambia.
+      //                     Negocio NO pierde margen.
+      //   • 'real'       → rebaja neta real sobre el total. El negocio sí
+      //                     deja de cobrar ese %. No hay markup.
+      // Movements resultantes en ambos modos llevan earlyPayDiscountPct/Amt/Expiry
+      // para que NDEReceiptModal renderice la línea de descuento correctamente.
+      let paymentPeriodFields: Record<string, any> = {};
+      let markupOverride: { amount: number; items: any[]; pct: number; real: number } | null = null;
+      let realDiscountOverride: { amount: number; items: any[]; pct: number; original: number; discountAmt: number } | null = null;
+      if (paymentDays > 0) {
+        const dueDate = new Date(now);
+        dueDate.setDate(dueDate.getDate() + paymentDays);
+        const dueDateStr = dueDate.toISOString().split('T')[0];
+        const activePeriod = paymentPeriods.find(p => p.days === paymentDays);
+        const discountPct = activePeriod?.discountPercent ?? 0;
+        const mode = activePeriod?.mode ?? 'fictitious'; // legacy default
+
+        const realTotal = totals.totalUsd;
+        let discountAmt = 0;
+
+        if (discountPct > 0 && mode === 'fictitious') {
+          // Ficticio: inflar el total y luego "descontar" al neto original.
+          // Ej: real $100, 5% → mostrar $105.26, desc -$5.26, neto $100.
+          const markupTotal = parseFloat((realTotal / (1 - discountPct / 100)).toFixed(2));
+          discountAmt = parseFloat((markupTotal - realTotal).toFixed(2));
+          const factor = markupTotal / realTotal;
+          markupOverride = {
+            amount: markupTotal,
+            pct: discountPct,
+            real: realTotal,
+            items: items.map((i: any) => ({
+              id: i.id,
+              nombre: i.nombre,
+              qty: i.qty,
+              price: parseFloat((i.priceUsd * factor).toFixed(2)),
+              priceReal: i.priceUsd,
+              subtotal: parseFloat((i.qty * i.priceUsd * factor).toFixed(2)),
+            })),
+          };
+        } else if (discountPct > 0 && mode === 'real') {
+          // Real: rebaja neta. El total FINAL baja por el pct. Los items se
+          // dejan al precio original — el descuento se acumula a nivel total
+          // (earlyPayDiscountAmt) y NDEReceiptModal lo muestra como línea.
+          discountAmt = parseFloat((realTotal * (discountPct / 100)).toFixed(2));
+          const finalTotal = parseFloat((realTotal - discountAmt).toFixed(2));
+          realDiscountOverride = {
+            amount: finalTotal,
+            pct: discountPct,
+            original: realTotal,
+            discountAmt,
+            items: items.map((i: any) => ({
+              id: i.id,
+              nombre: i.nombre,
+              qty: i.qty,
+              price: i.priceUsd,
+              subtotal: parseFloat((i.qty * i.priceUsd).toFixed(2)),
+              sellMode: i.sellMode || 'unidad',
+              unidadesPorBulto: i.unidadesPorBulto || 1,
+            })),
+          };
+        }
+
+        paymentPeriodFields = {
+          paymentDays,
+          dueDate: dueDateStr,
+          earlyPayDiscountPct:    discountPct > 0 ? discountPct : null,
+          earlyPayDiscountExpiry: discountPct > 0 ? dueDateStr  : null,
+          earlyPayDiscountAmt:    discountAmt > 0 ? discountAmt : null,
+          earlyPayDiscountMode:   discountPct > 0 ? mode        : null,
+        };
+      }
+
       const movementPayload: any = {
         businessId: empresa_id,
         nroControl,
         entityId,
         concept: `Venta POS Mayor — ${entityLabel}`,
-        amount: totals.totalUsd,
+        amount: markupOverride ? markupOverride.amount : realDiscountOverride ? realDiscountOverride.amount : totals.totalUsd,
         originalAmount: isDivisa ? null : totals.totalBs,
-        amountInUSD: totals.totalUsd,
+        amountInUSD: markupOverride ? markupOverride.amount : realDiscountOverride ? realDiscountOverride.amount : totals.totalUsd,
         subtotalUSD: totals.subtotalUsd,
         ivaAmount:      totals.taxUsd      > 0 ? totals.taxUsd      : null,
         discountAmount: totals.discountUsd > 0 ? totals.discountUsd : null,
@@ -1023,54 +1333,34 @@ const PosContent = () => {
         changeBs: null,
         mixCash: null,
         mixTransfer: null,
-        items: items.map(i => ({ id: i.id, nombre: i.nombre, qty: i.qty, price: i.priceUsd, subtotal: i.qty * i.priceUsd })),
+        items: markupOverride
+          ? markupOverride.items
+          : realDiscountOverride
+          ? realDiscountOverride.items
+          : items.map(i => {
+              const realQty = effectiveStockQty(i);
+              return { id: i.id, nombre: i.nombre, qty: realQty, price: i.priceUsd, subtotal: realQty * i.priceUsd, sellMode: i.sellMode || 'unidad', unidadesPorBulto: i.unidadesPorBulto || 1 };
+            }),
         cajaId: cajaId || 'principal',
         cajaName: terminalLabel,
         vendedorId: userProfile?.uid || 'sistema',
         vendedorNombre: userProfile?.fullName || 'Vendedor',
         startedAt: startedAt?.toISOString() || isoDate,
         paymentCondition,
-        // Dynamic payment period fields + fictitious discount markup
-        ...(paymentDays > 0 && (() => {
-          const dueDate = new Date(now);
-          dueDate.setDate(dueDate.getDate() + paymentDays);
-          const dueDateStr = dueDate.toISOString().split('T')[0];
-          const activePeriod = paymentPeriods.find(p => p.days === paymentDays);
-          const discountPct = activePeriod?.discountPercent ?? 0;
-
-          // Fictitious discount: inflate total so discount brings it back to real price
-          // Example: real $100, 5% discount → show $105.26, discount -$5.26 = net $100
-          const realTotal = totals.totalUsd;
-          const markupTotal = discountPct > 0 ? parseFloat((realTotal / (1 - discountPct / 100)).toFixed(2)) : realTotal;
-          const discountAmt = discountPct > 0 ? parseFloat((markupTotal - realTotal).toFixed(2)) : 0;
-
-          // Override movement amounts with marked-up values
-          if (discountPct > 0) {
-            movementPayload.amount = markupTotal;
-            movementPayload.amountInUSD = markupTotal;
-            movementPayload.creditMarkupApplied = true;
-            movementPayload.creditMarkupPct = discountPct;
-            movementPayload.realAmountUSD = realTotal;
-            // Inflate item prices proportionally for the receipt
-            const factor = markupTotal / realTotal;
-            movementPayload.items = items.map((i: any) => ({
-              id: i.id,
-              nombre: i.nombre,
-              qty: i.qty,
-              price: parseFloat((i.priceUsd * factor).toFixed(2)),
-              priceReal: i.priceUsd,
-              subtotal: parseFloat((i.qty * i.priceUsd * factor).toFixed(2)),
-            }));
-          }
-
-          return {
-            paymentDays,
-            dueDate: dueDateStr,
-            earlyPayDiscountPct:    discountPct > 0 ? discountPct : null,
-            earlyPayDiscountExpiry: discountPct > 0 ? dueDateStr  : null,
-            earlyPayDiscountAmt:    discountAmt > 0 ? discountAmt : null,
-          };
-        })()),
+        ...paymentPeriodFields,
+        ...(markupOverride && {
+          creditMarkupApplied: true,
+          creditMarkupPct: markupOverride.pct,
+          realAmountUSD: markupOverride.real,
+        }),
+        // Fase B.4 modo 'real': el negocio sí cede el pct. Guardamos el total
+        // original para que reportes/auditoría puedan ver cuánto se dejó de cobrar.
+        ...(realDiscountOverride && {
+          realDiscountApplied: true,
+          realDiscountPct: realDiscountOverride.pct,
+          realDiscountAmt: realDiscountOverride.discountAmt,
+          originalAmountUSD: realDiscountOverride.original,
+        }),
         pagado: false,
         estadoPago: 'PENDIENTE',
         esVentaContado: false,
@@ -1087,24 +1377,65 @@ const PosContent = () => {
       await addDoc(collection(db, 'movements'), movementPayload);
 
       // Update stock — floor at 0, never negative (NDE reserves stock immediately)
+      // Fase G: kits descuentan componentes, no el kit.
       const almacenKey = almacenes.length > 0 ? selectedAlmacenId : 'principal';
       for (const item of items) {
+        const realQty = effectiveStockQty(item); // Fase B: bulto → qty × unidadesPorBulto
+        const isVariantItem2 = item.id.includes('__v_');
+        const realProductId2 = isVariantItem2 ? item.id.split('__v_')[0] : item.id;
+        const variantId2 = isVariantItem2 ? item.id.split('__v_')[1] : null;
+
         await runTransaction(db, async (txn) => {
-          const ref = doc(db, `businesses/${empresa_id}/products`, item.id);
+          const ref = doc(db, `businesses/${empresa_id}/products`, realProductId2);
           const snap = await txn.get(ref);
           if (!snap.exists()) return;
           const data = snap.data();
+
+          if (variantId2 && data.hasVariants && Array.isArray(data.variants)) {
+            const updatedVariants = data.variants.map((v: any) => {
+              if (v.id === variantId2) return { ...v, stock: Math.max(0, (v.stock || 0) - realQty) };
+              return v;
+            });
+            txn.update(ref, { variants: updatedVariants });
+            return;
+          }
+
+          if (data.isKit && Array.isArray(data.kitComponents) && data.kitComponents.length > 0) {
+            const compRefs = data.kitComponents.map((c: any) =>
+              doc(db, `businesses/${empresa_id}/products`, c.productId),
+            );
+            const compSnaps = await Promise.all(compRefs.map((r: any) => txn.get(r)));
+            compSnaps.forEach((cSnap: any, i: number) => {
+              if (!cSnap.exists()) return;
+              const cData = cSnap.data();
+              const compQty = Number(data.kitComponents[i].qty || 1) * realQty;
+              const cStockByAlm: Record<string, number> = cData.stockByAlmacen || {};
+              if (cStockByAlm[almacenKey] !== undefined) {
+                const curA = Number(cStockByAlm[almacenKey] ?? 0);
+                const curT = Number(cData.stock ?? 0);
+                txn.update(compRefs[i], {
+                  [`stockByAlmacen.${almacenKey}`]: Math.max(0, curA - compQty),
+                  stock: Math.max(0, curT - compQty),
+                });
+              } else {
+                const cur = Number(cData.stock ?? 0);
+                txn.update(compRefs[i], { stock: Math.max(0, cur - compQty) });
+              }
+            });
+            return;
+          }
+
           const stockByAlmacen: Record<string, number> = data.stockByAlmacen || {};
           if (stockByAlmacen[almacenKey] !== undefined) {
             const curAlmacen = Number(stockByAlmacen[almacenKey] ?? 0);
             const curTotal = Number(data.stock ?? 0);
             txn.update(ref, {
-              [`stockByAlmacen.${almacenKey}`]: Math.max(0, curAlmacen - item.qty),
-              stock: Math.max(0, curTotal - item.qty),
+              [`stockByAlmacen.${almacenKey}`]: Math.max(0, curAlmacen - realQty),
+              stock: Math.max(0, curTotal - realQty),
             });
           } else {
             const cur = Number(data.stock ?? 0);
-            txn.update(ref, { stock: Math.max(0, cur - item.qty) });
+            txn.update(ref, { stock: Math.max(0, cur - realQty) });
           }
         });
       }
@@ -1129,7 +1460,7 @@ const PosContent = () => {
       setClientQuery('');
       setConsumidorFinal(false);
       setPaymentCondition('contado');
-      setSuccess(modoNDE ? 'Nota de Entrega (crédito) generada!' : 'Venta a crédito registrada!');
+      setSuccess(modoNDE ? 'Comprobante de Despacho (crédito) generado!' : 'Venta a crédito registrada!');
       setTimeout(() => setSuccess(''), 3500);
     } catch (err) {
       console.error(err);
@@ -1209,6 +1540,8 @@ const PosContent = () => {
               onChange={e => setSearchQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan(); } }}
               placeholder="Buscar por nombre, código o escanear..."
+              inputMode="search"
+              enterKeyHint="search"
               className="w-full pl-11 pr-4 py-2.5 bg-slate-100 dark:bg-white/[0.07] border-none rounded-2xl text-sm font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-violet-600 focus:bg-white dark:bg-slate-800/50transition-all shadow-inner"
             />
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
@@ -1316,12 +1649,22 @@ const PosContent = () => {
             <button
               onClick={() => setModoNDE(v => !v)}
               className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-black uppercase tracking-wider transition-all ${modoNDE ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-white/[0.04] border-white/10 text-slate-400 hover:border-white/20'}`}
-              title={modoNDE ? 'Modo Nota de Entrega activo' : 'Activar modo Nota de Entrega'}
+              title={modoNDE ? 'Modo Despacho activo (reserva stock sin cobrar)' : 'Activar modo Despacho (reserva stock sin cobrar)'}
             >
               <Truck size={11} />
-              {modoNDE ? 'Modo NDE' : 'Cobro Directo'}
+              {modoNDE ? 'Modo Despacho' : 'Cobro Directo'}
             </button>
           )}
+
+          {/* Kiosk fullscreen toggle */}
+          <button
+            onClick={toggleKiosk}
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-black uppercase tracking-wider transition-all ${isKiosk ? 'bg-violet-500/20 border-violet-500/40 text-violet-400' : 'bg-white/[0.04] border-white/10 text-slate-400 hover:border-white/20'}`}
+            title={isKiosk ? 'Salir de pantalla completa (Esc)' : 'Modo Kiosco — pantalla completa'}
+          >
+            {isKiosk ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+            {isKiosk ? 'Salir' : 'Kiosco'}
+          </button>
 
         </div>
       </header>
@@ -1336,6 +1679,8 @@ const PosContent = () => {
                 value={productFilter}
                 onChange={e => setProductFilter(e.target.value)}
                 placeholder="Filtrar productos..."
+                inputMode="search"
+                enterKeyHint="search"
                 className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 border border-slate-100 dark:border-white/[0.07] focus:ring-2 focus:ring-violet-600 focus:bg-white dark:bg-slate-800/50outline-none transition-all"
               />
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 h-3.5 w-3.5" />
@@ -1368,19 +1713,23 @@ const PosContent = () => {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                 {displayProducts.map(product => {
-                  const displayPrice = product.preciosCuenta[accountType] || product.price;
+                  const { price: tierPrice, tierLabel } = getMayorTierPrice(product);
+                  const displayPrice = tierLabel ? tierPrice : (product.preciosCuenta[accountType] || product.price);
+                  const defaultPrice = product.preciosCuenta[accountType] || product.price;
 
                   return (
                     <button key={product.id} onClick={() => handleAddProduct(product)}
-                      className={`group bg-white dark:bg-white/[0.05] p-3 rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between ${product.stock === 0 ? 'border-amber-200 dark:border-amber-500/25' : 'border-slate-100 dark:border-white/[0.1] hover:border-violet-300 dark:hover:border-violet-500/40'}`}>
+                      className={`group bg-white dark:bg-white/[0.05] p-3 rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between ${product.stock === 0 ? 'border-rose-300 dark:border-rose-700' : 'border-slate-100 dark:border-white/[0.1] hover:border-violet-300 dark:hover:border-violet-500/40'}`}>
                       <div>
                         <div className="flex justify-between items-start mb-1.5">
                           <div className="h-7 w-7 rounded-lg bg-slate-50 dark:bg-white/[0.08] text-slate-400 dark:text-slate-300 flex items-center justify-center group-hover:bg-violet-600 group-hover:text-white transition-colors">
                             <Package size={12} />
                           </div>
-                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${product.stock === 0 ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15' : 'text-slate-500 dark:text-slate-300 bg-slate-50 dark:bg-white/[0.08]'}`}>
-                            {product.stock === 0 ? 'AGOTADO' : product.stock}
-                          </span>
+                          {posConfig.showStockInPOS && (
+                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${product.stock === 0 ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15' : 'text-slate-500 dark:text-slate-300 bg-slate-50 dark:bg-white/[0.08]'}`}>
+                              {product.stock === 0 ? 'AGOTADO' : product.stock}
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs font-black text-slate-700 dark:text-white/90 line-clamp-2 leading-tight">{product.name}</p>
                         {product.marca && <p className="text-[9px] font-black text-violet-400 dark:text-violet-300 uppercase mt-0.5">{product.marca}</p>}
@@ -1389,8 +1738,16 @@ const PosContent = () => {
                         <p className="text-sm font-black text-violet-600 dark:text-violet-400">
                           ${(displayPrice || 0).toFixed(2)}
                         </p>
-                        {product.precioDetal > 0 && displayPrice !== product.precioDetal && (
-                          <p className="text-[9px] font-bold text-slate-400 dark:text-white/30 line-through">${product.precioDetal.toFixed(2)}</p>
+                        {tierLabel && (
+                          <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15 px-1 py-0.5 rounded capitalize">
+                            {tierLabel}
+                          </span>
+                        )}
+                        {tierLabel && displayPrice !== defaultPrice && (
+                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 line-through">${defaultPrice.toFixed(2)}</p>
+                        )}
+                        {!tierLabel && product.precioDetal > 0 && displayPrice !== product.precioDetal && (
+                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 line-through">${product.precioDetal.toFixed(2)}</p>
                         )}
                       </div>
                     </button>
@@ -1411,7 +1768,7 @@ const PosContent = () => {
                 <tr>
                   <th className="px-3 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07]">Producto</th>
                   <th className="px-2 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-center">Cant.</th>
-                  {modoNDE && <th className="px-2 sm:px-3 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-center text-amber-400">Bultos</th>}
+                  {modoNDE && posConfig.enableBultoColumn && <th className="px-2 sm:px-3 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-center text-amber-400">Bultos</th>}
                   <th className="px-5 py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right hidden sm:table-cell">P/U</th>
                   <th className="px-3 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] text-right">Total</th>
                   <th className="px-2 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] w-8 sm:w-auto" />
@@ -1420,7 +1777,7 @@ const PosContent = () => {
               <tbody className="divide-y divide-slate-50">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={modoNDE ? 6 : 5} className="px-5 py-16 sm:py-24 text-center pointer-events-none select-none">
+                    <td colSpan={modoNDE && posConfig.enableBultoColumn ? 6 : 5} className="px-5 py-16 sm:py-24 text-center pointer-events-none select-none">
                       <div className="inline-flex h-14 w-14 sm:h-16 sm:w-16 rounded-3xl bg-slate-50 dark:bg-slate-800/50 items-center justify-center mb-3 sm:mb-4">
                         <ShoppingCart size={24} className="text-slate-300 sm:hidden" />
                         <ShoppingCart size={28} className="text-slate-300 hidden sm:block" />
@@ -1429,13 +1786,33 @@ const PosContent = () => {
                       <p className="text-[10px] sm:text-xs text-slate-300 dark:text-white/15 font-medium">Escanea un código o selecciona un producto</p>
                     </td>
                   </tr>
-                ) : items.map(item => (
+                ) : items.map(item => {
+                  const hasBulto = (item.unidadesPorBulto || 1) > 1;
+                  const isBultoMode = item.sellMode === 'bulto';
+                  const perBulto = item.unidadesPorBulto || 1;
+                  const effectivePrice = isBultoMode ? item.priceUsd * perBulto : item.priceUsd;
+                  return (
                   <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.04] group transition-colors">
                     <td className="px-3 sm:px-5 py-2.5 sm:py-3.5">
                       <p className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 leading-none line-clamp-1">{item.nombre}</p>
                       <p className="text-[9px] sm:text-[10px] font-mono text-slate-400 dark:text-white/30 mt-0.5">
-                        <span className="sm:hidden">${item.priceUsd.toFixed(2)} · </span>{item.codigo}
+                        <span className="sm:hidden">${effectivePrice.toFixed(2)} · </span>{item.codigo}
                       </p>
+                      {hasBulto && (
+                        <div className="mt-1 flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setItemSellMode(item.id, 'unidad')}
+                            className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all ${!isBultoMode ? 'bg-violet-600 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-500 dark:text-white/40'}`}
+                          >Unid</button>
+                          <button
+                            type="button"
+                            onClick={() => setItemSellMode(item.id, 'bulto')}
+                            className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all ${isBultoMode ? 'bg-amber-500 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-500 dark:text-white/40'}`}
+                          >Bulto</button>
+                          <span className="text-[9px] font-mono text-slate-400 dark:text-white/30">= {perBulto} unid</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-2 sm:px-5 py-2.5 sm:py-3.5">
                       {item.unitType && item.unitType !== 'unidad' ? (
@@ -1464,7 +1841,7 @@ const PosContent = () => {
                       </div>
                       )}
                     </td>
-                    {modoNDE && (
+                    {modoNDE && posConfig.enableBultoColumn && (
                       <td className="px-2 sm:px-3 py-2.5 sm:py-3.5">
                         <input
                           type="number" min="0" step="1"
@@ -1475,10 +1852,10 @@ const PosContent = () => {
                       </td>
                     )}
                     <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500 dark:text-white/50 hidden sm:table-cell">
-                      ${item.priceUsd.toFixed(2)}
+                      ${effectivePrice.toFixed(2)}
                     </td>
                     <td className="px-3 sm:px-5 py-2.5 sm:py-3.5 text-right text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                      ${(item.qty * item.priceUsd).toFixed(2)}
+                      ${(item.qty * effectivePrice).toFixed(2)}
                     </td>
                     <td className="px-2 sm:px-5 py-2.5 sm:py-3.5 text-center">
                       <button onClick={() => removeItem(item.id)}
@@ -1487,7 +1864,8 @@ const PosContent = () => {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1609,6 +1987,8 @@ const PosContent = () => {
                       value={clientQuery}
                       onChange={e => setClientQuery(e.target.value)}
                       placeholder="Buscar cliente (nombre, RIF, cédula)..."
+                      inputMode="search"
+                      enterKeyHint="search"
                       className="w-full pl-9 pr-4 py-3 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30 focus:ring-2 focus:ring-violet-600 dark:focus:ring-violet-500 outline-none shadow-sm transition-all"
                     />
                     {filteredClients.length > 0 && (
@@ -1638,7 +2018,15 @@ const PosContent = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-black text-slate-900 dark:text-white truncate">{customer.fullName || customer.nombre}</p>
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase">{customer.rif || customer.cedula || 'Consumidor Final'}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase">{customer.rif || customer.cedula || 'Consumidor Final'}</p>
+                      {/* Loyalty tier badge — shown if customer has loyalty data */}
+                      {customer.loyaltyTier && (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 uppercase tracking-wider">
+                          {customer.loyaltyTier}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <button onClick={() => { setCustomer(null); setClientQuery(''); }}
                     className="text-[9px] font-black uppercase text-rose-400 hover:text-rose-600 shrink-0">
@@ -1717,7 +2105,7 @@ const PosContent = () => {
             </div>
 
             {/* Total + pay button */}
-            <div className="w-full sm:w-[38%] bg-gradient-to-br from-violet-900 to-purple-900 rounded-2xl sm:rounded-[1.8rem] p-4 sm:p-6 flex flex-col justify-between shadow-2xl shadow-violet-900/40 text-white relative overflow-hidden shrink-0">
+            <div className="w-full sm:w-[38%] bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl sm:rounded-[1.8rem] p-4 sm:p-6 flex flex-col justify-between shadow-2xl shadow-slate-900/40 text-white relative overflow-hidden shrink-0">
               <div className="absolute -right-8 -top-8 h-36 w-36 bg-white/5 rounded-full blur-2xl pointer-events-none" />
               <div>
                 <div className="flex items-center justify-between">
@@ -1742,32 +2130,52 @@ const PosContent = () => {
                 )}
 
                 {/* ── Descuento ── */}
-                <div className="mt-2 flex items-center gap-1.5">
-                  <Tag size={11} className="text-white/40 shrink-0" />
-                  <HelpTooltip
-                    title="Descuento"
-                    text="Aplica un descuento a toda la venta. Elige % para porcentaje o $ para monto fijo en dólares. El descuento se resta del total antes de cobrar."
-                    side="right"
-                  />
-                  <select
-                    value={discountType}
-                    onChange={e => setDiscount(e.target.value as DiscountType, discountValue)}
-                    className="flex-1 bg-white/[0.08] text-white text-[9px] font-black rounded-lg px-2 py-1 border border-white/10 appearance-none cursor-pointer"
-                  >
-                    <option value="none" className="text-slate-900">Sin descuento</option>
-                    <option value="percent" className="text-slate-900">Descuento %</option>
-                    <option value="fixed" className="text-slate-900">Descuento $</option>
-                  </select>
-                  {discountType !== 'none' && (
-                    <input
-                      type="number" min="0" step="any"
-                      value={discountValue || ''}
-                      onChange={e => setDiscount(discountType, parseFloat(e.target.value) || 0)}
-                      placeholder={discountType === 'percent' ? '%' : '$'}
-                      className="w-16 bg-white/[0.08] text-white text-[10px] font-black rounded-lg px-2 py-1 border border-white/10 text-center"
+                {posConfig.allowManualDiscount && (
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <Tag size={11} className="text-white/40 shrink-0" />
+                    <HelpTooltip
+                      title="Descuento"
+                      text={`Aplica un descuento a toda la venta. Elige % para porcentaje o $ para monto fijo en dólares. El descuento se resta del total antes de cobrar.${posConfig.maxDiscountWithoutApproval > 0 ? ` Máximo sin aprobación: ${posConfig.maxDiscountWithoutApproval}%.` : ''}`}
+                      side="right"
                     />
-                  )}
-                </div>
+                    <select
+                      value={discountType}
+                      onChange={e => setDiscount(e.target.value as DiscountType, discountValue)}
+                      className="flex-1 bg-white/[0.08] text-white text-[9px] font-black rounded-lg px-2 py-1 border border-white/10 appearance-none cursor-pointer"
+                    >
+                      <option value="none" className="text-slate-900">Sin descuento</option>
+                      <option value="percent" className="text-slate-900">Descuento %</option>
+                      <option value="fixed" className="text-slate-900">Descuento $</option>
+                    </select>
+                    {discountType !== 'none' && (() => {
+                      // Cap efectivo = min(posConfig.max, ACL.maxDescPct) — solo si % y hay límite
+                      const posMax = posConfig.maxDiscountWithoutApproval;
+                      const aclMax = aclMaxDesc;
+                      const effectiveMax = discountType === 'percent'
+                        ? (posMax > 0 && aclMax > 0 ? Math.min(posMax, aclMax) : (posMax > 0 ? posMax : aclMax))
+                        : 0;
+                      return (
+                        <input
+                          type="number" min="0" step="any" inputMode="decimal" enterKeyHint="done"
+                          max={effectiveMax > 0 ? effectiveMax : undefined}
+                          disabled={!canGiveDiscounts}
+                          value={discountValue || ''}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value) || 0;
+                            if (discountType === 'percent' && effectiveMax > 0 && v > effectiveMax) {
+                              setDiscount(discountType, effectiveMax);
+                            } else {
+                              setDiscount(discountType, v);
+                            }
+                          }}
+                          placeholder={discountType === 'percent' ? '%' : '$'}
+                          className="w-16 bg-white/[0.08] text-white text-[10px] font-black rounded-lg px-2 py-1 border border-white/10 text-center disabled:opacity-40"
+                          title={!canGiveDiscounts ? 'Tu rol no permite aplicar descuentos' : undefined}
+                        />
+                      );
+                    })()}
+                  </div>
+                )}
                 {totals.discountUsd > 0 && (
                   <div className="flex justify-between text-[10px] font-black text-emerald-400 mt-1">
                     <span>Descuento</span>
@@ -1817,10 +2225,10 @@ const PosContent = () => {
 
               {/* NDE mode indicator */}
               {modoNDE && (
-                <div className="rounded-xl p-2.5 bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 mb-1">
-                  <Truck size={12} className="text-amber-400 shrink-0" />
+                <div className="rounded-xl p-2.5 bg-amber-500/20 border border-amber-500/40 flex items-center gap-2 mb-1">
+                  <Truck size={12} className="text-amber-300 shrink-0" />
                   <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-400">Modo Nota de Entrega</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-300">Modo Despacho Interno</p>
                     {totalBultos > 0 && <p className="text-[9px] text-amber-300/70">{totalBultos} bulto{totalBultos !== 1 ? 's' : ''} · Stock se reserva ahora</p>}
                   </div>
                 </div>
@@ -1831,15 +2239,15 @@ const PosContent = () => {
                 <button
                   disabled={!canChargeCredit || paymentLoading}
                   onClick={handleCreditSale}
-                  className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canChargeCredit && !paymentLoading ? (modoNDE ? 'bg-amber-400 text-slate-900 hover:bg-amber-300 shadow-xl hover:scale-[1.02]' : 'bg-white text-violet-900 hover:bg-amber-400 hover:text-slate-900 shadow-xl hover:scale-[1.02]') : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
-                  {paymentLoading ? 'Procesando...' : modoNDE ? <><ClipboardList size={16} />Generar NDE a Crédito</> : <><CreditCard size={16} />Registrar Venta a Crédito</>}
+                  className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canChargeCredit && !paymentLoading ? (modoNDE ? 'bg-amber-400 text-slate-900 hover:bg-amber-300 shadow-xl hover:scale-[1.02]' : 'bg-white text-violet-900 hover:bg-amber-400 hover:text-slate-900 shadow-xl hover:scale-[1.02]') : 'bg-white/10 text-slate-500 cursor-not-allowed'}`}>
+                  {paymentLoading ? 'Procesando...' : modoNDE ? <><ClipboardList size={16} />Generar Despacho a Crédito</> : <><CreditCard size={16} />Registrar Venta a Crédito</>}
                 </button>
               ) : (
                 <button
                   disabled={!canChargeContado}
                   onClick={() => setShowPaymentModal(true)}
-                  className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canChargeContado ? (modoNDE ? 'bg-amber-400 text-slate-900 hover:bg-amber-300 shadow-xl hover:scale-[1.02]' : 'bg-white text-violet-900 hover:bg-emerald-400 hover:text-white shadow-xl hover:scale-[1.02]') : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
-                  {modoNDE ? <><ClipboardList size={16} />Generar NDE</> : <><Receipt size={16} />Cobrar</>}
+                  className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canChargeContado ? (modoNDE ? 'bg-amber-400 text-slate-900 hover:bg-amber-300 shadow-xl hover:scale-[1.02]' : 'bg-white text-violet-900 hover:bg-emerald-400 hover:text-white shadow-xl hover:scale-[1.02]') : 'bg-white/10 text-slate-500 cursor-not-allowed'}`}>
+                  {modoNDE ? <><ClipboardList size={16} />Generar Despacho</> : <><Receipt size={16} />Cobrar</>}
                 </button>
               )}
               {items.length > 0 && (
@@ -1900,7 +2308,7 @@ const PosContent = () => {
       {lastMovement && (
         <ReceiptModal
           movement={lastMovement}
-          config={{ companyName: userProfile?.fullName || 'Mi Negocio' } as any}
+          config={{ companyName: userProfile?.fullName || 'Mi Negocio', ticketFooter } as any}
           customerPhone={!consumidorFinal ? (customer?.telefono || customer?.phone || '') : ''}
           onClose={() => setLastMovement(null)}
         />
@@ -1923,6 +2331,52 @@ const PosContent = () => {
           onScan={handleCameraScan}
           onClose={() => setShowCameraScanner(false)}
         />
+      )}
+
+      {/* ── VARIANT PICKER (Fase 9.4) ───────────────────────────────────── */}
+      {variantPickerProduct && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setVariantPickerProduct(null)}>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/[0.07]">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 dark:text-white">{variantPickerProduct.name}</h3>
+                <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5">Selecciona una variante</p>
+              </div>
+              <button onClick={() => setVariantPickerProduct(null)} className="h-8 w-8 rounded-full bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center hover:bg-slate-200 dark:hover:bg-white/[0.12] transition-all">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-[55vh] p-3 space-y-1.5">
+              {(variantPickerProduct.variants || []).map(v => {
+                const label = Object.values(v.values).filter(Boolean).join(' / ');
+                const varPrice = v.precioMayor ?? variantPickerProduct.price;
+                const outOfStock = (v.stock || 0) <= 0;
+                return (
+                  <button
+                    key={v.id}
+                    disabled={outOfStock}
+                    onClick={() => handleAddVariant(variantPickerProduct, v)}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left ${
+                      outOfStock
+                        ? 'border-slate-100 dark:border-white/[0.05] opacity-40 cursor-not-allowed'
+                        : 'border-slate-200 dark:border-white/[0.08] hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/[0.06]'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-slate-800 dark:text-white">{label || v.sku || 'Sin nombre'}</p>
+                      <p className="text-[9px] text-slate-400 dark:text-white/30 mt-0.5">
+                        SKU: {v.sku || '—'} · Stock: {v.stock || 0}
+                      </p>
+                    </div>
+                    <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 shrink-0 ml-3">
+                      ${varPrice.toFixed(2)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── HISTORY PANEL ──────────────────────────────────────────────────── */}
@@ -2015,143 +2469,45 @@ const PosContent = () => {
 
       {/* Account change confirmation removed — now reprices cart instead */}
 
-      {/* ── NEW CLIENT MODAL ───────────────────────────────────────────────── */}
+      {/* ── NEW CLIENT MODAL — usa el form canónico de CxC ─────────────────
+          Antes POS tenía un NewClientModal "lite" inline (solo 7 campos, sin
+          RIF, sin días de pago, sin crédito aprobado). Divergía del form de
+          Deudores y causaba "cables sueltos" reportados por el usuario el
+          2026-04-09. Ahora ambos módulos comparten src/components/cxc/NewClientModal.
+          El listener onSnapshot de clientes se encarga de refrescar `clients`,
+          así que solo seteamos el customer activo del POS aquí.             */}
       {showNewClientModal && (
-        <NewClientModal
-          businessId={empresa_id!}
+        <CxcNewClientModal
+          open={showNewClientModal}
           onClose={() => setShowNewClientModal(false)}
-          onCreated={(newClient) => {
-            setClients(prev => [...prev, newClient]);
-            setCustomer(newClient);
+          existingCustomers={clients as any}
+          onSave={async (data) => {
+            const payload = {
+              ...data,
+              businessId: empresa_id,
+              createdAt: new Date().toISOString(),
+            };
+            const ref = await addDoc(collection(db, 'customers'), payload);
+            setCustomer({ id: ref.id, ...payload } as any);
             setShowNewClientModal(false);
           }}
         />
       )}
+
+      {/* Floating kiosk exit button */}
+      {isKiosk && (
+        <button
+          onClick={toggleKiosk}
+          className="fixed bottom-4 right-4 z-[9999] flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/70 backdrop-blur text-white text-[10px] font-black uppercase tracking-wider shadow-lg hover:bg-black/90 transition-all"
+          title="Salir de pantalla completa"
+        >
+          <Minimize2 size={12} />
+          Salir (Esc)
+        </button>
+      )}
     </div>
   );
 };
-
-// ─── NEW CLIENT MODAL ─────────────────────────────────────────────────────────
-function NewClientModal({ businessId, onClose, onCreated }: {
-  businessId: string;
-  onClose: () => void;
-  onCreated: (customer: any) => void;
-}) {
-  const [tipoDoc, setTipoDoc] = useState('V');
-  const [cedula, setCedula] = useState('');
-  const [nombre, setNombre] = useState('');
-  const [telefono, setTelefono] = useState('');
-  const [telefono2, setTelefono2] = useState('');
-  const [direccion, setDireccion] = useState('');
-  const [email, setEmail] = useState('');
-  const [creditLimit, setCreditLimit] = useState('0');
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!nombre.trim()) return;
-    setSaving(true);
-    try {
-      const data: Record<string, any> = {
-        businessId,
-        nombre: nombre.trim(),
-        fullName: nombre.trim(),
-        cedula: cedula ? `${tipoDoc}-${cedula.trim()}` : '',
-        rif: cedula ? `${tipoDoc}-${cedula.trim()}` : '',
-        telefono: telefono.trim(),
-        telefono2: telefono2.trim(),
-        direccion: direccion.trim(),
-        email: email.trim(),
-        creditLimit: Number(creditLimit) || 0,
-        createdAt: new Date().toISOString(),
-      };
-      const ref = await addDoc(collection(db, 'customers'), data);
-      onCreated({ id: ref.id, ...data });
-    } catch (err) {
-      console.error('Error creating customer:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const inp = "w-full px-3 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/25 focus:ring-2 focus:ring-violet-500 outline-none transition-all";
-
-  return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-md px-4">
-      <div className="w-full max-w-md bg-white dark:bg-[#0d1424] rounded-2xl shadow-2xl shadow-black/40 border border-slate-200 dark:border-white/[0.07] overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/[0.06]">
-          <div className="flex items-center gap-2">
-            <User size={15} className="text-violet-500" />
-            <h3 className="text-sm font-black text-slate-800 dark:text-white">Nuevo Cliente</h3>
-          </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-all">
-            <X size={14} className="text-slate-400" />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
-          {/* Nombre */}
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Nombre completo *</label>
-            <input value={nombre} onChange={e => setNombre(e.target.value)} required placeholder="Nombre completo" className={inp} />
-          </div>
-          {/* Documento */}
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Documento</label>
-            <div className="flex gap-2">
-              <select value={tipoDoc} onChange={e => setTipoDoc(e.target.value)}
-                className="px-3 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none w-20">
-                <option value="V">V-</option>
-                <option value="J">J-</option>
-                <option value="E">E-</option>
-                <option value="G">G-</option>
-                <option value="P">P-</option>
-              </select>
-              <input value={cedula} onChange={e => setCedula(e.target.value)} placeholder="12345678" className={`${inp} flex-1`} />
-            </div>
-          </div>
-          {/* Teléfonos */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Teléfono</label>
-              <input value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="+584241234567" className={inp} />
-            </div>
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Teléfono 2</label>
-              <input value={telefono2} onChange={e => setTelefono2(e.target.value)} placeholder="Opcional" className={inp} />
-            </div>
-          </div>
-          {/* Dirección */}
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Dirección</label>
-            <input value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Dirección de entrega" className={inp} />
-          </div>
-          {/* Email + Crédito */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" className={inp} />
-            </div>
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1 block">Límite crédito $</label>
-              <input type="number" min="0" step="0.01" value={creditLimit} onChange={e => setCreditLimit(e.target.value)} placeholder="0.00" className={inp} />
-            </div>
-          </div>
-        </form>
-        <div className="px-5 py-4 border-t border-slate-100 dark:border-white/[0.06] flex items-center justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={saving}
-            className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-white/[0.04] text-slate-500 dark:text-white/40 text-xs font-bold hover:bg-slate-200 dark:hover:bg-white/[0.08] transition-all">
-            Cancelar
-          </button>
-          <button type="submit" form="new-client-form" onClick={handleSubmit as any} disabled={!nombre.trim() || saving}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 disabled:opacity-40 hover:from-violet-500 hover:to-indigo-500 transition-all shadow-lg shadow-violet-500/25">
-            {saving ? <span className="animate-spin">⏳</span> : <Plus size={13} />}
-            Crear cliente
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── EXPORT ───────────────────────────────────────────────────────────────────
 export default function PosMayor() {

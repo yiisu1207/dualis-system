@@ -70,7 +70,7 @@ function printZReport(data: {
     .map(b => `<tr><td>Bs.${b}</td><td align="center">× ${data.bsCounts[b]}</td><td align="right">Bs.${(b * data.bsCounts[b]).toFixed(2)}</td></tr>`)
     .join('');
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Z Report</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Arqueo Interno</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Courier New',monospace;font-size:10px;width:80mm;padding:10px}
@@ -84,9 +84,11 @@ function printZReport(data: {
     .big{font-size:12px;font-weight:bold}
     .ok{font-weight:bold}
     .warn{font-weight:bold}
+    .legal{font-size:6px;text-align:center;margin-top:6px;padding:4px;border:1px dashed #000;line-height:1.3}
     @media print{button{display:none}}
   </style></head><body>
-  <h1>REPORTE Z — ARQUEO DE CAJA</h1>
+  <div class="c" style="font-size:8px;font-weight:bold;margin-bottom:4px">ARQUEO INTERNO DE CAJA &middot; NO FISCAL</div>
+  <h1>ARQUEO DE CAJA</h1>
   <h2>${data.terminalName}</h2>
   <div class="sep"></div>
   <div class="row"><span>Apertura:</span><span>${data.apertura}</span></div>
@@ -127,6 +129,11 @@ function printZReport(data: {
   <div class="sep"></div>
   <div class="c">Firma del cajero: ___________________</div>
   <div class="c" style="margin-top:8px">Firma supervisor: ___________________</div>
+  <div class="legal">
+    DOCUMENTO INTERNO &middot; NO ES REPORTE Z FISCAL &middot; SIN VALOR TRIBUTARIO<br/>
+    No sustituye el cierre Z de máquina fiscal regulado por la Providencia SENIAT SNAT/2011/00071.<br/>
+    Sistema administrativo no homologado.
+  </div>
   <div style="margin-top:8px;text-align:center">
     <button onclick="window.print()">🖨 Imprimir</button>
   </div>

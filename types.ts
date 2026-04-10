@@ -15,7 +15,8 @@ export const AccountType = { BCV: 'BCV' as const, GRUPO: 'GRUPO' as const, DIVIS
 
 export enum MovementType {
   FACTURA = 'FACTURA',
-  ABONO = 'ABONO'
+  ABONO = 'ABONO',
+  SALDO_INICIAL = 'SALDO_INICIAL'
 }
 
 export enum PaymentCurrency {
@@ -70,6 +71,10 @@ export interface Customer {
   loyaltyPoints?: number;
   segments?: CustomerSegment[];
   priceListId?: string;
+  // CRM
+  tags?: string[];
+  birthday?: string; // YYYY-MM-DD
+  lastBirthdayGreetingYear?: number;
 }
 
 export interface Supplier {
@@ -96,6 +101,7 @@ export type UnitType = 'unidad' | 'kg' | 'g' | 'ton' | 'lt' | 'ml' | 'lb';
 export interface Movement {
   id: string;
   entityId: string;
+  entityName?: string;
   date: string;
   createdAt?: string;
   startedAt?: string;
@@ -161,6 +167,187 @@ export interface Movement {
     qtyPedida: number;
     qtyDespachada: number;
   }[];
+  // Hybrid signature: in-person at delivery OR portal-confirmed later
+  clienteSignature?: string;            // dataURL PNG de la firma
+  clienteSignedAt?: string;
+  clienteSignedBy?: string;             // nombre del receptor
+  clienteSignedCedula?: string;         // cédula del receptor
+  signatureMethod?: 'in_person' | 'portal';
+  awaitingPortalConfirmation?: boolean; // marca que el receptor pidió confirmar luego desde portal
+  portalConfirmRequestedAt?: string;
+  // Tesorería / pagos manuales (P6)
+  bankAccountId?: string;
+  voucherUrl?: string;
+  payerCedula?: string;
+  payerPhone?: string;
+  paymentDate?: string;
+  portalPaymentId?: string;
+  reconciledAt?: string;
+  reconciledBy?: string;
+  receiptPdfUrl?: string;
+  anuladaAt?: string;
+  anuladaBy?: string;
+  anuladaReason?: string;
+  createdBy?: string;
+  // Disputas (cliente reporta error/daño desde portal)
+  disputeStatus?: 'open' | 'investigating' | 'resolved' | 'rejected';
+  disputeId?: string;
+  // ── Fase D.0 — Quórum de aprobación ───────────────────────────────────────
+  // Los movements legacy sin `status` se leen como 'committed' (fallback).
+  status?: 'committed' | 'pendingApproval';
+  approvalFlowId?: string;              // ref al pendingMovement del que nació
+  approvedBy?: string[];                // uids que firmaron
+  migratedFromHistorical?: boolean;     // bypass de quórum (import histórico)
+  // ── Fase D.0.1 — Verificación de llegada al banco ─────────────────────────
+  // Solo aplica a movements con metodoPago != Efectivo/Tarjeta.
+  // Campos 100% informativos — no afectan contabilidad ni saldos.
+  verificationStatus?: 'unverified' | 'verified' | 'not_arrived';
+  verifiedAt?: string;
+  verifiedBy?: string;                  // uid
+  verifiedByName?: string;              // denormalizado
+  verificationNote?: string;            // "Apareció en estado BDV del 15-abr"
+  // ── Fase D.5 — Compensación entre cuentas multi-tasa ─────────────────────
+  // Identifica el par FACTURA↔ABONO generado al rebalancear saldos entre
+  // cuentas (BCV / Paralela / etc.). Ambos lados comparten el mismo id.
+  compensationPairId?: string;
+  /** True when this movement belongs to CxP (accounts payable) rather than CxC */
+  isCxP?: boolean;
+  // ── Fase G — Ventas recurrentes ───────────────────────────────────────────
+  recurring?: {
+    enabled: boolean;
+    frequency: 'weekly' | 'monthly' | 'yearly';
+    nextDate: string;       // ISO date of next auto-generation
+    count?: number;         // total repetitions (undefined = infinite)
+    generated?: number;     // how many have been generated so far
+  };
+  // ── Fase G — Backorders / pedidos pendientes ──────────────────────────────
+  backorder?: boolean;       // true when sold without enough stock
+  backorderQty?: number;     // units still owed (stock was insufficient)
+  // ── Fase B — Devoluciones ─────────────────────────────────────────────────
+  devueltoParcial?: boolean;
+  devueltoTotal?: boolean;
+  saldoAFavor?: number;     // USD credit for future purchases
+}
+
+// ── Fase D.0 — Quórum multi-firma para movimientos sensibles ───────────────
+// Los movimientos manuales de CxC/CxP pasan por una cola de aprobación
+// cuando approvalConfig.enabled === true Y hay ≥2 validadores. POS realtime
+// y imports históricos bypass siempre. El creador NUNCA puede aprobar su
+// propio movimiento. Quórum = número fijo configurable (default 2).
+
+export type ApprovalMovementKind =
+  | 'FACTURA_CXC' | 'ABONO_CXC' | 'AJUSTE_CXC' | 'ANULACION_CXC'
+  | 'FACTURA_CXP' | 'ABONO_CXP' | 'AJUSTE_CXP' | 'ANULACION_CXP';
+
+export interface ApprovalConfig {
+  enabled: boolean;                     // default false (compat Usuario A/B)
+  quorumRequired: number;               // default 2, mínimo 2
+  appliesTo: ApprovalMovementKind[];    // default: todos los manuales CxC/CxP
+  exemptPortalPayments: boolean;        // default true
+  exemptPosRealtime: boolean;           // default true
+}
+
+export interface PendingMovementApproval {
+  userId: string;
+  userName: string;
+  at: string;
+  note?: string;
+}
+
+export interface PendingMovementRejection {
+  userId: string;
+  userName: string;
+  at: string;
+  reason: string;
+}
+
+export interface PendingMovement {
+  id: string;
+  businessId: string;
+  // Draft del movement a commitear — mismo shape que Movement sin id/createdAt.
+  movementDraft: Omit<Movement, 'id' | 'createdAt'>;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  approvals: PendingMovementApproval[];
+  rejections: PendingMovementRejection[];
+  quorumRequired: number;               // snapshot al crear
+  quorumSnapshot: {
+    validatorIds: string[];
+    validatorCount: number;
+  };
+  committedMovementId?: string;
+  committedAt?: string;
+  cancelledAt?: string;
+}
+
+// ── Fase G — Cotizaciones / presupuestos ───────────────────────────────────
+// Documento que el cliente puede aprobar/rechazar antes de convertirse en
+// venta. Al convertir, se abre PosDetal pre-poblado y al cerrar la venta
+// marca `status='convertida'` + `convertedMovementId`.
+
+export type QuoteStatus =
+  | 'borrador'
+  | 'enviada'
+  | 'aprobada'
+  | 'rechazada'
+  | 'vencida'
+  | 'convertida';
+
+export interface QuoteItem {
+  id: string;
+  nombre: string;
+  qty: number;
+  price: number;
+  subtotal: number;
+  productId?: string;
+}
+
+export interface Quote {
+  id: string;
+  businessId: string;
+  quoteNumber: string;           // correlativo visible tipo "COT-0001"
+  customerId: string;
+  customerName: string;
+  items: QuoteItem[];
+  subtotal: number;
+  iva: number;
+  ivaRate?: number;              // snapshot del % al crear
+  discount?: number;
+  total: number;
+  notes?: string;
+  status: QuoteStatus;
+  validUntil: string;            // ISO date
+  createdAt: string;
+  createdBy?: string;
+  createdByName?: string;
+  sentAt?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
+  convertedMovementId?: string;
+  convertedAt?: string;
+  expiredAt?: string;
+}
+
+// ── Disputas / reclamos del portal ─────────────────────────────────────────
+
+export interface Dispute {
+  id?: string;
+  businessId: string;
+  customerId: string;
+  customerName?: string;
+  movementId: string;
+  movementRef?: string;          // nroControl o concepto del movement
+  type: 'wrong_items' | 'missing_items' | 'damaged' | 'billing_error' | 'other';
+  description: string;
+  photos?: string[];             // Cloudinary URLs
+  status: 'open' | 'investigating' | 'resolved' | 'rejected';
+  resolution?: string;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
 }
 
 // ── Períodos de pago configurables ─────────────────────────────────────────
@@ -169,6 +356,15 @@ export interface PaymentPeriod {
   days: number;
   label: string;
   discountPercent: number;  // 0 = no discount
+  // ── Fase B.4 dual config ────────────────────────────────────────────────
+  // 'fictitious' → el sistema INFLA el precio (markup invisible) y luego
+  //                 "descuenta" hasta el neto original. El cliente siente
+  //                 que le hicieron un descuento pero el negocio no pierde
+  //                 margen. Fórmula: precioMostrado = neto / (1 - pct/100).
+  // 'real'       → descuento REAL sobre el total. El negocio sí deja de
+  //                 cobrar ese %. Útil para pronto pago genuino / promos.
+  // undefined    → legacy, se interpreta como 'fictitious' (compat).
+  mode?: 'fictitious' | 'real';
 }
 
 // ── Portal de Invitación ────────────────────────────────────────────────────
@@ -212,7 +408,6 @@ export interface NDEConfig {
   defaultMode: boolean;
   footerMessage?: string;
   showLogo: boolean;
-  showPoweredBy: boolean;
   rejectionReasons: string[];
   requireRejectionReason: boolean;
   autoNotifyVendedor: boolean;
@@ -446,11 +641,60 @@ export interface PortalPayment {
   metodoPago: string;
   referencia: string;
   nota?: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
   createdAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
   reviewNote?: string;
+  // Tesorería extensions (P6)
+  bankAccountId?: string;
+  voucherUrl?: string;
+  payerCedula?: string;
+  payerPhone?: string;
+  paymentDate?: string;
+  fingerprint?: string | null;
+  cancelledAt?: string;
+  cancelledBy?: 'customer' | 'admin';
+  vendedorId?: string;
+  vendedorNombre?: string;
+}
+
+// ─── Tesorería: Cuentas bancarias del negocio (P6) ────────────────────────────
+
+export type BankAccountType =
+  | 'corriente'
+  | 'ahorro'
+  | 'pago_movil'
+  | 'zelle'
+  | 'binance'
+  | 'paypal'
+  | 'efectivo';
+
+export interface BusinessBankAccount {
+  id: string;
+  businessId?: string;
+  bankCode: string;
+  bankName: string;
+  accountType: BankAccountType;
+  accountNumber: string;
+  holderName: string;
+  holderDocument: string;
+  currency: 'VES' | 'USD';
+  enabled: boolean;
+  instructions?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface BankWithdrawal {
+  id: string;
+  accountId: string;
+  amount: number;       // USD
+  concept: string;
+  date: string;
+  createdBy: string;
+  createdByName?: string;
+  createdAt: string;
 }
 
 // ─── Appointments (Citas) ─────────────────────────────────────────────────────
@@ -616,4 +860,44 @@ export interface PriceList {
   productOverrides?: Record<string, number>; // productId → precio especial USD
   active: boolean;
   createdAt: string;
+}
+
+// ── Fase K — Transferencias entre almacenes ────────────────────────────────
+export interface StockTransferItem {
+  productId: string;
+  productName: string;
+  qty: number;
+}
+
+export interface StockTransfer {
+  id: string;
+  businessId: string;
+  fromAlmacenId: string;
+  fromAlmacenName: string;
+  toAlmacenId: string;
+  toAlmacenName: string;
+  items: StockTransferItem[];
+  status: 'pendiente' | 'en_transito' | 'completada' | 'cancelada';
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  completedAt?: string;
+  completedBy?: string;
+  notes?: string;
+}
+
+// ── Fase F — Historial de comunicaciones con clientes ──────────────────────
+export type CommunicationType = 'llamada' | 'visita' | 'whatsapp' | 'email' | 'sms' | 'nota';
+export type CommunicationOutcome = 'promesa_pago' | 'no_contesto' | 'rechazo' | 'acuerdo' | 'informativo';
+
+export interface Communication {
+  id: string;
+  type: CommunicationType;
+  content: string;
+  date: string;
+  userId: string;
+  userName: string;
+  outcome?: CommunicationOutcome;
+  promiseDate?: string;           // solo si outcome === 'promesa_pago'
+  promiseAmount?: number;
 }

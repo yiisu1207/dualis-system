@@ -1,14 +1,15 @@
 import React, { useContext, useEffect, useState, useMemo, useCallback } from 'react';
-import { useSearchParams, useParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { useTenantSafe } from '../../context/TenantContext';
 
 // ─── KIOSK CONTEXT (for clean /caja/:token URL) ────────────────────────────────
 export { PosKioskContext } from '../../context/PosKioskContext';
 import { PosKioskContext } from '../../context/PosKioskContext';
-import { useCart, CartProvider, DiscountType, CartItem } from '../../context/CartContext';
+import { useCart, CartProvider, DiscountType, CartItem, effectiveLinePrice, effectiveStockQty } from '../../context/CartContext';
 import { useRates } from '../../context/RatesContext';
 import {
   collection, getDocs, query, where, addDoc, doc, updateDoc,
-  increment, getDoc, runTransaction,
+  increment, getDoc, runTransaction, onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
@@ -17,17 +18,32 @@ import {
   Scan, ShoppingCart, Search, Trash2, Plus, Minus, Receipt,
   Package, CheckCircle2, AlertTriangle, LogOut, X, Banknote,
   Smartphone, Layers, ArrowLeftRight, User, Clock, Camera, History,
-  Tag, MessageCircle, Printer, WifiOff, Pause, Play, CreditCard,
+  Tag, MessageCircle, Printer, WifiOff, Pause, Play, CreditCard, FileText, Hash,
+  Maximize2, Minimize2,
 } from 'lucide-react';
 import ReceiptModal from '../../components/ReceiptModal';
 import { getNextNroControl } from '../../utils/facturaUtils';
 import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import SaleHistoryPanel from '../../components/SaleHistoryPanel';
 import HelpTooltip from '../../components/HelpTooltip';
+import QuickSaleGrid, { type QuickSaleProduct } from '../../components/pos/QuickSaleGrid';
+import NumericKeypad from '../../components/pos/NumericKeypad';
+import TurnKpiBar from '../../components/pos/TurnKpiBar';
 import { auth } from '../../firebase/config';
 // Dynamic pricing imports removed — detal uses simple product.price
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
+type ProductVariant = {
+  id: string;
+  sku: string;
+  values: Record<string, string>;
+  stock: number;
+  precioDetal?: number;
+  precioMayor?: number;
+  costoUSD?: number;
+  barcode?: string;
+};
+
 type QuickProduct = {
   id: string;
   name: string;
@@ -38,6 +54,10 @@ type QuickProduct = {
   tipoTasa?: string;
   costoUSD?: number;
   margenDetal?: number;
+  hasVariants?: boolean;
+  variantAttributes?: string[];
+  variants?: ProductVariant[];
+  pricesByTier?: Record<string, { precioDetal?: number; precioMayor?: number }>;
 };
 
 type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'transferencia' | 'pago_movil' | 'punto' | 'mixto';
@@ -244,7 +264,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Monto Entregado (USD)</label>
-                <input autoFocus type="number" min="0" step="0.01"
+                <input autoFocus type="number" inputMode="decimal" enterKeyHint="done" min="0" step="0.01"
                   value={cashInput}
                   onChange={e => setCashInput(e.target.value)}
                   placeholder={`Mínimo: $${grandUsd.toFixed(2)}`}
@@ -272,7 +292,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Monto Entregado (BS)</label>
-                <input autoFocus type="number" min="0" step="0.01"
+                <input autoFocus type="number" inputMode="decimal" enterKeyHint="done" min="0" step="0.01"
                   value={cashInput}
                   onChange={e => setCashInput(e.target.value)}
                   placeholder={`Mínimo: ${totalBs.toFixed(2)} Bs`}
@@ -315,7 +335,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Efectivo (USD)</label>
-                <input autoFocus type="number" min="0" step="0.01"
+                <input autoFocus type="number" inputMode="decimal" enterKeyHint="next" min="0" step="0.01"
                   value={mixCash}
                   onChange={e => setMixCash(e.target.value)}
                   placeholder="0.00"
@@ -324,7 +344,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
               </div>
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Transferencia (USD)</label>
-                <input type="number" min="0" step="0.01"
+                <input type="number" inputMode="decimal" enterKeyHint="done" min="0" step="0.01"
                   value={mixTransfer}
                   onChange={e => setMixTransfer(e.target.value)}
                   placeholder="0.00"
@@ -385,14 +405,14 @@ const AccessDenied = () => (
 const PosContent = () => {
   const [searchParams] = useSearchParams();
   const kioskCtx = useContext(PosKioskContext);
-  const params = useParams();
-  const empresa_id = kioskCtx?.businessId ?? params.empresa_id ?? '';
+  const { tenantId } = useTenantSafe();
+  const empresa_id = kioskCtx?.businessId ?? tenantId ?? '';
   const cajaId = kioskCtx?.cajaId ?? searchParams.get('cajaId');
   const urlToken = kioskCtx?.token ?? searchParams.get('token');
   const { userProfile } = useAuth();
   const { rates, customRates, zoherEnabled } = useRates();
 
-  const { items, addProductByCode, updateQty, removeItem, totals, rateValue, setRateValue, clearCart, discountType, discountValue, setDiscount, startedAt, loadCart } = useCart();
+  const { items, addProductByCode, addProductByBarcode, setItemSellMode, updateQty, removeItem, setItemNote, totals, rateValue, setRateValue, clearCart, discountType, discountValue, setDiscount, startedAt, loadCart } = useCart();
 
   // ─── Token validation (kiosk mode) ────────────────────────────────────────
   const [tokenValid, setTokenValid] = useState<boolean | null>(null); // null = loading
@@ -424,6 +444,8 @@ const PosContent = () => {
   const [productFilter, setProductFilter] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'inStock' | 'noStock'>('all');
   const [loading, setLoading] = useState(true);
+  // Fase 9.4 — variant picker
+  const [variantPickerProduct, setVariantPickerProduct] = useState<QuickProduct | null>(null);
 
   // Client
   const [clientQuery, setClientQuery] = useState('');
@@ -448,6 +470,12 @@ const PosContent = () => {
   // Mobile tab mode
   const [mobileTab, setMobileTab] = useState<'products' | 'cart'>('products');
 
+  // Quick Sale Grid
+  const [showQuickGrid, setShowQuickGrid] = useState(true);
+
+  // Numeric Keypad (tablets)
+  const [showKeypad, setShowKeypad] = useState(false);
+
   // Payment
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -461,19 +489,110 @@ const PosContent = () => {
   // Ventas en espera
   const [heldCarts, setHeldCarts] = useState<HeldCart[]>([]);
   const [showHeld, setShowHeld] = useState(false);
+  const [isKiosk, setIsKiosk] = useState(false);
+
+  // Modo venta continua
+  const [continuousMode, setContinuousMode] = useState(() => localStorage.getItem('posDetal_continuousMode') === 'true');
+  const [turnSaleCount, setTurnSaleCount] = useState(0);
+  const [turnTotal, setTurnTotal] = useState(0);
+  useEffect(() => { localStorage.setItem('posDetal_continuousMode', String(continuousMode)); }, [continuousMode]);
+
+  // Auto-print toggle
+  const [autoPrint, setAutoPrint] = useState(() => localStorage.getItem('posDetal_autoPrint') === 'true');
+  useEffect(() => { localStorage.setItem('posDetal_autoPrint', String(autoPrint)); }, [autoPrint]);
 
   // Terminal info
   const [terminalInfo, setTerminalInfo] = useState<{ nombre: string; cajeroNombre: string } | null>(null);
+  const [ticketFooter, setTicketFooter] = useState<string>('');
 
   // Almacenes
   const [almacenes, setAlmacenes] = useState<{ id: string; nombre: string; activo: boolean }[]>([]);
   const [selectedAlmacenId, setSelectedAlmacenId] = useState<string>('principal');
+
+  // Bridge meta from another module (Citas, Pre-pedidos, Reparaciones)
+  const [bridgeMeta, setBridgeMeta] = useState<{
+    source: string;
+    sourceId: string;
+    customerId?: string;
+    customerName?: string;
+    staffId?: string;
+    staffName?: string;
+    serviceId?: string;
+    serviceName?: string;
+  } | null>(null);
+
+  // Commissions config (loaded from businessConfigs)
+  const [commissionsCfg, setCommissionsCfg] = useState<{
+    salesCommissionEnabled?: boolean;
+    salesCommissionPct?: number;
+    salesCommissionTarget?: 'vendedor' | 'almacenista' | 'both';
+  }>({});
 
   // Live clock
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(t);
+  }, []);
+
+  // Fullscreen / Kiosk mode listener
+  useEffect(() => {
+    const onFsChange = () => setIsKiosk(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const toggleKiosk = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }, []);
+
+  // ── Bridge: auto-load a pending sale from another module (Citas, Pre-pedidos, Reparaciones) ──
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('dualis_pending_pos_sale');
+      if (!raw) return;
+      const payload = JSON.parse(raw);
+      sessionStorage.removeItem('dualis_pending_pos_sale');
+      if (Array.isArray(payload?.items) && payload.items.length > 0) {
+        const cartItems = payload.items.map((it: any) => ({
+          id: it.id || `bridge-${Date.now()}`,
+          codigo: it.codigo || it.id || 'SVC',
+          nombre: it.nombre || it.name || 'Servicio',
+          qty: Number(it.qty || 1),
+          priceUsd: Number(it.price || it.priceUsd || 0),
+          ivaRate: 0,
+          stock: 9999,
+        }));
+        loadCart(cartItems, 'none' as DiscountType, 0);
+        if (payload.source && payload.sourceId) {
+          setBridgeMeta({
+            source: payload.source,
+            sourceId: payload.sourceId,
+            customerId: payload.customerId,
+            customerName: payload.customerName,
+            staffId: payload.staffId,
+            staffName: payload.staffName,
+            serviceId: payload.serviceId,
+            serviceName: payload.items?.[0]?.nombre || payload.items?.[0]?.name,
+          });
+        }
+        const sourceLabel =
+          payload.source === 'cita' ? 'Citas' :
+          payload.source === 'prepedido' ? 'Pre-Pedidos' :
+          payload.source === 'reparacion' ? 'Reparaciones' :
+          payload.source === 'cotizacion' ? 'Cotización' :
+          'módulo';
+        setSuccess(`Cargado desde ${sourceLabel}: ${payload.customerName || ''}`);
+        setTimeout(() => setSuccess(''), 4000);
+      }
+    } catch {
+      // Ignore malformed payload
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync BCV rate
@@ -488,6 +607,17 @@ const PosContent = () => {
       if (snap.exists()) setTerminalInfo(snap.data() as any);
     });
   }, [cajaId, empresa_id]);
+
+  // Load businessConfigs (ticketFooter + commissions)
+  useEffect(() => {
+    if (!empresa_id) return;
+    const unsub = onSnapshot(doc(db, 'businessConfigs', empresa_id), snap => {
+      const data = snap.data();
+      if (data && typeof data.ticketFooter === 'string') setTicketFooter(data.ticketFooter);
+      if (data && data.commissions) setCommissionsCfg(data.commissions);
+    }, () => {});
+    return () => unsub();
+  }, [empresa_id]);
 
   // Load almacenes
   useEffect(() => {
@@ -526,16 +656,30 @@ const PosContent = () => {
             tipoTasa: data.tipoTasa || 'BCV',
             costoUSD: Number(data.costoUSD || 0),
             margenDetal: Number(data.margenDetal || 0),
+            hasVariants: !!data.hasVariants,
+            variantAttributes: data.variantAttributes || [],
+            variants: data.variants || [],
+            pricesByTier: data.pricesByTier || undefined,
           };
         }));
 
-        const qc = query(collection(db, 'customers'), where('businessId', '==', empresa_id));
-        const snapC = await getDocs(qc);
-        setClients(snapC.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch { setError('Error cargando datos'); }
       finally { setLoading(false); }
     };
     loadData();
+  }, [empresa_id]);
+
+  // ── Clientes en vivo ───────────────────────────────────────────
+  // Parity con PosMayor: onSnapshot para que clientes creados desde
+  // CxC / NewClientModal aparezcan sin recargar. Ver PosMayor ~L684
+  // para el mismo patrón y el reporte del usuario (2026-04-09).
+  useEffect(() => {
+    if (!empresa_id) return;
+    const qc = query(collection(db, 'customers'), where('businessId', '==', empresa_id));
+    const unsub = onSnapshot(qc, snap => {
+      setClients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    return () => unsub();
   }, [empresa_id]);
 
   const filteredClients = useMemo(() => {
@@ -562,21 +706,103 @@ const PosContent = () => {
 
   const noStockCount = useMemo(() => products.filter(p => p.stock === 0).length, [products]);
 
+  // Quick Sale Grid products (map local shape → grid shape)
+  const quickGridProducts = useMemo<QuickSaleProduct[]>(() =>
+    products.filter(p => p.stock > 0).map(p => ({
+      id: p.id, codigo: p.codigo, name: p.name, price: p.price, stock: p.stock,
+    })),
+    [products]
+  );
+
+  // ── Loyalty tier pricing helper ─────────────────────────────────
+  const getDetalTierPrice = useCallback((product: QuickProduct): { price: number; tierLabel: string | null } => {
+    const tier = (customer as any)?.loyaltyTier as string | undefined;
+    if (tier && product.pricesByTier?.[tier]?.precioDetal) {
+      return { price: product.pricesByTier[tier].precioDetal!, tierLabel: tier };
+    }
+    return { price: product.price, tierLabel: null };
+  }, [customer]);
+
   const handleAddProduct = useCallback(async (product: QuickProduct) => {
-    const ok = await addProductByCode(product.codigo, 'detal');
+    // Fase 9.4: si tiene variantes, abrir picker en vez de agregar directo
+    if (product.hasVariants && (product.variants || []).length > 0) {
+      setVariantPickerProduct(product);
+      return;
+    }
+    const { price: tierPrice, tierLabel } = getDetalTierPrice(product);
+    const priceOverride = tierLabel ? tierPrice : undefined;
+    const ok = await addProductByCode(product.codigo, 'detal', priceOverride);
     if (!ok) {
       setError(`Producto no encontrado: ${product.name}`);
       setTimeout(() => setError(''), 3000);
     }
-  }, [addProductByCode]);
+  }, [addProductByCode, getDetalTierPrice]);
+
+  // Quick Sale Grid select handler
+  const handleQuickSelect = useCallback((qp: QuickSaleProduct) => {
+    const full = products.find(p => p.id === qp.id);
+    if (full) handleAddProduct(full);
+  }, [products, handleAddProduct]);
+
+  // Numeric keypad handler — sends keys to the focused input
+  const handleKeypadKey = useCallback((key: string) => {
+    const el = document.activeElement as HTMLInputElement | null;
+    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return;
+    if (key === 'DEL') {
+      const v = el.value;
+      const nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (nativeSet) {
+        nativeSet.call(el, v.slice(0, -1));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    } else {
+      const nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (nativeSet) {
+        nativeSet.call(el, el.value + key);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  }, []);
+
+  const handleAddVariant = useCallback(async (product: QuickProduct, variant: ProductVariant) => {
+    setVariantPickerProduct(null);
+    const { price: tierPrice, tierLabel } = getDetalTierPrice(product);
+    const basePrice = variant.precioDetal ?? (tierLabel ? tierPrice : product.price);
+    const ok = await addProductByCode(variant.sku || product.codigo, 'detal', basePrice);
+    if (!ok) {
+      setError(`Variante no encontrada: ${variant.sku}`);
+      setTimeout(() => setError(''), 3000);
+    }
+  }, [addProductByCode, getDetalTierPrice]);
+
+  // Fase B.6: beep audible (WebAudio, sin assets). Mismo patrón que PosMayor.
+  const playBeep = useCallback((kind: 'ok' | 'err') => {
+    try {
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = kind === 'ok' ? 1000 : 300;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (kind === 'ok' ? 0.06 : 0.15));
+      osc.start();
+      osc.stop(ctx.currentTime + (kind === 'ok' ? 0.08 : 0.18));
+      osc.onended = () => ctx.close();
+    } catch { /* silent */ }
+  }, []);
 
   const handleScan = async () => {
     const code = searchQuery.trim();
     if (!code) return;
-    const ok = await addProductByCode(code, 'detal');
+    const ok = await addProductByBarcode(code, 'detal');
     if (ok) {
+      playBeep('ok');
       setSearchQuery('');
     } else {
+      playBeep('err');
       setError(`Código no encontrado: ${code}`);
       setTimeout(() => setError(''), 2000);
     }
@@ -586,13 +812,57 @@ const PosContent = () => {
     setShowCameraScanner(false);
     const ok = await addProductByCode(code, 'detal');
     if (ok) {
+      playBeep('ok');
       setSuccess(`Escaneado: ${code}`);
       setTimeout(() => setSuccess(''), 2000);
     } else {
+      playBeep('err');
       setError(`Código no encontrado: ${code}`);
       setTimeout(() => setError(''), 2500);
     }
   };
+
+  // Fase B.6: listener global de scanner USB — mismo patrón que PosMayor.
+  // Buffer de teclas rápidas + Enter → addProductByBarcode. Ignora si foco
+  // está en input/textarea (para no competir con el search manual).
+  useEffect(() => {
+    let buffer = '';
+    let lastKeyTime = 0;
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) return;
+      const now = Date.now();
+      if (now - lastKeyTime > 80) buffer = '';
+      lastKeyTime = now;
+      if (e.key === 'Enter') {
+        if (buffer.length >= 4) {
+          const code = buffer;
+          buffer = '';
+          e.preventDefault();
+          addProductByBarcode(code, 'detal').then(ok => {
+            if (ok) {
+              playBeep('ok');
+              setSuccess(`Escaneado: ${code}`);
+              setTimeout(() => setSuccess(''), 1500);
+            } else {
+              playBeep('err');
+              setError(`Código no encontrado: ${code}`);
+              setTimeout(() => setError(''), 2000);
+            }
+          });
+        } else {
+          buffer = '';
+        }
+        return;
+      }
+      if (e.key.length === 1 && /[\w\-]/.test(e.key)) {
+        buffer += e.key;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [addProductByBarcode, playBeep]);
 
   const holdCart = useCallback(() => {
     if (items.length === 0) return;
@@ -674,6 +944,8 @@ const PosContent = () => {
         rateUsed: rateValue,
         metodoPago: METHOD_LABELS[method],
         esPagoMixto: method === 'mixto',
+        // K.9 — vincular ventas Efectivo USD a la caja chica para que aparezcan en Tesorería
+        ...(method === 'efectivo_usd' && { bankAccountId: 'efectivo_usd_default' }),
         pagos,
         referencia: reference || null,
         cashGiven: cashGiven || null,
@@ -681,7 +953,10 @@ const PosContent = () => {
         changeBs: changeBs || null,
         mixCash: method === 'mixto' ? mixCash : null,
         mixTransfer: method === 'mixto' ? mixTransfer : null,
-        items: items.map(i => ({ id: i.id, nombre: i.nombre, qty: i.qty, price: i.priceUsd, subtotal: i.qty * i.priceUsd })),
+        items: items.map(i => {
+          const realQty = effectiveStockQty(i);
+          return { id: i.id, nombre: i.nombre, qty: realQty, price: i.priceUsd, subtotal: realQty * i.priceUsd, sellMode: i.sellMode || 'unidad', unidadesPorBulto: i.unidadesPorBulto || 1, ...(i.note ? { note: i.note } : {}) };
+        }),
         cajaId: cajaId || 'principal',
         cajaName: terminalLabel,
         vendedorId: userProfile?.uid || 'sistema',
@@ -693,29 +968,143 @@ const PosContent = () => {
         esVentaContado: true,
       };
 
-      await addDoc(collection(db, 'movements'), movementPayload);
+      // Wire bridge metadata if this sale was loaded from another module
+      if (bridgeMeta) {
+        if (bridgeMeta.source === 'cita') movementPayload.appointmentId = bridgeMeta.sourceId;
+        if (bridgeMeta.source === 'prepedido') movementPayload.preorderId = bridgeMeta.sourceId;
+        if (bridgeMeta.source === 'reparacion') movementPayload.repairTicketId = bridgeMeta.sourceId;
+        if (bridgeMeta.source === 'cotizacion') movementPayload.quoteId = bridgeMeta.sourceId;
+        if (bridgeMeta.customerId && !movementPayload.entityId) {
+          movementPayload.entityId = bridgeMeta.customerId;
+        }
+      }
 
-      // Update stock — floor at 0, never negative
+      const movRef = await addDoc(collection(db, 'movements'), movementPayload);
+
+      // Back-fill the source document so it can't be re-billed and the user can trace the link
+      if (bridgeMeta) {
+        try {
+          if (bridgeMeta.source === 'reparacion') {
+            await updateDoc(doc(db, `businesses/${empresa_id}/repair_tickets`, bridgeMeta.sourceId), {
+              invoiceMovementId: movRef.id,
+              finalCostUSD: grandTotal,
+            });
+          } else if (bridgeMeta.source === 'prepedido') {
+            await updateDoc(doc(db, `businesses/${empresa_id}/preorders`, bridgeMeta.sourceId), {
+              deliveredMovementId: movRef.id,
+              status: 'delivered',
+            });
+          } else if (bridgeMeta.source === 'cita') {
+            await updateDoc(doc(db, `businesses/${empresa_id}/appointments`, bridgeMeta.sourceId), {
+              movementId: movRef.id,
+              status: 'completed',
+            });
+          } else if (bridgeMeta.source === 'cotizacion') {
+            await updateDoc(doc(db, `businesses/${empresa_id}/quotes`, bridgeMeta.sourceId), {
+              convertedMovementId: movRef.id,
+              convertedAt: isoDate,
+              status: 'convertida',
+            });
+          }
+
+          // Generate commission record if enabled and we know the staff
+          if (
+            commissionsCfg.salesCommissionEnabled &&
+            (commissionsCfg.salesCommissionPct ?? 0) > 0 &&
+            bridgeMeta.staffId
+          ) {
+            const pct = Number(commissionsCfg.salesCommissionPct || 0);
+            const amount = (grandTotal * pct) / 100;
+            await addDoc(collection(db, `businesses/${empresa_id}/commissions`), {
+              type: bridgeMeta.source,
+              staffId: bridgeMeta.staffId,
+              staffName: bridgeMeta.staffName || '',
+              source: bridgeMeta.source,
+              sourceId: bridgeMeta.sourceId,
+              movementId: movRef.id,
+              serviceId: bridgeMeta.serviceId || null,
+              serviceName: bridgeMeta.serviceName || null,
+              customerId: bridgeMeta.customerId || null,
+              customerName: bridgeMeta.customerName || null,
+              baseAmount: grandTotal,
+              percent: pct,
+              amount,
+              date: simpleDate,
+              createdAt: isoDate,
+            });
+          }
+        } catch (err) {
+          console.warn('[pos detal] could not back-fill bridge source', err);
+        }
+        setBridgeMeta(null);
+      }
+
+      // Update stock — floor at 0, never negative. Bulto: effectiveStockQty returns qty × unidadesPorBulto
       const almacenKey = almacenes.length > 0 ? selectedAlmacenId : 'principal';
       for (const item of items) {
+        const qtyToDecrement = effectiveStockQty(item); // Fase B: bulto-aware
+        // Fase 9.4: variant items have id = "productId__v_variantId"
+        const isVariantItem = item.id.includes('__v_');
+        const realProductId = isVariantItem ? item.id.split('__v_')[0] : item.id;
+        const variantId = isVariantItem ? item.id.split('__v_')[1] : null;
+
         await runTransaction(db, async (txn) => {
-          const ref = doc(db, `businesses/${empresa_id}/products`, item.id);
+          const ref = doc(db, `businesses/${empresa_id}/products`, realProductId);
           const snap = await txn.get(ref);
           if (!snap.exists()) return;
           const data = snap.data();
+
+          // Kit expansion: decrement each component, not the kit itself
+          if (data.isKit && Array.isArray(data.kitComponents) && data.kitComponents.length > 0) {
+            const compRefs = data.kitComponents.map((c: any) =>
+              doc(db, `businesses/${empresa_id}/products`, c.productId),
+            );
+            const compSnaps = await Promise.all(compRefs.map((r: any) => txn.get(r)));
+            compSnaps.forEach((cSnap: any, i: number) => {
+              if (!cSnap.exists()) return;
+              const cData = cSnap.data();
+              const compQty = Number(data.kitComponents[i].qty || 1) * qtyToDecrement;
+              const cStockByAlm: Record<string, number> = cData.stockByAlmacen || {};
+              if (cStockByAlm[almacenKey] !== undefined) {
+                const curA = Number(cStockByAlm[almacenKey] ?? 0);
+                const curT = Number(cData.stock ?? 0);
+                txn.update(compRefs[i], {
+                  [`stockByAlmacen.${almacenKey}`]: Math.max(0, curA - compQty),
+                  stock: Math.max(0, curT - compQty),
+                });
+              } else {
+                const cur = Number(cData.stock ?? 0);
+                txn.update(compRefs[i], { stock: Math.max(0, cur - compQty) });
+              }
+            });
+            return; // No tocar el stock del kit
+          }
+
+          // Fase 9.4: variant stock decrement — update the variant's stock inside the array
+          if (variantId && data.hasVariants && Array.isArray(data.variants)) {
+            const updatedVariants = data.variants.map((v: any) => {
+              if (v.id === variantId) {
+                return { ...v, stock: Math.max(0, (v.stock || 0) - qtyToDecrement) };
+              }
+              return v;
+            });
+            txn.update(ref, { variants: updatedVariants });
+            return;
+          }
+
           const stockByAlmacen: Record<string, number> = data.stockByAlmacen || {};
           if (stockByAlmacen[almacenKey] !== undefined) {
             // Multi-almacén path
             const curAlmacen = Number(stockByAlmacen[almacenKey] ?? 0);
             const curTotal = Number(data.stock ?? 0);
             txn.update(ref, {
-              [`stockByAlmacen.${almacenKey}`]: Math.max(0, curAlmacen - item.qty),
-              stock: Math.max(0, curTotal - item.qty),
+              [`stockByAlmacen.${almacenKey}`]: Math.max(0, curAlmacen - qtyToDecrement),
+              stock: Math.max(0, curTotal - qtyToDecrement),
             });
           } else {
             // Legacy single-stock path
             const cur = Number(data.stock ?? 0);
-            txn.update(ref, { stock: Math.max(0, cur - item.qty) });
+            txn.update(ref, { stock: Math.max(0, cur - qtyToDecrement) });
           }
         });
       }
@@ -729,14 +1118,30 @@ const PosContent = () => {
         });
       }
 
-      setLastMovement(movementPayload);
       clearCart();
       setCustomer(null);
       setClientQuery('');
       setConsumidorFinal(false);
       setShowPaymentModal(false);
-      setSuccess('¡Venta registrada!');
-      setTimeout(() => setSuccess(''), 3500);
+      setTurnSaleCount(prev => prev + 1);
+      setTurnTotal(prev => prev + movementPayload.totalUsd);
+
+      if (continuousMode) {
+        // In continuous mode: skip receipt, show brief toast, focus search
+        setSuccess(`Venta #${turnSaleCount + 1} — $${movementPayload.totalUsd.toFixed(2)}`);
+        setTimeout(() => setSuccess(''), 2500);
+        setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>('input[placeholder*="Buscar"], input[placeholder*="Filtrar"]');
+          el?.focus();
+        }, 100);
+      } else {
+        setLastMovement(movementPayload);
+        setSuccess('¡Venta registrada!');
+        setTimeout(() => setSuccess(''), 3500);
+        if (autoPrint) {
+          setTimeout(() => window.print(), 600);
+        }
+      }
     } catch (err) {
       console.error(err);
       setError('Error al procesar la venta');
@@ -763,9 +1168,21 @@ const PosContent = () => {
 
   if (loading && products.length === 0) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800/50 gap-4">
-        <div className="animate-spin h-9 w-9 border-4 border-slate-900 border-t-transparent rounded-full" />
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Cargando Terminal...</p>
+      <div className="h-screen w-screen flex flex-col bg-slate-50 dark:bg-slate-800/50">
+        {/* Skeleton header */}
+        <div className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 px-5 flex items-center gap-4">
+          <div className="h-10 w-10 rounded-xl bg-slate-200 dark:bg-white/10 animate-pulse" />
+          <div className="space-y-1.5">
+            <div className="h-3 w-24 bg-slate-200 dark:bg-white/10 rounded animate-pulse" />
+            <div className="h-2 w-16 bg-slate-100 dark:bg-white/5 rounded animate-pulse" />
+          </div>
+        </div>
+        {/* Skeleton product grid */}
+        <div className="flex-1 p-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-28 rounded-2xl bg-white dark:bg-white/[0.05] border border-slate-100 dark:border-white/[0.07] animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -864,6 +1281,45 @@ const PosContent = () => {
             </div>
           )}
 
+          {/* Continuous mode toggle + turn KPIs */}
+          <div className="hidden sm:flex items-center gap-2">
+            {turnSaleCount > 0 && (
+              <span className="text-[9px] font-black text-slate-400 dark:text-white/30 uppercase tracking-wider">
+                {turnSaleCount} venta{turnSaleCount !== 1 ? 's' : ''} · ${turnTotal.toFixed(2)}
+              </span>
+            )}
+            <button
+              onClick={() => setContinuousMode(prev => !prev)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                continuousMode ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-100 dark:bg-white/[0.05] text-slate-400 dark:text-white/30'
+              }`}
+              title={continuousMode ? 'Modo continuo activado' : 'Activar modo continuo'}
+            >
+              {continuousMode ? <Play size={10} /> : <Pause size={10} />}
+              Continuo
+            </button>
+            <button
+              onClick={() => setAutoPrint(prev => !prev)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                autoPrint ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'bg-slate-100 dark:bg-white/[0.05] text-slate-400 dark:text-white/30'
+              }`}
+              title={autoPrint ? 'Auto-print activado' : 'Activar impresión automática'}
+            >
+              <Printer size={10} />
+              Auto
+            </button>
+            <button
+              onClick={() => setShowKeypad(prev => !prev)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                showKeypad ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30' : 'bg-slate-100 dark:bg-white/[0.05] text-slate-400 dark:text-white/30'
+              }`}
+              title={showKeypad ? 'Ocultar teclado numérico' : 'Mostrar teclado numérico'}
+            >
+              <Hash size={10} />
+              Keypad
+            </button>
+          </div>
+
           {/* Date + time */}
           <div className="text-right hidden lg:block">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">{formatLiveDate(now)}</p>
@@ -884,6 +1340,16 @@ const PosContent = () => {
             ))}
           </div>
 
+          {/* Kiosk fullscreen toggle */}
+          <button
+            onClick={toggleKiosk}
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-black uppercase tracking-wider transition-all ${isKiosk ? 'bg-slate-700/40 border-slate-500/40 text-slate-300' : 'bg-white/[0.04] border-white/10 text-slate-400 hover:border-white/20'}`}
+            title={isKiosk ? 'Salir de pantalla completa (Esc)' : 'Modo Kiosco — pantalla completa'}
+          >
+            {isKiosk ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+            {isKiosk ? 'Salir' : 'Kiosco'}
+          </button>
+
         </div>
       </header>
 
@@ -897,6 +1363,8 @@ const PosContent = () => {
                 value={productFilter}
                 onChange={e => setProductFilter(e.target.value)}
                 placeholder="Filtrar productos..."
+                inputMode="search"
+                enterKeyHint="search"
                 className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 border border-slate-100 dark:border-white/[0.07] focus:ring-2 focus:ring-slate-900 focus:bg-white dark:bg-slate-900 outline-none transition-all"
               />
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 h-3.5 w-3.5" />
@@ -920,6 +1388,14 @@ const PosContent = () => {
             </div>
           </div>
 
+          {/* Quick Sale Grid — top sellers / pinned */}
+          <QuickSaleGrid
+            products={quickGridProducts}
+            onSelect={handleQuickSelect}
+            visible={showQuickGrid && !productFilter && !searchQuery}
+            maxItems={8}
+          />
+
           <div className="flex-1 overflow-y-auto p-3 custom-scroll">
             {displayProducts.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-40">
@@ -928,7 +1404,9 @@ const PosContent = () => {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                {displayProducts.map(product => (
+                {displayProducts.map(product => {
+                  const { price: tierPrice, tierLabel } = getDetalTierPrice(product);
+                  return (
                     <button key={product.id} onClick={() => handleAddProduct(product)}
                       className={`group bg-white dark:bg-white/[0.05] p-3 rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-left flex flex-col h-28 justify-between ${product.stock === 0 ? 'border-amber-200 dark:border-amber-500/25' : 'border-slate-100 dark:border-white/[0.1] hover:border-slate-300 dark:hover:border-white/20'}`}>
                       <div>
@@ -943,11 +1421,22 @@ const PosContent = () => {
                         <p className="text-xs font-black text-slate-700 dark:text-white/90 line-clamp-2 leading-tight">{product.name}</p>
                         {product.marca && <p className="text-[9px] font-black text-indigo-400 dark:text-indigo-300 uppercase mt-0.5">{product.marca}</p>}
                       </div>
-                      <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">
-                        ${product.price.toFixed(2)}
-                      </p>
+                      <div className="flex items-baseline gap-1.5">
+                        <p className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                          ${tierPrice.toFixed(2)}
+                        </p>
+                        {tierLabel && (
+                          <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15 px-1 py-0.5 rounded capitalize">
+                            {tierLabel}
+                          </span>
+                        )}
+                        {tierLabel && tierPrice !== product.price && (
+                          <p className="text-[9px] font-bold text-slate-400 line-through">${product.price.toFixed(2)}</p>
+                        )}
+                      </div>
                     </button>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -980,13 +1469,44 @@ const PosContent = () => {
                       <p className="text-[10px] sm:text-xs text-slate-300 dark:text-white/15 font-medium">Escanea un código o selecciona un producto</p>
                     </td>
                   </tr>
-                ) : items.map(item => (
+                ) : items.map(item => {
+                  const hasBulto = (item.unidadesPorBulto || 1) > 1;
+                  const isBultoMode = item.sellMode === 'bulto';
+                  const perBulto = item.unidadesPorBulto || 1;
+                  const effectivePrice = effectiveLinePrice(item);
+                  return (
                   <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.04] group transition-colors">
                     <td className="px-3 sm:px-5 py-2.5 sm:py-3.5">
-                      <p className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 leading-none line-clamp-1">{item.nombre}</p>
-                      <p className="text-[9px] sm:text-[10px] font-mono text-slate-400 dark:text-white/30 mt-0.5">
-                        <span className="sm:hidden">${item.priceUsd.toFixed(2)} · </span>{item.codigo}
-                      </p>
+                      <div className="flex items-start gap-1.5">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-200 leading-none line-clamp-1">{item.nombre}</p>
+                          <p className="text-[9px] sm:text-[10px] font-mono text-slate-400 dark:text-white/30 mt-0.5">
+                            <span className="sm:hidden">${effectivePrice.toFixed(2)} · </span>{item.codigo}
+                          </p>
+                          {item.note && <p className="text-[9px] text-amber-500 dark:text-amber-400 mt-0.5 italic truncate">{item.note}</p>}
+                          {hasBulto && (
+                            <div className="mt-1 flex items-center gap-1">
+                              <button type="button" onClick={() => setItemSellMode(item.id, 'unidad')}
+                                className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all ${!isBultoMode ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-500 dark:text-white/40'}`}
+                              >Unid</button>
+                              <button type="button" onClick={() => setItemSellMode(item.id, 'bulto')}
+                                className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all ${isBultoMode ? 'bg-amber-500 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-500 dark:text-white/40'}`}
+                              >Bulto</button>
+                              <span className="text-[9px] font-mono text-slate-400 dark:text-white/30">= {perBulto} unid</span>
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            const note = prompt('Nota para este producto:', item.note || '');
+                            if (note !== null) setItemNote(item.id, note);
+                          }}
+                          className={`shrink-0 p-1 rounded transition-colors ${item.note ? 'text-amber-500' : 'text-slate-300 dark:text-white/15 hover:text-slate-500'}`}
+                          title="Agregar nota"
+                        >
+                          <FileText size={12} />
+                        </button>
+                      </div>
                     </td>
                     <td className="px-2 sm:px-5 py-2.5 sm:py-3.5">
                       {item.unitType && item.unitType !== 'unidad' ? (
@@ -1016,10 +1536,10 @@ const PosContent = () => {
                       )}
                     </td>
                     <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500 dark:text-white/50 hidden sm:table-cell">
-                      ${item.priceUsd.toFixed(2)}
+                      ${effectivePrice.toFixed(2)}
                     </td>
                     <td className="px-3 sm:px-5 py-2.5 sm:py-3.5 text-right text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                      ${(item.qty * item.priceUsd).toFixed(2)}
+                      ${(item.qty * effectivePrice).toFixed(2)}
                     </td>
                     <td className="px-2 sm:px-5 py-2.5 sm:py-3.5 text-center">
                       <button onClick={() => removeItem(item.id)}
@@ -1028,10 +1548,14 @@ const PosContent = () => {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
+
+          {/* Numeric Keypad (tablet mode) */}
+          <NumericKeypad onKey={handleKeypadKey} visible={showKeypad} />
 
           {/* ── CHECKOUT PANEL ─────────────────────────────────────────────── */}
           <div className="border-t border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-slate-900 p-3 sm:p-5 flex flex-col sm:flex-row gap-3 sm:gap-5">
@@ -1239,7 +1763,7 @@ const PosContent = () => {
       {lastMovement && (
         <ReceiptModal
           movement={lastMovement}
-          config={{ companyName: userProfile?.fullName || 'Mi Negocio' } as any}
+          config={{ companyName: userProfile?.fullName || 'Mi Negocio', ticketFooter } as any}
           customerPhone={!consumidorFinal ? (customer?.telefono || customer?.phone || '') : ''}
           onClose={() => setLastMovement(null)}
         />
@@ -1262,6 +1786,55 @@ const PosContent = () => {
           readOnly={userProfile?.role !== 'owner' && userProfile?.role !== 'admin'}
           onClose={() => setShowHistory(false)}
         />
+      )}
+
+      {/* ── VARIANT PICKER (Fase 9.4) ───────────────────────────────────── */}
+      {variantPickerProduct && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setVariantPickerProduct(null)}>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/[0.07]">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 dark:text-white">{variantPickerProduct.name}</h3>
+                <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5">Selecciona una variante</p>
+              </div>
+              <button onClick={() => setVariantPickerProduct(null)} className="h-8 w-8 rounded-full bg-slate-100 dark:bg-white/[0.07] flex items-center justify-center hover:bg-slate-200 dark:hover:bg-white/[0.12] transition-all">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-[55vh] p-3 space-y-1.5">
+              {(variantPickerProduct.variants || []).map(v => {
+                const label = Object.values(v.values).filter(Boolean).join(' / ');
+                const varPrice = v.precioDetal ?? variantPickerProduct.price;
+                const outOfStock = (v.stock || 0) <= 0;
+                return (
+                  <button
+                    key={v.id}
+                    disabled={outOfStock}
+                    onClick={() => handleAddVariant(variantPickerProduct, v)}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left ${
+                      outOfStock
+                        ? 'border-slate-100 dark:border-white/[0.05] opacity-40 cursor-not-allowed'
+                        : 'border-slate-200 dark:border-white/[0.08] hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/[0.06]'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-slate-800 dark:text-white">{label || v.sku || 'Sin nombre'}</p>
+                      <p className="text-[9px] text-slate-400 dark:text-white/30 mt-0.5">
+                        SKU: {v.sku || '—'} · Stock: {v.stock || 0}
+                      </p>
+                    </div>
+                    <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 shrink-0 ml-3">
+                      ${varPrice.toFixed(2)}
+                    </span>
+                  </button>
+                );
+              })}
+              {(variantPickerProduct.variants || []).length === 0 && (
+                <p className="text-center text-xs text-slate-400 dark:text-white/30 py-6">Sin variantes configuradas</p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── VENTAS EN ESPERA PANEL ─────────────────────────────────────────── */}
@@ -1329,6 +1902,18 @@ const PosContent = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Floating kiosk exit button */}
+      {isKiosk && (
+        <button
+          onClick={toggleKiosk}
+          className="fixed bottom-4 right-4 z-[9999] flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/70 backdrop-blur text-white text-[10px] font-black uppercase tracking-wider shadow-lg hover:bg-black/90 transition-all"
+          title="Salir de pantalla completa"
+        >
+          <Minimize2 size={12} />
+          Salir (Esc)
+        </button>
       )}
     </div>
   );

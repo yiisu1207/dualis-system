@@ -27,6 +27,7 @@ const NAV_MAP: Record<string, string> = {
   'pending-compare': 'comparar',
   'pending-products': 'inventario',
   'nde-pendientes': 'despacho',
+  'cobranza-reminders': 'cobranza',
 };
 
 const NotificationCenter: React.FC<NotificationCenterProps> = ({
@@ -40,7 +41,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
 }) => {
   const lowStockItems = useMemo(
     () => inventoryItems.filter(p => {
-      const stock = p.stock ?? p.quantity ?? 0;
+      // Dual-model stock: prefer sum across warehouses, fall back to legacy field.
+      const map = p.stockByAlmacen as Record<string, number> | undefined;
+      const sumWarehouses = map
+        ? Object.values(map).reduce<number>((acc, v) => acc + Number(v ?? 0), 0)
+        : 0;
+      const legacy = Number(p.stock ?? p.quantity ?? 0);
+      const stock = sumWarehouses >= legacy ? sumWarehouses : legacy;
       const min = p.minStock ?? 10;
       return stock < min;
     }),

@@ -41,7 +41,15 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
   const [direccion, setDireccion] = useState('');
 
   const [creditLimit, setCreditLimit] = useState(0);
-  const [defaultPaymentDays, setDefaultPaymentDays] = useState(0);
+  // ── defaultPaymentDays: null = sin especificar ─────────────────
+  // Antes era `0` por default, lo que hacía que "Contado" apareciera
+  // siempre pre-seleccionado y el usuario sintiera que estaba obligado
+  // a elegir un período. Ahora arranca en null → ninguna píldora está
+  // marcada y el usuario puede guardar un límite de crédito sin tocar
+  // los días. Pedido del usuario 2026-04-09: "me gustaria que se pueda
+  // elegir el limite de credito sin necesidad de seleccionar los dias".
+  // Click en una píldora ya seleccionada la deselecciona (toggle off).
+  const [defaultPaymentDays, setDefaultPaymentDays] = useState<number | null>(null);
   const [creditApproved, setCreditApproved] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);
 
@@ -62,7 +70,7 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
       setEmail('');
       setDireccion('');
       setCreditLimit(0);
-      setDefaultPaymentDays(0);
+      setDefaultPaymentDays(null);
       setCreditApproved(false);
       setCreditOpen(false);
       setSaving(false);
@@ -82,6 +90,17 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
     ? existingCustomers.find(c => c.rif?.replace(/[\s.-]/g, '').toUpperCase() === fullRif.replace(/[\s.-]/g, '').toUpperCase())
     : null;
 
+  // Phone duplicate: compare last 7+ digits to catch format variations (+58, 0, -, spaces)
+  const phoneDigits = phoneNum.replace(/\D/g, '');
+  const phoneDuplicate = phoneDigits.length >= 7
+    ? existingCustomers.find(c => {
+        const otherDigits = String(c.telefono || (c as any).phone || '').replace(/\D/g, '');
+        if (otherDigits.length < 7) return false;
+        // Match on last 7 digits to handle +58/0-prefix variations
+        return otherDigits.slice(-7) === phoneDigits.slice(-7);
+      })
+    : null;
+
   /* -- Validation -- */
   const validate = useCallback((): boolean => {
     const errs: Record<string, string> = {};
@@ -98,9 +117,10 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
     // Block duplicates
     if (cedulaDuplicate) errs.cedula = `Ya existe: ${cedulaDuplicate.nombre || cedulaDuplicate.fullName}`;
     if (rifDuplicate) errs.rif = `Ya existe: ${rifDuplicate.nombre || rifDuplicate.fullName}`;
+    if (phoneDuplicate) errs.phone = `Ya existe: ${phoneDuplicate.nombre || phoneDuplicate.fullName}`;
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }, [nombre, cedulaNum, rifNum, rifPrefix, cedulaDuplicate, rifDuplicate]);
+  }, [nombre, cedulaNum, rifNum, rifPrefix, cedulaDuplicate, rifDuplicate, phoneDuplicate]);
 
   /* -- Save -- */
   const handleSave = async () => {
@@ -116,7 +136,9 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
         email: email.trim() || undefined,
         direccion: direccion.trim(),
         creditLimit,
-        defaultPaymentDays,
+        // Solo incluir defaultPaymentDays si el usuario lo eligió.
+        // null → no se envía el campo (cliente queda sin período predefinido).
+        ...(defaultPaymentDays !== null ? { defaultPaymentDays } : {}),
         creditApproved,
       };
       await onSave(data);
@@ -196,6 +218,16 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
                   className={`${inputCls} ${errors.cedula ? 'ring-2 ring-red-500 border-red-500' : ''}`}
                 />
               </div>
+              {cedulaNum.length >= 3 && (
+                <span className={`inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                  cedulaPrefix === 'V-' ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400' :
+                  cedulaPrefix === 'E-' ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                  cedulaPrefix === 'J-' ? 'bg-violet-100 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400' :
+                  'bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                }`}>
+                  {cedulaPrefix === 'V-' ? 'Venezolano' : cedulaPrefix === 'E-' ? 'Extranjero' : cedulaPrefix === 'J-' ? 'Jurídico' : 'Gobierno'}
+                </span>
+              )}
               {errors.cedula && <p className="mt-1 text-xs text-red-400">{errors.cedula}</p>}
               {cedulaDuplicate && (
                 <div className="mt-2 flex items-start gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl">
@@ -257,9 +289,18 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
                   value={phoneNum}
                   onChange={e => setPhoneNum(e.target.value.replace(/[^\d-]/g, ''))}
                   placeholder="412-1234567"
-                  className={inputCls}
+                  className={`${inputCls} ${errors.phone ? 'ring-2 ring-red-500 border-red-500' : ''}`}
                 />
               </div>
+              {errors.phone && <p className="mt-1 text-xs text-red-400">{errors.phone}</p>}
+              {phoneDuplicate && !errors.phone && (
+                <div className="mt-2 flex items-start gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl">
+                  <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Ya existe un cliente con este teléfono: <span className="font-bold">{phoneDuplicate.nombre || phoneDuplicate.fullName}</span>
+                  </p>
+                </div>
+              )}
             </div>
           </section>
 
@@ -329,6 +370,8 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
                         type="number"
                         min={0}
                         step={0.01}
+                        inputMode="decimal"
+                        enterKeyHint="done"
                         value={creditLimit}
                         onChange={e => setCreditLimit(parseFloat(e.target.value) || 0)}
                         className={`${inputCls} pl-7`}
@@ -336,25 +379,39 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
                     </div>
                   </div>
 
-                  {/* Días de pago */}
+                  {/* Días de pago — opcional, independiente del límite */}
                   <div>
-                    <label className={labelCls}>Días de pago default</label>
-                    <div className="flex gap-2 flex-wrap">
-                      {PAYMENT_DAY_OPTIONS.map(d => (
-                        <button
-                          key={d}
-                          type="button"
-                          onClick={() => setDefaultPaymentDays(d)}
-                          className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
-                            defaultPaymentDays === d
-                              ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
-                              : 'bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-white/50 hover:bg-slate-200 dark:hover:bg-white/[0.1]'
-                          }`}
-                        >
-                          {d === 0 ? 'Contado' : `${d} días`}
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className={labelCls + ' mb-0'}>Días de pago default</label>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/30">
+                        Opcional
+                      </span>
                     </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {PAYMENT_DAY_OPTIONS.map(d => {
+                        const selected = defaultPaymentDays === d;
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            // Toggle: click en la píldora seleccionada la deselecciona.
+                            onClick={() => setDefaultPaymentDays(selected ? null : d)}
+                            className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${
+                              selected
+                                ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
+                                : 'bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-white/50 hover:bg-slate-200 dark:hover:bg-white/[0.1]'
+                            }`}
+                          >
+                            {d === 0 ? 'Contado' : `${d} días`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {defaultPaymentDays === null && (
+                      <p className="text-[11px] font-medium text-slate-400 dark:text-white/30 mt-1.5">
+                        Sin período predefinido. Podrás elegirlo al facturar.
+                      </p>
+                    )}
                   </div>
 
                   {/* Toggle crédito aprobado */}

@@ -371,9 +371,9 @@ const HELP_CATEGORIES: HelpCategory[] = [
             { name: 'Exportar estado de cuenta', what: 'Genera un PDF o Excel con el historial del cliente para enviárselo.' },
           ],
           concepts: [
-            { term: 'Saldo pendiente', def: 'Cuánto debe el cliente en este momento. Es la suma de sus facturas menos sus abonos.' },
-            { term: 'Factura', def: 'Registro de una venta a crédito. El cliente lleva el producto y promete pagar después.' },
-            { term: 'Abono', def: 'Pago parcial o total de una factura. Cada abono reduce el saldo pendiente.' },
+            { term: 'Saldo pendiente', def: 'Cuánto debe el cliente en este momento. Es la suma de sus cargos menos sus abonos.' },
+            { term: 'Cargo / Venta', def: 'Registro interno de una venta a crédito. El cliente lleva el producto y promete pagar después. No sustituye factura fiscal.' },
+            { term: 'Abono', def: 'Pago parcial o total de un cargo. Cada abono reduce el saldo pendiente.' },
             { term: 'Consumidor Final', def: 'Venta a cliente anónimo (sin nombre). NO aparece en CxC porque no tiene deuda asociada.' },
           ],
           emptyState: {
@@ -631,7 +631,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
             { term: 'IGTF (3%)', def: 'Se agrega cuando el cliente paga en divisas (efectivo en USD, etc.).' },
           ],
           tips: [
-            'Los módulos de Libro de Ventas, Libro de Compras y Declaración IVA están en desarrollo y pendientes de homologación SENIAT — aparecen como "Próximamente".',
+            'Dualis NO emite documentos fiscales. El "Reporte de Ventas" es un registro administrativo interno para tu control y el de tu contador, no sustituye el Libro de Ventas fiscal que debe llevar tu medio de emisión homologado (máquina fiscal, imprenta autorizada o sistema digital aprobado por el SENIAT).',
             'El arqueo se hace desde Ventas/Cajas → botón "Cerrar Turno" en el terminal correspondiente.',
           ],
         },

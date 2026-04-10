@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useTenantSafe } from '../context/TenantContext';
 import {
   Check, Zap, Crown, Building2, ArrowLeft, Copy, CheckCheck,
   AlertTriangle, Clock, Loader2, Send, ChevronRight, Shield,
@@ -80,9 +81,9 @@ function StatusBadge({ status, daysLeft }: { status: string; daysLeft: number | 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function BillingPage() {
   const navigate = useNavigate();
-  const { empresa_id } = useParams<{ empresa_id: string }>();
+  const { tenantId } = useTenantSafe();
   const { userProfile } = useAuth();
-  const businessId = userProfile?.businessId || empresa_id || '';
+  const businessId = tenantId || userProfile?.businessId || '';
 
   const { subscription, trialDaysLeft, isExpired } = useSubscription(businessId);
 
@@ -187,7 +188,7 @@ export default function BillingPage() {
             Te avisaremos por email cuando esté listo.
           </p>
           <button
-            onClick={() => navigate(`/${empresa_id}/admin/dashboard`)}
+            onClick={() => navigate('/admin/dashboard')}
             className="px-8 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-black text-sm shadow-lg hover:-translate-y-0.5 transition-all"
           >
             Volver al sistema

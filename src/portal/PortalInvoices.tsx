@@ -73,6 +73,8 @@ export default function PortalInvoices() {
         clienteSignature: sigData,
         clienteSignedAt: new Date().toISOString(),
         clienteSignedBy: customerName,
+        signatureMethod: 'portal',
+        awaitingPortalConfirmation: false,
       });
       setSigMovId(null);
     } catch (err) {
@@ -123,9 +125,9 @@ export default function PortalInvoices() {
   return (
     <div className="space-y-4 sm:space-y-6 animate-in">
       <div>
-        <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Facturas</h1>
+        <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Movimientos</h1>
         <p className="text-xs sm:text-sm text-white/40 font-bold mt-1">
-          Historial completo de movimientos
+          Historial completo de tu cuenta
         </p>
       </div>
 
@@ -227,6 +229,11 @@ export default function PortalInvoices() {
                       {(mov as any).clienteSignature && (
                         <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 text-[7px] font-black uppercase rounded shrink-0">
                           Firmado
+                        </span>
+                      )}
+                      {(mov as any).awaitingPortalConfirmation && !(mov as any).clienteSignature && (
+                        <span className="px-1.5 py-0.5 bg-violet-500/10 text-violet-400 text-[7px] font-black uppercase rounded shrink-0">
+                          Confirma
                         </span>
                       )}
                     </div>

@@ -1,4 +1,5 @@
 import { LoyaltyTier, LoyaltyConfig, TierBenefit } from '../../types';
+import { addDoc, collection, doc, getDoc, setDoc, Firestore } from 'firebase/firestore';
 
 // ─── Default Loyalty Config ────────────────────────────────────────────────────
 
@@ -104,4 +105,72 @@ export function tierProgress(totalPoints: number, config: LoyaltyConfig): {
     progress,
     pointsToNext: Math.max(0, nextThreshold - totalPoints),
   };
+}
+
+// ─── Side-effect helper: leer config + escribir loyaltyAccounts/loyaltyEvents ──
+// Path unificado: businesses/{bid}/config/loyalty (espejo de Configuracion.tsx
+// y PortalLoyalty.tsx). Fire-and-forget desde el call site.
+export async function applyLoyaltyForMovement(
+  db: Firestore,
+  businessId: string,
+  data: any,
+  movementId: string,
+): Promise<void> {
+  if (!businessId) return;
+  const customerId: string | undefined = data.entityId || data.customerId;
+  if (!customerId) return;
+  const isFactura = data.movementType === 'FACTURA';
+  const isAbono = data.movementType === 'ABONO';
+  if (!isFactura && !isAbono) return;
+
+  const cfgSnap = await getDoc(doc(db, `businesses/${businessId}/config`, 'loyalty'));
+  if (!cfgSnap.exists()) return;
+  const config: LoyaltyConfig = { ...DEFAULT_LOYALTY_CONFIG, ...(cfgSnap.data() as LoyaltyConfig) };
+  if (!config.enabled) return;
+
+  const amountUSD = Number(data.amountInUSD ?? data.amount ?? 0);
+  if (amountUSD <= 0) return;
+
+  let pointsEarned = calculatePurchasePoints(amountUSD, config);
+
+  // Early-payment bonus solo aplica a abonos con dueDate
+  let earlyDays = 0;
+  if (isAbono && data.dueDate) {
+    const due = new Date(data.dueDate).getTime();
+    const now = Date.now();
+    earlyDays = Math.floor((due - now) / (1000 * 60 * 60 * 24));
+    if (earlyDays > 0) {
+      pointsEarned += calculateEarlyPaymentBonus(earlyDays, config);
+    }
+  }
+  if (pointsEarned <= 0) return;
+
+  const accRef = doc(db, `businesses/${businessId}/loyaltyAccounts`, customerId);
+  const accSnap = await getDoc(accRef);
+  const prevTotal = accSnap.exists() ? Number((accSnap.data() as any).totalPoints || 0) : 0;
+  const prevCurrent = accSnap.exists() ? Number((accSnap.data() as any).currentPoints || 0) : 0;
+  const newTotal = prevTotal + pointsEarned;
+  const newCurrent = prevCurrent + pointsEarned;
+  const newTier = calculateTier(newTotal, config);
+  const nowIso = new Date().toISOString();
+
+  await setDoc(accRef, {
+    customerId,
+    businessId,
+    totalPoints: newTotal,
+    currentPoints: newCurrent,
+    tier: newTier,
+    updatedAt: nowIso,
+  }, { merge: true });
+
+  await addDoc(collection(db, `businesses/${businessId}/loyaltyEvents`), {
+    customerId,
+    businessId,
+    type: isFactura ? 'purchase' : (earlyDays > 0 ? 'early_payment' : 'payment'),
+    points: pointsEarned,
+    amountUSD,
+    movementId,
+    earlyDays: earlyDays > 0 ? earlyDays : null,
+    createdAt: nowIso,
+  });
 }

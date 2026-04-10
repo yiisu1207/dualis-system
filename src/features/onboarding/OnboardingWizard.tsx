@@ -9,10 +9,10 @@ import {
 import { BUSINESS_PRESETS, PRESET_IDS, type BusinessPreset } from '../../data/businessPresets';
 
 const SETUP_STEPS_META = [
-  { icon: Building2,   label: 'Datos del Negocio', desc: 'Nombre, RIF y dirección fiscal',  cls: 'bg-indigo-50  dark:bg-indigo-500/10  text-indigo-600  dark:text-indigo-400'  },
-  { icon: Banknote,    label: 'Finanzas y Fiscal',  desc: 'Tasa BCV, IVA e IGTF',           cls: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
-  { icon: Monitor,     label: 'Terminal POS',        desc: 'Tu primera caja de ventas',      cls: 'bg-sky-50     dark:bg-sky-500/10     text-sky-600     dark:text-sky-400'     },
-  { icon: Fingerprint, label: 'PIN de Seguridad',    desc: 'Crea y confirma tu PIN secreto', cls: 'bg-rose-50    dark:bg-rose-500/10    text-rose-600    dark:text-rose-400'    },
+  { icon: Building2,   label: 'Datos del Negocio',   desc: 'Nombre, RIF y dirección',          cls: 'bg-indigo-50  dark:bg-indigo-500/10  text-indigo-600  dark:text-indigo-400'  },
+  { icon: Banknote,    label: 'Finanzas',             desc: 'Tasa BCV, IVA e IGTF referencial', cls: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  { icon: Monitor,     label: 'Terminal POS',         desc: 'Tu primera caja de ventas',        cls: 'bg-sky-50     dark:bg-sky-500/10     text-sky-600     dark:text-sky-400'     },
+  { icon: Fingerprint, label: 'PIN de Seguridad',     desc: 'Crea y confirma tu PIN secreto',   cls: 'bg-rose-50    dark:bg-rose-500/10    text-rose-600    dark:text-rose-400'    },
 ];
 
 export default function OnboardingWizard() {
@@ -35,20 +35,21 @@ export default function OnboardingWizard() {
   }, [tenantId, userProfile]);
 
   const [formData, setFormData] = useState({
-    tipoNegocio:  'general',
-    companyName:  '',
-    rif:          '',
-    address:      '',
-    phone:        '',
-    mainCurrency: 'USD',
-    exchangeRate: '36.50',
-    iva:          '16',
-    igtfEnabled:  true,
-    igtfRate:     '3',
-    terminalName: 'Caja Principal 01',
-    terminalType: 'detal' as 'detal' | 'mayor',
-    pin:          '',
-    pinConfirm:   '',
+    tipoNegocio:       'general',
+    companyName:       '',
+    rif:               '',
+    address:           '',
+    phone:             '',
+    mainCurrency:      'USD',
+    exchangeRate:      '36.50',
+    iva:               '16',
+    igtfEnabled:       true,
+    igtfRate:          '3',
+    fiscalMediumType:  'maquina_fiscal' as 'maquina_fiscal' | 'imprenta' | 'digital_homologado' | 'ninguno',
+    terminalName:      'Caja Principal 01',
+    terminalType:      'detal' as 'detal' | 'mayor',
+    pin:               '',
+    pinConfirm:        '',
   });
 
   const f = (key: string, val: unknown) =>
@@ -141,6 +142,9 @@ export default function OnboardingWizard() {
 
       if (!currentTenantId) throw new Error('No se pudo obtener el ID del negocio.');
 
+      // Resolve the chosen preset (general fallback)
+      const chosenPreset = BUSINESS_PRESETS[formData.tipoNegocio] || BUSINESS_PRESETS.general;
+
       // Update businesses doc with name + fiscal summary + business type
       await setDoc(doc(db, 'businesses', currentTenantId), {
         name: formData.companyName.trim() || userProfile?.fullName || user?.email || 'Mi Negocio',
@@ -150,7 +154,8 @@ export default function OnboardingWizard() {
         setupCompleted: true,
       }, { merge: true });
 
-      // Full business config
+      // Full business config — incluye defaults del preset (categorías/unidades)
+      // para que Inventario muestre sugerencias desde el primer producto.
       await setDoc(doc(db, 'businessConfigs', currentTenantId), {
         companyName:    formData.companyName.trim(),
         companyRif:     formData.rif.trim(),
@@ -162,6 +167,9 @@ export default function OnboardingWizard() {
         tasaGrupo:      parseFloat(formData.exchangeRate) || 36.5,
         igtfEnabled:    formData.igtfEnabled,
         igtfRate:       parseFloat(formData.igtfRate) || 3,
+        fiscalMediumType: formData.fiscalMediumType,
+        presetCategories: chosenPreset.defaultCategories,
+        presetUnits:      chosenPreset.defaultUnits,
         setupCompleted: true,
         updatedAt:      new Date().toISOString(),
       });
@@ -507,6 +515,39 @@ export default function OnboardingWizard() {
                       <span className="text-xs text-slate-400 dark:text-slate-500">Estándar: 3%</span>
                     </div>
                   )}
+                </div>
+
+                {/* Fiscal medium selector — external document system */}
+                <div className="bg-amber-50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/20 rounded-3xl p-6 space-y-4">
+                  <div>
+                    <p className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-1">Medio Fiscal Externo</p>
+                    <p className="text-sm font-black text-slate-900 dark:text-white">¿Cómo emites tus facturas fiscales?</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                      Dualis es un sistema administrativo <strong>NO homologado</strong> por el SENIAT. Debes mantener tu medio fiscal externo (máquina fiscal, imprenta autorizada o sistema digital homologado) conforme a la Providencia SNAT/2011/00071.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { id: 'maquina_fiscal',     label: 'Máquina Fiscal',              desc: 'Tipo I, II o III homologada' },
+                      { id: 'imprenta',           label: 'Imprenta Autorizada',         desc: 'Facturas forma libre preimpresas' },
+                      { id: 'digital_homologado', label: 'Sistema Digital Homologado',  desc: 'Proveedor con RIF en lista SENIAT' },
+                      { id: 'ninguno',            label: 'Aún no tengo',                desc: 'Debo gestionarlo antes de emitir facturas fiscales' },
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => f('fiscalMediumType', opt.id)}
+                        className={`text-left px-4 py-3 rounded-2xl border transition-all ${
+                          formData.fiscalMediumType === opt.id
+                            ? 'bg-amber-500/10 border-amber-500/40'
+                            : 'bg-white dark:bg-[#0d1424]/40 border-slate-200 dark:border-white/10 hover:border-amber-500/30'
+                        }`}
+                      >
+                        <p className="text-xs font-black text-slate-900 dark:text-white">{opt.label}</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{opt.desc}</p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="flex gap-4">

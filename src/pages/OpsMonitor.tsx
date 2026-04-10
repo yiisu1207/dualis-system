@@ -837,7 +837,7 @@ function BusinessesTab({ businesses, stats, tenants, users, exportCSV, onRefresh
                 <th className="px-4 py-3">Slug</th>
                 <th className="px-4 py-3 text-right">Usuarios</th>
                 <th className="px-4 py-3 text-right">Clientes</th>
-                <th className="px-4 py-3 text-right">Facturas</th>
+                <th className="px-4 py-3 text-right">Ventas</th>
                 <th className="px-4 py-3 text-right">Revenue</th>
                 <th className="px-4 py-3 text-right">Creado</th>
               </tr>
@@ -1644,7 +1644,7 @@ function RevenueTab({ stats, movements, businesses, exportCSV }: any) {
 
       {/* Revenue KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KpiCard icon={Receipt} label="Facturas" value={fmtInt(filteredMov.length)} color="indigo" sub={`Período: ${period}`} isString />
+        <KpiCard icon={Receipt} label="Ventas" value={fmtInt(filteredMov.length)} color="indigo" sub={`Período: ${period}`} isString />
         <KpiCard icon={DollarSign} label="Revenue" value={`$${fmt(totalRevenue)}`} color="emerald" sub="Total facturado" isString />
         <KpiCard icon={BadgeDollarSign} label="Ticket Promedio" value={`$${fmt(avgTicket)}`} color="sky" sub="Por factura" isString />
         <KpiCard icon={Banknote} label="IVA + IGTF" value={`$${fmt(totalIVA + totalIGTF)}`} color="violet" sub={`IVA: $${fmt(totalIVA)} | IGTF: $${fmt(totalIGTF)}`} isString />

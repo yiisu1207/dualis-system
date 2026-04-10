@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { NavLink, useLocation, useNavigate, useParams } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { User, AppConfig } from '../../types';
 import { type RolePermissions, type ModuleId } from '../hooks/useRolePermissions';
 import { useVendor } from '../context/VendorContext';
@@ -31,6 +31,9 @@ import {
   Truck,
   History,
   CalendarDays,
+  Award,
+  ShieldCheck,
+  MessageCircle,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -43,6 +46,11 @@ interface SidebarProps {
   rolePermissions?: RolePermissions;
   badges?: Record<string, number>;
   labelOverrides?: Record<string, string>;
+  presetFlags?: {
+    hasAppointments?: boolean;
+    hasPreorders?: boolean;
+    hasRepairTickets?: boolean;
+  };
   onLogout: () => void;
   onOpenProfile: () => void;
 }
@@ -80,6 +88,9 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'citas',        label: 'Citas',            Icon: CalendarDays,    path: 'citas'        },
       { id: 'prepedidos',   label: 'Pre-Pedidos',      Icon: Package,         path: 'prepedidos'   },
       { id: 'reparaciones', label: 'Reparaciones',     Icon: ClipboardCheck,  path: 'reparaciones' },
+      { id: 'cotizaciones', label: 'Cotizaciones',     Icon: FileText,        path: 'cotizaciones' },
+      { id: 'recurrentes', label: 'Recurrentes',      Icon: Clock,           path: 'recurrentes'  },
+      { id: 'transferencias',label: 'Transferencias',   Icon: ArrowLeftRight,  path: 'transferencias'},
       { id: 'tasas',        label: 'Tasas Cambiarias', Icon: TrendingUp,      path: 'tasas'        },
       { id: 'historial',    label: 'Libro Movimientos',Icon: History,         path: 'historial'    },
     ],
@@ -89,7 +100,14 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Finanzas',
     items: [
       { id: 'clientes',     label: 'Deudores / CxC',   Icon: Wallet,          path: 'cobranzas'    },
+      { id: 'cobranza',     label: 'Agenda Cobranza',  Icon: CalendarDays,    path: 'cobranza'     },
       { id: 'proveedores',  label: 'Gastos / CxP',     Icon: Receipt,         path: 'cxp'          },
+      { id: 'tesoreria',    label: 'Tesorería',        Icon: Landmark,        path: 'tesoreria'    },
+      { id: 'flujocaja',    label: 'Flujo de Caja',    Icon: TrendingUp,      path: 'flujocaja'    },
+      { id: 'aprobaciones', label: 'Aprobaciones',     Icon: ShieldCheck,     path: 'aprobaciones' },
+      { id: 'verificacion', label: 'Verificación',     Icon: ShieldCheck,     path: 'verificacion' },
+      { id: 'reclamos',     label: 'Reclamos',         Icon: ClipboardCheck,  path: 'reclamos'     },
+      { id: 'portalchat',   label: 'Chat Portal',      Icon: MessageCircle,   path: 'portalchat'   },
       { id: 'contabilidad', label: 'Contabilidad',     Icon: BookOpen,        path: 'contabilidad' },
       { id: 'conciliacion', label: 'Conciliación',     Icon: Landmark,        path: 'conciliacion' },
     ],
@@ -99,6 +117,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Equipo',
     items: [
       { id: 'rrhh',         label: 'RRHH / Nómina',    Icon: Users,           path: 'rrhh'         },
+      { id: 'comisiones',   label: 'Comisiones',       Icon: Award,           path: 'comisiones'   },
       { id: 'sucursales',   label: 'Sucursales',       Icon: MapPin,          path: 'sucursales'   },
     ],
   },
@@ -106,7 +125,10 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'inteligencia',
     label: 'Inteligencia',
     items: [
-      { id: 'reportes',     label: 'Estadísticas',     Icon: BarChart3,       path: 'reportes'     },
+      { id: 'reportes',     label: 'Reportes',         Icon: BarChart3,       path: 'reportes'     },
+      { id: 'estadisticas', label: 'Estadísticas',     Icon: BarChart3,       path: 'estadisticas' },
+      { id: 'pareto',       label: 'Pareto 80/20',     Icon: BarChart3,       path: 'pareto'       },
+      { id: 'rentabilidad', label: 'Rentabilidad',     Icon: TrendingUp,      path: 'rentabilidad' },
       { id: 'vision',       label: 'Auditoría IA',     Icon: ClipboardList,   path: 'vision'       },
       { id: 'comparar',     label: 'Comparar Libros',  Icon: ArrowLeftRight,  path: 'comparar'     },
     ],
@@ -120,6 +142,15 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+// Fase C.4 — Mapeo item → data-tour selector para el tour guiado
+const TOUR_ATTR: Record<string, string> = {
+  cajas:      'nav-pos',
+  inventario: 'nav-inventario',
+  clientes:   'nav-cxc',
+  reportes:   'nav-reportes',
+  config:     'topbar-config',
+};
 
 const moduleMap: Record<string, string> = {
   clientes:     'cxc',
@@ -141,6 +172,46 @@ const GROUP_ICON_COLOR = [
   'text-sky-400',      // Equipo
   'text-violet-400',   // Inteligencia
   'text-slate-400',    // Sistema
+];
+
+// Tinted header colors per group (subtle accent for labels)
+const GROUP_HEADER_COLOR = [
+  'text-indigo-500/30',  // Dashboard
+  'text-sky-500/30',     // Operaciones
+  'text-emerald-500/30', // Finanzas
+  'text-sky-500/30',     // Equipo
+  'text-violet-500/30',  // Inteligencia
+  'text-white/20',       // Sistema (neutral)
+];
+
+// Dot accent colors for group headers
+const GROUP_DOT_COLOR = [
+  'bg-indigo-400/40',    // Dashboard
+  'bg-sky-400/40',       // Operaciones
+  'bg-emerald-400/40',   // Finanzas
+  'bg-sky-400/40',       // Equipo
+  'bg-violet-400/40',    // Inteligencia
+  'bg-slate-400/30',     // Sistema
+];
+
+// Indent line gradient colors per group
+const GROUP_INDENT_COLOR = [
+  'from-indigo-400/20',  // Dashboard
+  'from-sky-400/20',     // Operaciones
+  'from-emerald-400/20', // Finanzas
+  'from-sky-400/20',     // Equipo
+  'from-violet-400/20',  // Inteligencia
+  'from-slate-400/15',   // Sistema
+];
+
+// Separator gradient colors (via color between groups)
+const GROUP_SEP_COLOR = [
+  'via-indigo-500/15',   // Dashboard
+  'via-sky-500/15',      // Operaciones
+  'via-emerald-500/15',  // Finanzas
+  'via-sky-500/15',      // Equipo
+  'via-violet-500/15',   // Inteligencia
+  'via-slate-500/10',    // Sistema
 ];
 
 // ─── TOOLTIP helper (collapsed mode) ─────────────────────────────────────────
@@ -173,11 +244,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   rolePermissions,
   badges = {},
   labelOverrides = {},
+  presetFlags,
   onLogout,
   onOpenProfile,
 }) => {
   const location     = useLocation();
-  const { empresa_id } = useParams();
   const navigate     = useNavigate();
   const { moduleHidden, moduleForced } = useVendor();
 
@@ -216,6 +287,27 @@ const Sidebar: React.FC<SidebarProps> = ({
     });
   }, []);
 
+  // ── Swipe-to-close on mobile ────────────────────────────────────────────
+  const touchStartX = useRef(0);
+  const sidebarSwipeRef = useRef<HTMLElement>(null);
+  const [swipeX, setSwipeX] = useState(0);
+  const swiping = useRef(false);
+
+  const handleSidebarTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    swiping.current = true;
+  }, []);
+  const handleSidebarTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!swiping.current) return;
+    const dx = e.touches[0].clientX - touchStartX.current;
+    if (dx < 0) setSwipeX(dx);
+  }, []);
+  const handleSidebarTouchEnd = useCallback(() => {
+    swiping.current = false;
+    if (swipeX < -80) setIsOpen(false);
+    setSwipeX(0);
+  }, [swipeX, setIsOpen]);
+
   // ── Auto-close sidebar on resize past lg breakpoint ────────────────────
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -241,7 +333,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const base   = empresa_id ? `/${empresa_id}/admin` : '';
+  const base   = '/admin';
   const toPath = (p: string) => `${base}/${p}`;
 
   const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
@@ -249,6 +341,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   const isVisible = (item: NavItem): boolean => {
     if (moduleHidden(item.id)) return false;
     if (item.id === 'help') return true;
+
+    // Preset-based gating — vertical presets hide irrelevant tabs unless forced
+    // If presetFlags is not supplied, behave as before (no gating)
+    if (presetFlags && !moduleForced(item.id)) {
+      if (item.id === 'citas' && presetFlags.hasAppointments === false) return false;
+      if (item.id === 'prepedidos' && presetFlags.hasPreorders === false) return false;
+      if (item.id === 'reparaciones' && presetFlags.hasRepairTickets === false) return false;
+    }
 
     const modKey = moduleMap[item.id];
     if (modKey && (config as any).modules?.[modKey] === false && !moduleForced(item.id)) return false;
@@ -288,18 +388,24 @@ const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
+        ref={sidebarSwipeRef}
+        data-tour="sidebar"
+        onTouchStart={handleSidebarTouchStart}
+        onTouchMove={handleSidebarTouchMove}
+        onTouchEnd={handleSidebarTouchEnd}
+        style={swipeX < 0 ? { transform: `translateX(${swipeX}px)`, transition: swiping.current ? 'none' : undefined } : undefined}
         className={`
           fixed lg:static top-0 left-0 h-full z-50 flex flex-col overflow-hidden
           transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]
           lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
           w-[280px] sm:w-[260px] ${collapsed ? 'lg:w-[72px]' : 'lg:w-[230px]'}
-          bg-[#070b14] relative
+          bg-gradient-to-b from-[#0c1322] via-[#070b14] to-[#0a0f1a] relative
         `}
       >
         {/* Decorative layers */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent pointer-events-none" />
         <div className="absolute right-0 inset-y-0 w-px bg-gradient-to-b from-transparent via-indigo-500/20 to-transparent pointer-events-none z-10" />
-        <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-32 h-32 bg-indigo-600/8 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-40 h-40 bg-indigo-600/[0.12] rounded-full blur-3xl pointer-events-none" />
 
         {/* ── LOGO ──────────────────────────────────────────────────── */}
         <div
@@ -313,14 +419,15 @@ const Sidebar: React.FC<SidebarProps> = ({
             {!collapsed && (
               <div className="min-w-0">
                 <p className="text-white font-black text-[15px] leading-none tracking-tight">Dualis</p>
-                <p className="text-[9px] font-bold text-white/25 uppercase tracking-[0.18em] mt-0.5">Sistema ERP</p>
+                <p className="text-[9px] font-bold text-indigo-400/40 uppercase tracking-[0.18em] mt-0.5">Sistema ERP</p>
+                <div className="h-0.5 w-10 bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full mt-1.5" />
               </div>
             )}
           </div>
           {!collapsed && (
             <button
               onClick={toggleCollapsed}
-              className="w-6 h-6 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] text-white/20 hover:text-white/60 flex items-center justify-center transition-all shrink-0"
+              className="w-6 h-6 rounded-lg bg-indigo-500/[0.08] hover:bg-indigo-500/[0.15] text-white/20 hover:text-white/60 flex items-center justify-center transition-all shrink-0"
               title="Colapsar menú"
             >
               <ChevronLeft size={12} />
@@ -351,14 +458,17 @@ const Sidebar: React.FC<SidebarProps> = ({
 
                 {/* ── Group header ── */}
                 {collapsed ? (
-                  // Icon-only mode: just a separator
-                  gi > 0 && <div className="w-8 h-px bg-white/[0.06] my-2.5 shrink-0 mx-auto" />
+                  // Icon-only mode: separator with group color
+                  gi > 0 && <div className={`w-8 h-px bg-gradient-to-r from-transparent ${GROUP_SEP_COLOR[gi] || 'via-white/10'} to-transparent my-2.5 shrink-0 mx-auto`} />
                 ) : isSimpleGroup ? (
-                  // Single-item groups: static label
+                  // Single-item groups: static label with accent
                   <div className={`${gi > 0 ? 'mt-3' : 'mt-0'} mb-1 px-2`}>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">
-                      {group.label}
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-1.5 h-1.5 rounded-full ${GROUP_DOT_COLOR[gi] || 'bg-white/20'}`} />
+                      <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${GROUP_HEADER_COLOR[gi] || 'text-white/20'}`}>
+                        {group.label}
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   // Multi-item groups: clickable folder header
@@ -371,8 +481,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     `}
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div className={`w-px h-3 rounded-full bg-current opacity-30 ${iconColor}`} />
-                      <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${isGroupOpen ? 'text-white/30' : 'text-white/20'} group-hover/gh:text-white/40 transition-colors`}>
+                      <div className={`w-1.5 h-1.5 rounded-full ${GROUP_DOT_COLOR[gi] || 'bg-white/20'} transition-transform duration-200 ${isGroupOpen ? 'scale-125' : 'scale-100'}`} />
+                      <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${isGroupOpen ? GROUP_HEADER_COLOR[gi]?.replace('/30', '/50') || 'text-white/40' : GROUP_HEADER_COLOR[gi] || 'text-white/20'} group-hover/gh:text-white/40 transition-colors`}>
                         {group.label}
                       </p>
                     </div>
@@ -396,7 +506,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   {/* Indent line for expanded groups */}
                   {!collapsed && !isSimpleGroup && isGroupOpen && (
                     <div className="flex">
-                      <div className="ml-[14px] mr-1 w-px bg-white/[0.05] rounded-full self-stretch my-0.5" />
+                      <div className={`ml-[14px] mr-1 w-px rounded-full self-stretch my-0.5 bg-gradient-to-b ${GROUP_INDENT_COLOR[gi] || 'from-white/10'} to-transparent`} />
                       <div className="flex-1 flex flex-col gap-0">
                         {visibleItems.map(item => (
                           <NavItemRow
@@ -459,7 +569,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             const isActivePaid  = subscription.status === 'active' && !inGracePeriod && !isExpired;
             const days          = inGracePeriod ? graceDaysLeft : isTrial ? trialDaysLeft : planDaysLeft;
             const planName      = subscription.plan === 'trial' ? 'Trial' : subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1);
-            const billingPath   = `/${empresa_id}/billing`;
+            const billingPath   = '/billing';
             const theme         = isExpired || inGracePeriod ? 'rose' : isTrial ? 'amber' : 'emerald';
 
             if (collapsed) {
@@ -559,9 +669,10 @@ const Sidebar: React.FC<SidebarProps> = ({
             `}
           >
             <div className="relative shrink-0">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 flex items-center justify-center text-white font-black text-[12px] select-none shadow-[0_0_12px_rgba(245,158,11,0.3)]">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 flex items-center justify-center text-white font-black text-[12px] select-none shadow-[0_0_12px_rgba(245,158,11,0.3)] ring-2 ring-emerald-500/50">
                 {user.name.charAt(0).toUpperCase()}
               </div>
+              <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-[#070b14]" />
               {collapsed && (
                 <span className="absolute -bottom-1 -right-1 px-1 py-px rounded bg-[#1a2235] border border-white/[0.08] text-[7px] font-black text-white/50 uppercase leading-none">
                   {(roleLabel[user.role] || user.role).slice(0, 3)}
@@ -608,6 +719,7 @@ const NavItemRow: React.FC<NavItemRowProps> = ({
 }) => (
   <NavLink
     to={href}
+    data-tour={TOUR_ATTR[item.id] || undefined}
     onClick={onNavigate}
     className={`
       relative group flex items-center rounded-xl transition-all duration-200 shrink-0
@@ -616,13 +728,13 @@ const NavItemRow: React.FC<NavItemRowProps> = ({
         : `gap-2.5 px-2.5 py-2 w-full mb-0.5 ${indented ? 'pl-2.5' : ''}`
       }
       ${isActive
-        ? 'bg-gradient-to-r from-indigo-600/[0.18] to-violet-600/[0.08] border border-indigo-500/[0.12] text-white'
-        : `${iconColor} hover:bg-white/[0.05] hover:text-white`
+        ? 'bg-gradient-to-r from-indigo-600/[0.22] to-violet-600/[0.10] border border-indigo-500/[0.15] text-white'
+        : `${iconColor} hover:bg-white/[0.07] hover:text-white hover:pl-3`
       }
     `}
   >
     {isActive && (
-      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full bg-gradient-to-b from-indigo-400 to-violet-400 shadow-[0_0_8px_rgba(99,102,241,0.7)]" />
+      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full bg-gradient-to-b from-indigo-400 to-violet-400 shadow-[0_0_12px_rgba(99,102,241,0.6)]" />
     )}
     <span className="relative shrink-0">
       <item.Icon size={15} strokeWidth={isActive ? 2.2 : 1.7} className="relative z-10" />

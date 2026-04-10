@@ -17,7 +17,7 @@ export default function PendingApprovalWall() {
 
   const redirectIfActive = useCallback((status: string | undefined, businessId: string | undefined) => {
     if (status === 'ACTIVE' && businessId) {
-      navigate(`/${businessId}/admin/dashboard`, { replace: true });
+      navigate('/admin/dashboard', { replace: true });
     }
     if (status === 'REJECTED') {
       // Stay on page but update UI

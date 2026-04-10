@@ -17,7 +17,35 @@ export type CartItem = {
   stock: number;
   tipoTasa?: string; // 'BCV' | customRate.id
   unitType?: string; // 'unidad' | 'kg' | 'g' | 'ton' | 'lt' | 'ml' | 'lb'
+  // Fase B — venta por bulto
+  unidadesPorBulto?: number; // >= 1; default 1. Cuántas unidades reales trae 1 bulto
+  sellMode?: 'unidad' | 'bulto'; // default 'unidad'. Si 'bulto', qty representa bultos, precio se multiplica
+  // Fase B — código de barras
+  barcode?: string;
+  // Fase 9.4 — variantes
+  variantId?: string;       // id de la variante seleccionada
+  variantLabel?: string;    // ej: "M / Rojo" — para display
+  // H.23 — nota por item
+  note?: string;            // ej: "sin azúcar", "color rojo"
 };
+
+// Unidades reales descontadas del stock según modo de venta
+export function effectiveStockQty(item: CartItem): number {
+  if (item.sellMode === 'bulto') {
+    const per = Math.max(1, item.unidadesPorBulto || 1);
+    return item.qty * per;
+  }
+  return item.qty;
+}
+
+// Precio efectivo considerando modo de venta
+export function effectiveLinePrice(item: CartItem): number {
+  if (item.sellMode === 'bulto') {
+    const per = Math.max(1, item.unidadesPorBulto || 1);
+    return item.priceUsd * per;
+  }
+  return item.priceUsd;
+}
 
 type CartTotals = {
   subtotalUsd: number;
@@ -38,8 +66,11 @@ type CartContextValue = {
   cartTipoTasa: string | null; // tipo de tasa del carrito actual (null = vacío)
   setDiscount: (type: DiscountType, value: number) => void;
   addProductByCode: (code: string, priceTier?: PriceTier, priceOverride?: number) => Promise<boolean>;
+  addProductByBarcode: (barcode: string, priceTier?: PriceTier) => Promise<boolean>;
+  setItemSellMode: (id: string, mode: 'unidad' | 'bulto') => void;
   updateQty: (id: string, qty: number) => void;
   updateItemPrices: (priceMap: Record<string, number>) => void;
+  setItemNote: (id: string, note: string) => void;
   removeItem: (id: string) => void;
   clearCart: () => void;
   loadCart: (items: CartItem[], discountType: DiscountType, discountValue: number) => void;
@@ -126,23 +157,62 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      // Fase 9.4 — si no encontramos el código en productos, buscar en variantes
+      if (!foundId || !foundData) {
+        const allSnap = await getDocs(productsCol);
+        for (const d of allSnap.docs) {
+          const pd = d.data() as any;
+          if (!pd.hasVariants || !Array.isArray(pd.variants)) continue;
+          const matchedVariant = pd.variants.find((v: any) =>
+            v.sku === normalized || v.barcode === normalized
+          );
+          if (matchedVariant) {
+            foundId = d.id;
+            foundData = pd;
+            // attach matched variant for downstream use
+            (foundData as any).__matchedVariant = matchedVariant;
+            break;
+          }
+        }
+      }
+
       if (!foundId || !foundData) return false;
 
       const data = foundData;
       const productTipoTasa = String(data.tipoTasa || 'BCV');
+      const matchedVar = (data as any).__matchedVariant as { id: string; sku: string; values: Record<string, string>; stock: number; precioDetal?: number; precioMayor?: number; costoUSD?: number; barcode?: string } | undefined;
 
-      const priceUsd = priceOverride != null ? priceOverride : resolvePrice(data, priceTier);
+      let priceUsd: number;
+      if (priceOverride != null) {
+        priceUsd = priceOverride;
+      } else if (matchedVar) {
+        // variant price override or fallback to parent
+        const varPrice = priceTier === 'mayor' ? matchedVar.precioMayor : matchedVar.precioDetal;
+        priceUsd = varPrice != null ? varPrice : resolvePrice(data, priceTier);
+      } else {
+        priceUsd = resolvePrice(data, priceTier);
+      }
+
+      const variantLabel = matchedVar ? Object.values(matchedVar.values).filter(Boolean).join(' / ') : undefined;
+      const cartKey = matchedVar ? `${foundId}__v_${matchedVar.id}` : foundId;
 
       const nextItem: CartItem = {
-        id: foundId,
-        codigo: String(data.codigo || data.codigoAlterno || normalized),
-        nombre: String(data.nombre || 'Producto sin nombre'),
+        id: cartKey,
+        codigo: matchedVar?.sku || String(data.codigo || data.codigoAlterno || normalized),
+        nombre: matchedVar
+          ? `${String(data.nombre || 'Producto')} — ${variantLabel}`
+          : String(data.nombre || 'Producto sin nombre'),
         qty: 1,
         priceUsd,
         ivaRate: resolveIvaRate(data),
-        stock: Number(data.stock || 0),
+        stock: matchedVar ? (matchedVar.stock || 0) : Number(data.stock || 0),
         tipoTasa: productTipoTasa,
         unitType: String(data.unitType || 'unidad'),
+        unidadesPorBulto: Math.max(1, Number(data.unidadesPorBulto) || 1),
+        sellMode: 'unidad',
+        barcode: matchedVar?.barcode || (data.barcode ? String(data.barcode) : undefined),
+        variantId: matchedVar?.id,
+        variantLabel,
       };
 
       if (itemsRef.current.length === 0) {
@@ -162,6 +232,53 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [tenantId, cartTipoTasa]
   );
 
+  const addProductByBarcode = useCallback(
+    async (barcode: string, priceTier: PriceTier = 'detal') => {
+      if (!tenantId) return false;
+      const normalized = barcode.trim();
+      if (!normalized) return false;
+      const productsCol = collection(db, `businesses/${tenantId}/products`);
+      const snap = await getDocs(query(productsCol, where('barcode', '==', normalized)));
+      if (snap.empty) {
+        // fallback a búsqueda por código
+        return addProductByCode(normalized, priceTier);
+      }
+      const found = snap.docs[0];
+      const data = found.data() as Record<string, unknown>;
+      const productTipoTasa = String(data.tipoTasa || 'BCV');
+      const priceUsd = resolvePrice(data, priceTier);
+      const nextItem: CartItem = {
+        id: found.id,
+        codigo: String(data.codigo || normalized),
+        nombre: String(data.nombre || 'Producto sin nombre'),
+        qty: 1,
+        priceUsd,
+        ivaRate: resolveIvaRate(data),
+        stock: Number(data.stock || 0),
+        tipoTasa: productTipoTasa,
+        unitType: String(data.unitType || 'unidad'),
+        unidadesPorBulto: Math.max(1, Number(data.unidadesPorBulto) || 1),
+        sellMode: 'unidad',
+        barcode: normalized,
+      };
+      if (itemsRef.current.length === 0) {
+        setStartedAt(new Date());
+        setCartTipoTasa(productTipoTasa);
+      }
+      setItems((prev) => {
+        const existing = prev.find((it) => it.id === nextItem.id);
+        if (!existing) return [...prev, nextItem];
+        return prev.map((it) => (it.id === nextItem.id ? { ...it, qty: it.qty + 1 } : it));
+      });
+      return true;
+    },
+    [tenantId, addProductByCode],
+  );
+
+  const setItemSellMode = useCallback((id: string, mode: 'unidad' | 'bulto') => {
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, sellMode: mode } : item)));
+  }, []);
+
   const updateQty = useCallback((id: string, qty: number) => {
     const nextQty = Math.max(1, Math.floor(qty || 1));
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, qty: nextQty } : item)));
@@ -177,6 +294,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (newPrice != null && newPrice > 0) return { ...item, priceUsd: newPrice };
       return item;
     }));
+  }, []);
+
+  const setItemNote = useCallback((id: string, note: string) => {
+    setItems(prev => prev.map(item => item.id === id ? { ...item, note } : item));
   }, []);
 
   const clearCart = useCallback(() => {
@@ -195,9 +316,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const totals = useMemo<CartTotals>(() => {
-    const subtotalUsd = items.reduce((sum, item) => sum + item.qty * item.priceUsd, 0);
+    const subtotalUsd = items.reduce((sum, item) => sum + item.qty * effectiveLinePrice(item), 0);
     const taxUsd = items.reduce(
-      (sum, item) => sum + item.qty * item.priceUsd * item.ivaRate,
+      (sum, item) => sum + item.qty * effectiveLinePrice(item) * item.ivaRate,
       0
     );
     const preTotalUsd = subtotalUsd + taxUsd;
@@ -224,13 +345,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       cartTipoTasa,
       setDiscount,
       addProductByCode,
+      addProductByBarcode,
+      setItemSellMode,
       updateQty,
       updateItemPrices,
+      setItemNote,
       removeItem,
       clearCart,
       loadCart,
     }),
-    [items, startedAt, rateValue, totals, discountType, discountValue, cartTipoTasa, setDiscount, addProductByCode, updateQty, updateItemPrices, removeItem, clearCart, loadCart]
+    [items, startedAt, rateValue, totals, discountType, discountValue, cartTipoTasa, setDiscount, addProductByCode, addProductByBarcode, setItemSellMode, updateQty, updateItemPrices, setItemNote, removeItem, clearCart, loadCart]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

@@ -355,3 +355,520 @@ export async function sendInviteEmail(payload: {
     html_body: buildInviteHtml(inviterName, businessName, role, inviteUrl, expiresAt),
   }, PUB);
 }
+
+/* ── Tesorería: pagos del portal (P6.G) ───────────────────────────────── */
+
+const fmtUsd = (n: number) => `$${(n || 0).toFixed(2)}`;
+
+function buildPaymentPendingHtml(opts: {
+  customerName: string;
+  amount: number;
+  bankName: string;
+  reference: string;
+  businessName: string;
+}): string {
+  return emailShell(BRAND.gradientPrimary, 'Dualis ERP', 'Nuevo pago pendiente', `
+    <h2 style="margin:0 0 12px;font-size:24px;font-weight:900;color:${BRAND.textPrimary};">
+      Pago pendiente de revisión
+    </h2>
+    <p style="margin:0 0 24px;font-size:15px;color:${BRAND.textSecondary};line-height:1.7;">
+      <strong style="color:${BRAND.textPrimary};">${opts.customerName}</strong> registró un pago en el portal de
+      <strong style="color:${BRAND.accent};">${opts.businessName}</strong>. Revísalo en Tesorería &rarr; Solicitudes.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:18px;">
+      <tr><td style="padding:24px 28px;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr><td style="padding:6px 0;color:${BRAND.textMuted};font-size:13px;">Monto</td><td style="padding:6px 0;text-align:right;color:${BRAND.textPrimary};font-weight:900;font-size:18px;">${fmtUsd(opts.amount)}</td></tr>
+          <tr><td style="padding:6px 0;color:${BRAND.textMuted};font-size:13px;">Banco</td><td style="padding:6px 0;text-align:right;color:${BRAND.textPrimary};font-weight:700;">${opts.bankName}</td></tr>
+          <tr><td style="padding:6px 0;color:${BRAND.textMuted};font-size:13px;">Referencia</td><td style="padding:6px 0;text-align:right;color:${BRAND.accent};font-family:'Courier New',monospace;font-weight:700;">${opts.reference}</td></tr>
+        </table>
+      </td></tr>
+    </table>
+  `);
+}
+
+function buildPaymentApprovedHtml(opts: {
+  customerName: string;
+  amount: number;
+  businessName: string;
+  reviewNote?: string;
+  receiptPdfUrl?: string;
+}): string {
+  return emailShell(BRAND.gradientGreen, 'Dualis ERP', 'Pago aprobado', `
+    <h2 style="margin:0 0 12px;font-size:26px;font-weight:900;color:${BRAND.textPrimary};">
+      &#10004; Pago aprobado
+    </h2>
+    <p style="margin:0 0 24px;font-size:15px;color:${BRAND.textSecondary};line-height:1.7;">
+      Hola <strong style="color:${BRAND.textPrimary};">${opts.customerName}</strong>, tu pago de
+      <strong style="color:${BRAND.accentGreen};">${fmtUsd(opts.amount)}</strong> en
+      <strong style="color:${BRAND.accentGreen};">${opts.businessName}</strong> fue aprobado.
+    </p>
+    ${opts.reviewNote ? `<p style="margin:0 0 20px;font-size:13px;color:${BRAND.textMuted};font-style:italic;">"${opts.reviewNote}"</p>` : ''}
+    ${opts.receiptPdfUrl ? `
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+        <tr><td align="center">
+          <a href="${opts.receiptPdfUrl}" style="display:inline-block;padding:14px 36px;background:${BRAND.gradientGreen};color:#fff;font-size:14px;font-weight:900;text-decoration:none;border-radius:14px;text-transform:uppercase;letter-spacing:1.5px;">
+            Descargar comprobante
+          </a>
+        </td></tr>
+      </table>
+    ` : ''}
+  `);
+}
+
+function buildPaymentRejectedHtml(opts: {
+  customerName: string;
+  amount: number;
+  businessName: string;
+  reason: string;
+}): string {
+  return emailShell(BRAND.gradientPrimary, 'Dualis ERP', 'Pago rechazado', `
+    <h2 style="margin:0 0 12px;font-size:26px;font-weight:900;color:${BRAND.textPrimary};">
+      Pago rechazado
+    </h2>
+    <p style="margin:0 0 20px;font-size:15px;color:${BRAND.textSecondary};line-height:1.7;">
+      Hola <strong style="color:${BRAND.textPrimary};">${opts.customerName}</strong>, tu pago de
+      <strong style="color:#fca5a5;">${fmtUsd(opts.amount)}</strong> en
+      <strong style="color:${BRAND.accent};">${opts.businessName}</strong> no pudo ser confirmado.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(239,68,68,0.07);border:1.5px solid rgba(239,68,68,0.25);border-radius:18px;">
+      <tr><td style="padding:22px 28px;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:900;color:#f87171;text-transform:uppercase;letter-spacing:2px;">Motivo</p>
+        <p style="margin:0;font-size:14px;color:rgba(248,113,113,0.85);line-height:1.7;">${opts.reason}</p>
+      </td></tr>
+    </table>
+    <p style="margin:24px 0 0;font-size:13px;color:${BRAND.textMuted};line-height:1.7;">
+      Puedes registrar un nuevo pago desde el portal en cualquier momento.
+    </p>
+  `);
+}
+
+function buildPaymentRevertedHtml(opts: {
+  customerName: string;
+  amount: number;
+  businessName: string;
+  reason: string;
+}): string {
+  return emailShell(BRAND.gradientPrimary, 'Dualis ERP', 'Pago revertido', `
+    <h2 style="margin:0 0 12px;font-size:24px;font-weight:900;color:${BRAND.textPrimary};">
+      Pago revertido
+    </h2>
+    <p style="margin:0 0 20px;font-size:15px;color:${BRAND.textSecondary};line-height:1.7;">
+      <strong style="color:${BRAND.textPrimary};">${opts.customerName}</strong>, durante la conciliación bancaria de
+      <strong style="color:${BRAND.accent};">${opts.businessName}</strong> tu pago de
+      <strong style="color:#fca5a5;">${fmtUsd(opts.amount)}</strong> fue revertido.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(239,68,68,0.07);border:1.5px solid rgba(239,68,68,0.25);border-radius:18px;">
+      <tr><td style="padding:22px 28px;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:900;color:#f87171;text-transform:uppercase;letter-spacing:2px;">Motivo</p>
+        <p style="margin:0;font-size:14px;color:rgba(248,113,113,0.85);line-height:1.7;">${opts.reason}</p>
+      </td></tr>
+    </table>
+    <p style="margin:24px 0 0;font-size:13px;color:${BRAND.textMuted};line-height:1.7;">
+      Si crees que esto es un error, contacta directamente al negocio para regularizar la situación.
+    </p>
+  `);
+}
+
+function buildOverdueDigestHtml(opts: {
+  count: number;
+  list: { customerName: string; amount: number; createdAt: string }[];
+  businessName: string;
+}): string {
+  const rows = opts.list.slice(0, 10).map(p => {
+    const ageH = Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 3600000);
+    return `<tr>
+      <td style="padding:8px 0;color:${BRAND.textPrimary};font-size:14px;font-weight:700;">${p.customerName}</td>
+      <td style="padding:8px 0;text-align:right;color:${BRAND.accent};font-size:14px;font-weight:900;">${fmtUsd(p.amount)}</td>
+      <td style="padding:8px 0;text-align:right;color:${BRAND.textMuted};font-size:12px;">${ageH}h</td>
+    </tr>`;
+  }).join('');
+
+  return emailShell(BRAND.gradientPrimary, 'Dualis ERP', 'Pagos pendientes', `
+    <h2 style="margin:0 0 12px;font-size:24px;font-weight:900;color:${BRAND.textPrimary};">
+      ${opts.count} pago${opts.count !== 1 ? 's' : ''} esperando revisión
+    </h2>
+    <p style="margin:0 0 24px;font-size:15px;color:${BRAND.textSecondary};line-height:1.7;">
+      Tienes pagos pendientes en <strong style="color:${BRAND.accent};">${opts.businessName}</strong> con más de 24 horas sin atender.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:18px;">
+      <tr><td style="padding:24px 28px;">
+        <table width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+        ${opts.list.length > 10 ? `<p style="margin:12px 0 0;text-align:center;color:${BRAND.textMuted};font-size:12px;">+${opts.list.length - 10} más</p>` : ''}
+      </td></tr>
+    </table>
+  `);
+}
+
+export async function sendPaymentPendingEmail(toEmail: string, opts: {
+  customerName: string;
+  amount: number;
+  bankName: string;
+  reference: string;
+  businessName: string;
+}): Promise<void> {
+  if (!toEmail) return;
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Pago pendiente → ${toEmail}: ${opts.customerName} ${fmtUsd(opts.amount)} (${opts.bankName})`, 'color:#f59e0b;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email:  toEmail,
+      to_name:   'Administrador',
+      subject:   `Nuevo pago pendiente — ${opts.customerName} ${fmtUsd(opts.amount)}`,
+      html_body: buildPaymentPendingHtml(opts),
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendPaymentPendingEmail failed:', err);
+  }
+}
+
+export async function sendPaymentApprovedEmail(toEmail: string, opts: {
+  customerName: string;
+  amount: number;
+  businessName: string;
+  reviewNote?: string;
+  receiptPdfUrl?: string;
+}): Promise<void> {
+  if (!toEmail) return;
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Pago aprobado → ${toEmail}: ${fmtUsd(opts.amount)}`, 'color:#10b981;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email:  toEmail,
+      to_name:   opts.customerName,
+      subject:   `Pago aprobado ${fmtUsd(opts.amount)} — ${opts.businessName}`,
+      html_body: buildPaymentApprovedHtml(opts),
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendPaymentApprovedEmail failed:', err);
+  }
+}
+
+export async function sendPaymentRejectedEmail(toEmail: string, opts: {
+  customerName: string;
+  amount: number;
+  businessName: string;
+  reason: string;
+}): Promise<void> {
+  if (!toEmail) return;
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Pago rechazado → ${toEmail}: ${opts.reason}`, 'color:#ef4444;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email:  toEmail,
+      to_name:   opts.customerName,
+      subject:   `Pago rechazado — ${opts.businessName}`,
+      html_body: buildPaymentRejectedHtml(opts),
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendPaymentRejectedEmail failed:', err);
+  }
+}
+
+export async function sendPaymentRevertedEmail(toEmail: string, opts: {
+  customerName: string;
+  amount: number;
+  businessName: string;
+  reason: string;
+}): Promise<void> {
+  if (!toEmail) return;
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Pago revertido → ${toEmail}: ${opts.reason}`, 'color:#ef4444;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email:  toEmail,
+      to_name:   opts.customerName,
+      subject:   `Pago revertido — ${opts.businessName}`,
+      html_body: buildPaymentRevertedHtml(opts),
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendPaymentRevertedEmail failed:', err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// DISPUTES — emails para reclamos del portal
+// ─────────────────────────────────────────────────────────────────────
+
+const DISPUTE_TYPE_LABELS: Record<string, string> = {
+  wrong_items:   'Productos incorrectos',
+  missing_items: 'Productos faltantes',
+  damaged:       'Productos dañados',
+  billing_error: 'Error de facturación',
+  other:         'Otro motivo',
+};
+
+function buildDisputeOpenedHtml(opts: {
+  customerName: string;
+  type: string;
+  description: string;
+  movementRef: string;
+  businessName: string;
+  photoCount: number;
+}): string {
+  const typeLabel = DISPUTE_TYPE_LABELS[opts.type] || opts.type;
+  return emailShell(BRAND.gradientPrimary, 'Dualis ERP', 'Nuevo reclamo', `
+    <h2 style="margin:0 0 12px;font-size:24px;font-weight:900;color:${BRAND.textPrimary};">
+      Nuevo reclamo recibido
+    </h2>
+    <p style="margin:0 0 20px;font-size:15px;color:${BRAND.textSecondary};line-height:1.7;">
+      <strong style="color:${BRAND.textPrimary};">${opts.customerName}</strong> reportó un problema en
+      <strong style="color:${BRAND.accent};">${opts.businessName}</strong>.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(245,158,11,0.07);border:1.5px solid rgba(245,158,11,0.25);border-radius:18px;">
+      <tr><td style="padding:22px 28px;">
+        <p style="margin:0 0 8px;font-size:11px;font-weight:900;color:#fbbf24;text-transform:uppercase;letter-spacing:2px;">Tipo</p>
+        <p style="margin:0 0 16px;font-size:15px;font-weight:900;color:${BRAND.textPrimary};">${typeLabel}</p>
+        <p style="margin:0 0 8px;font-size:11px;font-weight:900;color:#fbbf24;text-transform:uppercase;letter-spacing:2px;">Movimiento</p>
+        <p style="margin:0 0 16px;font-size:13px;color:${BRAND.textSecondary};">${opts.movementRef || '—'}</p>
+        <p style="margin:0 0 8px;font-size:11px;font-weight:900;color:#fbbf24;text-transform:uppercase;letter-spacing:2px;">Descripción</p>
+        <p style="margin:0;font-size:13px;color:${BRAND.textSecondary};line-height:1.7;">${opts.description}</p>
+        ${opts.photoCount > 0 ? `<p style="margin:16px 0 0;font-size:12px;color:${BRAND.textMuted};">📎 ${opts.photoCount} foto${opts.photoCount !== 1 ? 's' : ''} adjunta${opts.photoCount !== 1 ? 's' : ''}</p>` : ''}
+      </td></tr>
+    </table>
+    <p style="margin:24px 0 0;font-size:13px;color:${BRAND.textMuted};line-height:1.7;">
+      Revisa el reclamo desde el panel de Dualis lo antes posible.
+    </p>
+  `);
+}
+
+function buildDisputeResolvedHtml(opts: {
+  customerName: string;
+  resolution: string;
+  movementRef: string;
+  businessName: string;
+}): string {
+  return emailShell(BRAND.gradientGreen, 'Dualis ERP', 'Reclamo resuelto', `
+    <h2 style="margin:0 0 12px;font-size:26px;font-weight:900;color:${BRAND.textPrimary};">
+      &#10004; Reclamo resuelto
+    </h2>
+    <p style="margin:0 0 20px;font-size:15px;color:${BRAND.textSecondary};line-height:1.7;">
+      Hola <strong style="color:${BRAND.textPrimary};">${opts.customerName}</strong>, tu reclamo en
+      <strong style="color:${BRAND.accentGreen};">${opts.businessName}</strong> fue revisado y resuelto.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(16,185,129,0.07);border:1.5px solid rgba(16,185,129,0.25);border-radius:18px;">
+      <tr><td style="padding:22px 28px;">
+        <p style="margin:0 0 8px;font-size:11px;font-weight:900;color:#34d399;text-transform:uppercase;letter-spacing:2px;">Respuesta</p>
+        <p style="margin:0;font-size:14px;color:${BRAND.textSecondary};line-height:1.7;">${opts.resolution}</p>
+        ${opts.movementRef ? `<p style="margin:16px 0 0;font-size:12px;color:${BRAND.textMuted};">Movimiento: ${opts.movementRef}</p>` : ''}
+      </td></tr>
+    </table>
+    <p style="margin:24px 0 0;font-size:13px;color:${BRAND.textMuted};line-height:1.7;">
+      Si tienes dudas adicionales puedes registrar un nuevo reclamo desde tu portal.
+    </p>
+  `);
+}
+
+function buildDisputeRejectedHtml(opts: {
+  customerName: string;
+  resolution: string;
+  movementRef: string;
+  businessName: string;
+}): string {
+  return emailShell(BRAND.gradientPrimary, 'Dualis ERP', 'Reclamo cerrado', `
+    <h2 style="margin:0 0 12px;font-size:24px;font-weight:900;color:${BRAND.textPrimary};">
+      Reclamo cerrado
+    </h2>
+    <p style="margin:0 0 20px;font-size:15px;color:${BRAND.textSecondary};line-height:1.7;">
+      Hola <strong style="color:${BRAND.textPrimary};">${opts.customerName}</strong>, tu reclamo en
+      <strong style="color:${BRAND.accent};">${opts.businessName}</strong> fue revisado y cerrado.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(239,68,68,0.07);border:1.5px solid rgba(239,68,68,0.25);border-radius:18px;">
+      <tr><td style="padding:22px 28px;">
+        <p style="margin:0 0 8px;font-size:11px;font-weight:900;color:#f87171;text-transform:uppercase;letter-spacing:2px;">Motivo</p>
+        <p style="margin:0;font-size:14px;color:rgba(248,113,113,0.85);line-height:1.7;">${opts.resolution}</p>
+        ${opts.movementRef ? `<p style="margin:16px 0 0;font-size:12px;color:${BRAND.textMuted};">Movimiento: ${opts.movementRef}</p>` : ''}
+      </td></tr>
+    </table>
+    <p style="margin:24px 0 0;font-size:13px;color:${BRAND.textMuted};line-height:1.7;">
+      Si crees que esto es un error puedes contactar directamente al negocio.
+    </p>
+  `);
+}
+
+export async function sendDisputeOpenedEmail(toEmail: string, opts: {
+  customerName: string;
+  type: string;
+  description: string;
+  movementRef: string;
+  businessName: string;
+  photoCount: number;
+}): Promise<void> {
+  if (!toEmail) return;
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Reclamo abierto → ${toEmail}: ${opts.customerName} (${opts.type})`, 'color:#f59e0b;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email:  toEmail,
+      to_name:   'Administrador',
+      subject:   `Nuevo reclamo — ${opts.customerName}`,
+      html_body: buildDisputeOpenedHtml(opts),
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendDisputeOpenedEmail failed:', err);
+  }
+}
+
+export async function sendDisputeResolvedEmail(toEmail: string, opts: {
+  customerName: string;
+  resolution: string;
+  movementRef: string;
+  businessName: string;
+}): Promise<void> {
+  if (!toEmail) return;
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Reclamo resuelto → ${toEmail}`, 'color:#10b981;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email:  toEmail,
+      to_name:   opts.customerName,
+      subject:   `Reclamo resuelto — ${opts.businessName}`,
+      html_body: buildDisputeResolvedHtml(opts),
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendDisputeResolvedEmail failed:', err);
+  }
+}
+
+export async function sendDisputeRejectedEmail(toEmail: string, opts: {
+  customerName: string;
+  resolution: string;
+  movementRef: string;
+  businessName: string;
+}): Promise<void> {
+  if (!toEmail) return;
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Reclamo cerrado → ${toEmail}`, 'color:#ef4444;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email:  toEmail,
+      to_name:   opts.customerName,
+      subject:   `Reclamo cerrado — ${opts.businessName}`,
+      html_body: buildDisputeRejectedHtml(opts),
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendDisputeRejectedEmail failed:', err);
+  }
+}
+
+export async function sendBirthdayEmail(toEmail: string, opts: {
+  customerName: string;
+  businessName: string;
+}): Promise<void> {
+  if (!toEmail) return;
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Birthday greeting → ${toEmail}: ${opts.customerName}`, 'color:#ec4899;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email: toEmail,
+      to_name: opts.customerName,
+      subject: `¡Feliz cumpleaños, ${opts.customerName}! 🎂`,
+      html_body: `
+        <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;text-align:center;padding:32px 20px;">
+          <div style="font-size:48px;margin-bottom:16px;">🎂</div>
+          <h1 style="color:${BRAND.accent};margin:0 0 12px;">¡Feliz Cumpleaños!</h1>
+          <p style="color:#475569;font-size:16px;line-height:1.6;">
+            <strong>${opts.businessName}</strong> te desea un excelente día en tu cumpleaños, <strong>${opts.customerName}</strong>.
+          </p>
+          <p style="color:#64748b;font-size:14px;margin-top:24px;">Gracias por ser parte de nuestra familia.</p>
+        </div>
+      `,
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendBirthdayEmail failed:', err);
+  }
+}
+
+export async function sendOverduePaymentsDigest(toEmail: string, opts: {
+  count: number;
+  list: { customerName: string; amount: number; createdAt: string }[];
+  businessName: string;
+}): Promise<void> {
+  if (!toEmail || opts.count === 0) return;
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Digest pagos pendientes → ${toEmail}: ${opts.count}`, 'color:#f59e0b;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email:  toEmail,
+      to_name:   'Administrador',
+      subject:   `${opts.count} pago${opts.count !== 1 ? 's' : ''} pendiente${opts.count !== 1 ? 's' : ''} de revisión`,
+      html_body: buildOverdueDigestHtml(opts),
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendOverduePaymentsDigest failed:', err);
+  }
+}
+
+/**
+ * Send an overdue invoice reminder email to a customer.
+ */
+export async function sendOverdueReminderEmail(toEmail: string, opts: {
+  customerName: string;
+  amount: string;
+  businessName: string;
+  daysOverdue: number;
+  severity: 'soft' | 'urgent' | 'overdue' | 'final';
+}): Promise<void> {
+  if (!toEmail) return;
+  const subjectMap: Record<string, string> = {
+    soft: `Recordatorio de pago — ${opts.businessName}`,
+    urgent: `Su saldo vence HOY — ${opts.businessName}`,
+    overdue: `Saldo vencido (${opts.daysOverdue} días) — ${opts.businessName}`,
+    final: `AVISO FINAL de pago — ${opts.businessName}`,
+  };
+  const colorMap: Record<string, string> = {
+    soft: '#f59e0b', urgent: '#f97316', overdue: '#ef4444', final: '#dc2626',
+  };
+  const color = colorMap[opts.severity] || '#f59e0b';
+
+  if (DEV || !WELCOME_TPL) {
+    console.info(`%c[EmailService] Reminder (${opts.severity}) → ${toEmail}: ${opts.amount}`, 'color:#f59e0b;font-weight:bold');
+    return;
+  }
+  try {
+    await emailjs.send(SVC, WELCOME_TPL, {
+      to_email: toEmail,
+      to_name: opts.customerName,
+      subject: subjectMap[opts.severity],
+      html_body: `
+        <div style="font-family:Inter,system-ui,sans-serif;background:${BRAND.bg};padding:32px 16px;">
+          <div style="max-width:520px;margin:auto;background:${BRAND.card};border:1px solid ${BRAND.border};border-radius:16px;padding:32px;">
+            <h2 style="color:${color};font-size:20px;margin:0 0 16px;">
+              ${subjectMap[opts.severity]}
+            </h2>
+            <p style="color:${BRAND.textPrimary};font-size:15px;line-height:1.6;margin:0 0 16px;">
+              Hola ${opts.customerName},
+            </p>
+            <p style="color:${BRAND.textPrimary};font-size:15px;line-height:1.6;margin:0 0 16px;">
+              Le informamos que su saldo pendiente con <strong>${opts.businessName}</strong> es de
+              <strong style="color:${color};">${opts.amount}</strong>${opts.daysOverdue > 0 ? ` y tiene <strong>${opts.daysOverdue} día${opts.daysOverdue !== 1 ? 's' : ''}</strong> de vencido` : ''}.
+            </p>
+            <p style="color:${BRAND.textSecondary};font-size:13px;line-height:1.5;margin:0;">
+              Si ya realizó el pago, por favor ignore este mensaje o comuníquese con nosotros.
+            </p>
+          </div>
+        </div>
+      `,
+    }, PUB);
+  } catch (err) {
+    console.error('[EmailService] sendOverdueReminderEmail failed:', err);
+  }
+}

@@ -64,7 +64,7 @@ export default function PortalProntoPago() {
         <div className="bg-[#0d1424] rounded-2xl border border-white/[0.07] p-6 shadow-lg">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
             <div>
-              <p className="text-[9px] font-black uppercase text-white/30">Facturas elegibles</p>
+              <p className="text-[9px] font-black uppercase text-white/30">Documentos elegibles</p>
               <p className="text-2xl font-black text-white mt-1">{eligible.length}</p>
             </div>
             <div>
@@ -90,14 +90,14 @@ export default function PortalProntoPago() {
       <div className="bg-[#0d1424] rounded-2xl border border-white/[0.07] overflow-hidden shadow-lg">
         <div className="px-6 py-4 border-b border-white/[0.07]">
           <h3 className="text-[10px] font-black uppercase tracking-widest text-white/40">
-            Facturas Pendientes
+            Pendientes de Pago
           </h3>
         </div>
 
         {invoicesWithDiscount.length === 0 ? (
           <div className="py-16 text-center">
             <TrendingDown size={24} className="text-white/10 mx-auto mb-3" />
-            <p className="text-sm font-bold text-white/20">No hay facturas pendientes</p>
+            <p className="text-sm font-bold text-white/20">No hay documentos pendientes</p>
           </div>
         ) : (
           <div className="divide-y divide-white/[0.05]">

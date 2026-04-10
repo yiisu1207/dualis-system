@@ -1,17 +1,24 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
-  collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy,
+  collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { PaymentRequest, AccountType, MovementType } from '../../types';
+import { PaymentRequest, AccountType, MovementType, BusinessBankAccount } from '../../types';
 import {
-  CheckCircle2, XCircle, Clock, Search, Filter, Receipt,
-  AlertTriangle, ChevronDown, Banknote, Smartphone, Globe,
+  CheckCircle2, XCircle, Clock, Search, Receipt,
+  ChevronDown, Banknote, Globe, Eye, ShieldCheck, ShieldAlert,
+  Phone, IdCard, Calendar as CalendarIcon, Landmark,
 } from 'lucide-react';
 import { PortalPayment } from '../../types';
+import VoucherViewer from './tesoreria/VoucherViewer';
+import { getBancoByCode, CEDULA_VE_REGEX, REFERENCE_6_REGEX } from '../data/bancosVE';
+import { sendPaymentApprovedEmail, sendPaymentRejectedEmail } from '../utils/emailService';
+import { uploadToCloudinary } from '../utils/cloudinary';
+import { applyLoyaltyForMovement } from '../utils/loyaltyEngine';
 
 interface PaymentRequestsPanelProps {
   businessId: string;
+  businessName?: string;
   userRole: string;
   userId: string;
   userName: string;
@@ -32,16 +39,31 @@ const ACCOUNT_COLORS: Record<string, string> = {
   DIVISA: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
 };
 
+// Extended PaymentRequest with portal fields
+type PortalReq = PaymentRequest & {
+  _source: 'vendedor' | 'portal';
+  voucherUrl?: string;
+  payerCedula?: string;
+  payerPhone?: string;
+  paymentDate?: string;
+  bankAccountId?: string;
+  fingerprint?: string;
+  invoiceIds?: string[];
+};
+
 const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
-  businessId, userRole, userId, userName, rates,
+  businessId, businessName = 'tu negocio', userRole, userId, userName, rates,
 }) => {
-  const [requests, setRequests] = useState<PaymentRequest[]>([]);
+  const [requests, setRequests] = useState<PortalReq[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [processing, setProcessing] = useState<string | null>(null);
   const [reviewNote, setReviewNote] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [voucherView, setVoucherView] = useState<{ url: string; caption?: string } | null>(null);
+  const [bankAccountsMap, setBankAccountsMap] = useState<Record<string, BusinessBankAccount>>({});
+  const [customerEmails, setCustomerEmails] = useState<Record<string, string>>({});
 
   // New request form (for vendors)
   const [showNewForm, setShowNewForm] = useState(false);
@@ -56,35 +78,42 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
 
   const isAdmin = userRole === 'owner' || userRole === 'admin';
 
-  // Load requests (vendedor + portal)
+  // Load requests realtime (vendedor + portal)
   useEffect(() => {
     if (!businessId) return;
-    const load = async () => {
-      try {
-        // Load vendedor payment requests
-        const q = query(
-          collection(db, `businesses/${businessId}/paymentRequests`),
-          orderBy('createdAt', 'desc'),
-        );
-        const snap = await getDocs(q);
-        const vendorReqs = snap.docs.map(d => ({ id: d.id, ...d.data(), _source: 'vendedor' as const } as PaymentRequest & { _source: 'vendedor' | 'portal' }));
+    let vendorRows: PortalReq[] = [];
+    let portalRows: PortalReq[] = [];
 
-        // Load portal payment requests
-        const pq = query(
-          collection(db, `businesses/${businessId}/portalPayments`),
-          orderBy('createdAt', 'desc'),
-        );
-        const pSnap = await getDocs(pq);
-        const portalReqs = pSnap.docs.map(d => {
+    const merge = () => {
+      const all = [...vendorRows, ...portalRows].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      setRequests(all);
+      setLoading(false);
+    };
+
+    const unsubVendor = onSnapshot(
+      query(collection(db, `businesses/${businessId}/paymentRequests`), orderBy('createdAt', 'desc')),
+      snap => {
+        vendorRows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any), _source: 'vendedor' as const } as PortalReq));
+        merge();
+      },
+      err => { console.error('Error loading vendor requests:', err); setLoading(false); },
+    );
+
+    const unsubPortal = onSnapshot(
+      query(collection(db, `businesses/${businessId}/portalPayments`), orderBy('createdAt', 'desc')),
+      snap => {
+        portalRows = snap.docs.map(d => {
           const data = d.data() as PortalPayment;
           return {
-            id: d.id,
+            id: d.id!,
             businessId: data.businessId,
             customerId: data.customerId,
             customerName: data.customerName,
             accountType: data.accountType,
             amount: data.amount,
-            currency: 'USD',
+            currency: 'USD' as const,
             metodoPago: data.metodoPago,
             referencia: data.referencia,
             nota: data.nota,
@@ -96,32 +125,68 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
             vendedorId: '__portal__',
             vendedorNombre: 'Portal Cliente',
             _source: 'portal' as const,
-          } as PaymentRequest & { _source: 'vendedor' | 'portal' };
+            voucherUrl: data.voucherUrl,
+            payerCedula: data.payerCedula,
+            payerPhone: data.payerPhone,
+            paymentDate: data.paymentDate,
+            bankAccountId: data.bankAccountId,
+            fingerprint: data.fingerprint || undefined,
+            invoiceIds: data.invoiceIds,
+          } as PortalReq;
         });
+        merge();
+      },
+      err => { console.error('Error loading portal requests:', err); setLoading(false); },
+    );
 
-        // Merge and sort by createdAt desc
-        const merged = [...vendorReqs, ...portalReqs].sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        setRequests(merged);
-      } catch (err) {
-        console.error('Error loading payment requests:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+    return () => { unsubVendor(); unsubPortal(); };
   }, [businessId]);
 
-  // Load customers for vendor form
+  // Load bank accounts for the business (for badge validation)
+  useEffect(() => {
+    if (!businessId) return;
+    const unsub = onSnapshot(
+      collection(db, `businesses/${businessId}/bankAccounts`),
+      snap => {
+        const map: Record<string, BusinessBankAccount> = {};
+        snap.docs.forEach(d => { map[d.id] = { id: d.id, ...(d.data() as any) }; });
+        setBankAccountsMap(map);
+      },
+    );
+    return unsub;
+  }, [businessId]);
+
+  // Load customers for vendor form (and capture emails for notifications)
   useEffect(() => {
     if (!businessId) return;
     const load = async () => {
       const snap = await getDocs(query(collection(db, 'customers'), where('businessId', '==', businessId)));
-      setCustomers(snap.docs.map(d => ({ id: d.id, name: (d.data().fullName || d.data().nombre || d.id) })));
+      const list: { id: string; name: string }[] = [];
+      const emails: Record<string, string> = {};
+      snap.docs.forEach(d => {
+        const data = d.data() as any;
+        const name = data.fullName || data.nombre || d.id;
+        list.push({ id: d.id, name });
+        if (data.email) emails[d.id] = data.email;
+      });
+      setCustomers(list);
+      setCustomerEmails(emails);
     };
     load();
   }, [businessId]);
+
+  // ── Fingerprint match index ────────────────────────────────────────────────
+  const fingerprintIndex = useMemo(() => {
+    const idx: Record<string, { approved: number; rejected: number; pending: number }> = {};
+    requests.forEach(r => {
+      if (!r.fingerprint) return;
+      if (!idx[r.fingerprint]) idx[r.fingerprint] = { approved: 0, rejected: 0, pending: 0 };
+      if (r.status === 'approved') idx[r.fingerprint].approved += 1;
+      else if (r.status === 'rejected') idx[r.fingerprint].rejected += 1;
+      else if (r.status === 'pending') idx[r.fingerprint].pending += 1;
+    });
+    return idx;
+  }, [requests]);
 
   const filtered = useMemo(() => {
     let list = requests;
@@ -140,25 +205,27 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
 
   const pendingCount = requests.filter(r => r.status === 'pending').length;
 
-  // Approve request → create ABONO movement
-  const handleApprove = async (req: PaymentRequest) => {
+  // Approve request → create ABONO movement (with portal extras + back-fill)
+  const handleApprove = async (req: PortalReq) => {
     setProcessing(req.id);
     try {
       const now = new Date();
       const rateForAccount = req.accountType === AccountType.BCV ? rates.bcv
         : req.accountType === AccountType.GRUPO ? rates.grupo : rates.divisa;
       const isDivisaAcct = req.accountType === AccountType.DIVISA;
+      const isPortal = req._source === 'portal';
 
-      // Create ABONO movement
-      await addDoc(collection(db, 'movements'), {
+      // Build movement payload — inject portal fields if applicable
+      const movementPayload: any = {
         businessId,
         entityId: req.customerId,
         concept: `Abono — ${req.metodoPago}${req.nota ? ` — ${req.nota}` : ''}`,
         amount: req.amount,
         amountInUSD: req.amount,
         currency: 'USD',
-        date: now.toISOString().split('T')[0],
+        date: req.paymentDate || now.toISOString().split('T')[0],
         createdAt: now.toISOString(),
+        createdBy: userId,
         movementType: MovementType.ABONO,
         accountType: req.accountType,
         rateUsed: isDivisaAcct ? 0 : rateForAccount,
@@ -166,10 +233,53 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
         metodoPago: req.metodoPago,
         pagado: true,
         estadoPago: 'PAGADO',
-      });
+      };
+      if (isPortal) {
+        if (req.bankAccountId) movementPayload.bankAccountId = req.bankAccountId;
+        if (req.voucherUrl)    movementPayload.voucherUrl    = req.voucherUrl;
+        if (req.payerCedula)   movementPayload.payerCedula   = req.payerCedula;
+        if (req.payerPhone)    movementPayload.payerPhone    = req.payerPhone;
+        if (req.paymentDate)   movementPayload.paymentDate   = req.paymentDate;
+        movementPayload.portalPaymentId = req.id;
+      }
+      const movementRef = await addDoc(collection(db, 'movements'), movementPayload);
+
+      // Loyalty: otorgar puntos al aprobar abono (fire-and-forget, mismo helper que MainSystem)
+      applyLoyaltyForMovement(db, businessId, movementPayload, movementRef.id)
+        .catch(err => console.error('[loyalty] portal-approve failed', err));
+
+      // Back-fill facturas: si el monto del abono cubre la suma de las facturas,
+      // marcarlas como PAGADO. Si parcial, dejar como está (solo el ABONO suma).
+      if (isPortal && Array.isArray(req.invoiceIds) && req.invoiceIds.length > 0) {
+        try {
+          let invoicesTotal = 0;
+          const invoiceDocs = await Promise.all(
+            req.invoiceIds.map(id => getDocs(query(
+              collection(db, 'movements'),
+              where('__name__', '==', id),
+            )).then(s => s.docs[0])),
+          );
+          const validInvoices = invoiceDocs.filter(Boolean);
+          validInvoices.forEach(d => {
+            const data: any = d!.data();
+            invoicesTotal += Number(data.amountInUSD || data.amount || 0);
+          });
+          // Tolerancia ±$0.50
+          if (req.amount + 0.5 >= invoicesTotal) {
+            await Promise.all(
+              validInvoices.map(d => updateDoc(doc(db, 'movements', d!.id), {
+                pagado: true,
+                estadoPago: 'PAGADO',
+              })),
+            );
+          }
+        } catch (err) {
+          console.error('[paymentRequests] back-fill facturas failed', err);
+        }
+      }
 
       // Update request status (in correct collection based on source)
-      const collectionPath = (req as any)._source === 'portal'
+      const collectionPath = isPortal
         ? `businesses/${businessId}/portalPayments`
         : `businesses/${businessId}/paymentRequests`;
       await updateDoc(doc(db, collectionPath, req.id), {
@@ -179,7 +289,44 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
         reviewNote: reviewNote || null,
       });
 
-      setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'approved' as const, reviewedAt: now.toISOString(), reviewedBy: userId } : r));
+      // Generar PDF de comprobante (lazy import) — solo para pagos del portal
+      let receiptPdfUrl: string | undefined;
+      if (isPortal) {
+        try {
+          const { generatePaymentReceiptPDF } = await import('../utils/paymentReceiptPdf');
+          const bankAcct = req.bankAccountId ? bankAccountsMap[req.bankAccountId] : undefined;
+          const pdfBlob = await generatePaymentReceiptPDF({
+            payment: { ...req, status: 'approved', reviewedAt: now.toISOString() } as any,
+            business: { id: businessId, name: businessName },
+            customer: { name: req.customerName, cedula: req.payerCedula },
+            bankName: bankAcct?.bankName,
+            approvedAt: now.toISOString(),
+          });
+          const upload = await uploadToCloudinary(
+            pdfBlob,
+            'dualis_payments',
+            'auto',
+            `recibo-${req.id}.pdf`,
+          );
+          receiptPdfUrl = upload.secure_url;
+          await updateDoc(doc(db, 'movements', movementRef.id), { receiptPdfUrl });
+        } catch (err) {
+          console.warn('[paymentRequests] PDF generation failed (non-blocking)', err);
+        }
+      }
+
+      // Notificar al cliente (no bloqueante)
+      const customerEmail = customerEmails[req.customerId];
+      if (customerEmail) {
+        sendPaymentApprovedEmail(customerEmail, {
+          customerName: req.customerName,
+          amount: req.amount,
+          businessName,
+          reviewNote: reviewNote || undefined,
+          receiptPdfUrl,
+        }).catch(() => { /* swallow */ });
+      }
+
       setExpandedId(null);
       setReviewNote('');
       showToast('Abono aprobado y registrado');
@@ -192,19 +339,36 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
   };
 
   // Reject request
-  const handleReject = async (req: PaymentRequest) => {
+  const handleReject = async (req: PortalReq) => {
+    if (!reviewNote.trim()) {
+      const reason = window.prompt('Motivo del rechazo (visible para el cliente):', 'Pago no recibido en banco');
+      if (!reason || !reason.trim()) return;
+      setReviewNote(reason.trim());
+    }
     setProcessing(req.id);
     try {
-      const collPath = (req as any)._source === 'portal'
+      const collPath = req._source === 'portal'
         ? `businesses/${businessId}/portalPayments`
         : `businesses/${businessId}/paymentRequests`;
+      const reasonText = reviewNote || 'Sin motivo especificado';
       await updateDoc(doc(db, collPath, req.id), {
         status: 'rejected',
         reviewedAt: new Date().toISOString(),
         reviewedBy: userId,
-        reviewNote: reviewNote || null,
+        reviewNote: reasonText,
       });
-      setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'rejected' as const } : r));
+
+      // Notificar al cliente
+      const customerEmail = customerEmails[req.customerId];
+      if (customerEmail) {
+        sendPaymentRejectedEmail(customerEmail, {
+          customerName: req.customerName,
+          amount: req.amount,
+          businessName,
+          reason: reasonText,
+        }).catch(() => { /* swallow */ });
+      }
+
       setExpandedId(null);
       setReviewNote('');
       showToast('Solicitud rechazada');
@@ -481,21 +645,143 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
                 </div>
 
                 {/* Expanded: admin actions */}
-                {isExpanded && (
-                  <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-0 border-t border-slate-50 dark:border-white/[0.05]">
-                    <div className="pt-4 space-y-3">
-                      {req.nota && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400"><strong>Nota:</strong> {req.nota}</p>
-                      )}
-                      {req.reviewNote && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400"><strong>Revisión:</strong> {req.reviewNote}</p>
-                      )}
-                      {req.reviewedAt && (
-                        <p className="text-[10px] text-slate-400">Revisado: {new Date(req.reviewedAt).toLocaleString('es-VE')}</p>
-                      )}
+                {isExpanded && (() => {
+                  const isPortalReq = req._source === 'portal';
+                  const linkedAccount = req.bankAccountId ? bankAccountsMap[req.bankAccountId] : undefined;
+                  const banco = linkedAccount ? getBancoByCode(linkedAccount.bankCode) : undefined;
 
+                  // Auto-validations (portal only)
+                  const refOk     = req.referencia ? REFERENCE_6_REGEX.test(req.referencia) : false;
+                  const cedulaOk  = req.payerCedula ? CEDULA_VE_REGEX.test(req.payerCedula) : false;
+                  const dateOk    = req.paymentDate
+                    ? (() => {
+                        const d = new Date(req.paymentDate).getTime();
+                        const now = Date.now();
+                        return d <= now + 86_400_000 && now - d <= 7 * 86_400_000;
+                      })()
+                    : false;
+                  const bankOk    = !!linkedAccount;
+                  const phoneOk   = linkedAccount?.accountType === 'pago_movil'
+                    ? !!req.payerPhone && /^04(12|14|16|24|26)\d{7}$/.test(req.payerPhone)
+                    : true;
+
+                  // Fingerprint state
+                  const fpStats = req.fingerprint ? fingerprintIndex[req.fingerprint] : undefined;
+                  const fpOtherApproved = fpStats && (fpStats.approved - (req.status === 'approved' ? 1 : 0)) > 0;
+                  const fpOtherRejected = fpStats && fpStats.rejected > 0;
+
+                  return (
+                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-0 border-t border-slate-100 dark:border-white/[0.05]">
+                      <div className="pt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+                        {/* Left: voucher */}
+                        {isPortalReq && req.voucherUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setVoucherView({ url: req.voucherUrl!, caption: `${req.customerName} · $${req.amount.toFixed(2)}` })}
+                            className="relative group rounded-2xl border border-slate-200 dark:border-white/[0.07] overflow-hidden bg-slate-50 dark:bg-white/[0.03] hover:border-indigo-400 dark:hover:border-indigo-500/40 transition-all"
+                          >
+                            <img src={req.voucherUrl} alt="voucher" className="w-full h-56 object-cover" />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 px-3 py-2 rounded-xl bg-white/90 text-slate-900 text-[10px] font-black">
+                                <Eye size={12} /> Ver voucher completo
+                              </div>
+                            </div>
+                          </button>
+                        ) : isPortalReq ? (
+                          <div className="rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02] flex items-center justify-center h-56">
+                            <p className="text-[10px] font-bold text-slate-400">Sin voucher adjunto</p>
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-slate-200 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02] flex items-center justify-center h-56">
+                            <p className="text-[10px] font-bold text-slate-400">Solicitud manual del vendedor</p>
+                          </div>
+                        )}
+
+                        {/* Right: details + validations */}
+                        <div className="space-y-3">
+                          {isPortalReq && (
+                            <div className="space-y-2">
+                              {linkedAccount && (
+                                <div className="flex items-start gap-2 text-[11px]">
+                                  <Landmark size={12} className="text-slate-400 mt-0.5" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-slate-700 dark:text-slate-300">{banco?.shortName || linkedAccount.bankName}</p>
+                                    <p className="text-[10px] text-slate-400 truncate font-mono">{linkedAccount.accountNumber}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {req.payerCedula && (
+                                <div className="flex items-center gap-2 text-[11px]">
+                                  <IdCard size={12} className="text-slate-400" />
+                                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{req.payerCedula}</span>
+                                </div>
+                              )}
+                              {req.payerPhone && (
+                                <div className="flex items-center gap-2 text-[11px]">
+                                  <Phone size={12} className="text-slate-400" />
+                                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{req.payerPhone}</span>
+                                </div>
+                              )}
+                              {req.paymentDate && (
+                                <div className="flex items-center gap-2 text-[11px]">
+                                  <CalendarIcon size={12} className="text-slate-400" />
+                                  <span className="font-bold text-slate-700 dark:text-slate-300">{new Date(req.paymentDate).toLocaleDateString('es-VE')}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Auto-validation badges (portal only) */}
+                          {isPortalReq && (
+                            <div className="flex flex-wrap gap-1.5">
+                              <ValidationBadge ok={refOk} label="Ref 6 dígitos" />
+                              <ValidationBadge ok={cedulaOk} label="Cédula válida" />
+                              <ValidationBadge ok={dateOk} label="Fecha válida" />
+                              <ValidationBadge ok={bankOk} label="Cuenta vinculada" />
+                              {linkedAccount?.accountType === 'pago_movil' && (
+                                <ValidationBadge ok={phoneOk} label="Teléfono OK" />
+                              )}
+                            </div>
+                          )}
+
+                          {/* Fingerprint warnings */}
+                          {req.fingerprint && (
+                            <div>
+                              {fpOtherApproved ? (
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30">
+                                  <ShieldAlert size={12} className="text-rose-500" />
+                                  <p className="text-[10px] font-black text-rose-600 dark:text-rose-400">Posible duplicado: ya hay un pago aprobado con esta misma referencia</p>
+                                </div>
+                              ) : fpOtherRejected ? (
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30">
+                                  <ShieldAlert size={12} className="text-amber-500" />
+                                  <p className="text-[10px] font-black text-amber-600 dark:text-amber-400">Referencia previamente rechazada</p>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30">
+                                  <ShieldCheck size={12} className="text-emerald-500" />
+                                  <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400">Referencia única</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {req.nota && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400"><strong>Nota:</strong> {req.nota}</p>
+                          )}
+                          {req.reviewNote && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400"><strong>Revisión:</strong> {req.reviewNote}</p>
+                          )}
+                          {req.reviewedAt && (
+                            <p className="text-[9px] text-slate-400">Revisado: {new Date(req.reviewedAt).toLocaleString('es-VE')}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
                       {isAdmin && isPending && (
-                        <>
+                        <div className="mt-4 space-y-3">
                           <div>
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1 block">Nota de revisión (opcional)</label>
                             <input value={reviewNote} onChange={e => setReviewNote(e.target.value)} placeholder="Comentario al aprobar/rechazar..."
@@ -511,18 +797,38 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
                               {isProcessing ? 'Procesando...' : <><CheckCircle2 size={14} /> Aprobar</>}
                             </button>
                           </div>
-                        </>
+                        </div>
                       )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })}
         </div>
       )}
+
+      {voucherView && (
+        <VoucherViewer
+          url={voucherView.url}
+          caption={voucherView.caption}
+          onClose={() => setVoucherView(null)}
+        />
+      )}
     </div>
   );
 };
+
+const ValidationBadge: React.FC<{ ok: boolean; label: string }> = ({ ok, label }) => (
+  <span
+    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black ${
+      ok
+        ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+        : 'bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400'
+    }`}
+  >
+    {ok ? '✓' : '✗'} {label}
+  </span>
+);
 
 export default PaymentRequestsPanel;

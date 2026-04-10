@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShieldAlert } from 'lucide-react';
 
-const UPDATED = '7 de marzo de 2026';
+const UPDATED = '8 de abril de 2026';
 
 export default function Terms() {
   const nav = useNavigate();
@@ -29,7 +29,7 @@ export default function Terms() {
           <div>
             <p className="text-[11px] font-black text-amber-400 uppercase tracking-widest mb-1">Aviso Fiscal Prioritario</p>
             <p className="text-xs text-amber-300/70 leading-relaxed">
-              Dualis ERP es un sistema en <strong className="text-amber-300">período de prueba beta</strong>, aún no homologado ante el <strong className="text-amber-300">SENIAT</strong> ni ante ninguna autoridad fiscal venezolana. Los documentos generados (facturas, recibos, reportes) <strong className="text-amber-300">no tienen validez fiscal oficial</strong> y no sustituyen la obligación de emitir facturas con máquina fiscal homologada según la Providencia Administrativa SNAT/2011/0071. El usuario asume plena responsabilidad de sus obligaciones tributarias.
+              Dualis ERP es un <strong className="text-amber-300">sistema administrativo y de gestión interna</strong>, NO es un sistema de facturación homologado por el <strong className="text-amber-300">SENIAT</strong> ni ante ninguna autoridad fiscal venezolana. Los documentos generados (comprobantes de venta, comprobantes internos de despacho, registros de devolución, reportes, recibos) <strong className="text-amber-300">no tienen validez fiscal</strong> y NO sustituyen la factura, nota de débito, nota de crédito, orden de entrega ni guía de despacho regulados por la <strong className="text-amber-300">Providencia SNAT/2011/00071</strong>, la <strong className="text-amber-300">Providencia SNAT/2024/000102</strong> (facturación digital) ni la <strong className="text-amber-300">Providencia SNAT/2024/000121</strong> (homologación de proveedores de software fiscal). El usuario debe mantener su medio de emisión fiscal externo (máquina fiscal, imprenta autorizada o sistema homologado) y asume plena responsabilidad por sus obligaciones tributarias conforme al Código Orgánico Tributario vigente.
             </p>
           </div>
         </div>
@@ -49,11 +49,13 @@ export default function Terms() {
           <section>
             <h2 className="text-base font-black text-white mb-2">3. Limitaciones Fiscales y Legales</h2>
             <ul className="space-y-2">
-              <li>• Este software <strong className="text-white/70">no está homologado</strong> ante el SENIAT como sistema de facturación fiscal.</li>
-              <li>• Los comprobantes y reportes generados son de uso <strong className="text-white/70">administrativo interno</strong> y no sustituyen documentos fiscales válidos.</li>
-              <li>• Los cálculos de IVA, IGTF y retenciones son referenciales y no constituyen declaración tributaria oficial.</li>
-              <li>• El usuario es responsable de cumplir con la <strong className="text-white/70">Ley del IVA (Arts. 54-57)</strong>, el <strong className="text-white/70">Código Orgánico Tributario</strong> y demás normativa vigente en Venezuela.</li>
-              <li>• El proveedor no se hace responsable por sanciones, multas o reparos fiscales derivados del uso de este software como sustituto de medios fiscales oficiales.</li>
+              <li>• Dualis ERP <strong className="text-white/70">NO está homologado</strong> por el SENIAT como sistema de facturación fiscal, ni bajo la Providencia SNAT/2011/00071 (imprenta autorizada / forma libre), ni bajo la SNAT/2024/000102 (facturación digital), ni bajo la SNAT/2024/000121 (proveedores de software de facturación).</li>
+              <li>• Dualis ERP es un <strong className="text-white/70">sistema administrativo y de gestión interna</strong>. NO emite facturas fiscales, notas de crédito fiscales, notas de débito fiscales, órdenes de entrega fiscales ni guías de despacho fiscales. Los términos reservados por la Providencia SNAT/2011/00071 Art. 6 no son utilizados como documentos fiscales dentro de Dualis.</li>
+              <li>• Los comprobantes, recibos, reportes y demás documentos generados por Dualis son de uso <strong className="text-white/70">exclusivamente administrativo interno</strong> del usuario y <strong className="text-white/70">no sustituyen</strong> los documentos fiscales regulados por la normativa SENIAT. El usuario debe contar con un medio de emisión fiscal externo (máquina fiscal Tipo I/II/III, imprenta autorizada o sistema digital homologado) conforme al Art. 5 de la SNAT/2011/00071.</li>
+              <li>• Los cálculos de IVA, IGTF y retenciones que Dualis muestra son <strong className="text-white/70">referenciales</strong>, no generan crédito ni débito fiscal oponible ante el SENIAT, y no constituyen declaración tributaria oficial.</li>
+              <li>• El usuario es el único responsable de cumplir con la <strong className="text-white/70">Ley del IVA (Arts. 54-57)</strong>, el <strong className="text-white/70">Reglamento de la Ley del IVA</strong>, el <strong className="text-white/70">Código Orgánico Tributario 2020 (en particular los Arts. 100-107)</strong>, y la normativa SENIAT vigente. Dualis provee un campo opcional "Nº Factura Fiscal Externa" para que el usuario vincule cada venta interna con el documento fiscal emitido por su medio autorizado.</li>
+              <li>• El proveedor de Dualis ERP <strong className="text-white/70">no asume responsabilidad solidaria</strong> por el incumplimiento fiscal del usuario. La relación Dualis-usuario es una prestación de servicios administrativos, no una relación de proveedor homologado bajo el Art. 12 de la Providencia SNAT/2024/000121.</li>
+              <li>• El uso de Dualis como sustituto del medio fiscal oficial es expresamente <strong className="text-white/70">contrario</strong> a estos Términos y libera al proveedor de toda responsabilidad por sanciones, multas, clausuras o reparos tributarios.</li>
             </ul>
           </section>
 

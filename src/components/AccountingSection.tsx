@@ -34,6 +34,7 @@ interface AccountingSectionProps {
   employees?: Employee[];
   rates: ExchangeRates;
   config: AppConfig;
+  businessName?: string;
   onUpdateMovement: (id: string, updated: Partial<Movement>) => void;
   onDeleteMovement: (id: string) => void;
   onNavigateToCustomers?: () => void;
@@ -52,6 +53,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
   employees = [],
   rates,
   config,
+  businessName,
   onUpdateMovement,
   onDeleteMovement,
   onNavigateToCustomers,
@@ -167,7 +169,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       } else if (customers.some((c) => c.id === id)) {
         type = 'CLIENTE';
         typeColor = 'bg-blue-50 text-blue-600 border-blue-200'; // Blue for Customers
-      } else if (employees.some((e) => id.includes(e.name.toUpperCase()))) {
+      } else if (employees.some((e) => e.name && id && id.includes(e.name.toUpperCase()))) {
         type = 'NÓMINA';
         typeColor = 'bg-purple-50 text-purple-600 border-purple-200'; // Purple for Payroll
       }
@@ -236,7 +238,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
         if (entityFilter === 'CATALOGO') return s.type === 'CLIENTE' || s.type === 'PROVEEDOR';
         return s.type === entityFilter;
       })
-      .filter((s) => s.id.toLowerCase().includes(searchTerm.toLowerCase()));
+      .filter((s) => (s.id || '').toLowerCase().includes((searchTerm || '').toLowerCase()));
 
     if (receivableOnly) {
       filtered = filtered.filter((s) => s.type === 'CLIENTE' && s.globalBalance > 0.01);
@@ -1690,6 +1692,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           movements={movements}
           rates={rates}
           config={config}
+          businessName={businessName}
           customRates={customRates}
           onBack={() => setViewMode('DIRECTORY')}
           onViewLedger={() => setViewMode('DETAIL')}

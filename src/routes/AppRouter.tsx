@@ -1,10 +1,10 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
-import { Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { PosKioskContext } from '../context/PosKioskContext';
 import { useAuth } from '../context/AuthContext';
-import { TenantProvider, useTenant } from '../context/TenantContext';
+import { AutoTenantProvider, TenantProvider, useTenant } from '../context/TenantContext';
 import { useSubscription } from '../hooks/useSubscription';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { useSubdomain } from '../context/SubdomainContext';
@@ -23,6 +23,7 @@ const PosMayor         = lazy(() => import('../pages/pos/PosMayor'));
 const AdminPosManager  = lazy(() => import('../pages/AdminPosManager'));
 const Terms            = lazy(() => import('../pages/Terms'));
 const Privacy          = lazy(() => import('../pages/Privacy'));
+const Changelog        = lazy(() => import('../pages/Changelog'));
 const SuperAdminPanel  = lazy(() => import('../pages/SuperAdminPanel'));
 const BillingPage      = lazy(() => import('../pages/BillingPage'));
 const SubscriptionWall = lazy(() => import('../pages/SubscriptionWall'));
@@ -42,6 +43,11 @@ const PortalHelp       = lazy(() => import('../portal/PortalHelp'));
 const PortalCatalog    = lazy(() => import('../portal/PortalCatalog'));
 const PortalBooking    = lazy(() => import('../portal/PortalBooking'));
 const PortalLoyalty    = lazy(() => import('../portal/PortalLoyalty'));
+const PortalPedidos    = lazy(() => import('../portal/PortalPedidos'));
+const PortalReparaciones = lazy(() => import('../portal/PortalReparaciones'));
+const PortalPaymentVerify = lazy(() => import('../portal/PortalPaymentVerify'));
+const PortalDispute    = lazy(() => import('../portal/PortalDispute'));
+const PortalChat       = lazy(() => import('../portal/PortalChat'));
 // Páginas públicas SEO
 const PreciosPage      = lazy(() => import('../pages/public/PreciosPage'));
 const FuncionesPage    = lazy(() => import('../pages/public/FuncionesPage'));
@@ -94,7 +100,7 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
   }
 
   if (userProfile?.status === 'PENDING_APPROVAL') {
-    return <Navigate to={`/${tenantId}/pending`} replace />;
+    return <Navigate to="/pending" replace />;
   }
 
   const path = window.location.pathname;
@@ -102,7 +108,7 @@ function AuthEntry({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
+  return <Navigate to="/admin/dashboard" replace />;
 }
 
 function SubdomainGuard({ children, fallback }: { children: React.ReactNode; fallback?: string }) {
@@ -114,7 +120,6 @@ function SubdomainGuard({ children, fallback }: { children: React.ReactNode; fal
 
 function TenantGuard({ children }: { children: React.ReactNode }) {
   const { user, userProfile, loading } = useAuth();
-  const { empresa_id } = useParams();
 
   if (loading) {
     return <PageSpinner />;
@@ -129,30 +134,26 @@ function TenantGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/" replace />;
   }
 
-  if (!empresa_id || tenantId !== empresa_id) {
-    return <Navigate to="/unauthorized" replace />;
-  }
-
   if (userProfile?.status === 'PENDING_APPROVAL') {
-    return <Navigate to={`/${empresa_id}/pending`} replace />;
+    return <Navigate to="/pending" replace />;
   }
 
-  return <TenantProvider tenantId={empresa_id}>{children}</TenantProvider>;
+  return <AutoTenantProvider>{children}</AutoTenantProvider>;
 }
 
 function SubscriptionGuard({ children }: { children: React.ReactNode }) {
   const { userProfile, loading: authLoading } = useAuth();
-  const { empresa_id } = useParams();
+  const { tenantId } = useTenant();
   const navigate = useNavigate();
-  const businessId = userProfile?.businessId || empresa_id || '';
+  const businessId = tenantId || userProfile?.businessId || '';
   const { subscription, loading: subLoading } = useSubscription(businessId);
 
   React.useEffect(() => {
     if (authLoading || subLoading) return;
     if (!subscription) {
-      navigate(`/${empresa_id}/subscribe`, { replace: true });
+      navigate('/subscribe', { replace: true });
     }
-  }, [authLoading, subLoading, subscription, empresa_id]);
+  }, [authLoading, subLoading, subscription]);
 
   if (authLoading || subLoading) {
     return <PageSpinner />;
@@ -163,19 +164,17 @@ function SubscriptionGuard({ children }: { children: React.ReactNode }) {
 
 function AdminCoreWrapper() {
   const { tenantId } = useTenant();
-  const params = useParams();
-  const empresaId = params.empresa_id || tenantId;
   return (
-    <VendorProvider businessId={empresaId || ''}>
+    <VendorProvider businessId={tenantId || ''}>
       <WidgetProvider>
-        <MainSystem key={empresaId} initialTab={undefined} />
+        <MainSystem key={tenantId} initialTab={undefined} />
       </WidgetProvider>
     </VendorProvider>
   );
 }
 
 function LegacyRedirect() {
-  const { user, userProfile, loading } = useAuth();
+  const { user, loading } = useAuth();
 
   if (loading) {
     return <PageSpinner />;
@@ -185,12 +184,21 @@ function LegacyRedirect() {
     return <Navigate to="/login" replace />;
   }
 
-  const tenantId = resolveTenantId(userProfile);
-  if (!tenantId) {
-    return <Navigate to="/" replace />;
-  }
+  return <Navigate to="/admin/dashboard" replace />;
+}
 
-  return <Navigate to={`/${tenantId}/admin/dashboard`} replace />;
+/**
+ * Redirige rutas legacy con `:empresa_id` (ej: `/key_xxx/admin/cajas`) a la
+ * versión flat (`/admin/cajas`) — preservando el resto del path y query string.
+ * Sirve de fallback para bookmarks viejos sin exponer el businessId nunca más.
+ */
+function LegacyTenantRedirect() {
+  const location = useLocation();
+  const { empresa_id } = useParams();
+  if (!empresa_id) return <Navigate to="/" replace />;
+  // Strip el primer segmento `/${empresa_id}` y conserva lo demás
+  const stripped = location.pathname.replace(`/${empresa_id}`, '') || '/';
+  return <Navigate to={`${stripped}${location.search}`} replace />;
 }
 
 function JoinPage() {
@@ -301,16 +309,17 @@ export default function AppRouter() {
         <Route path="/join" element={<JoinPage />} />
         <Route path="/terms" element={<SubdomainGuard><Terms /></SubdomainGuard>} />
         <Route path="/privacy" element={<SubdomainGuard><Privacy /></SubdomainGuard>} />
+        <Route path="/changelog" element={<SubdomainGuard><Changelog /></SubdomainGuard>} />
         {/* Páginas públicas SEO */}
         <Route path="/precios" element={<SubdomainGuard><PreciosPage /></SubdomainGuard>} />
         <Route path="/funciones" element={<SubdomainGuard><FuncionesPage /></SubdomainGuard>} />
         {/* Internal ops panel */}
         <Route path={`/${import.meta.env.VITE_SUPER_ADMIN_PATH ?? 'ctrl-9x7b'}`} element={<SuperAdminPanel />} />
         <Route path="/ops" element={<OpsMonitor />} />
-        {/* Walls */}
-        <Route path="/:empresa_id/pending" element={<ProtectedRoute><PendingApprovalWall /></ProtectedRoute>} />
-        <Route path="/:empresa_id/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
-        <Route path="/:empresa_id/subscribe" element={<ProtectedRoute><SubscriptionWall /></ProtectedRoute>} />
+        {/* Walls — flat URLs, tenantId resuelto via AutoTenantProvider */}
+        <Route path="/pending" element={<ProtectedRoute><AutoTenantProvider><PendingApprovalWall /></AutoTenantProvider></ProtectedRoute>} />
+        <Route path="/billing" element={<ProtectedRoute><AutoTenantProvider><BillingPage /></AutoTenantProvider></ProtectedRoute>} />
+        <Route path="/subscribe" element={<ProtectedRoute><AutoTenantProvider><SubscriptionWall /></AutoTenantProvider></ProtectedRoute>} />
         <Route path="/unauthorized" element={<NotAuthorized />} />
 
         {/* Rutas legacy */}
@@ -328,12 +337,9 @@ export default function AppRouter() {
         <Route path="/help" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
         <Route path="/ayuda" element={<ProtectedRoute><LegacyRedirect /></ProtectedRoute>} />
 
-        {/* Tenant root */}
-        <Route path="/:empresa_id" element={<Navigate to="admin/dashboard" replace />} />
-
-        {/* Sistema principal */}
+        {/* Sistema principal — URLs flat, sin businessId visible */}
         <Route
-          path="/:empresa_id/admin/cajas"
+          path="/admin/cajas"
           element={
             <TenantGuard>
               <SubscriptionGuard>
@@ -343,7 +349,7 @@ export default function AppRouter() {
           }
         />
         <Route
-          path="/:empresa_id/admin/*"
+          path="/admin/*"
           element={
             <TenantGuard>
               <SubscriptionGuard>
@@ -355,7 +361,7 @@ export default function AppRouter() {
 
         {/* POS */}
         <Route
-          path="/:empresa_id/pos"
+          path="/pos"
           element={
             <TenantGuard>
               <PosLayout />
@@ -365,6 +371,17 @@ export default function AppRouter() {
           <Route path="detal" element={<PosDetal />} />
           <Route path="mayor" element={<PosMayor />} />
         </Route>
+
+        {/* Legacy tenant-prefixed redirects — preservan bookmarks viejos */}
+        <Route path="/:empresa_id" element={<LegacyTenantRedirect />} />
+        <Route path="/:empresa_id/admin/*" element={<LegacyTenantRedirect />} />
+        <Route path="/:empresa_id/pos/*" element={<LegacyTenantRedirect />} />
+        <Route path="/:empresa_id/billing" element={<LegacyTenantRedirect />} />
+        <Route path="/:empresa_id/pending" element={<LegacyTenantRedirect />} />
+        <Route path="/:empresa_id/subscribe" element={<LegacyTenantRedirect />} />
+
+        {/* Verificación pública de pago (sin login, escaneable por QR) */}
+        <Route path="/portal/:slug/payment/:paymentId/verify" element={<PortalPaymentVerify />} />
 
         {/* Portal de Clientes */}
         <Route path="/portal/:slug" element={<PortalGuard />}>
@@ -376,6 +393,10 @@ export default function AppRouter() {
           <Route path="catalogo" element={<PortalCatalog />} />
           <Route path="citas" element={<PortalBooking />} />
           <Route path="fidelidad" element={<PortalLoyalty />} />
+          <Route path="pedidos" element={<PortalPedidos />} />
+          <Route path="reparaciones" element={<PortalReparaciones />} />
+          <Route path="reclamo" element={<PortalDispute />} />
+          <Route path="chat" element={<PortalChat />} />
           <Route path="ayuda" element={<PortalHelp />} />
         </Route>
 

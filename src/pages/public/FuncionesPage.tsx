@@ -16,8 +16,8 @@ const MODULES = [
   },
   {
     icon: Building2, label: 'POS Mayor', color: 'text-indigo-400', bg: 'bg-indigo-500/10',
-    desc: 'Terminal de ventas al mayor con crédito a 15, 30 o 45 días. Numeración correlativa de facturas, múltiples tasas de cambio (BCV, Grupo, personalizada), descuentos y condiciones especiales por cliente.',
-    keywords: ['venta al mayor', 'crédito 15 días', 'facturación Venezuela', 'numeración correlativa'],
+    desc: 'Terminal de ventas al mayor con crédito a 15, 30 o 45 días. Numeración correlativa interna de comprobantes, múltiples tasas de cambio (BCV, Grupo, personalizada), descuentos y condiciones especiales por cliente. Campo opcional para vincular con tu factura fiscal externa.',
+    keywords: ['venta al mayor', 'crédito 15 días', 'POS Venezuela', 'control administrativo'],
   },
   {
     icon: BadgeDollarSign, label: 'Precios Dinámicos', color: 'text-amber-400', bg: 'bg-amber-500/10',
@@ -26,7 +26,7 @@ const MODULES = [
   },
   {
     icon: FileText, label: 'CxC / Clientes', color: 'text-emerald-400', bg: 'bg-emerald-500/10',
-    desc: 'Cuentas por cobrar completo. Historial de facturas y abonos por cliente, balances en USD y bolívares, perfil de cliente con estado de cuenta, aging de cartera (0-30, 31-60, 61-90, 90+ días).',
+    desc: 'Cuentas por cobrar completo. Historial de cargos y abonos por cliente, balances en USD y bolívares, perfil de cliente con estado de cuenta, aging de cartera (0-30, 31-60, 61-90, 90+ días).',
     keywords: ['cuentas por cobrar Venezuela', 'cartera de clientes', 'estado de cuenta', 'cobros'],
   },
   {
@@ -46,7 +46,7 @@ const MODULES = [
   },
   {
     icon: Globe, label: 'Portal de Clientes', color: 'text-emerald-400', bg: 'bg-emerald-500/10',
-    desc: 'Tus clientes acceden a su estado de cuenta por internet con un enlace personalizado. Pueden ver facturas pendientes, su balance y registrar pagos.',
+    desc: 'Tus clientes acceden a su estado de cuenta por internet con un enlace personalizado. Pueden ver sus movimientos pendientes, su balance y registrar pagos administrativos.',
     keywords: ['portal clientes Venezuela', 'autogestión clientes', 'cobros en línea'],
   },
   {
@@ -90,13 +90,13 @@ const MODULES = [
     keywords: ['auditoría interna Venezuela', 'control de acceso', 'trazabilidad operaciones'],
   },
   {
-    icon: Receipt, label: 'Libro de Ventas', color: 'text-rose-400', bg: 'bg-rose-500/10',
-    desc: 'Reporte fiscal completo de todas las ventas. Filtros por fecha, método de pago, vendedor y estado. Totales en USD y bolívares. Exportar CSV para declaraciones.',
-    keywords: ['libro de ventas Venezuela', 'reporte fiscal Venezuela', 'declaración IVA'],
+    icon: Receipt, label: 'Reporte de Ventas', color: 'text-rose-400', bg: 'bg-rose-500/10',
+    desc: 'Reporte interno administrativo de todas las ventas registradas. Filtros por fecha, método de pago, vendedor y estado. Totales en USD y bolívares. Exportar CSV para tus registros internos o para tu contador.',
+    keywords: ['reporte de ventas Venezuela', 'reporte administrativo', 'control de ventas'],
   },
   {
     icon: Sliders, label: 'Configuración Avanzada', color: 'text-slate-400', bg: 'bg-slate-500/10',
-    desc: 'Control total: IVA, IGTF, roles y permisos de usuarios, invitaciones por email, tasas personalizadas, prefijo de facturas, configuración de nómina y mucho más.',
+    desc: 'Control total: IVA referencial, IGTF referencial, roles y permisos de usuarios, invitaciones por email, tasas personalizadas, prefijo de comprobantes internos, configuración de nómina y mucho más.',
     keywords: ['configuración ERP Venezuela', 'roles y permisos', 'multi-usuario Venezuela'],
   },
 ];

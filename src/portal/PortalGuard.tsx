@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { useParams, useSearchParams, Outlet } from 'react-router-dom';
-import { collection, query, where, getDocs, doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { PortalAccessToken } from '../../types';
 import { generateOTP, sendOTPEmail } from '../utils/emailService';
@@ -38,10 +38,7 @@ export default function PortalGuard() {
   const [businessName, setBusinessName] = useState('');
   const [businessLogo, setBusinessLogo] = useState('');
   const [brandColor, setBrandColor] = useState('');
-  const [pin, setPin] = useState('');
-  const [pinError, setPinError] = useState('');
-  // OTP state
-  const [authMode, setAuthMode] = useState<'choose' | 'pin' | 'otp'>('choose');
+  // Fase B.3: OTP-only. Mantenemos compat con enlaces viejos ignorando tokenData.pin.
   const [otpCode, setOtpCode] = useState('');
   const [otpError, setOtpError] = useState('');
   const [otpSending, setOtpSending] = useState(false);
@@ -182,6 +179,13 @@ export default function PortalGuard() {
     })();
   }, [tokenData?.customerId, businessId]);
 
+  // Fase B.3: auto-enviar OTP en cuanto tengamos email y estemos en pin_required
+  useEffect(() => {
+    if (authState !== 'pin_required' || !customerEmail || otpSent || otpSending) return;
+    handleSendOTP();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authState, customerEmail]);
+
   const handleSendOTP = async () => {
     if (!tokenData || !customerEmail || otpSending) return;
     setOtpSending(true);
@@ -251,71 +255,52 @@ export default function PortalGuard() {
     }
   };
 
-  const handlePinSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!tokenData) return;
+  // Fase B.3: handlePinSubmit eliminado — portal es OTP-only.
 
-    if (pin !== tokenData.pin) {
-      setPinError('PIN incorrecto');
-      return;
-    }
-
-    // Update last access
-    try {
-      if (tokenDocId && businessId) {
-        await updateDoc(
-          doc(db, 'businesses', businessId, 'portalAccess', tokenDocId),
-          { lastAccessAt: new Date().toISOString() }
-        );
-      }
-    } catch {}
-
-    // Store session (24 hours)
-    localStorage.setItem(
-      `portal_session_${slug}`,
-      JSON.stringify({
-        businessId,
-        customerId: tokenData.customerId,
-        customerName: tokenData.customerName,
-        businessName,
-        businessLogo,
-        brandColor,
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-      })
-    );
-
-    setAuthState('authenticated');
-  };
-
-  // ── KYC check after authentication ──────────────────────────────────────────
+  // ── KYC check after authentication (realtime) ──────────────────────────────
   useEffect(() => {
     if (authState !== 'authenticated' || !businessId || !tokenData?.customerId) return;
-    (async () => {
-      try {
-        // Check if business requires KYC
-        const bizDoc = await getDoc(doc(db, 'businesses', businessId));
-        const bizData = bizDoc.data();
-        const requiresKyc = bizData?.portalKycRequired !== false; // default true
-        if (bizData?.portalTerms) setPortalTerms(bizData.portalTerms);
 
-        if (!requiresKyc) {
-          setKycStatus('verified');
-          return;
-        }
+    let unsubCustomer: (() => void) | null = null;
+    let unsubConfig: (() => void) | null = null;
+    let requiresKyc = true;
+    let lastCustomerStatus: string | undefined;
 
-        // Check customer KYC status
-        const custDoc = await getDoc(doc(db, 'customers', tokenData.customerId));
-        const custData = custDoc.data();
-        const status = custData?.kycStatus;
+    const applyStatus = () => {
+      if (!requiresKyc) { setKycStatus('verified'); return; }
+      if (lastCustomerStatus === 'verified') setKycStatus('verified');
+      else if (lastCustomerStatus === 'pending') setKycStatus('pending');
+      else if (lastCustomerStatus === 'rejected') setKycStatus('rejected');
+      else setKycStatus('required');
+    };
 
-        if (status === 'verified') setKycStatus('verified');
-        else if (status === 'pending') setKycStatus('pending');
-        else if (status === 'rejected') setKycStatus('rejected');
-        else setKycStatus('required');
-      } catch {
-        setKycStatus('verified'); // fail-open so portal still works
-      }
-    })();
+    // Subscribe to businessConfigs so KYC requirement changes propagate live
+    unsubConfig = onSnapshot(
+      doc(db, 'businessConfigs', businessId),
+      (snap) => {
+        const cfgData = snap.data();
+        const creditCfg = cfgData?.creditConfig || {};
+        requiresKyc = creditCfg.portalKycRequired !== false; // default true
+        if (cfgData?.portalTerms) setPortalTerms(cfgData.portalTerms);
+        applyStatus();
+      },
+      () => { requiresKyc = false; setKycStatus('verified'); }
+    );
+
+    // Subscribe to customer KYC status so portal reacts when admin approves
+    unsubCustomer = onSnapshot(
+      doc(db, 'customers', tokenData.customerId!),
+      (snap) => {
+        lastCustomerStatus = snap.data()?.kycStatus;
+        applyStatus();
+      },
+      () => setKycStatus('verified') // fail-open on permission error
+    );
+
+    return () => {
+      if (unsubCustomer) unsubCustomer();
+      if (unsubConfig) unsubConfig();
+    };
   }, [authState, businessId, tokenData?.customerId]);
 
   const handleKycSubmit = async () => {
@@ -406,67 +391,19 @@ export default function PortalGuard() {
             Hola, {tokenData?.customerName}
           </p>
 
-          {/* ── Auth mode chooser ── */}
-          {authMode === 'choose' && (
-            <div className="space-y-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/30 text-center mb-2">Elige cómo acceder</p>
-              <button
-                onClick={() => setAuthMode('pin')}
-                className="w-full py-4 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white hover:bg-white/[0.07] transition-all flex items-center justify-center gap-3"
-              >
-                <span className="text-lg">🔑</span>
-                <span className="text-xs font-black uppercase tracking-widest">Ingresar PIN</span>
-              </button>
-              {customerEmail && (
-                <button
-                  onClick={() => { setAuthMode('otp'); handleSendOTP(); }}
-                  className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:opacity-90 transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-500/25"
-                >
-                  <span className="text-lg">📧</span>
-                  <div className="text-left">
-                    <span className="text-xs font-black uppercase tracking-widest block">Código por email</span>
-                    <span className="text-[9px] text-white/50 font-bold">{maskedEmail}</span>
-                  </div>
-                </button>
-              )}
+          {/* Fase B.3: portal es OTP-only. Si el cliente no tiene email, se muestra fallback. */}
+          {!customerEmail && (
+            <div className="space-y-3 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto text-2xl">📧</div>
+              <p className="text-sm text-white font-black">Email requerido</p>
+              <p className="text-xs text-white/40 leading-relaxed">
+                Este portal requiere verificación por email. Contacta a {businessName || 'tu proveedor'} para registrar tu correo.
+              </p>
             </div>
           )}
 
-          {/* ── PIN mode ── */}
-          {authMode === 'pin' && (
-            <form onSubmit={handlePinSubmit} className="space-y-4">
-              <div>
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={pin}
-                  onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setPinError(''); }}
-                  placeholder="PIN"
-                  className="w-full px-4 py-4 bg-white/[0.06] border border-white/[0.08] rounded-xl text-center text-2xl font-black text-white tracking-[0.5em] focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-white/20 placeholder:tracking-normal placeholder:text-base"
-                  autoFocus
-                />
-                {pinError && (
-                  <p className="text-xs font-bold text-rose-400 mt-2 text-center">{pinError}</p>
-                )}
-              </div>
-              <button
-                type="submit"
-                disabled={pin.length < 4}
-                className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-500/25 disabled:opacity-40 transition-all"
-              >
-                Acceder al Portal
-              </button>
-              {customerEmail && (
-                <button type="button" onClick={() => setAuthMode('choose')} className="w-full text-[10px] font-bold text-white/30 hover:text-white/50 py-2 transition-colors">
-                  ← Usar código por email
-                </button>
-              )}
-            </form>
-          )}
-
-          {/* ── OTP mode ── */}
-          {authMode === 'otp' && (
+          {/* ── OTP mode (único método) ── */}
+          {customerEmail && (
             <div className="space-y-4">
               {otpSending && !otpSent && (
                 <div className="text-center py-4">
@@ -500,12 +437,9 @@ export default function PortalGuard() {
                   >
                     Verificar Código
                   </button>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-center">
                     <button type="button" onClick={() => { setOtpSent(false); setOtpCode(''); handleSendOTP(); }} className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors">
                       Reenviar código
-                    </button>
-                    <button type="button" onClick={() => setAuthMode('choose')} className="text-[10px] font-bold text-white/30 hover:text-white/50 transition-colors">
-                      ← Usar PIN
                     </button>
                   </div>
                 </form>

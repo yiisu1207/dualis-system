@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, doc, query, where, getDoc, increment } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../../firebase/config';
-import { PreOrder, PreOrderStatus, PreOrderItem } from '../../../types';
+import { PreOrder, PreOrderStatus, PreOrderItem, Customer } from '../../../types';
 import {
   Plus, Clock, CheckCircle, Package, Truck, XCircle, ChevronRight,
-  Loader2, Calendar, DollarSign,
+  Loader2, Calendar, DollarSign, Search, User as UserIcon,
 } from 'lucide-react';
 
 interface Props {
@@ -24,13 +25,18 @@ const STATUS_CONFIG: Record<PreOrderStatus, { label: string; color: string; icon
 };
 
 export default function PrePedidosPanel({ businessId, currentUserName }: Props) {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<PreOrder[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Form state
+  const [formCustomerId, setFormCustomerId] = useState<string>('');
   const [formCustomer, setFormCustomer] = useState('');
   const [formPhone, setFormPhone] = useState('');
+  const [formCustomerSearch, setFormCustomerSearch] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [formDate, setFormDate] = useState('');
   const [formTime, setFormTime] = useState('');
   const [formDeposit, setFormDeposit] = useState(0);
@@ -48,6 +54,42 @@ export default function PrePedidosPanel({ businessId, currentUserName }: Props) 
     return unsub;
   }, [businessId]);
 
+  // Load customers for selector
+  useEffect(() => {
+    if (!businessId) return;
+    const q = query(collection(db, 'customers'), where('businessId', '==', businessId));
+    const unsub = onSnapshot(q, snap => {
+      setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer)));
+    });
+    return () => unsub();
+  }, [businessId]);
+
+  const customerMatches = useMemo(() => {
+    const term = formCustomerSearch.trim().toLowerCase();
+    if (!term) return customers.slice(0, 8);
+    return customers.filter(c =>
+      ((c as any).fullName || (c as any).nombre || '').toLowerCase().includes(term)
+      || ((c as any).cedula || '').toLowerCase().includes(term)
+      || ((c as any).telefono || (c as any).phone || '').toLowerCase().includes(term)
+    ).slice(0, 8);
+  }, [customers, formCustomerSearch]);
+
+  const pickCustomer = (c: Customer) => {
+    const name = (c as any).fullName || (c as any).nombre || '';
+    setFormCustomerId(c.id);
+    setFormCustomer(name);
+    setFormPhone((c as any).telefono || (c as any).phone || '');
+    setFormCustomerSearch(name);
+    setShowCustomerDropdown(false);
+  };
+
+  const clearCustomer = () => {
+    setFormCustomerId('');
+    setFormCustomer('');
+    setFormPhone('');
+    setFormCustomerSearch('');
+  };
+
   const filtered = useMemo(() => {
     let list = orders;
     if (statusFilter !== 'all') list = list.filter(o => o.status === statusFilter);
@@ -63,14 +105,18 @@ export default function PrePedidosPanel({ businessId, currentUserName }: Props) 
   const formTotal = formItems.reduce((s, it) => s + it.quantity * it.priceUSD, 0);
 
   const handleSave = async () => {
-    if (!formCustomer || formItems.length === 0 || !formDate || saving) return;
+    // P1.6: customerId obligatorio — sin esto el depósito no genera ABONO ni el
+    // pedido aparece en el portal del cliente.
+    if (!formCustomerId || !formCustomer || formItems.length === 0 || !formDate || saving) return;
     setSaving(true);
     try {
-      await addDoc(collection(db, `businesses/${businessId}/preorders`), {
+      const validItems = formItems.filter(it => it.name);
+      const ref = await addDoc(collection(db, `businesses/${businessId}/preorders`), {
         businessId,
+        customerId: formCustomerId || undefined,
         customerName: formCustomer,
         customerPhone: formPhone,
-        items: formItems.filter(it => it.name),
+        items: validItems,
         deliveryDate: formDate,
         deliveryTime: formTime || undefined,
         totalUSD: formTotal,
@@ -81,6 +127,31 @@ export default function PrePedidosPanel({ businessId, currentUserName }: Props) 
         createdBy: currentUserName,
         createdAt: new Date().toISOString(),
       });
+
+      // If deposit > 0 and customer linked → create CxC ABONO movement
+      if (formDeposit > 0 && formCustomerId) {
+        try {
+          await addDoc(collection(db, 'movements'), {
+            businessId,
+            entityId: formCustomerId,
+            entityName: formCustomer,
+            date: new Date().toISOString().slice(0, 10),
+            createdAt: new Date().toISOString(),
+            concept: `Depósito Pre-pedido #${ref.id.slice(0, 6)}`,
+            amount: formDeposit,
+            amountInUSD: formDeposit,
+            currency: 'USD',
+            movementType: 'ABONO',
+            accountType: 'BCV',
+            rateUsed: 1,
+            preorderId: ref.id,
+          });
+          await updateDoc(doc(db, `businesses/${businessId}/preorders`, ref.id), { depositMovementCreated: true });
+        } catch (err) {
+          console.error('[prepedidos] error creating deposit movement', err);
+        }
+      }
+
       resetForm();
     } catch (err) {
       console.error('Error saving pre-order:', err);
@@ -94,6 +165,58 @@ export default function PrePedidosPanel({ businessId, currentUserName }: Props) 
     if (idx < 0 || idx >= STATUS_FLOW.length - 1) return;
     const next = STATUS_FLOW[idx + 1];
     await updateDoc(doc(db, `businesses/${businessId}/preorders`, order.id), { status: next });
+
+    // On delivery transition: create FACTURA and decrement stock for product-linked items
+    if (next === 'delivered' && !(order as any).deliveredMovementId) {
+      try {
+        const customerId = (order as any).customerId;
+        if (customerId) {
+          const totalUsd = Number(order.totalUSD || 0);
+          const movRef = await addDoc(collection(db, 'movements'), {
+            businessId,
+            entityId: customerId,
+            entityName: order.customerName,
+            date: new Date().toISOString().slice(0, 10),
+            createdAt: new Date().toISOString(),
+            concept: `Pre-pedido #${order.id.slice(0, 6)} entregado`,
+            amount: totalUsd,
+            amountInUSD: totalUsd,
+            currency: 'USD',
+            movementType: 'FACTURA',
+            accountType: 'BCV',
+            rateUsed: 1,
+            preorderId: order.id,
+            items: order.items.map(it => ({
+              id: (it as any).productId || `po-${order.id}-${it.name}`,
+              nombre: it.name,
+              qty: it.quantity,
+              price: it.priceUSD,
+              subtotal: it.quantity * it.priceUSD,
+            })),
+          });
+          await updateDoc(doc(db, `businesses/${businessId}/preorders`, order.id), { deliveredMovementId: movRef.id });
+        }
+
+        // Decrement stock for any items linked to a product
+        for (const it of order.items) {
+          const pid = (it as any).productId;
+          if (!pid) continue;
+          const pRef = doc(db, `businesses/${businessId}/products`, pid);
+          const pSnap = await getDoc(pRef);
+          if (!pSnap.exists()) continue;
+          const pData = pSnap.data() as any;
+          // Update legacy stock field
+          const updates: any = { stock: increment(-it.quantity) };
+          // Update stockByAlmacen.principal if map exists
+          if (pData.stockByAlmacen && typeof pData.stockByAlmacen === 'object') {
+            updates['stockByAlmacen.principal'] = increment(-it.quantity);
+          }
+          await updateDoc(pRef, updates);
+        }
+      } catch (err) {
+        console.error('[prepedidos] delivery flow error', err);
+      }
+    }
   };
 
   const cancelOrder = async (orderId: string) => {
@@ -102,8 +225,11 @@ export default function PrePedidosPanel({ businessId, currentUserName }: Props) 
 
   const resetForm = () => {
     setShowNew(false);
+    setFormCustomerId('');
     setFormCustomer('');
     setFormPhone('');
+    setFormCustomerSearch('');
+    setShowCustomerDropdown(false);
     setFormDate('');
     setFormTime('');
     setFormDeposit(0);
@@ -195,6 +321,33 @@ export default function PrePedidosPanel({ businessId, currentUserName }: Props) 
                         <ChevronRight size={12} /> Avanzar
                       </button>
                     )}
+                    {order.status === 'ready' && (
+                      <button
+                        onClick={() => {
+                          try {
+                            sessionStorage.setItem('dualis_pending_pos_sale', JSON.stringify({
+                              source: 'prepedido',
+                              sourceId: order.id,
+                              customerId: (order as any).customerId,
+                              customerName: order.customerName,
+                              customerPhone: (order as any).customerPhone,
+                              items: order.items.map(it => ({
+                                id: (it as any).productId || `po-${order.id}-${it.name}`,
+                                nombre: it.name,
+                                name: it.name,
+                                price: it.priceUSD,
+                                qty: it.quantity,
+                              })),
+                            }));
+                          } catch {}
+                          navigate('/admin/cajas');
+                        }}
+                        className="px-3 py-2 rounded-lg bg-emerald-500/15 text-emerald-400 text-[9px] font-bold uppercase hover:opacity-80 transition-all flex items-center gap-1"
+                        title="Cobrar este pre-pedido en POS"
+                      >
+                        <DollarSign size={12} /> Cobrar
+                      </button>
+                    )}
                     {isActive && (
                       <button
                         onClick={() => cancelOrder(order.id)}
@@ -218,17 +371,69 @@ export default function PrePedidosPanel({ businessId, currentUserName }: Props) 
             <h3 className="text-lg font-black text-white mb-5">Nuevo Pre-Pedido</h3>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              <div className="space-y-3">
+                <div className="relative">
                   <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Cliente</label>
-                  <input value={formCustomer} onChange={e => setFormCustomer(e.target.value)} placeholder="Nombre"
-                    className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm outline-none" />
+                  {formCustomerId ? (
+                    <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <UserIcon size={14} className="text-emerald-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-white truncate">{formCustomer}</p>
+                          {formPhone && <p className="text-[9px] text-white/40">{formPhone}</p>}
+                        </div>
+                      </div>
+                      <button type="button" onClick={clearCustomer} className="text-rose-400 hover:bg-rose-500/10 rounded-lg p-1">
+                        <XCircle size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative">
+                        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                        <input
+                          value={formCustomerSearch}
+                          onChange={e => { setFormCustomerSearch(e.target.value); setShowCustomerDropdown(true); }}
+                          onFocus={() => setShowCustomerDropdown(true)}
+                          placeholder="Buscar cliente registrado..."
+                          className="w-full pl-8 pr-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm outline-none"
+                        />
+                      </div>
+                      {showCustomerDropdown && customerMatches.length === 0 && formCustomerSearch.trim() && (
+                        <p className="mt-1.5 text-[9px] text-amber-400 font-bold">
+                          No hay coincidencias. Registra el cliente desde CxC para poder crear el pedido.
+                        </p>
+                      )}
+                      {showCustomerDropdown && customerMatches.length > 0 && (
+                        <div className="absolute z-10 left-0 right-0 mt-1 bg-[#0f1828] border border-white/[0.08] rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                          {customerMatches.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => pickCustomer(c)}
+                              className="w-full text-left px-3 py-2 hover:bg-white/[0.05] flex items-center gap-2 border-b border-white/[0.04] last:border-b-0"
+                            >
+                              <div className="h-7 w-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 text-xs font-black shrink-0">
+                                {((c as any).fullName || (c as any).nombre || '?').charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-white truncate">{(c as any).fullName || (c as any).nombre}</p>
+                                <p className="text-[9px] text-white/30">{(c as any).telefono || (c as any).phone || (c as any).cedula || ''}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Teléfono</label>
-                  <input value={formPhone} onChange={e => setFormPhone(e.target.value)} placeholder="04XX..."
-                    className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm outline-none" />
-                </div>
+                {!formCustomerId && (
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Teléfono</label>
+                    <input value={formPhone} onChange={e => setFormPhone(e.target.value)} placeholder="04XX..."
+                      className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm outline-none" />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -285,7 +490,7 @@ export default function PrePedidosPanel({ businessId, currentUserName }: Props) 
 
             <div className="flex gap-3 mt-6">
               <button onClick={resetForm} className="flex-1 py-3 rounded-xl border border-white/10 text-white/40 text-[10px] font-black uppercase tracking-widest">Cancelar</button>
-              <button onClick={handleSave} disabled={!formCustomer || !formDate || saving}
+              <button onClick={handleSave} disabled={!formCustomerId || !formCustomer || !formDate || saving}
                 className="flex-1 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-40 flex items-center justify-center gap-2">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
                 Crear Pedido

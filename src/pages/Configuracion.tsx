@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
 import {
   ALL_MODULES, MODULE_LABELS, PRESETS, DEFAULT_ROLE_PERMISSIONS,
+  DEFAULT_CAPABILITIES,
   type RolePermissions, type ModuleId, type RoleKey,
+  type Capability, type CapabilityMap, type RoleCapabilities,
 } from '../hooks/useRolePermissions';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -20,6 +22,7 @@ import {
   revokeInvitation,
 } from '../firebase/api';
 import { sendInviteEmail } from '../utils/emailService';
+import { useDriverTour } from '../components/DriverTour';
 import {
   Building2,
   Receipt,
@@ -78,6 +81,8 @@ import {
   BarChart3,
   CalendarDays,
   Trophy,
+  ArrowRight,
+  Download,
 } from 'lucide-react';
 import { updatePassword, updateProfile, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
@@ -85,8 +90,11 @@ import { db, auth } from '../firebase/config';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { acceptRequest, rejectRequest } from '../firebase/api';
 import { seedTestData } from '../utils/seedTestData';
+import { uploadToCloudinary } from '../utils/cloudinary';
+import { DEFAULT_APPROVAL_CONFIG } from '../utils/approvalHelpers';
+import type { ApprovalConfig, ApprovalMovementKind } from '../../types';
 
-type SectionType = 'perfil' | 'identidad' | 'facturacion' | 'equipo' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'servicios' | 'fidelidad' | 'devtest';
+type SectionType = 'perfil' | 'identidad' | 'facturacion' | 'equipo' | 'aprobaciones' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'servicios' | 'fidelidad' | 'devtest';
 
 interface ConfigData {
   tipoNegocio: string;
@@ -100,9 +108,8 @@ interface ConfigData {
   invoicePrefix: string;
   ticketFooter: string;
   security: {
-    twoFactor: boolean;
     auditLogs: boolean;
-    terminalMonitor: boolean;
+    sessionTimeoutMinutes: number;
   };
 }
 
@@ -132,6 +139,13 @@ function applyUiPrefs(prefs: UiPrefs) {
     xs: '11px', sm: '13px', base: '14px', lg: '16px', xl: '18px',
   };
   root.style.fontSize = fontSizes[prefs.fontSize] ?? '14px';
+  // Activar las CSS vars --f-* definidas en index.css (`[data-font="xs|sm|..."]`).
+  // Sin este setAttribute, los componentes que usan `text-[var(--f-small)]` no
+  // escalan cuando el usuario cambia el tamaño. También persistimos en el
+  // mismo key que lee el bootstrap de src/index.tsx para que el data-font
+  // esté activo ANTES del primer paint (evita flash visual al reload).
+  root.setAttribute('data-font', prefs.fontSize);
+  try { localStorage.setItem('dualis_font_size', prefs.fontSize); } catch {}
   const accents: Record<UiPrefs['accentColor'], { p: string; h: string; s: string }> = {
     indigo:  { p: '#4f46e5', h: '#4338ca', s: 'rgba(79,70,229,0.08)'   },
     violet:  { p: '#7c3aed', h: '#6d28d9', s: 'rgba(124,58,237,0.08)'  },
@@ -158,6 +172,7 @@ function applyUiPrefs(prefs: UiPrefs) {
 const Configuracion: React.FC = () => {
   const navigate = useNavigate();
   const { userProfile, updateUserProfile } = useAuth();
+  const { startTour } = useDriverTour(userProfile?.uid);
   const toast = useToast();
   const { t } = useTranslation();
 
@@ -192,16 +207,18 @@ const Configuracion: React.FC = () => {
     enabled: false,
     defaultMode: false,
     showLogo: true,
-    showPoweredBy: true,
     footerMessage: '',
     rejectionReasons: ['Sin stock', 'Avería en transporte', 'Dirección incorrecta', 'Cliente ausente'] as string[],
     requireRejectionReason: false,
     autoNotifyVendedor: false,
+    receiptSize: 'a4' as 'a4' | '80mm', // Fase B.7 — tamaño de impresión del comprobante interno
   });
   const [savingNde, setSavingNde] = useState(false);
 
   // Payment periods (credit days + discount)
-  const [paymentPeriods, setPaymentPeriods] = useState<{ days: number; label: string; discountPercent: number }[]>([]);
+  // Fase B.4 dual config: cada período tiene `mode` ('fictitious' | 'real').
+  // Ver types.ts → PaymentPeriod para la explicación completa.
+  const [paymentPeriods, setPaymentPeriods] = useState<{ days: number; label: string; discountPercent: number; mode?: 'fictitious' | 'real' }[]>([]);
 
   // Credit policy config
   const [creditConfig, setCreditConfig] = useState({
@@ -219,6 +236,7 @@ const Configuracion: React.FC = () => {
     portalAllowComprobantes: false,
     portalAllowAutoPedido: false,
     portalPinLength: 4 as 4 | 6,
+    portalKycRequired: true, // default true — requires cedula upload before portal access
     // Recordatorios
     sendReminderBeforeExpiry: false,
     reminderDaysBefore: 3,
@@ -262,6 +280,10 @@ const Configuracion: React.FC = () => {
     enableBultoColumn: true,
   });
 
+  // Fase D.0 — Quórum de aprobación
+  const [approvalConfig, setApprovalConfig] = useState<ApprovalConfig>(DEFAULT_APPROVAL_CONFIG);
+  const [savingApproval, setSavingApproval] = useState(false);
+
   // Profile state
   const [profileDisplayName, setProfileDisplayName] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
@@ -282,14 +304,34 @@ const Configuracion: React.FC = () => {
   });
   const [savingFeatures, setSavingFeatures] = useState(false);
 
+  // Inventario — toggles opcionales. recepcionEnabled controla el botón
+  // "Recibir Mercancía" en [src/pages/Inventario.tsx]. Costo promedio
+  // ponderado, stockByAlmacen y lotes FEFO ya están implementados.
+  const [inventoryConfig, setInventoryConfig] = useState({
+    recepcionEnabled: true,
+  });
+  const [savingInventoryCfg, setSavingInventoryCfg] = useState(false);
+
   // Role permissions (editable matrix)
   const [rolePerms, setRolePerms] = useState<RolePermissions>(DEFAULT_ROLE_PERMISSIONS);
   const [activeRoleTab, setActiveRoleTab] = useState<RoleKey>('ventas');
   const [savingPerms, setSavingPerms] = useState(false);
 
+  // Fase C.5 — ACL granular por capability
+  const [roleCaps, setRoleCaps] = useState<RoleCapabilities>({});
+  const [savingCaps, setSavingCaps] = useState(false);
+
   // PIN Modal state
   const [pinModal, setPinModal] = useState(false);
   const [newPinValue, setNewPinValue] = useState('');
+
+  // Export backup
+  const [exportProgress, setExportProgress] = useState<string | null>(null);
+
+  // Business logo
+  const [businessLogoUrl, setBusinessLogoUrl] = useState<string>('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [configData, setConfigData] = useState<ConfigData>({
     tipoNegocio: 'general',
@@ -300,12 +342,14 @@ const Configuracion: React.FC = () => {
     companyAddress: '',
     defaultIva: 16,
     mainCurrency: 'USD',
-    invoicePrefix: 'FACT-',
+    // Prefijo genérico no-fiscal. Antes era 'FACT-' pero "FACT" evoca
+    // "Factura" (término reservado SENIAT que ya removimos del UI). NF- =
+    // "Nota de Facturación" interna, coincide con el default de facturaUtils.
+    invoicePrefix: 'NF-',
     ticketFooter: '¡Gracias por su compra!',
     security: {
-      twoFactor: false,
       auditLogs: true,
-      terminalMonitor: true,
+      sessionTimeoutMinutes: 15,
     },
   });
 
@@ -334,6 +378,9 @@ const Configuracion: React.FC = () => {
         } else if (bizSnap?.tipoNegocio) {
           setConfigData(prev => ({ ...prev, tipoNegocio: bizSnap.tipoNegocio }));
         }
+        if (bizSnap?.logoUrl || bizSnap?.logo) {
+          setBusinessLogoUrl(bizSnap.logoUrl || bizSnap.logo);
+        }
         setUsers(usersSnap);
         if (featuresSnap?.features) {
           setFeatures(prev => ({ ...prev, ...featuresSnap.features }));
@@ -360,11 +407,26 @@ const Configuracion: React.FC = () => {
         if (featuresSnap?.commissions) {
           setCommissions(prev => ({ ...prev, ...featuresSnap.commissions }));
         }
+        if (featuresSnap?.approvalConfig) {
+          setApprovalConfig(prev => ({ ...prev, ...featuresSnap.approvalConfig }));
+        }
         if (featuresSnap?.posConfig) {
           setPosConfig(prev => ({ ...prev, ...featuresSnap.posConfig }));
         }
+        if (featuresSnap?.inventoryConfig) {
+          setInventoryConfig(prev => ({ ...prev, ...featuresSnap.inventoryConfig }));
+        }
         if (featuresSnap?.rolePermissions) {
           setRolePerms(prev => ({ ...prev, ...featuresSnap.rolePermissions }));
+        }
+        if (featuresSnap?.roleCapabilities) {
+          setRoleCaps(featuresSnap.roleCapabilities as RoleCapabilities);
+        }
+        if (featuresSnap?.securityConfig && typeof featuresSnap.securityConfig.sessionTimeoutMinutes === 'number') {
+          setConfigData(prev => ({
+            ...prev,
+            security: { ...prev.security, sessionTimeoutMinutes: featuresSnap.securityConfig.sessionTimeoutMinutes },
+          }));
         }
       } catch (e) {
         console.error('Error cargando configuración:', e);
@@ -729,6 +791,44 @@ const Configuracion: React.FC = () => {
     }));
   };
 
+  // Fase C.5 — Capability helpers
+  const getEffectiveCap = (role: RoleKey, cap: Capability): boolean => {
+    const override = roleCaps[role]?.[cap];
+    if (override !== undefined) return override === true;
+    return DEFAULT_CAPABILITIES[role]?.[cap] === true;
+  };
+  const getEffectiveMaxDesc = (role: RoleKey): number => {
+    const override = roleCaps[role]?.maxDescPct;
+    if (override !== undefined) return override;
+    return DEFAULT_CAPABILITIES[role]?.maxDescPct ?? 0;
+  };
+  const toggleCap = (cap: Capability) => {
+    const current = getEffectiveCap(activeRoleTab, cap);
+    setRoleCaps(prev => ({
+      ...prev,
+      [activeRoleTab]: { ...(prev[activeRoleTab] || {}), [cap]: !current },
+    }));
+  };
+  const setMaxDescPct = (pct: number) => {
+    setRoleCaps(prev => ({
+      ...prev,
+      [activeRoleTab]: { ...(prev[activeRoleTab] || {}), maxDescPct: pct },
+    }));
+  };
+  const handleSaveCapabilities = async () => {
+    if (!businessId) return;
+    setSavingCaps(true);
+    try {
+      await setDoc(doc(db, 'businessConfigs', businessId), { roleCapabilities: roleCaps }, { merge: true });
+      toast.success('Capacidades por rol actualizadas');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar capacidades');
+    } finally {
+      setSavingCaps(false);
+    }
+  };
+
   const handleSaveFeatures = async () => {
     if (!businessId) return;
     setSavingFeatures(true);
@@ -745,6 +845,20 @@ const Configuracion: React.FC = () => {
     }
   };
 
+  const handleSaveInventoryConfig = async () => {
+    if (!businessId) return;
+    setSavingInventoryCfg(true);
+    try {
+      await setDoc(doc(db, 'businessConfigs', businessId), { inventoryConfig }, { merge: true });
+      toast.success('Configuración de inventario actualizada');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar inventario');
+    } finally {
+      setSavingInventoryCfg(false);
+    }
+  };
+
   const handleSaveNde = async () => {
     if (!businessId) return;
     setSavingNde(true);
@@ -754,8 +868,6 @@ const Configuracion: React.FC = () => {
         paymentPeriods,
         creditConfig,
       }, { merge: true });
-      // Also sync periods to localStorage for POS quick access
-      localStorage.setItem('payment_periods', JSON.stringify(paymentPeriods));
       toast.success('Configuración de Despacho y Crédito guardada');
     } catch (e) {
       console.error(e);
@@ -776,6 +888,28 @@ const Configuracion: React.FC = () => {
       toast.error('Error al guardar comisiones');
     } finally {
       setSavingCommissions(false);
+    }
+  };
+
+  const handleSaveApprovalConfig = async () => {
+    if (!businessId) return;
+    if (approvalConfig.quorumRequired < 2) {
+      toast.error('El quórum mínimo es 2 validadores');
+      return;
+    }
+    setSavingApproval(true);
+    try {
+      await setDoc(
+        doc(db, 'businessConfigs', businessId),
+        { approvalConfig },
+        { merge: true }
+      );
+      toast.success('Configuración de aprobaciones guardada');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar configuración de aprobaciones');
+    } finally {
+      setSavingApproval(false);
     }
   };
 
@@ -815,11 +949,12 @@ const Configuracion: React.FC = () => {
       items: [
         { id: 'identidad',  label: 'Identidad',            icon: Building2 },
         { id: 'facturacion',label: 'Facturación y POS',    icon: Receipt },
-        { id: 'despacho',   label: 'Despacho / NDE',       icon: Truck },
+        { id: 'despacho',   label: 'Despacho',              icon: Truck },
         { id: 'comisiones', label: 'Comisiones',            icon: Package },
         { id: 'servicios', label: 'Servicios y Citas',     icon: CalendarDays },
         { id: 'fidelidad', label: 'Fidelidad',             icon: Trophy },
         { id: 'equipo',     label: 'Equipo y Permisos',    icon: Users2 },
+        { id: 'aprobaciones', label: 'Aprobaciones',       icon: ShieldCheck },
       ],
     },
     {
@@ -1150,15 +1285,65 @@ const Configuracion: React.FC = () => {
                   <div className="flex items-center gap-6 mb-5 pb-5 border-b border-slate-50 dark:border-white/[0.06]">
                     <div className="relative group">
                       <div className="h-24 w-24 rounded-2xl bg-slate-50 dark:bg-white/[0.05] flex items-center justify-center border-2 border-white dark:border-white/[0.1] shadow-lg overflow-hidden group-hover:scale-105 transition-transform duration-300">
-                        <Building2 size={36} className="text-slate-300 dark:text-white/20" />
+                        {businessLogoUrl ? (
+                          <img src={businessLogoUrl} alt="Logo" className="h-full w-full object-contain" />
+                        ) : (
+                          <Building2 size={36} className="text-slate-300 dark:text-white/20" />
+                        )}
                       </div>
-                      <button className="absolute -bottom-1.5 -right-1.5 h-8 w-8 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg border-2 border-white dark:border-[#0d1424] hover:bg-indigo-500 active:scale-95 transition-all">
-                        <Camera size={14} />
+                      <input
+                        ref={logoFileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file || !businessId) return;
+                          if (file.size > 2 * 1024 * 1024) {
+                            toast.error('Imagen muy grande (máx 2MB)');
+                            return;
+                          }
+                          setUploadingLogo(true);
+                          try {
+                            const result = await uploadToCloudinary(file, 'dualis_avatars');
+                            await setDoc(doc(db, 'businesses', businessId), { logoUrl: result.secure_url }, { merge: true });
+                            setBusinessLogoUrl(result.secure_url);
+                            toast.success('Logo actualizado');
+                          } catch (err) {
+                            console.error(err);
+                            toast.error('Error al subir el logo');
+                          } finally {
+                            setUploadingLogo(false);
+                            if (logoFileInputRef.current) logoFileInputRef.current.value = '';
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={uploadingLogo}
+                        onClick={() => logoFileInputRef.current?.click()}
+                        className="absolute -bottom-1.5 -right-1.5 h-8 w-8 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg border-2 border-white dark:border-[#0d1424] hover:bg-indigo-500 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {uploadingLogo ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
                       </button>
                     </div>
                     <div className="space-y-1">
                       <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Logo Corporativo</h4>
-                      <p className="text-xs text-slate-400 dark:text-white/30 font-medium leading-relaxed max-w-xs">Aparecerá en facturas, tickets y correos. SVG o PNG transparente.</p>
+                      <p className="text-xs text-slate-400 dark:text-white/30 font-medium leading-relaxed max-w-xs">Aparecerá en facturas, tickets y correos. SVG o PNG transparente. Máx 2MB.</p>
+                      {businessLogoUrl && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!businessId) return;
+                            await setDoc(doc(db, 'businesses', businessId), { logoUrl: '' }, { merge: true });
+                            setBusinessLogoUrl('');
+                            toast.success('Logo eliminado');
+                          }}
+                          className="text-[10px] font-bold uppercase tracking-widest text-rose-500 hover:text-rose-600"
+                        >
+                          Eliminar logo
+                        </button>
+                      )}
                     </div>
                   </div>
                   {/* Tipo de Negocio */}
@@ -1250,7 +1435,7 @@ const Configuracion: React.FC = () => {
                     </div>
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 flex items-center gap-2"><FileText size={12} /> Prefijo de Facturación</label>
-                      <input value={configData.invoicePrefix} onChange={e => setConfigData({ ...configData, invoicePrefix: e.target.value.toUpperCase() })} className={inputClasses} placeholder="FACT-" />
+                      <input value={configData.invoicePrefix} onChange={e => setConfigData({ ...configData, invoicePrefix: e.target.value.toUpperCase() })} className={inputClasses} placeholder="NF-" />
                     </div>
                     <div className="col-span-1 md:col-span-2 space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 flex items-center gap-2"><MessageSquare size={12} /> Mensaje al Pie del Ticket</label>
@@ -1271,9 +1456,7 @@ const Configuracion: React.FC = () => {
                   <div className="p-5 space-y-4">
                     {[
                       { key: 'showStockInPOS',     label: 'Mostrar stock disponible en el POS',            sub: 'El vendedor ve la cantidad disponible junto a cada producto' },
-                      { key: 'enableBultoColumn',  label: 'Facturar por bultos y unidades',                sub: 'Habilita la columna de bultos en POS Mayor' },
                       { key: 'allowManualDiscount', label: 'Permitir descuentos manuales en POS',          sub: 'El vendedor puede aplicar descuentos línea por línea' },
-                      { key: 'requireClientAboveAmount', label: 'Requerir selección de cliente para ventas grandes', sub: 'Obliga a seleccionar un cliente cuando la venta supera un monto' },
                     ].map(({ key, label, sub }) => (
                       <div key={key} className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-50 dark:border-white/[0.04] last:border-0">
                         <div>
@@ -1305,22 +1488,6 @@ const Configuracion: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Min amount for client requirement */}
-                    {posConfig.requireClientAboveAmount && (
-                      <div className="pl-4 border-l-2 border-indigo-200 dark:border-indigo-500/30">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Monto mínimo que requiere cliente</label>
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-black text-slate-400">$</span>
-                          <input
-                            type="number" min="0" step="10"
-                            value={posConfig.requireClientMinAmount}
-                            onChange={e => setPosConfig(prev => ({ ...prev, requireClientMinAmount: parseFloat(e.target.value) || 0 }))}
-                            className="w-28 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                          />
-                          <span className="text-[11px] text-slate-400">USD</span>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
@@ -1668,6 +1835,80 @@ const Configuracion: React.FC = () => {
                         Guardar Permisos
                       </button>
                     </div>
+
+                    {/* ── Fase C.5 — Capacidades granulares por rol ── */}
+                    <div className="border-t border-slate-100 dark:border-white/[0.06] px-5 py-4 bg-slate-50/40 dark:bg-white/[0.015]">
+                      <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest">Capacidades ({activeRoleTab})</h4>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mt-0.5 mb-3">
+                        Permisos operativos finos. Independientes de la visibilidad de módulos.
+                      </p>
+
+                      {/* Max discount input */}
+                      <div className="mb-4 flex items-center gap-3">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-white/40">
+                          Descuento máx. sin aprobación (%)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={getEffectiveMaxDesc(activeRoleTab)}
+                          onChange={e => setMaxDescPct(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                          className="w-20 px-2 py-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] text-[11px] font-bold text-slate-700 dark:text-white/70"
+                        />
+                      </div>
+
+                      {/* Capability toggles */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {([
+                          ['verCostos',          'Ver costos'],
+                          ['verMargenes',        'Ver márgenes'],
+                          ['anularVentas',       'Anular ventas'],
+                          ['darDescuentos',      'Dar descuentos'],
+                          ['crearClientes',      'Crear clientes'],
+                          ['verCxC',             'Ver CxC'],
+                          ['verSoloMisClientes', 'Solo sus clientes'],
+                          ['verReportes',        'Ver reportes'],
+                          ['verTesoreria',       'Ver tesorería'],
+                          ['cerrarTurno',        'Cerrar turno'],
+                          ['cobrarPOS',          'Cobrar en POS'],
+                          ['gestionarInventario','Gestionar inventario'],
+                          ['hacerDespacho',      'Hacer despacho'],
+                          ['recibirMercancia',   'Recibir mercancía'],
+                          ['aprobarPagos',       'Aprobar pagos portal'],
+                          ['eliminarDatos',      'Eliminar datos'],
+                        ] as Array<[Capability, string]>).map(([cap, label]) => {
+                          const enabled = getEffectiveCap(activeRoleTab, cap);
+                          return (
+                            <button
+                              key={cap}
+                              onClick={() => toggleCap(cap)}
+                              className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-left ${
+                                enabled
+                                  ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/25'
+                                  : 'bg-slate-50 dark:bg-white/[0.03] border-slate-100 dark:border-white/[0.06]'
+                              }`}
+                            >
+                              <span className={`text-[10px] font-semibold ${enabled ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-white/40'}`}>
+                                {label}
+                              </span>
+                              <div className={`relative w-8 h-4 rounded-full transition-all shrink-0 ${enabled ? 'bg-gradient-to-r from-emerald-600 to-teal-600' : 'bg-slate-200 dark:bg-white/[0.1]'}`}>
+                                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${enabled ? 'left-4' : 'left-0.5'}`} />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        onClick={handleSaveCapabilities}
+                        disabled={savingCaps}
+                        className="mt-4 flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-md shadow-emerald-500/25 hover:opacity-90 transition-all disabled:opacity-50"
+                      >
+                        {savingCaps ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Guardar Capacidades
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1760,6 +2001,51 @@ const Configuracion: React.FC = () => {
                     </button>
                   </div>
                 )}
+
+                {/* INVENTARIO — módulos opcionales en beta */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Inventario</h3>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mt-0.5">Módulos opcionales del inventario</p>
+                  </div>
+                  <div className="p-5 space-y-3">
+                    <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 dark:border-white/[0.07]">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${inventoryConfig.recepcionEnabled ? 'bg-emerald-500/10' : 'bg-slate-100 dark:bg-white/[0.05]'}`}>
+                          <Truck size={16} className={inventoryConfig.recepcionEnabled ? 'text-emerald-400' : 'text-slate-400 dark:text-white/25'} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm font-black text-slate-900 dark:text-white">Recepción de mercancía</h4>
+                          </div>
+                          <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5 leading-relaxed">
+                            Habilita el botón "Recibir Mercancía" en Inventario. Incluye costo promedio ponderado, asignación por almacén y captura de lote/vencimiento (FEFO).
+                          </p>
+                        </div>
+                      </div>
+                      <div
+                        onClick={() => {
+                          if (!isAdmin) return;
+                          setInventoryConfig(prev => ({ ...prev, recepcionEnabled: !prev.recepcionEnabled }));
+                        }}
+                        className={`h-7 w-12 rounded-full relative transition-colors shrink-0 ml-4 ${!isAdmin ? 'cursor-not-allowed' : 'cursor-pointer'} ${inventoryConfig.recepcionEnabled ? 'bg-gradient-to-r from-emerald-600 to-teal-600' : 'bg-slate-200 dark:bg-white/10'}`}
+                      >
+                        <div className={`absolute top-1 h-5 w-5 bg-white rounded-full transition-all shadow-sm ${inventoryConfig.recepcionEnabled ? 'right-1' : 'left-1'}`} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {isAdmin && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleSaveInventoryConfig}
+                      disabled={savingInventoryCfg}
+                      className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-lg shadow-emerald-500/25 active:scale-95 disabled:opacity-50"
+                    >
+                      {savingInventoryCfg ? <Loader2 className="animate-spin" size={15} /> : <><Save size={15} /> Guardar Inventario</>}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1772,9 +2058,7 @@ const Configuracion: React.FC = () => {
                   </h3>
                   <div className="grid grid-cols-1 gap-3">
                     {[
-                      { id: 'twoFactor', title: 'Autenticación de Dos Factores (2FA)', desc: 'Protege tu acceso con un código dinámico adicional.', enabled: configData.security.twoFactor, icon: Fingerprint },
                       { id: 'auditLogs', title: 'Registros de Auditoría', desc: 'Seguimiento de inicios de sesión y acciones críticas.', enabled: configData.security.auditLogs, icon: Activity },
-                      { id: 'terminalMonitor', title: 'Monitoreo de Terminales', desc: 'Controla qué dispositivos están autorizados para facturar.', enabled: configData.security.terminalMonitor, icon: Monitor },
                     ].map(opt => (
                       <div key={opt.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/[0.03] rounded-xl border border-slate-100 dark:border-white/[0.07] group hover:bg-white dark:hover:bg-white/[0.06] hover:shadow-md transition-all duration-300">
                         <div className="flex items-center gap-4">
@@ -1829,6 +2113,106 @@ const Configuracion: React.FC = () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* BLOQUEO POR INACTIVIDAD */}
+                    <div className="mt-4 p-6 bg-gradient-to-br from-slate-900 to-[#0d1220] rounded-2xl text-white shadow-2xl shadow-black/30 relative overflow-hidden group border border-white/[0.06]">
+                      <div className="absolute -left-10 -top-10 h-40 w-40 bg-violet-500/10 rounded-full blur-3xl pointer-events-none" />
+                      <div className="relative z-10">
+                        <h4 className="text-lg font-black mb-1.5 flex items-center gap-2">
+                          <Lock className="text-violet-400" size={20} /> Bloqueo por Inactividad
+                        </h4>
+                        <p className="text-white/40 text-xs font-medium mb-5 max-w-md">
+                          La sesión se bloqueará automáticamente tras el tiempo seleccionado sin actividad. Usa tu PIN maestro para desbloquear, o <span className="font-black text-white/60">Ctrl + L</span> para bloquear manualmente.
+                        </p>
+                        <div className="flex flex-col md:flex-row md:items-center gap-4">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-white/50 shrink-0">
+                            Tiempo límite
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {[
+                              { val: 5, label: '5 min' },
+                              { val: 10, label: '10 min' },
+                              { val: 15, label: '15 min' },
+                              { val: 30, label: '30 min' },
+                              { val: 0, label: 'Nunca' },
+                            ].map(opt => {
+                              const active = configData.security.sessionTimeoutMinutes === opt.val;
+                              return (
+                                <button
+                                  key={opt.val}
+                                  onClick={async () => {
+                                    setConfigData(prev => ({
+                                      ...prev,
+                                      security: { ...prev.security, sessionTimeoutMinutes: opt.val },
+                                    }));
+                                    if (businessId) {
+                                      try {
+                                        await setDoc(
+                                          doc(db, 'businessConfigs', businessId),
+                                          { securityConfig: { sessionTimeoutMinutes: opt.val } },
+                                          { merge: true },
+                                        );
+                                        toast.success(opt.val === 0 ? 'Bloqueo automático desactivado' : `Bloqueo tras ${opt.val} min sin actividad`);
+                                      } catch (e) {
+                                        console.error(e);
+                                        toast.error('No se pudo guardar el tiempo de bloqueo');
+                                      }
+                                    }
+                                  }}
+                                  className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
+                                    active
+                                      ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-900/40'
+                                      : 'bg-white/5 hover:bg-white/10 border border-white/10 text-white/60'
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        {!userProfile?.pin && configData.security.sessionTimeoutMinutes > 0 && (
+                          <div className="mt-4 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-semibold">
+                            ⚠️ Establece tu PIN maestro arriba para poder desbloquear la sesión cuando se active el bloqueo automático.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {/* BACKUP / EXPORT DATA */}
+                    <div className="mt-4 p-6 bg-gradient-to-br from-slate-900 to-[#0d1220] rounded-2xl text-white shadow-2xl shadow-black/30 relative overflow-hidden group border border-white/[0.06]">
+                      <div className="absolute -right-10 -bottom-10 h-40 w-40 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                      <div className="relative z-10">
+                        <h4 className="text-lg font-black mb-1.5 flex items-center gap-2">
+                          <Download className="text-emerald-400" size={20} /> Descargar toda mi data
+                        </h4>
+                        <p className="text-white/40 text-xs font-medium mb-5 max-w-md">
+                          Exporta clientes, productos, movimientos, proveedores y más en un archivo ZIP con CSVs.
+                        </p>
+                        <button
+                          disabled={exportProgress !== null}
+                          onClick={async () => {
+                            if (!businessId) return;
+                            setExportProgress('Iniciando...');
+                            try {
+                              const { exportBusinessData, downloadBlob } = await import('../utils/dataExport');
+                              const blob = await exportBusinessData(businessId, (msg) => setExportProgress(msg));
+                              const date = new Date().toISOString().slice(0, 10);
+                              downloadBlob(blob, `dualis-backup-${date}.zip`);
+                              toast.success('¡Backup descargado!');
+                            } catch (e) {
+                              console.error('[export]', e);
+                              toast.error('Error al exportar datos');
+                            } finally {
+                              setExportProgress(null);
+                            }
+                          }}
+                          className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 border border-emerald-500/30 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2"
+                        >
+                          <Download size={14} />
+                          {exportProgress || 'Descargar ZIP'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1843,15 +2227,19 @@ const Configuracion: React.FC = () => {
                   </div>
                   <div className="absolute -left-10 -bottom-10 h-40 w-40 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
                   <div className="relative z-10">
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-[0.2em] rounded-full mb-4">
-                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Plan Enterprise Activo
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[10px] font-black uppercase tracking-[0.2em] rounded-full mb-4">
+                      <CreditCard size={11} /> Suscripción
                     </div>
-                    <h3 className="text-3xl font-black tracking-tighter mb-2">Enterprise Pro</h3>
-                    <p className="text-white/40 font-medium text-sm mb-5 max-w-md">Infraestructura dedicada, terminales ilimitadas y soporte técnico prioritario 24/7.</p>
-                    <div className="flex gap-3">
-                      <button className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">Historial de Facturas</button>
-                      <button className="px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">Gestionar Plan</button>
-                    </div>
+                    <h3 className="text-2xl font-black tracking-tighter mb-2">Gestiona tu plan</h3>
+                    <p className="text-white/40 font-medium text-sm mb-5 max-w-md">
+                      Cambia de plan, agrega add-ons (RRHH Pro, Visión IA), revisa tu uso actual y consulta el historial de pagos en el portal de facturación.
+                    </p>
+                    <button
+                      onClick={() => navigate('/billing')}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-slate-900 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-100 transition-all active:scale-95"
+                    >
+                      Ir al panel de facturación <ArrowRight size={13} />
+                    </button>
                   </div>
                 </div>
 
@@ -1873,26 +2261,25 @@ const Configuracion: React.FC = () => {
               </div>
             )}
 
-            {/* DESPACHO / NDE */}
+            {/* DESPACHO */}
             {activeSection === 'despacho' && (
               <div className="space-y-5 pb-10">
                 <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
                   <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
                     <div className="flex items-center gap-2">
                       <Truck size={15} className="text-amber-500" />
-                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Nota de Entrega (NDE)</h3>
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Comprobante Interno de Despacho</h3>
                     </div>
-                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Configura el flujo de Nota de Entrega para POS Mayor</p>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Configura el flujo de despacho interno para POS Mayor (documento administrativo, no fiscal)</p>
                   </div>
                   <div className="p-5 space-y-4">
                     {/* Toggles */}
                     {[
-                      { key: 'enabled',         label: 'Habilitar modo Nota de Entrega en POS Mayor',  sub: 'Muestra el toggle NDE en el POS Mayor' },
-                      { key: 'defaultMode',      label: 'Activar modo NDE por defecto al abrir POS',    sub: 'Arranca en modo NDE sin necesidad de activarlo cada vez' },
-                      { key: 'showLogo',         label: 'Mostrar logo en la Nota de Entrega',           sub: 'Logo de la empresa en el documento impreso' },
-                      { key: 'showPoweredBy',    label: "Mostrar 'Powered by Dualis'",                  sub: 'Branding al pie del documento' },
+                      { key: 'enabled',         label: 'Habilitar modo Despacho en POS Mayor',         sub: 'Muestra el toggle Despacho en el POS Mayor' },
+                      { key: 'defaultMode',      label: 'Activar modo Despacho por defecto al abrir POS', sub: 'Arranca en modo Despacho sin necesidad de activarlo cada vez' },
+                      { key: 'showLogo',         label: 'Mostrar logo en el comprobante de despacho',   sub: 'Logo de la empresa en el documento impreso' },
                       { key: 'requireRejectionReason', label: 'Requerir motivo al rechazar despacho',    sub: 'El almacenista debe indicar el motivo de rechazo' },
-                      { key: 'autoNotifyVendedor',     label: 'Notificar al vendedor si su NDE es rechazada', sub: 'Notificación interna al vendedor' },
+                      { key: 'autoNotifyVendedor',     label: 'Notificar al vendedor si su despacho es rechazado', sub: 'Notificación interna al vendedor' },
                     ].map(({ key, label, sub }) => (
                       <div key={key} className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-50 dark:border-white/[0.04] last:border-0">
                         <div>
@@ -1908,9 +2295,31 @@ const Configuracion: React.FC = () => {
                       </div>
                     ))}
 
+                    {/* Receipt size — Fase B.7 */}
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Tamaño de impresión del comprobante interno</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['a4', '80mm'] as const).map(opt => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => setNdeConfig(prev => ({ ...prev, receiptSize: opt }))}
+                            className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${
+                              ndeConfig.receiptSize === opt
+                                ? 'bg-indigo-500 text-white border-indigo-500'
+                                : 'bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-white/40 border-slate-200 dark:border-white/[0.08] hover:bg-slate-100 dark:hover:bg-white/[0.06]'
+                            }`}
+                          >
+                            {opt === 'a4' ? 'Hoja A4' : 'Térmica 80mm'}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-400 dark:text-white/30 mt-1.5">El comprobante mantiene los mismos disclaimers no fiscales en ambos formatos.</p>
+                    </div>
+
                     {/* Footer message */}
                     <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Mensaje al pie de la NDE</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Mensaje al pie del comprobante</label>
                       <textarea
                         value={ndeConfig.footerMessage}
                         onChange={e => setNdeConfig(prev => ({ ...prev, footerMessage: e.target.value }))}
@@ -1960,16 +2369,23 @@ const Configuracion: React.FC = () => {
                       <Clock size={15} className="text-sky-500" />
                       <h3 className="text-sm font-black text-slate-900 dark:text-white">Períodos de Crédito y Descuento</h3>
                     </div>
-                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Plazos de crédito disponibles en POS Mayor. Si un período tiene descuento, el sistema aplica un markup ficticio al precio y muestra el descuento — el neto queda igual.</p>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Plazos de crédito disponibles en POS Mayor. Cada período puede usar descuento ficticio (markup invisible) o descuento real (rebaja neta).</p>
                   </div>
                   <div className="p-5 space-y-4">
-                    {/* Info banner about markup */}
-                    <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-500/[0.06] border border-sky-100 dark:border-sky-500/15">
+                    {/* ── Info banner: Fase B.4 dual config ──────────────────
+                        Explica los DOS modos de descuento que ahora coexisten.
+                        Ver types.ts → PaymentPeriod.mode para detalles.        */}
+                    <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-500/[0.06] border border-sky-100 dark:border-sky-500/15 space-y-2">
                       <div className="flex items-start gap-2">
                         <Info size={13} className="text-sky-500 mt-0.5 shrink-0" />
-                        <p className="text-[11px] text-sky-600 dark:text-sky-300/70 leading-relaxed">
-                          <strong>¿Cómo funciona?</strong> Si configuras 30 días con 5% de descuento, al facturar a crédito el sistema sube el precio un 5.26% y muestra "Descuento pronto pago: -5%". El cliente paga el precio real si paga a tiempo. Esto es legal bajo VEN-NIF como financiamiento comercial.
-                        </p>
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] text-sky-600 dark:text-sky-300/70 leading-relaxed">
+                            <strong>Modo Ficticio (default):</strong> Si configuras 30 días con 5%, el sistema sube el precio un 5.26% y muestra "Descuento pronto pago: -5%". Si el cliente paga a tiempo, paga el precio real. <em>El negocio NO pierde margen</em>. Legal bajo VEN-NIF como financiamiento comercial.
+                          </p>
+                          <p className="text-[11px] text-sky-600 dark:text-sky-300/70 leading-relaxed">
+                            <strong>Modo Real:</strong> El descuento se aplica como una rebaja genuina sobre el total. <em>El negocio sí deja de cobrar ese %</em>. Útil para promociones reales o pronto pago sin markup.
+                          </p>
+                        </div>
                       </div>
                     </div>
 
@@ -1977,7 +2393,7 @@ const Configuracion: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-white/30">Períodos Configurados</p>
                       <button
-                        onClick={() => setPaymentPeriods([...paymentPeriods, { days: 30, label: '30 días', discountPercent: 0 }])}
+                        onClick={() => setPaymentPeriods([...paymentPeriods, { days: 30, label: '30 días', discountPercent: 0, mode: 'fictitious' }])}
                         className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-md shadow-indigo-500/25"
                       >
                         <Plus size={11} /> Agregar período
@@ -1989,7 +2405,8 @@ const Configuracion: React.FC = () => {
                     ) : (
                       <div className="space-y-2.5">
                         {paymentPeriods.map((period, idx) => (
-                          <div key={idx} className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-100 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                          <div key={idx} className="p-3.5 rounded-xl border border-slate-100 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02] space-y-3">
+                           <div className="flex items-center gap-3">
                             <div className="grid grid-cols-3 gap-3 flex-1">
                               <div>
                                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25 mb-1 block">Días</label>
@@ -2037,6 +2454,42 @@ const Configuracion: React.FC = () => {
                             >
                               <Trash2 size={14} />
                             </button>
+                           </div>
+                           {/* ── Fase B.4 dual config: mode selector ─────
+                               Si discountPercent === 0 el selector queda
+                               deshabilitado (no hay descuento que aplicar). */}
+                           <div className={`flex items-center gap-2 ${period.discountPercent <= 0 ? 'opacity-40 pointer-events-none' : ''}`}>
+                             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/25">Modo descuento:</span>
+                             <div className="flex rounded-lg border border-slate-200 dark:border-white/[0.08] overflow-hidden">
+                               <button
+                                 onClick={() => {
+                                   const updated = [...paymentPeriods];
+                                   updated[idx] = { ...period, mode: 'fictitious' };
+                                   setPaymentPeriods(updated);
+                                 }}
+                                 className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all ${(period.mode ?? 'fictitious') === 'fictitious' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-white/[0.04] text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.08]'}`}
+                               >
+                                 Ficticio
+                               </button>
+                               <button
+                                 onClick={() => {
+                                   const updated = [...paymentPeriods];
+                                   updated[idx] = { ...period, mode: 'real' };
+                                   setPaymentPeriods(updated);
+                                 }}
+                                 className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all ${period.mode === 'real' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-white/[0.04] text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.08]'}`}
+                               >
+                                 Real
+                               </button>
+                             </div>
+                             {period.discountPercent > 0 && (
+                               <span className="text-[10px] font-bold text-slate-400 dark:text-white/30 ml-1">
+                                 {(period.mode ?? 'fictitious') === 'fictitious'
+                                   ? '→ el negocio NO pierde margen'
+                                   : '→ rebaja neta real (el negocio sí cede el %)'}
+                               </span>
+                             )}
+                           </div>
                           </div>
                         ))}
                       </div>
@@ -2051,7 +2504,12 @@ const Configuracion: React.FC = () => {
                             <div key={i} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] text-center">
                               <p className="text-sm font-black text-slate-900 dark:text-white">{p.label}</p>
                               {p.discountPercent > 0 && (
-                                <p className="text-[10px] font-bold text-emerald-500">Ahorra {p.discountPercent}%</p>
+                                <>
+                                  <p className="text-[10px] font-bold text-emerald-500">Ahorra {p.discountPercent}%</p>
+                                  <p className="text-[8px] font-black uppercase tracking-widest mt-0.5 opacity-60">
+                                    {(p.mode ?? 'fictitious') === 'fictitious' ? 'Ficticio' : 'Real'}
+                                  </p>
+                                </>
                               )}
                             </div>
                           ))}
@@ -2074,7 +2532,6 @@ const Configuracion: React.FC = () => {
                     {[
                       { key: 'enabled',          label: 'Permitir ventas a crédito',                          sub: 'Habilita la opción de venta a crédito en POS Mayor' },
                       { key: 'autoMarkup',        label: 'Aplicar markup ficticio automáticamente',            sub: 'Al facturar a crédito con descuento, sube el precio y muestra el dto. El neto queda igual' },
-                      { key: 'requireApproval',   label: 'Requerir aprobación de admin para crédito largo',    sub: 'Ventas a crédito que excedan los días máximos requieren aprobación' },
                       { key: 'requireAbonoApproval', label: 'Requerir aprobación de admin para abonos',        sub: 'Los vendedores registran solicitudes — un admin debe aprobar antes de aplicar el pago' },
                     ].map(({ key, label, sub }) => (
                       <div key={key} className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-50 dark:border-white/[0.04] last:border-0">
@@ -2083,167 +2540,13 @@ const Configuracion: React.FC = () => {
                           <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">{sub}</p>
                         </div>
                         <button
-                          onClick={() => setCreditConfig(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))}
+                          onClick={() => setCreditConfig(prev => ({ ...prev, [key]: !(prev as any)[key] }))}
                           className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${(creditConfig as any)[key] ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
                         >
                           <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${(creditConfig as any)[key] ? 'left-5' : 'left-0.5'}`} />
                         </button>
                       </div>
                     ))}
-
-                    {/* Max days without approval */}
-                    {creditConfig.requireApproval && (
-                      <div className="pl-4 border-l-2 border-indigo-200 dark:border-indigo-500/30">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Días máximos sin aprobación</label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number" min="1" max="365"
-                            value={creditConfig.maxDaysNoApproval}
-                            onChange={e => setCreditConfig(prev => ({ ...prev, maxDaysNoApproval: parseInt(e.target.value) || 30 }))}
-                            className="w-24 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
-                          />
-                          <span className="text-[11px] text-slate-400">días</span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 dark:text-white/25 mt-1">Créditos de hasta {creditConfig.maxDaysNoApproval} días se procesan sin aprobación</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* ═══ LÍMITES DE CRÉDITO ═══ */}
-                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
-                    <div className="flex items-center gap-2">
-                      <DollarSign size={15} className="text-emerald-500" />
-                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Límites de Crédito</h3>
-                    </div>
-                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Controla cuánto crédito puede tener cada cliente</p>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    {/* Default credit limit */}
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Límite de crédito por defecto (clientes nuevos)</label>
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-black text-slate-400">$</span>
-                        <input
-                          type="number" min="0" step="100"
-                          value={creditConfig.defaultCreditLimit || ''}
-                          onChange={e => setCreditConfig(prev => ({ ...prev, defaultCreditLimit: parseFloat(e.target.value) || 0 }))}
-                          placeholder="0 = sin límite"
-                          className="w-40 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                        />
-                        <span className="text-[11px] text-slate-400">USD · $0 = sin límite</span>
-                      </div>
-                    </div>
-
-                    {/* Block mode */}
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Cuando se excede el límite</label>
-                      <div className="flex gap-2">
-                        {[
-                          { value: 'block', label: 'Bloquear venta', icon: Lock, desc: 'No permite la venta' },
-                          { value: 'alert', label: 'Alertar y permitir', icon: AlertTriangle, desc: 'Muestra advertencia pero permite con override' },
-                        ].map(opt => (
-                          <button
-                            key={opt.value}
-                            onClick={() => setCreditConfig(prev => ({ ...prev, creditBlockMode: opt.value as 'block' | 'alert' }))}
-                            className={`flex-1 p-3 rounded-xl border text-left transition-all ${creditConfig.creditBlockMode === opt.value
-                              ? 'border-indigo-300 dark:border-indigo-500/40 bg-indigo-50 dark:bg-indigo-500/10'
-                              : 'border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] hover:bg-slate-50 dark:hover:bg-white/[0.04]'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 mb-1">
-                              <opt.icon size={13} className={creditConfig.creditBlockMode === opt.value ? 'text-indigo-500' : 'text-slate-400'} />
-                              <p className={`text-sm font-bold ${creditConfig.creditBlockMode === opt.value ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-white/60'}`}>{opt.label}</p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 dark:text-white/25">{opt.desc}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Alert threshold */}
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">% de utilización para alerta</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number" min="50" max="100"
-                          value={creditConfig.creditAlertPct}
-                          onChange={e => setCreditConfig(prev => ({ ...prev, creditAlertPct: parseInt(e.target.value) || 90 }))}
-                          className="w-20 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
-                        />
-                        <span className="text-[11px] text-slate-400">% — Muestra alerta amarilla en CxC cuando el cliente usa este % de su límite</span>
-                      </div>
-                    </div>
-
-                    {/* Grace period */}
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Período de gracia</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number" min="0" max="365"
-                          value={creditConfig.gracePeriodDays}
-                          onChange={e => setCreditConfig(prev => ({ ...prev, gracePeriodDays: parseInt(e.target.value) || 0 }))}
-                          className="w-20 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
-                        />
-                        <span className="text-[11px] text-slate-400">días después del vencimiento antes de bloquear nuevas ventas a crédito</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ═══ RECORDATORIOS DE VENCIMIENTO ═══ */}
-                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
-                    <div className="flex items-center gap-2">
-                      <Bell size={15} className="text-amber-500" />
-                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Recordatorios de Vencimiento</h3>
-                    </div>
-                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Notificaciones automáticas sobre facturas próximas a vencer</p>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    {/* Send reminder before expiry */}
-                    <div className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-50 dark:border-white/[0.04]">
-                      <div>
-                        <p className="text-sm font-bold text-slate-700 dark:text-white/80">Enviar recordatorio antes de vencimiento</p>
-                        <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">Notificación interna cuando una factura está por vencer</p>
-                      </div>
-                      <button
-                        onClick={() => setCreditConfig(prev => ({ ...prev, sendReminderBeforeExpiry: !prev.sendReminderBeforeExpiry }))}
-                        className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${creditConfig.sendReminderBeforeExpiry ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
-                      >
-                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${creditConfig.sendReminderBeforeExpiry ? 'left-5' : 'left-0.5'}`} />
-                      </button>
-                    </div>
-
-                    {creditConfig.sendReminderBeforeExpiry && (
-                      <div className="pl-4 border-l-2 border-indigo-200 dark:border-indigo-500/30">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2 block">Días antes del vencimiento</label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number" min="1" max="30"
-                            value={creditConfig.reminderDaysBefore}
-                            onChange={e => setCreditConfig(prev => ({ ...prev, reminderDaysBefore: parseInt(e.target.value) || 3 }))}
-                            className="w-20 px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm font-black text-slate-900 dark:text-white text-center focus:ring-2 focus:ring-indigo-500 outline-none"
-                          />
-                          <span className="text-[11px] text-slate-400">días</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Notify vendedor overdue */}
-                    <div className="flex items-center justify-between gap-4 py-2.5">
-                      <div>
-                        <p className="text-sm font-bold text-slate-700 dark:text-white/80">Notificar al vendedor cuando su cliente tiene facturas vencidas</p>
-                        <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">El vendedor recibe alerta cuando un cliente asignado tiene deuda vencida</p>
-                      </div>
-                      <button
-                        onClick={() => setCreditConfig(prev => ({ ...prev, notifyVendedorOverdue: !prev.notifyVendedorOverdue }))}
-                        className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${creditConfig.notifyVendedorOverdue ? 'bg-gradient-to-r from-indigo-600 to-violet-600' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
-                      >
-                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-all ${creditConfig.notifyVendedorOverdue ? 'left-5' : 'left-0.5'}`} />
-                      </button>
-                    </div>
                   </div>
                 </div>
 
@@ -2253,13 +2556,13 @@ const Configuracion: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <Smartphone size={15} className="text-indigo-500" />
                       <h3 className="text-sm font-black text-slate-900 dark:text-white">Portal de Clientes</h3>
-                      <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/10 text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">Próximamente</span>
                     </div>
                     <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Permite a tus clientes ver su estado de cuenta, hacer pedidos y subir comprobantes de pago</p>
                   </div>
                   <div className="p-5 space-y-4">
                     {[
                       { key: 'portalEnabled',            label: 'Habilitar portal de clientes',          sub: 'Los clientes acceden con cédula/RIF + PIN para ver su cuenta' },
+                      { key: 'portalKycRequired',        label: 'Exigir verificación KYC (cédula)',       sub: 'El cliente debe subir foto de su cédula antes de acceder al portal' },
                       { key: 'portalAllowComprobantes',  label: 'Permitir que clientes suban comprobantes', sub: 'El cliente sube foto del comprobante y un admin aprueba el abono' },
                       { key: 'portalAllowAutoPedido',    label: 'Permitir auto-pedido desde portal',      sub: 'El cliente arma su pedido desde el catálogo y lo envía para aprobación' },
                     ].map(({ key, label, sub }) => (
@@ -2375,6 +2678,216 @@ const Configuracion: React.FC = () => {
               </div>
             )}
 
+            {/* APROBACIONES — Quórum multi-firma (Fase D.0) */}
+            {activeSection === 'aprobaciones' && (() => {
+              const APPLIES_OPTIONS: { value: ApprovalMovementKind; label: string; group: 'CxC' | 'CxP' }[] = [
+                { value: 'FACTURA_CXC',   label: 'Factura CxC',    group: 'CxC' },
+                { value: 'ABONO_CXC',     label: 'Abono CxC',      group: 'CxC' },
+                { value: 'AJUSTE_CXC',    label: 'Ajuste CxC',     group: 'CxC' },
+                { value: 'ANULACION_CXC', label: 'Anulación CxC',  group: 'CxC' },
+                { value: 'FACTURA_CXP',   label: 'Factura CxP',    group: 'CxP' },
+                { value: 'ABONO_CXP',     label: 'Abono CxP',      group: 'CxP' },
+                { value: 'AJUSTE_CXP',    label: 'Ajuste CxP',     group: 'CxP' },
+                { value: 'ANULACION_CXP', label: 'Anulación CxP',  group: 'CxP' },
+              ];
+
+              const validators = users.filter(u => {
+                const rawRole = String(u.role || 'ventas');
+                if (rawRole === 'owner' || rawRole === 'admin') return true;
+                const role = rawRole as RoleKey;
+                if (role === 'auditor') return true;
+                return getEffectiveCap(role, 'aprobarMovimientos' as Capability);
+              });
+              const validatorCount = validators.length;
+              const quorum = approvalConfig.quorumRequired;
+              const hasWarning = approvalConfig.enabled && validatorCount < quorum;
+
+              const toggleAppliesTo = (v: ApprovalMovementKind) => {
+                setApprovalConfig(prev => ({
+                  ...prev,
+                  appliesTo: prev.appliesTo.includes(v)
+                    ? prev.appliesTo.filter(x => x !== v)
+                    : [...prev.appliesTo, v],
+                }));
+              };
+
+              return (
+                <div className="space-y-5 pb-10">
+                  {/* Header/intro */}
+                  <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                    <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck size={15} className="text-emerald-500" />
+                        <h3 className="text-sm font-black text-slate-900 dark:text-white">Quórum de Aprobación</h3>
+                      </div>
+                      <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">
+                        Requiere que N validadores firmen cada movimiento manual sensible de CxC/CxP antes de que se asiente en el libro.
+                      </p>
+                    </div>
+                    <div className="p-5 space-y-5">
+                      {/* Enable toggle */}
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-bold text-slate-700 dark:text-white/80">Requerir aprobación para movimientos manuales</p>
+                          <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">
+                            Cuando está activo, los movimientos manuales quedan en cola hasta reunir el quórum.
+                            POS en tiempo real y pagos del portal quedan exentos.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setApprovalConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
+                          className={`relative h-6 w-11 rounded-full transition-all shrink-0 ${approvalConfig.enabled ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                        >
+                          <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${approvalConfig.enabled ? 'left-[22px]' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+
+                      {/* Quorum number */}
+                      <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-t border-slate-100 dark:border-white/[0.05] pt-5">
+                        <div>
+                          <p className="text-sm font-bold text-slate-700 dark:text-white/80">Validadores requeridos</p>
+                          <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">
+                            Número de firmas distintas necesarias para asentar el movimiento. Mínimo 2. El creador NUNCA cuenta como firmante.
+                          </p>
+                        </div>
+                        <input
+                          type="number"
+                          min={2}
+                          max={10}
+                          value={approvalConfig.quorumRequired}
+                          onChange={e => {
+                            const v = parseInt(e.target.value) || 2;
+                            setApprovalConfig(prev => ({ ...prev, quorumRequired: Math.max(2, Math.min(10, v)) }));
+                          }}
+                          className="w-20 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-center text-sm font-bold text-slate-900 dark:text-white"
+                        />
+                      </div>
+
+                      {/* AppliesTo multiselect */}
+                      <div className="border-t border-slate-100 dark:border-white/[0.05] pt-5">
+                        <p className="text-sm font-bold text-slate-700 dark:text-white/80 mb-1">Tipos de movimiento con quórum</p>
+                        <p className="text-[11px] text-slate-400 dark:text-white/30 mb-3">
+                          Selecciona qué movimientos manuales disparan el flujo. Los no marcados se asientan directo.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {APPLIES_OPTIONS.map(opt => {
+                            const active = approvalConfig.appliesTo.includes(opt.value);
+                            return (
+                              <button
+                                key={opt.value}
+                                onClick={() => toggleAppliesTo(opt.value)}
+                                className={`px-3 py-2 rounded-lg border text-left text-xs font-bold transition-all ${
+                                  active
+                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
+                                    : 'bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-white/40'
+                                }`}
+                              >
+                                <span className="opacity-60 mr-2">{opt.group}</span>
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Exempt toggles */}
+                      <div className="border-t border-slate-100 dark:border-white/[0.05] pt-5 space-y-3">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-xs font-bold text-slate-700 dark:text-white/80">Excluir POS en tiempo real</p>
+                            <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5">Las ventas de mostrador nunca requieren quórum.</p>
+                          </div>
+                          <button
+                            onClick={() => setApprovalConfig(prev => ({ ...prev, exemptPosRealtime: !prev.exemptPosRealtime }))}
+                            className={`relative h-5 w-9 rounded-full transition-all shrink-0 ${approvalConfig.exemptPosRealtime ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                          >
+                            <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${approvalConfig.exemptPosRealtime ? 'left-[18px]' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-xs font-bold text-slate-700 dark:text-white/80">Excluir pagos del portal</p>
+                            <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5">Los abonos aprobados desde el portal tienen su propio flujo de revisión.</p>
+                          </div>
+                          <button
+                            onClick={() => setApprovalConfig(prev => ({ ...prev, exemptPortalPayments: !prev.exemptPortalPayments }))}
+                            className={`relative h-5 w-9 rounded-full transition-all shrink-0 ${approvalConfig.exemptPortalPayments ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-white/[0.12]'}`}
+                          >
+                            <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${approvalConfig.exemptPortalPayments ? 'left-[18px]' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Live validators widget */}
+                  <div className={`rounded-2xl border shadow-lg overflow-hidden ${hasWarning ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30' : 'bg-white dark:bg-[#0d1424] border-slate-100 dark:border-white/[0.07]'}`}>
+                    <div className="px-5 py-4 border-b border-slate-100 dark:border-white/[0.05]">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Users2 size={15} className={hasWarning ? 'text-rose-500' : 'text-indigo-500'} />
+                          <h3 className="text-sm font-black text-slate-900 dark:text-white">Validadores actuales</h3>
+                        </div>
+                        <div className={`text-2xl font-black ${hasWarning ? 'text-rose-600 dark:text-rose-300' : 'text-slate-900 dark:text-white'}`}>
+                          {validatorCount}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-5 space-y-3">
+                      {validatorCount === 0 ? (
+                        <p className="text-xs text-slate-500 dark:text-white/50 italic">
+                          No hay usuarios con la capacidad <code className="px-1 rounded bg-slate-100 dark:bg-white/10">aprobarMovimientos</code> activa.
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {validators.slice(0, 10).map(u => (
+                            <div key={u.uid} className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-slate-700 dark:text-white/80">{u.fullName || u.email}</span>
+                              <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase">{u.role}</span>
+                            </div>
+                          ))}
+                          {validators.length > 10 && (
+                            <p className="text-[10px] text-slate-400 dark:text-white/30 italic">…y {validators.length - 10} más</p>
+                          )}
+                        </div>
+                      )}
+
+                      {hasWarning && (
+                        <div className="mt-3 p-3 rounded-lg bg-rose-100 dark:bg-rose-500/20 border border-rose-300 dark:border-rose-500/40">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle size={14} className="text-rose-600 dark:text-rose-300 shrink-0 mt-0.5" />
+                            <div className="text-[11px] text-rose-700 dark:text-rose-200">
+                              <p className="font-bold">Solo tienes {validatorCount} validador{validatorCount !== 1 ? 'es' : ''} pero requieres {quorum}.</p>
+                              <p className="mt-1 opacity-90">Mientras no haya al menos {quorum} validadores, el sistema auto-aprobará los movimientos manuales (bypass del quórum). Asigna la capacidad <code>aprobarMovimientos</code> a más usuarios en Equipo y Permisos.</p>
+                              <button
+                                onClick={() => setActiveSection('equipo')}
+                                className="mt-2 inline-flex items-center gap-1 text-[11px] font-black underline hover:opacity-80"
+                              >
+                                Ir a Equipo y Permisos
+                                <ArrowRight size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Save button */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleSaveApprovalConfig}
+                      disabled={savingApproval}
+                      className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black text-sm shadow-md shadow-emerald-500/25 hover:opacity-90 transition-all disabled:opacity-50"
+                    >
+                      {savingApproval ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                      Guardar Aprobaciones
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* COMISIONES */}
             {activeSection === 'comisiones' && (
               <div className="space-y-5 pb-10">
@@ -2391,7 +2904,7 @@ const Configuracion: React.FC = () => {
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <p className="text-sm font-bold text-slate-700 dark:text-white/80">Activar comisiones por bulto</p>
-                        <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">Calcula comisiones automáticamente según los bultos en cada NDE</p>
+                        <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">Calcula comisiones automáticamente según los bultos en cada comprobante de despacho</p>
                       </div>
                       <button
                         onClick={() => setCommissions(prev => ({ ...prev, enabled: !prev.enabled }))}
@@ -2833,6 +3346,22 @@ const Configuracion: React.FC = () => {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Tour guiado — Fase C.4 */}
+                <div className="bg-white dark:bg-[#0d1424] p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10">
+                  <h4 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-white/30 mb-1">
+                    Tour guiado
+                  </h4>
+                  <p className="text-[10px] text-slate-400 dark:text-white/20 mb-4">
+                    Vuelve a ver la introducción al sistema — útil para nuevos usuarios de tu equipo.
+                  </p>
+                  <button
+                    onClick={() => { void startTour(); }}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.10] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white/70 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95"
+                  >
+                    ▶ Volver a ver el tour
+                  </button>
                 </div>
 
                 {/* Save button */}

@@ -31,7 +31,7 @@ const RESERVED_SLUGS = new Set([
 export function extractSubdomain(): string | null {
   const hostname = window.location.hostname.toLowerCase();
 
-  // localhost / IP → no hay subdominio
+  // localhost / IP solos → no hay subdominio
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return null;
   }
@@ -43,7 +43,16 @@ export function extractSubdomain(): string | null {
 
   // Extraer la primera parte del hostname
   // "mitienda.dualis.online" → parts = ["mitienda", "dualis", "online"]
+  // "mitienda.localhost"    → parts = ["mitienda", "localhost"]   (dev hosts)
   const parts = hostname.split('.');
+
+  // Caso dev: xxx.localhost (2 partes, última es 'localhost')
+  if (parts.length === 2 && parts[1] === 'localhost') {
+    const sub = parts[0];
+    if (RESERVED_SLUGS.has(sub)) return null;
+    return sub;
+  }
+
   if (parts.length < 3) {
     // Solo "dualis.online" → no hay subdominio
     return null;
@@ -207,15 +216,14 @@ export async function generateAutoSlug(businessName: string, businessId: string)
 /** Genera la URL completa del subdominio */
 export function buildSubdomainUrl(slug: string): string {
   const proto = window.location.protocol;
-  // En producción usa tu dominio real
-  const baseDomain = window.location.hostname === 'localhost'
-    ? `localhost:${window.location.port}`
-    : 'dualis.online';
+  const hostname = window.location.hostname;
+  const port = window.location.port;
 
-  if (window.location.hostname === 'localhost') {
-    // En dev no se pueden usar subdominios fácilmente, retornar URL con query param
-    return `${proto}//${baseDomain}?tenant=${slug}`;
+  // Dev: si el hostname actual termina en .localhost o es localhost puro,
+  // usar el patrón <slug>.localhost:<port> (requiere entry en hosts)
+  if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
+    return `${proto}//${slug}.localhost${port ? `:${port}` : ''}`;
   }
 
-  return `${proto}//${slug}.${baseDomain}`;
+  return `${proto}//${slug}.dualis.online`;
 }

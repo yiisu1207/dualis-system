@@ -9,8 +9,8 @@ interface NDEReceiptModalProps {
   customerPhone?: string;
   ndeConfig?: Partial<{
     showLogo: boolean;
-    showPoweredBy: boolean;
     footerMessage: string;
+    receiptSize: 'a4' | '80mm';
   }>;
   onClose: () => void;
 }
@@ -26,10 +26,11 @@ const NDEReceiptModal: React.FC<NDEReceiptModalProps> = ({
   movement,
   businessId,
   customerPhone,
-  ndeConfig = { showLogo: true, showPoweredBy: true, footerMessage: undefined as string | undefined },
+  ndeConfig = { showLogo: true, footerMessage: undefined as string | undefined, receiptSize: 'a4' as 'a4' | '80mm' },
   onClose,
 }) => {
   const [businessInfo, setBusinessInfo] = useState<{ name: string; rif?: string; phone?: string; address?: string; logoUrl?: string } | null>(null);
+  const [ticketFooter, setTicketFooter] = useState<string | undefined>(ndeConfig.footerMessage);
 
   useEffect(() => {
     if (!businessId) return;
@@ -45,7 +46,16 @@ const NDEReceiptModal: React.FC<NDEReceiptModalProps> = ({
         });
       }
     });
-  }, [businessId]);
+    // Leer ticketFooter de businessConfigs si no viene por props
+    if (!ndeConfig.footerMessage) {
+      getDoc(doc(db, 'businessConfigs', businessId)).then(snap => {
+        if (snap.exists()) {
+          const tf = snap.data().ticketFooter;
+          if (tf) setTicketFooter(tf);
+        }
+      });
+    }
+  }, [businessId, ndeConfig.footerMessage]);
 
   const items: any[] = movement.items || [];
   const estado = movement.estadoNDE || 'pendiente_despacho';
@@ -59,6 +69,10 @@ const NDEReceiptModal: React.FC<NDEReceiptModalProps> = ({
   const logoUrl = businessInfo?.logoUrl;
 
   const printNDE = () => {
+    const is80mm = ndeConfig.receiptSize === '80mm';
+    const pageRule = is80mm
+      ? '@page { size: 80mm auto; margin: 2mm; }'
+      : '@page { size: A4; margin: 12mm; }';
     const footerHtml = `
       <div class="footer">
         ${(ndeConfig.showLogo !== false) ? (
@@ -69,13 +83,13 @@ const NDEReceiptModal: React.FC<NDEReceiptModalProps> = ({
         <span class="footer-biz">${businessName}</span>
         ${businessInfo?.rif ? `<span class="footer-rif">RIF: ${businessInfo.rif}</span>` : ''}
       </div>
-      ${ndeConfig.footerMessage ? `<p class="footer-msg">${ndeConfig.footerMessage}</p>` : ''}
-      ${ndeConfig.showPoweredBy !== false ? `<p class="footer-sub">Generado con <strong style="color:#6366f1">Dualis ERP</strong> · dualis.app</p>` : ''}
+      ${ticketFooter ? `<p class="footer-msg">${ticketFooter.replace(/</g, '&lt;')}</p>` : ''}
+      <p class="footer-sub">Generado con <strong style="color:#6366f1">Dualis ERP</strong> · dualis.app</p>
     `;
 
     const itemsHtml = items.map(item => `
       <tr>
-        <td style="padding:3px 4px;border-bottom:1px solid #f1f5f9;">${item.nombre || item.name || 'Producto'}</td>
+        <td style="padding:3px 4px;border-bottom:1px solid #f1f5f9;">${item.nombre || item.name || 'Producto'}${item.note ? `<br><small style="color:#d97706;font-style:italic;">${item.note.replace(/</g, '&lt;')}</small>` : ''}</td>
         <td style="text-align:center;padding:3px 4px;border-bottom:1px solid #f1f5f9;">${item.qty ?? 1}</td>
         <td style="text-align:right;padding:3px 4px;border-bottom:1px solid #f1f5f9;">$${(item.price ?? item.priceUsd ?? 0).toFixed(2)}</td>
         <td style="text-align:right;padding:3px 4px;border-bottom:1px solid #f1f5f9;">$${(item.subtotal ?? ((item.qty ?? 1) * (item.price ?? item.priceUsd ?? 0))).toFixed(2)}</td>
@@ -84,15 +98,18 @@ const NDEReceiptModal: React.FC<NDEReceiptModalProps> = ({
 
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<title>Nota de Entrega ${nroControl}</title>
+<title>Comprobante Interno de Despacho ${nroControl}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Courier New', monospace; font-size: 11px; color: #1e293b; width: 302px; padding: 10px; }
+  ${pageRule}
+  body { font-family: 'Courier New', monospace; font-size: 11px; color: #1e293b; width: ${is80mm ? '76mm' : '302px'}; padding: ${is80mm ? '0' : '10px'}; }
   .header { text-align:center; margin-bottom:10px; }
   .biz-logo { max-height:40px; object-fit:contain; margin-bottom:4px; }
   .biz-name { font-size:14px; font-weight:900; color:#1e293b; }
   .biz-sub  { font-size:9px; color:#64748b; margin-top:2px; }
-  .title    { font-size:13px; font-weight:900; letter-spacing:0.1em; margin:8px 0 4px; border-top:2px solid #1e293b; border-bottom:2px solid #1e293b; padding:4px 0; }
+  .title    { font-size:11px; font-weight:900; letter-spacing:0.08em; margin:8px 0 4px; border-top:2px solid #1e293b; border-bottom:2px solid #1e293b; padding:4px 0; }
+  .nofiscal { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; text-align:center; font-size:8px; font-weight:900; letter-spacing:0.05em; padding:3px; margin:4px 0; text-transform:uppercase; }
+  .ivaref   { text-align:center; font-size:7px; color:#b45309; font-weight:700; font-style:italic; margin:2px 0; }
   .meta     { display:flex; justify-content:space-between; font-size:9px; color:#64748b; margin-bottom:2px; }
   .divider  { border-top:1px dashed #cbd5e1; margin:6px 0; }
   table     { width:100%; border-collapse:collapse; font-size:9px; margin:6px 0; }
@@ -108,7 +125,8 @@ const NDEReceiptModal: React.FC<NDEReceiptModalProps> = ({
   .footer-rif  { font-size:9px; color:#94a3b8; }
   .footer-msg  { text-align:center; font-size:9px; color:#64748b; margin:4px 0; font-style:italic; }
   .footer-sub  { text-align:center; font-size:9px; color:#94a3b8; margin-top:4px; }
-  @media print { body { width:auto; } }
+  .legal    { margin-top:6px; padding:4px; border:1px dashed #dc2626; text-align:center; font-size:7px; color:#991b1b; font-weight:700; line-height:1.3; }
+  @media print { body { width:${is80mm ? '76mm' : 'auto'}; } }
 </style>
 </head><body>
 <div class="header">
@@ -117,9 +135,10 @@ const NDEReceiptModal: React.FC<NDEReceiptModalProps> = ({
   ${businessInfo?.rif ? `<div class="biz-sub">RIF: ${businessInfo.rif}</div>` : ''}
 </div>
 
-<div class="title" style="text-align:center">NOTA DE ENTREGA</div>
+<div class="title" style="text-align:center">COMPROBANTE INTERNO DE DESPACHO</div>
+<div class="nofiscal">DOCUMENTO NO FISCAL &middot; SIN VALOR TRIBUTARIO</div>
 
-<div class="meta"><span>Nro:</span><span><strong>${nroControl}</strong></span></div>
+<div class="meta"><span>N° Interno:</span><span><strong>${nroControl}</strong></span></div>
 <div class="meta"><span>Fecha:</span><span>${dateFormatted}</span></div>
 <div class="meta"><span>Cliente:</span><span>${movement.concept?.replace(/Venta POS Mayor — /, '') || 'Cliente'}</span></div>
 <div class="meta"><span>Vendedor:</span><span>${movement.vendedorNombre || 'Vendedor'}</span></div>
@@ -147,8 +166,10 @@ ${movement.almacenId && movement.almacenId !== 'principal' ? `<div class="meta">
 
 <div class="totals">
   ${movement.ivaAmount ? `<div class="total-row"><span>Base:</span><span>$${movement.subtotalUSD?.toFixed(2) || '0.00'}</span></div>` : ''}
-  ${movement.ivaAmount ? `<div class="total-row"><span>IVA:</span><span>+$${movement.ivaAmount?.toFixed(2)}</span></div>` : ''}
+  ${movement.ivaAmount ? `<div class="total-row"><span>IVA (referencial):</span><span>+$${movement.ivaAmount?.toFixed(2)}</span></div>` : ''}
+  ${movement.ivaAmount ? `<div class="ivaref">IVA referencial &middot; no genera cr&eacute;dito fiscal</div>` : ''}
   ${movement.discountAmount ? `<div class="total-row"><span>Descuento:</span><span>-$${movement.discountAmount?.toFixed(2)}</span></div>` : ''}
+  ${(movement as any).realDiscountApplied && (movement as any).originalAmountUSD ? `<div class="total-row"><span>Subtotal:</span><span>$${(movement as any).originalAmountUSD.toFixed(2)}</span></div>` : ''}
   ${(movement as any).earlyPayDiscountPct ? `<div class="total-row" style="color:#10b981"><span>Desc. pronto pago ${(movement as any).earlyPayDiscountPct}%:</span><span>-$${((movement as any).earlyPayDiscountAmt || 0).toFixed(2)}</span></div>` : ''}
   <div class="total-main"><span>TOTAL:</span><span>$${(movement.amountInUSD ?? movement.amount ?? 0).toFixed(2)}</span></div>
   ${(movement as any).realAmountUSD ? `<div class="total-row" style="margin-top:2px;color:#a78bfa"><span>Neto (con desc.):</span><span>$${(movement as any).realAmountUSD.toFixed(2)}</span></div>` : ''}
@@ -164,6 +185,12 @@ ${movement.bultos ? `<div class="divider"></div><div class="meta"><span><strong>
 </div>
 
 ${footerHtml}
+
+<div class="legal">
+  DOCUMENTO INTERNO &middot; NO ES FACTURA FISCAL &middot; SIN VALOR TRIBUTARIO<br/>
+  No sustituye factura, nota de d&eacute;bito/cr&eacute;dito, orden de entrega ni gu&iacute;a de despacho<br/>
+  conforme a la Providencia SENIAT SNAT/2011/00071. Sistema administrativo no homologado.
+</div>
 </body></html>`;
 
     const w = window.open('', '_blank', 'width=350,height=600');
@@ -177,12 +204,13 @@ ${footerHtml}
     if (!customerPhone) return;
     const phone = customerPhone.replace(/\D/g, '');
     const text = encodeURIComponent(
-      `📋 *Nota de Entrega ${nroControl}*\n` +
+      `📋 *Comprobante de Despacho ${nroControl}*\n` +
       `Fecha: ${dateFormatted}\n` +
       `Total: $${(movement.amountInUSD ?? movement.amount ?? 0).toFixed(2)}\n` +
       (movement.bultos ? `Bultos: ${movement.bultos}\n` : '') +
       `Estado: ${estadoInfo.label}\n\n` +
-      `Emitido por ${businessName}`
+      `Emitido por ${businessName}\n` +
+      `_Documento interno no fiscal_`
     );
     window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
   };
@@ -198,7 +226,7 @@ ${footerHtml}
               <Truck size={18} className="text-amber-400" />
             </div>
             <div>
-              <h2 className="text-sm font-black text-slate-900 dark:text-white">Nota de Entrega</h2>
+              <h2 className="text-sm font-black text-slate-900 dark:text-white">Comprobante Interno de Despacho</h2>
               <p className="text-[10px] font-bold text-amber-500">{nroControl}</p>
             </div>
           </div>
@@ -209,6 +237,16 @@ ${footerHtml}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto custom-scroll p-6 space-y-4">
+
+          {/* Legal non-fiscal banner */}
+          <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-rose-400 text-center">
+              Documento no fiscal &middot; Sin valor tributario
+            </p>
+            <p className="text-[8px] text-rose-300/70 text-center mt-0.5 leading-tight">
+              No es factura, orden de entrega ni guía de despacho ante SENIAT
+            </p>
+          </div>
 
           {/* Status badge */}
           <div className="flex items-center justify-center">
@@ -222,7 +260,7 @@ ${footerHtml}
           {/* Info grid */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3 border border-slate-100 dark:border-white/[0.07]">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1">Nro. Control</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1">N° Interno</p>
               <p className="text-sm font-black text-slate-900 dark:text-white">{nroControl}</p>
             </div>
             <div className="bg-slate-50 dark:bg-white/[0.04] rounded-xl p-3 border border-slate-100 dark:border-white/[0.07]">
@@ -283,22 +321,20 @@ ${footerHtml}
             </p>
           </div>
 
-          {/* Branding */}
-          {ndeConfig.showPoweredBy !== false && (
-            <div className="flex flex-col items-center gap-1 pt-2">
-              <div className="flex items-center gap-2">
-                {ndeConfig.showLogo !== false && (
-                  logoUrl
-                    ? <img src={logoUrl} className="h-5 object-contain" alt="logo" />
-                    : <div className="h-5 w-5 rounded bg-indigo-600 flex items-center justify-center text-white text-[10px] font-black">{businessName[0]}</div>
-                )}
-                <span className="text-xs font-black text-slate-700 dark:text-white/70">{businessName}</span>
-              </div>
-              <p className="text-[9px] text-slate-400 dark:text-white/20">
-                Powered by <strong className="text-indigo-400">Dualis ERP</strong>
-              </p>
+          {/* Branding — siempre visible */}
+          <div className="flex flex-col items-center gap-1 pt-2">
+            <div className="flex items-center gap-2">
+              {ndeConfig.showLogo !== false && (
+                logoUrl
+                  ? <img src={logoUrl} className="h-5 object-contain" alt="logo" />
+                  : <div className="h-5 w-5 rounded bg-indigo-600 flex items-center justify-center text-white text-[10px] font-black">{businessName[0]}</div>
+              )}
+              <span className="text-xs font-black text-slate-700 dark:text-white/70">{businessName}</span>
             </div>
-          )}
+            <p className="text-[9px] text-slate-400 dark:text-white/20">
+              Powered by <strong className="text-indigo-400">Dualis ERP</strong>
+            </p>
+          </div>
         </div>
 
         {/* Actions */}

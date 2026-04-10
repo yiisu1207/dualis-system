@@ -2,13 +2,14 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc,
 } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase/config';
 import {
-  Appointment, AppointmentStatus, Service, StaffSchedule,
+  Appointment, AppointmentStatus, Service, StaffSchedule, Customer,
 } from '../../types';
 import {
-  ChevronLeft, ChevronRight, Plus, Clock, User, Phone,
-  CheckCircle, XCircle, AlertTriangle, Calendar, UserPlus,
+  ChevronLeft, ChevronRight, Plus, Clock, User as UserIcon,
+  CheckCircle, XCircle, Calendar, UserPlus, DollarSign, Search,
 } from 'lucide-react';
 
 interface Props {
@@ -62,18 +63,23 @@ const STATUS_LABELS: Record<AppointmentStatus, string> = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function CitasPanel({ businessId, currentUserId, currentUserName }: Props) {
+  const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState(() => formatDate(new Date()));
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [staffSchedules, setStaffSchedules] = useState<StaffSchedule[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
 
   // Modal state
   const [showNewModal, setShowNewModal] = useState(false);
   const [editingAppt, setEditingAppt] = useState<Appointment | null>(null);
 
   // New appointment form
+  const [formCustomerId, setFormCustomerId] = useState('');
   const [formCustomerName, setFormCustomerName] = useState('');
   const [formCustomerPhone, setFormCustomerPhone] = useState('');
+  const [formCustomerSearch, setFormCustomerSearch] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [formServiceId, setFormServiceId] = useState('');
   const [formStaffId, setFormStaffId] = useState('');
   const [formTime, setFormTime] = useState('09:00');
@@ -94,9 +100,39 @@ export default function CitasPanel({ businessId, currentUserId, currentUserName 
       onSnapshot(collection(db, `businesses/${businessId}/staffSchedules`), snap => {
         setStaffSchedules(snap.docs.map(d => ({ staffId: d.id, ...d.data() } as StaffSchedule)));
       }),
+      onSnapshot(query(collection(db, 'customers'), where('businessId', '==', businessId)), snap => {
+        setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer)));
+      }),
     ];
     return () => unsubs.forEach(u => u());
   }, [businessId]);
+
+  // Customer picker matches
+  const customerMatches = useMemo(() => {
+    const term = formCustomerSearch.trim().toLowerCase();
+    if (!term) return customers.slice(0, 8);
+    return customers.filter(c =>
+      ((c as any).fullName || (c as any).nombre || '').toLowerCase().includes(term)
+      || ((c as any).cedula || '').toLowerCase().includes(term)
+      || ((c as any).telefono || (c as any).phone || '').toLowerCase().includes(term)
+    ).slice(0, 8);
+  }, [customers, formCustomerSearch]);
+
+  const pickCustomer = (c: Customer) => {
+    const name = (c as any).fullName || (c as any).nombre || '';
+    setFormCustomerId(c.id);
+    setFormCustomerName(name);
+    setFormCustomerPhone((c as any).telefono || (c as any).phone || '');
+    setFormCustomerSearch(name);
+    setShowCustomerDropdown(false);
+  };
+
+  const clearCustomer = () => {
+    setFormCustomerId('');
+    setFormCustomerName('');
+    setFormCustomerPhone('');
+    setFormCustomerSearch('');
+  };
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const dayAppts = useMemo(
@@ -125,15 +161,21 @@ export default function CitasPanel({ businessId, currentUserId, currentUserName 
 
   // ── Save appointment ────────────────────────────────────────────────────────
   const handleSaveAppointment = async () => {
+    // P1.5: customerId obligatorio (no input libre) — sin esto la cita
+    // queda huérfana y rompe el encadenado Cita→POS→Movement→Comisión.
+    // Excepción: editar citas viejas que ya no tenían customerId.
+    const requireCustomerId = !editingAppt || !!(editingAppt as any).customerId;
     if (!formCustomerName || !formServiceId || !formStaffId || saving) return;
+    if (requireCustomerId && !formCustomerId) return;
     setSaving(true);
     try {
       const svc = services.find(s => s.id === formServiceId);
       const staff = staffList.find(s => s.staffId === formStaffId);
       const endTime = addMinutes(formTime, svc?.duration || 30);
 
-      const payload: Omit<Appointment, 'id'> = {
+      const payload: Omit<Appointment, 'id'> & { customerId?: string } = {
         businessId,
+        customerId: formCustomerId || undefined,
         customerName: formCustomerName,
         customerPhone: formCustomerPhone,
         serviceId: formServiceId,
@@ -166,8 +208,11 @@ export default function CitasPanel({ businessId, currentUserId, currentUserName 
   const resetForm = () => {
     setShowNewModal(false);
     setEditingAppt(null);
+    setFormCustomerId('');
     setFormCustomerName('');
     setFormCustomerPhone('');
+    setFormCustomerSearch('');
+    setShowCustomerDropdown(false);
     setFormServiceId('');
     setFormStaffId('');
     setFormTime('09:00');
@@ -177,32 +222,16 @@ export default function CitasPanel({ businessId, currentUserId, currentUserName 
 
   const handleStatusChange = async (apptId: string, status: AppointmentStatus) => {
     await updateDoc(doc(db, `businesses/${businessId}/appointments`, apptId), { status });
-
-    // When completed, record commission for the staff member
-    if (status === 'completed') {
-      const appt = appointments.find(a => a.id === apptId);
-      const svc = services.find(s => s.id === appt?.serviceId);
-      if (appt && svc && svc.price > 0) {
-        await addDoc(collection(db, `businesses/${businessId}/commissions`), {
-          type: 'cita',
-          staffId: appt.staffId,
-          staffName: appt.staffName,
-          appointmentId: apptId,
-          serviceId: svc.id,
-          serviceName: svc.name,
-          servicePrice: svc.price,
-          customerName: appt.customerName,
-          date: appt.date,
-          createdAt: new Date().toISOString(),
-        });
-      }
-    }
+    // Note: Commissions are now created from PosDetal when the appointment is billed,
+    // so revenue and commission stay in sync.
   };
 
   const openEdit = (appt: Appointment) => {
     setEditingAppt(appt);
+    setFormCustomerId((appt as any).customerId || '');
     setFormCustomerName(appt.customerName);
     setFormCustomerPhone(appt.customerPhone);
+    setFormCustomerSearch(appt.customerName);
     setFormServiceId(appt.serviceId);
     setFormStaffId(appt.staffId);
     setFormTime(appt.startTime);
@@ -418,26 +447,74 @@ export default function CitasPanel({ businessId, currentUserId, currentUserName 
             </h3>
 
             <div className="space-y-4">
-              {/* Customer */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              {/* Customer picker */}
+              <div className="space-y-3">
+                <div className="relative">
                   <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Cliente</label>
-                  <input
-                    value={formCustomerName}
-                    onChange={e => setFormCustomerName(e.target.value)}
-                    placeholder="Nombre"
-                    className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                  />
+                  {formCustomerId ? (
+                    <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <UserIcon size={14} className="text-emerald-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-white truncate">{formCustomerName}</p>
+                          {formCustomerPhone && <p className="text-[9px] text-white/40">{formCustomerPhone}</p>}
+                        </div>
+                      </div>
+                      <button type="button" onClick={clearCustomer} className="text-rose-400 hover:bg-rose-500/10 rounded-lg p-1">
+                        <XCircle size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative">
+                        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                        <input
+                          value={formCustomerSearch}
+                          onChange={e => { setFormCustomerSearch(e.target.value); setShowCustomerDropdown(true); }}
+                          onFocus={() => setShowCustomerDropdown(true)}
+                          placeholder="Buscar cliente registrado..."
+                          className="w-full pl-8 pr-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm outline-none"
+                        />
+                      </div>
+                      {showCustomerDropdown && customerMatches.length === 0 && formCustomerSearch.trim() && (
+                        <p className="mt-1.5 text-[9px] text-amber-400 font-bold">
+                          No hay coincidencias. Registra el cliente desde CxC para poder agendar.
+                        </p>
+                      )}
+                      {showCustomerDropdown && customerMatches.length > 0 && (
+                        <div className="absolute z-10 left-0 right-0 mt-1 bg-[#0f1828] border border-white/[0.08] rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                          {customerMatches.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => pickCustomer(c)}
+                              className="w-full text-left px-3 py-2 hover:bg-white/[0.05] flex items-center gap-2 border-b border-white/[0.04] last:border-b-0"
+                            >
+                              <div className="h-7 w-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 text-xs font-black shrink-0">
+                                {((c as any).fullName || (c as any).nombre || '?').charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-white truncate">{(c as any).fullName || (c as any).nombre}</p>
+                                <p className="text-[9px] text-white/30">{(c as any).telefono || (c as any).phone || (c as any).cedula || ''}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Teléfono</label>
-                  <input
-                    value={formCustomerPhone}
-                    onChange={e => setFormCustomerPhone(e.target.value)}
-                    placeholder="04XX-XXXXXXX"
-                    className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                  />
-                </div>
+                {!formCustomerId && (
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Teléfono</label>
+                    <input
+                      value={formCustomerPhone}
+                      onChange={e => setFormCustomerPhone(e.target.value)}
+                      placeholder="04XX-XXXXXXX"
+                      className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Service */}
@@ -529,6 +606,47 @@ export default function CitasPanel({ businessId, currentUserId, currentUserName 
                   ))}
                 </div>
               )}
+
+              {/* Cobrar en POS — bridge to POS Detal via sessionStorage */}
+              {editingAppt && (editingAppt.status === 'completed' || editingAppt.status === 'confirmed') && !(editingAppt as any).movementId && (() => {
+                const svc = services.find(s => s.id === editingAppt.serviceId);
+                if (!svc || svc.price <= 0) return null;
+                return (
+                  <button
+                    onClick={() => {
+                      try {
+                        sessionStorage.setItem('dualis_pending_pos_sale', JSON.stringify({
+                          source: 'cita',
+                          sourceId: editingAppt.id,
+                          customerId: (editingAppt as any).customerId,
+                          customerName: editingAppt.customerName,
+                          customerPhone: editingAppt.customerPhone,
+                          staffId: editingAppt.staffId,
+                          staffName: editingAppt.staffName,
+                          serviceId: svc.id,
+                          items: [{
+                            id: svc.id,
+                            nombre: svc.name,
+                            name: svc.name,
+                            price: svc.price,
+                            qty: 1,
+                          }],
+                        }));
+                      } catch {}
+                      resetForm();
+                      navigate('/admin/cajas');
+                    }}
+                    className="w-full mt-2 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 hover:brightness-110 transition-all"
+                  >
+                    <DollarSign size={14} /> Cobrar en POS (${svc.price.toFixed(2)})
+                  </button>
+                );
+              })()}
+              {editingAppt && (editingAppt as any).movementId && (
+                <div className="mt-2 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase text-center">
+                  Cita ya facturada
+                </div>
+              )}
             </div>
 
             {/* Actions */}
@@ -541,7 +659,7 @@ export default function CitasPanel({ businessId, currentUserId, currentUserName 
               </button>
               <button
                 onClick={handleSaveAppointment}
-                disabled={!formCustomerName || !formServiceId || !formStaffId || saving}
+                disabled={!formCustomerId && (!editingAppt || !!(editingAppt as any).customerId) || !formCustomerName || !formServiceId || !formStaffId || saving}
                 className="flex-1 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/25 disabled:opacity-40 transition-all"
               >
                 {saving ? 'Guardando...' : editingAppt ? 'Actualizar' : 'Crear Cita'}

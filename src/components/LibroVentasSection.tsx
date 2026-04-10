@@ -210,7 +210,7 @@ export default function LibroVentasSection() {
 
   // ── Export CSV ──────────────────────────────────────────────────────────
   const exportCSV = () => {
-    const headers = ['Fecha', 'Hora', 'Nro Control', 'Cliente', 'Método', 'Subtotal USD', 'IVA USD', 'IGTF USD', 'Descuento USD', 'Total USD', 'Total Bs', 'Tasa', 'Vendedor', 'Caja', 'Estado'];
+    const headers = ['Fecha', 'Hora', 'Ref. Interna', 'Cliente', 'Método', 'Subtotal USD', 'IVA USD (ref.)', 'IGTF USD (ref.)', 'Descuento USD', 'Total USD', 'Total Bs', 'Tasa', 'Vendedor', 'Caja', 'Estado'];
     const rows = filtered.map(m => {
       const bsTotal = m.originalAmount || (m.amountInUSD && m.rateUsed ? m.amountInUSD * m.rateUsed : 0);
       return [
@@ -236,7 +236,7 @@ export default function LibroVentasSection() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `libro-ventas-${dateFrom}-${dateTo}.csv`;
+    a.download = `reporte-ventas-${dateFrom}-${dateTo}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -249,9 +249,9 @@ export default function LibroVentasSection() {
         <div>
           <h2 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
             <FileText size={20} className="text-indigo-500" />
-            Libro de Ventas
+            Reporte Interno de Ventas
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">Reporte completo de facturación — doble moneda</p>
+          <p className="text-xs text-slate-400 mt-0.5">Registro administrativo · doble moneda · sin valor fiscal</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-xs font-bold text-slate-600 dark:text-white/60 hover:bg-slate-50 dark:hover:bg-white/[0.1] transition-all">

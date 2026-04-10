@@ -1,11 +1,20 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useLocation, useNavigate, useParams, Outlet } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
+import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import {
   Customer,
   Movement,
   User,
   Supplier,
+  PendingMovement,
+  ApprovalConfig,
 } from '../types';
+import {
+  decideQuorum,
+  countValidators,
+  DEFAULT_APPROVAL_CONFIG,
+  canApprovePending,
+  ValidatorUser,
+} from './utils/approvalHelpers';
 
 import { useAuth } from './context/AuthContext';
 import { useRates } from './context/RatesContext';
@@ -23,16 +32,23 @@ import { useWidgetManager } from './context/WidgetContext';
 import Sidebar from './components/Sidebar';
 import AdminDashboard from './features/admin/AdminDashboard';
 import Configuracion from './pages/Configuracion';
-import AccountingSection from './components/AccountingSection';
+const AccountingSection = lazy(() => import('./components/AccountingSection'));
 import SupplierSection from './components/SupplierSection';
 import RecursosHumanos from './pages/RecursosHumanos';
+const ComisionesReporte = lazy(() => import('./pages/ComisionesReporte'));
+const AprobacionesPanel = lazy(() => import('./pages/AprobacionesPanel'));
+const VerificacionPanel = lazy(() => import('./pages/VerificacionPanel'));
+const Tesoreria = lazy(() => import('./pages/Tesoreria'));
 import Inventario from './pages/Inventario';
-import VisionLab from './components/VisionLab';
-import BooksComparePanel from './components/BooksComparePanel';
+const VisionLab = lazy(() => import('./components/VisionLab'));
+const BooksComparePanel = lazy(() => import('./components/BooksComparePanel'));
 import UserProfileModalComp from './components/UserProfileModal';
 import CustomerViewer from './components/CustomerViewer';
 import CxCPage from './pages/CxCPage';
 import CxPPage from './pages/CxPPage';
+import AgendaCobranza from './pages/AgendaCobranza';
+import PortalChatAdmin from './pages/PortalChatAdmin';
+import { countPendingReminders, calculateReminders } from './utils/reminderEngine';
 import DataImporter from './components/DataImporter';
 import SmartCalculatorWidget from './components/SmartCalculatorWidget';
 import HelpCenter from './components/HelpCenter';
@@ -40,16 +56,26 @@ import WidgetLaunchpad from './components/WidgetLaunchpad';
 import AdminPosManager from './pages/AdminPosManager';
 import DespachoPanel from './pages/DespachoPanel';
 import CitasPanel from './pages/CitasPanel';
+const QuotesPanel = lazy(() => import('./pages/QuotesPanel'));
+const RecurringBillingPanel = lazy(() => import('./pages/RecurringBillingPanel'));
+const CashFlowPanel = lazy(() => import('./pages/CashFlowPanel'));
+const ParetoPanel = lazy(() => import('./pages/ParetoPanel'));
+const Estadisticas = lazy(() => import('./pages/Estadisticas'));
+const TransferenciasPanel = lazy(() => import('./pages/TransferenciasPanel'));
+const RentabilidadPage = lazy(() => import('./pages/RentabilidadPage'));
 import PrePedidosPanel from './components/inventory/PrePedidosPanel';
 import RepairTicketsPanel from './components/inventory/RepairTicketsPanel';
-import SucursalesManager from './pages/SucursalesManager';
+const SucursalesManager = lazy(() => import('./pages/SucursalesManager'));
 import TrialBanner from './components/TrialBanner';
 import NotificationCenter from './components/NotificationCenter';
 import ReportesSection from './components/ReportesSection';
-import ReconciliationSection from './components/ReconciliationSection';
+const ReconciliationSection = lazy(() => import('./components/ReconciliationSection'));
 import LibroVentasSection from './components/LibroVentasSection';
 import PaymentRequestsPanel from './components/PaymentRequestsPanel';
+const DisputesPanel = lazy(() => import('./components/DisputesPanel'));
 import ExchangeRatesSection from './components/ExchangeRatesSection';
+import GlobalSearchPalette from './components/GlobalSearchPalette';
+import KeyboardShortcutsOverlay from './components/KeyboardShortcutsOverlay';
 
 // WIDGETS
 import RateConverterWidget from './components/RateConverterWidget';
@@ -67,13 +93,23 @@ import {
   query,
   where,
   onSnapshot,
+  getDoc,
+  getDocs,
+  setDoc,
 } from 'firebase/firestore';
-import { Bell, HelpCircle, Lock, ArrowRight, Zap, Menu } from 'lucide-react';
+import { applyLoyaltyForMovement } from './utils/loyaltyEngine';
+import { sendOverduePaymentsDigest, sendBirthdayEmail } from './utils/emailService';
+import { Bell, HelpCircle, Lock, ArrowRight, Zap, Menu, Search as SearchIcon } from 'lucide-react';
 import { logAudit } from './utils/auditLogger';
 import ModeToggle from './components/ModeToggle';
 import HelpPanel from './components/HelpPanel';
 import { useSubscription } from './hooks/useSubscription';
 import LegalDisclaimerModal from './components/LegalDisclaimerModal';
+import OfflineBanner from './components/OfflineBanner';
+import SessionLockOverlay from './components/SessionLockOverlay';
+import { useIdleTimeout } from './hooks/useIdleTimeout';
+import { useKeyboardFix } from './hooks/useKeyboardFix';
+import { useDriverTour } from './components/DriverTour';
 
 // ── Topbar ─────────────────────────────────────────────────────────────────────
 const Topbar: React.FC<{
@@ -83,10 +119,14 @@ const Topbar: React.FC<{
   onToggleNotifications: () => void;
   onOpenCalculator: () => void;
   onOpenHelp: () => void;
+  onOpenSearch: () => void;
   onToggleSidebar: () => void;
   bcvRate: number;
   customRates?: { id: string; name: string; value: number }[];
-}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, onToggleSidebar, bcvRate, customRates }) => (
+  usingStaleRate?: boolean;
+  lastUpdated?: string;
+  onRefreshRate?: () => void;
+}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, onOpenSearch, onToggleSidebar, bcvRate, customRates, usingStaleRate, lastUpdated, onRefreshRate }) => (
   <header className="h-14 md:h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.08] px-3 md:px-7 flex items-center justify-between sticky top-0 z-50 transition-colors">
     <div className="flex items-center gap-2 md:gap-3 min-w-0">
       {/* Hamburger menu — mobile only */}
@@ -108,10 +148,20 @@ const Topbar: React.FC<{
     </div>
 
     <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
-      <div className="flex items-center gap-2 md:gap-3 bg-slate-50 dark:bg-white/[0.05] border border-slate-200/60 dark:border-white/10 rounded-xl px-2.5 md:px-4 py-1.5">
-        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse hidden sm:block shrink-0" />
+      <div
+        className={`flex items-center gap-2 md:gap-3 border rounded-xl px-2.5 md:px-4 py-1.5 ${
+          usingStaleRate
+            ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300/60 dark:border-amber-500/30 cursor-pointer'
+            : 'bg-slate-50 dark:bg-white/[0.05] border-slate-200/60 dark:border-white/10'
+        }`}
+        onClick={usingStaleRate ? onRefreshRate : undefined}
+        title={usingStaleRate ? `Usando tasa del ${lastUpdated ? new Date(lastUpdated).toLocaleDateString('es-VE') : '?'}. Click para reintentar.` : `Tasa actualizada hoy`}
+      >
+        <div className={`w-2 h-2 rounded-full hidden sm:block shrink-0 ${usingStaleRate ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
         <div className="flex flex-col">
-          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-tighter text-slate-400 dark:text-slate-500 leading-none">BCV</span>
+          <span className={`text-[9px] md:text-[10px] font-black uppercase tracking-tighter leading-none ${usingStaleRate ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'}`}>
+            BCV{usingStaleRate ? ' ⚠' : ''}
+          </span>
           <span className="text-[12px] md:text-[13px] font-mono font-bold text-amber-600 dark:text-amber-400">Bs. {bcvRate.toFixed(2)}</span>
         </div>
         {customRates?.filter(cr => cr.value > 0).map(cr => (
@@ -126,6 +176,19 @@ const Topbar: React.FC<{
       </div>
 
       <div className="w-px h-8 bg-slate-100 dark:bg-white/[0.08] mx-0.5 md:mx-1 hidden sm:block" />
+
+      <button
+        onClick={onOpenSearch}
+        data-tour="topbar-search"
+        title="Búsqueda global (Ctrl+K)"
+        className="hidden md:flex items-center gap-2 h-9 px-3 rounded-xl bg-slate-50 dark:bg-white/[0.05] border border-slate-100 dark:border-white/10 text-slate-400 dark:text-white/30 hover:bg-white dark:hover:bg-white/10 hover:border-indigo-200 hover:text-indigo-500 transition-all"
+      >
+        <SearchIcon size={14} />
+        <span className="text-[11px] font-bold">Buscar</span>
+        <span className="ml-1 text-[9px] font-mono font-black px-1.5 py-0.5 rounded-md bg-slate-200/60 dark:bg-white/[0.08] text-slate-500 dark:text-white/40">
+          Ctrl+K
+        </span>
+      </button>
 
       <span className="hidden sm:block"><ModeToggle /></span>
 
@@ -212,7 +275,6 @@ const LockedModule: React.FC<{ moduleName: string; requiredPlan?: string; isAddo
   moduleName, requiredPlan = 'negocio', isAddon = false,
 }) => {
   const navigate = useNavigate();
-  const { empresa_id } = useParams<{ empresa_id: string }>();
   const { name, color } = PLAN_LABELS[requiredPlan] ?? PLAN_LABELS.negocio;
   return (
     <div className="h-full flex items-center justify-center p-12">
@@ -245,7 +307,7 @@ const LockedModule: React.FC<{ moduleName: string; requiredPlan?: string; isAddo
         {/* CTA */}
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <button
-            onClick={() => navigate(`/${empresa_id}/billing`)}
+            onClick={() => navigate('/billing')}
             className={`flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r ${color} text-white text-sm font-black shadow-lg hover:-translate-y-0.5 transition-all`}
           >
             Ver planes <ArrowRight size={14} />
@@ -259,14 +321,13 @@ const LockedModule: React.FC<{ moduleName: string; requiredPlan?: string; isAddo
 // ── MainSystem ─────────────────────────────────────────────────────────────────
 const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const { user: firebaseUser, userProfile, updateUserProfile, isolationMode } = useAuth();
-  const { rates, customRates, updateRates } = useRates();
+  const { rates, customRates, updateRates, usingStaleRate, forceRefreshBCV } = useRates();
   const toast = useToast();
   const location = useLocation();
   const navigate = useNavigate();
   const widgetManager = useWidgetManager();
 
-  const { empresa_id } = useParams<{ empresa_id: string }>();
-  const adminBase = empresa_id ? `/${empresa_id}/admin` : '';
+  const adminBase = '/admin';
 
   const [activeTab, setActiveTab] = useState<string>(initialTab || 'resumen');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -274,11 +335,21 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [isImporterOpen, setIsImporterOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [sessionLocked, setSessionLocked] = useState(false);
+  // Timeout configurable (minutos). 0 = nunca. Default 15 min.
+  const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState<number>(15);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [pendingJoinCount, setPendingJoinCount] = useState(0);
   const [pendingCompareCount, setPendingCompareCount] = useState(0);
   const [pendingProductsCount, setPendingProductsCount] = useState(0);
+  const [overduePaymentsCount, setOverduePaymentsCount] = useState(0);
   const [tipoNegocio, setTipoNegocio] = useState('general');
+  // Fase D.0 — Quórum de aprobación CxC/CxP
+  const [approvalConfig, setApprovalConfig] = useState<ApprovalConfig>(DEFAULT_APPROVAL_CONFIG);
+  const [pendingMovementsList, setPendingMovementsList] = useState<PendingMovement[]>([]);
+  const [businessUsersList, setBusinessUsersList] = useState<ValidatorUser[]>([]);
   const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('dualis_dismissed_notifs');
@@ -299,7 +370,24 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
   const { canAccess, subscription: subData, markBonusSeen } = useSubscription(businessId);
-  const { permissions: rolePermissions, canView: canViewRole } = useRolePermissions(businessId, user?.role || 'member');
+  const { runAndMark: runTourAndMark } = useDriverTour(firebaseUser?.uid);
+
+  // Fase C.4 — Auto-dispatch del tour guiado en el primer login post-onboarding
+  useEffect(() => {
+    if (!firebaseUser?.uid || !userProfile) return;
+    if ((userProfile as any).tourCompleted) return;
+    if (!(userProfile as any).onboardingCompleted) return;
+    // Pequeño delay para que el DOM (sidebar, topbar) esté montado
+    const t = setTimeout(() => { void runTourAndMark(); }, 1200);
+    return () => clearTimeout(t);
+  }, [firebaseUser?.uid, userProfile, runTourAndMark]);
+
+  const {
+    permissions: rolePermissions,
+    canView: canViewRole,
+    capabilities: roleCapabilities,
+    can: canCapability,
+  } = useRolePermissions(businessId, user?.role || 'member');
   const { moduleHidden, moduleForced, featureOverride, webhookUrl } = useVendor();
 
   // Per-business code customization (registry-based, zero impact on other businesses)
@@ -322,6 +410,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     contabilidad:  `${adminBase}/contabilidad`,
     proveedores:   `${adminBase}/cxp`,
     rrhh:          `${adminBase}/rrhh`,
+    comisiones:    `${adminBase}/comisiones`,
     inventario:    `${adminBase}/inventario`,
     reportes:      `${adminBase}/reportes`,
     vision:        `${adminBase}/vision`,
@@ -336,7 +425,13 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     reparaciones:  `${adminBase}/reparaciones`,
     sucursales:    `${adminBase}/sucursales`,
     fiscal:        `${adminBase}/fiscal`,
+    reclamos:      `${adminBase}/reclamos`,
     libroventas:   `${adminBase}/libroventas`,
+    tesoreria:     `${adminBase}/tesoreria`,
+    cobranza:      `${adminBase}/cobranza`,
+    portalchat:    `${adminBase}/portalchat`,
+    aprobaciones:  `${adminBase}/aprobaciones`,
+    verificacion:  `${adminBase}/verificacion`,
     config:        `${adminBase}/configuracion`,
     help:          `${adminBase}/help`,
   }), [adminBase]);
@@ -355,6 +450,67 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     setActiveTab(tab);
     if (tabRoutes[tab]) navigate(tabRoutes[tab]);
   }, [navigate, tabRoutes]);
+
+  // ── Global hotkeys: Ctrl+K (search), ? (shortcuts overlay), Ctrl+L (lock) ──
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Ctrl+K / Cmd+K → búsqueda global
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setSearchOpen(prev => !prev);
+        return;
+      }
+      // Ctrl+L / Cmd+L → bloquear sesión (sin cerrar Firebase auth)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) {
+        e.preventDefault();
+        setSessionLocked(true);
+        return;
+      }
+      // "?" (Shift+/) → overlay de atajos — solo si no estás escribiendo en un input
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+        const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement)?.isContentEditable;
+        if (!isEditable) {
+          e.preventDefault();
+          setShortcutsOpen(prev => !prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // ── Fase A.7: Leer timeout de sesión desde businessConfigs ──────────────────
+  useEffect(() => {
+    if (!businessId) return;
+    const unsub = onSnapshot(doc(db, 'businessConfigs', businessId), (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data() as any;
+      const raw = data?.securityConfig?.sessionTimeoutMinutes;
+      if (typeof raw === 'number' && raw >= 0) {
+        setSessionTimeoutMinutes(raw);
+      }
+      // Fase D.0 — config de quórum de aprobación (default seguro si no existe)
+      const cfg = data?.approvalConfig;
+      if (cfg && typeof cfg === 'object') {
+        setApprovalConfig({ ...DEFAULT_APPROVAL_CONFIG, ...cfg });
+      } else {
+        setApprovalConfig(DEFAULT_APPROVAL_CONFIG);
+      }
+    }, () => { /* ignore */ });
+    return () => unsub();
+  }, [businessId]);
+
+  // ── Fase A.7: Auto-lock por inactividad ──────────────────────────────────────
+  const idleMs = sessionTimeoutMinutes > 0 ? sessionTimeoutMinutes * 60 * 1000 : 0;
+  useIdleTimeout(
+    idleMs,
+    () => setSessionLocked(true),
+    !!firebaseUser && !sessionLocked && idleMs > 0
+  );
+
+  // ── Mobile keyboard fix (iOS virtual keyboard covering inputs) ───────────────
+  useKeyboardFix();
 
   // ── Listener: solicitudes pendientes de unirse al equipo ─────────────────────
   useEffect(() => {
@@ -381,6 +537,110 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     return unsub;
   }, [businessId, userProfile?.role]);
 
+  // ── Listener: pagos de portal pendientes >24h (badge Tesorería + digest) ───
+  useEffect(() => {
+    const role = userProfile?.role;
+    if (!businessId || (role !== 'owner' && role !== 'admin')) return;
+    const q = query(
+      collection(db, `businesses/${businessId}/portalPayments`),
+      where('status', '==', 'pending')
+    );
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const unsub = onSnapshot(q, snap => {
+      const now = Date.now();
+      const overdue = snap.docs.filter(d => {
+        const data = d.data() as any;
+        const created = new Date(data.createdAt || 0).getTime();
+        return now - created >= ONE_DAY_MS;
+      });
+      setOverduePaymentsCount(overdue.length);
+    });
+    return unsub;
+  }, [businessId, userProfile?.role]);
+
+  // ── Fase D.0: listener de pendingMovements del negocio ─────────────────────
+  useEffect(() => {
+    if (!businessId) return;
+    const q = query(collection(db, `businesses/${businessId}/pendingMovements`));
+    const unsub = onSnapshot(q, snap => {
+      const list: PendingMovement[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      setPendingMovementsList(list);
+    }, () => { /* ignore */ });
+    return () => unsub();
+  }, [businessId]);
+
+  // ── Fase D.0: listener de usuarios del negocio (para contar validadores) ──
+  useEffect(() => {
+    if (!businessId) return;
+    const q = query(collection(db, 'users'), where('businessId', '==', businessId));
+    const unsub = onSnapshot(q, snap => {
+      const list: ValidatorUser[] = snap.docs.map(d => {
+        const data = d.data() as any;
+        return {
+          uid: d.id,
+          name: data.displayName || data.fullName,
+          email: data.email,
+          role: data.role,
+        };
+      });
+      setBusinessUsersList(list);
+    }, () => { /* ignore */ });
+    return () => unsub();
+  }, [businessId]);
+
+  // ── One-shot: digest diario al primer login admin del día (Opción A K.3) ───
+  useEffect(() => {
+    const role = userProfile?.role;
+    if (!businessId || (role !== 'owner' && role !== 'admin')) return;
+    if (!userProfile?.email) return;
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const cfgRef = doc(db, 'businessConfigs', businessId);
+        const cfgSnap = await getDoc(cfgRef);
+        const cfg = cfgSnap.exists() ? cfgSnap.data() as any : {};
+        if (cfg.notifyOverduePayments === false) return;
+
+        const lastSent = cfg.lastDigestSent ? new Date(cfg.lastDigestSent).getTime() : 0;
+        const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+        if (lastSent >= todayMidnight.getTime()) return;
+
+        // Buscar pagos pendientes >24h
+        const pendingQ = query(
+          collection(db, `businesses/${businessId}/portalPayments`),
+          where('status', '==', 'pending')
+        );
+        const snap = await getDocs(pendingQ);
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        const overdue = snap.docs
+          .map(d => d.data() as any)
+          .filter((data) => now - new Date(data.createdAt || 0).getTime() >= ONE_DAY_MS);
+
+        if (cancelled || overdue.length === 0) return;
+
+        await sendOverduePaymentsDigest(userProfile.email!, {
+          count: overdue.length,
+          businessName: (userProfile as any)?.businessName || 'tu negocio',
+          list: overdue.slice(0, 10).map((p: any) => ({
+            customerName: p.customerName || 'Cliente',
+            amount: Number(p.amount || 0),
+            createdAt: p.createdAt,
+          })),
+        });
+
+        await setDoc(cfgRef, { lastDigestSent: new Date().toISOString() }, { merge: true });
+      } catch (err) {
+        console.warn('[Digest] failed:', err);
+      }
+    };
+
+    // Delay 3s para no competir con login flow
+    const t = setTimeout(run, 3000);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [businessId, userProfile?.role, userProfile?.email]);
+
   // ── Listener: tipo de negocio (para UI adaptativa) ─────────────────────────
   useEffect(() => {
     if (!businessId) return;
@@ -392,6 +652,34 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   }, [businessId]);
 
   const preset = useMemo(() => getPreset(tipoNegocio), [tipoNegocio]);
+
+  // Safe-default flag: if tipoNegocio is empty/general, do NOT hide tabs — only
+  // filter when the user picked an explicit vertical that negates the module.
+  const presetAllows = useCallback((flag: keyof typeof preset) => {
+    if (!tipoNegocio || tipoNegocio === 'general') return true;
+    return Boolean((preset as any)[flag]);
+  }, [preset, tipoNegocio]);
+
+  // ── F.7 Birthday auto-greeting (cron-less, runs once per day per mount) ──────
+  useEffect(() => {
+    const bName = (userProfile as any)?.businessName || 'Tu negocio';
+    if (!businessId || !customers.length) return;
+    const today = new Date();
+    const todayMMDD = (today.getMonth() + 1).toString().padStart(2, '0') + '-' + today.getDate().toString().padStart(2, '0');
+    const thisYear = today.getFullYear();
+
+    customers.forEach(async (c: any) => {
+      if (!c.birthday || !c.email) return;
+      const bMMDD = c.birthday.slice(5); // "YYYY-MM-DD" → "MM-DD"
+      if (bMMDD !== todayMMDD) return;
+      if (c.lastBirthdayGreetingYear === thisYear) return;
+      try {
+        await sendBirthdayEmail(c.email, { customerName: c.nombre || c.fullName || 'Cliente', businessName: bName });
+        await updateDoc(doc(db, 'businesses', businessId, 'customers', c.id), { lastBirthdayGreetingYear: thisYear });
+      } catch (e) { console.error('[Birthday greeting]', e); }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessId, customers.length]);
 
   // ── Listener: solicitudes de Comparar Libros pendientes ──────────────────────
   useEffect(() => {
@@ -432,17 +720,216 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
   const uid = firebaseUser?.uid || '';
 
-  const handleRegisterMovement = async (data: any) => {
+  // ── Fase D.0 — Write path dividido en commit + submit ────────────────────
+  // commitMovement = el write real al ledger (lógica legacy preservada)
+  // submitMovement = wrapper que decide si el movement va a quórum o directo
+  type SubmitOpts = {
+    approvalFlowId?: string;
+    approvedBy?: string[];
+    migratedFromHistorical?: boolean;
+    fromPosRealtime?: boolean;
+    fromPortalPayment?: boolean;
+  };
+
+  const commitMovement = async (data: any, opts: SubmitOpts = {}): Promise<string> => {
     if (!businessId) return '';
-    const docRef = await addDoc(collection(db, 'movements'), { ...data, businessId, createdAt: new Date().toISOString() });
+
+    // G.1 — Detector de ventas/abonos duplicados (últimos 5 min, mismo cliente + monto)
+    if (
+      !opts.migratedFromHistorical &&
+      (data.movementType === 'FACTURA' || data.movementType === 'ABONO') &&
+      data.entityId &&
+      data.amountInUSD
+    ) {
+      try {
+        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        const dupQ = query(
+          collection(db, 'movements'),
+          where('businessId', '==', businessId),
+          where('entityId', '==', data.entityId),
+          where('movementType', '==', data.movementType),
+          where('createdAt', '>=', fiveMinAgo),
+        );
+        const dupSnap = await getDocs(dupQ);
+        const similar = dupSnap.docs.find(d => Math.abs((d.data().amountInUSD || 0) - data.amountInUSD) < 0.01);
+        if (similar) {
+          toast.warning(`Movimiento similar registrado hace menos de 5 min (${data.movementType} $${data.amountInUSD} al mismo cliente). Verifica que no sea duplicado.`);
+        }
+      } catch {
+        // No bloquear la venta si la query falla
+      }
+    }
+
+    const payload: any = {
+      ...data,
+      businessId,
+      createdAt: new Date().toISOString(),
+      status: 'committed',
+    };
+    if (opts.approvalFlowId) payload.approvalFlowId = opts.approvalFlowId;
+    if (opts.approvedBy) payload.approvedBy = opts.approvedBy;
+    if (opts.migratedFromHistorical) payload.migratedFromHistorical = true;
+    const docRef = await addDoc(collection(db, 'movements'), payload);
     logAudit(businessId, uid, 'CREAR', 'MOVIMIENTO', `${data.movementType || 'MOV'} — ${data.description || docRef.id}`);
     // Custom hooks & webhook — fire-and-forget, never block the sale
-    const saleRecord = { ...data, id: docRef.id, businessId };
+    const saleRecord = { ...payload, id: docRef.id };
     customization.afterSaleHook?.(saleRecord);
     if (data.movementType === 'FACTURA' || data.movementType === 'ABONO') {
       fireWebhook(businessId, webhookUrl, 'sale.created', saleRecord);
     }
+    // Loyalty engine — fire-and-forget, never block the sale
+    applyLoyaltyForMovement(db, businessId, data, docRef.id)
+      .catch(err => console.error('[loyalty] award failed', err));
     return docRef.id;
+  };
+
+  const submitMovement = async (data: any, opts: SubmitOpts = {}): Promise<string> => {
+    if (!businessId) return '';
+    const { count: validatorCount, ids: validatorIds } = countValidators(
+      businessUsersList,
+      roleCapabilities
+    );
+    const decision = decideQuorum({
+      config: approvalConfig,
+      movementDraft: data,
+      validatorCount,
+      fromPosRealtime: opts.fromPosRealtime,
+      migratedFromHistorical: opts.migratedFromHistorical,
+      fromPortalPayment: opts.fromPortalPayment,
+    });
+
+    if (!decision.needsQuorum) {
+      return commitMovement(data, opts);
+    }
+
+    // Crea pendingMovement — el write al ledger ocurrirá cuando se alcance el quórum
+    const pendingRef = await addDoc(
+      collection(db, `businesses/${businessId}/pendingMovements`),
+      {
+        movementDraft: data,
+        createdBy: uid,
+        createdByName: user?.name || '',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        approvals: [],
+        rejections: [],
+        quorumRequired: Math.max(2, approvalConfig.quorumRequired || 2),
+        quorumSnapshot: { validatorIds, validatorCount },
+      }
+    );
+    logAudit(businessId, uid, 'CREAR', 'MOV_PENDIENTE', `${data.movementType || 'MOV'} → cola aprobación`);
+    toast.info(`Movimiento enviado a aprobación (0/${Math.max(2, approvalConfig.quorumRequired || 2)})`);
+    return pendingRef.id;
+  };
+
+  // Alias backwards-compat para callsites existentes (CxC/CxP/DataImporter)
+  const handleRegisterMovement = (data: any) => submitMovement(data);
+
+  // Wrapper para POS: bypass quórum por tratarse de venta en tiempo real
+  const handleRegisterMovementPos = (data: any) =>
+    submitMovement(data, { fromPosRealtime: true });
+
+  // Wrapper para DataImporter: bypass quórum por tratarse de histórico
+  const handleRegisterMovementHistorical = (data: any) =>
+    submitMovement(data, { migratedFromHistorical: true });
+
+  // ── Fase D.0 — handlers de aprobación ───────────────────────────────────
+  const approvePendingMovement = async (pendingId: string, note?: string) => {
+    if (!businessId || !uid) return;
+    const pending = pendingMovementsList.find(p => p.id === pendingId);
+    if (!pending) {
+      toast.error('Movimiento pendiente no encontrado');
+      return;
+    }
+    const check = canApprovePending(
+      pending,
+      { uid, role: user?.role },
+      (cap) => canCapability(cap as any)
+    );
+    if (!check.allowed) {
+      toast.error(`No se puede aprobar: ${check.reason}`);
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    const newApprovals = [
+      ...(pending.approvals || []),
+      { userId: uid, userName: user?.name || '', at: nowIso, note },
+    ];
+    const pendingDocRef = doc(db, `businesses/${businessId}/pendingMovements`, pendingId);
+
+    if (newApprovals.length >= (pending.quorumRequired || 2)) {
+      // Quórum alcanzado → commit + marca pending como aprobado
+      const committedId = await commitMovement(pending.movementDraft, {
+        approvalFlowId: pendingId,
+        approvedBy: newApprovals.map(a => a.userId),
+      });
+      await updateDoc(pendingDocRef, {
+        approvals: newApprovals,
+        status: 'approved',
+        committedMovementId: committedId,
+        committedAt: nowIso,
+      });
+      logAudit(businessId, uid, 'APROBAR', 'MOV_PENDIENTE', `quórum alcanzado → ${committedId}`);
+      toast.success('Movimiento aprobado y commiteado al ledger');
+    } else {
+      await updateDoc(pendingDocRef, { approvals: newApprovals });
+      logAudit(
+        businessId,
+        uid,
+        'FIRMAR',
+        'MOV_PENDIENTE',
+        `${newApprovals.length}/${pending.quorumRequired}`
+      );
+      toast.success(`Firma registrada (${newApprovals.length}/${pending.quorumRequired})`);
+    }
+  };
+
+  const rejectPendingMovement = async (pendingId: string, reason: string) => {
+    if (!businessId || !uid) return;
+    const pending = pendingMovementsList.find(p => p.id === pendingId);
+    if (!pending) return;
+    if (pending.status !== 'pending') {
+      toast.error('Solo se pueden rechazar pendientes activos');
+      return;
+    }
+    if (pending.createdBy === uid) {
+      toast.error('No puedes rechazar tu propio movimiento — cancélalo en su lugar');
+      return;
+    }
+    if (!canCapability('aprobarMovimientos' as any)) {
+      toast.error('Sin permiso para rechazar');
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    const newRejections = [
+      ...(pending.rejections || []),
+      { userId: uid, userName: user?.name || '', at: nowIso, reason },
+    ];
+    await updateDoc(doc(db, `businesses/${businessId}/pendingMovements`, pendingId), {
+      status: 'rejected',
+      rejections: newRejections,
+    });
+    logAudit(businessId, uid, 'RECHAZAR', 'MOV_PENDIENTE', reason);
+    toast.success('Movimiento rechazado');
+  };
+
+  const cancelPendingMovement = async (pendingId: string) => {
+    if (!businessId || !uid) return;
+    const pending = pendingMovementsList.find(p => p.id === pendingId);
+    if (!pending) return;
+    if (pending.createdBy !== uid) {
+      toast.error('Solo el creador puede cancelar');
+      return;
+    }
+    if (pending.status !== 'pending') {
+      toast.error('Solo se pueden cancelar pendientes activos');
+      return;
+    }
+    await updateDoc(doc(db, `businesses/${businessId}/pendingMovements`, pendingId), {
+      status: 'cancelled',
+    });
+    logAudit(businessId, uid, 'CANCELAR', 'MOV_PENDIENTE', pendingId);
+    toast.success('Movimiento cancelado');
   };
 
   const updateMovement = async (id: string, updated: Partial<Movement>) => {
@@ -549,7 +1036,13 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         .map(m => m.entityId)
     )].length;
     if (overdueCount > 0) {
-      items.push({ id: 'overdue-cxc', title: `${overdueCount} cliente${overdueCount > 1 ? 's' : ''} con CxC vencida`, subtitle: 'Facturas sin cobrar > 30 días', type: 'warning' });
+      items.push({ id: 'overdue-cxc', title: `${overdueCount} cliente${overdueCount > 1 ? 's' : ''} con CxC vencida`, subtitle: 'Cargos sin cobrar > 30 días', type: 'warning' });
+    }
+
+    // 3b. Recordatorios progresivos CxC
+    const reminderCount = countPendingReminders(calculateReminders(movements, customers));
+    if (reminderCount > 0) {
+      items.push({ id: 'cobranza-reminders', title: `${reminderCount} recordatorio${reminderCount > 1 ? 's' : ''} de cobranza`, subtitle: 'Facturas próximas a vencer o vencidas', type: 'warning' });
     }
 
     // 0. Solicitudes de acceso al equipo pendientes
@@ -588,7 +1081,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     // NDE pendientes de despacho (visible para almacenista/admin/owner)
     const ndePendientes = movements.filter((m: any) => m.esNotaEntrega && m.estadoNDE === 'pendiente_despacho' && !m.anulada);
     if (ndePendientes.length > 0) {
-      items.push({ id: 'nde-pendientes', title: `${ndePendientes.length} NDE pendiente${ndePendientes.length > 1 ? 's' : ''} de despacho`, subtitle: 'Panel de Despacho', type: 'warning' });
+      items.push({ id: 'nde-pendientes', title: `${ndePendientes.length} comprobante${ndePendientes.length > 1 ? 's' : ''} pendiente${ndePendientes.length > 1 ? 's' : ''} de despacho`, subtitle: 'Panel de Despacho', type: 'warning' });
     }
 
     return items;
@@ -626,7 +1119,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     reportes: 'Reportes', vision: 'VisionLab', widgets: 'Herramientas',
     comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
     cajas: 'Cajas', despacho: 'Panel Despacho', citas: 'Citas',
-    prepedidos: 'Pre-Pedidos', reparaciones: 'Reparaciones', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Libro de Ventas',
+    prepedidos: 'Pre-Pedidos', reparaciones: 'Reparaciones', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Reporte de Ventas',
+    tesoreria: 'Tesorería', comisiones: 'Reporte de Comisiones',
+    aprobaciones: 'Aprobaciones',
+    verificacion: 'Verificación',
+    reclamos: 'Reclamos',
     config: 'Configuración', help: 'Ayuda',
   }), [preset]);
 
@@ -636,6 +1133,17 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     if (preset.hasAppointments) o.citas = 'Citas';
     return o;
   }, [preset]);
+
+  // Fase D.0 — Count de pendientes que esperan firma del current user (excluye propios y ya firmados)
+  const pendingApprovalInboxCount = useMemo(() => {
+    const uid = firebaseUser?.uid || '';
+    if (!uid || !canCapability('aprobarMovimientos' as any)) return 0;
+    return pendingMovementsList.filter(p =>
+      p.status === 'pending' &&
+      p.createdBy !== uid &&
+      !p.approvals.some(a => a.userId === uid)
+    ).length;
+  }, [pendingMovementsList, firebaseUser?.uid, canCapability]);
 
   return (
     <div className="h-screen w-full flex bg-slate-50 dark:bg-[#0a0f1e] overflow-hidden font-inter transition-colors">
@@ -648,14 +1156,20 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           config={{ companyName: userProfile?.businessId } as any}
           rolePermissions={rolePermissions}
           canCompare={canAccess('comparar')}
-          badges={{ comparar: pendingCompareCount }}
+          badges={{ comparar: pendingCompareCount, tesoreria: overduePaymentsCount, aprobaciones: pendingApprovalInboxCount }}
           labelOverrides={sidebarLabelOverrides}
+          presetFlags={tipoNegocio && tipoNegocio !== 'general' ? {
+            hasAppointments: preset.hasAppointments,
+            hasPreorders: preset.hasPreorders,
+            hasRepairTickets: preset.hasRepairTickets,
+          } : undefined}
           onLogout={() => auth.signOut()}
           onOpenProfile={() => setIsProfileOpen(true)}
         />
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+        <OfflineBanner />
         <TrialBanner businessId={businessId} />
         <Topbar
           topbarTitle={tabTitles[activeTab] || activeTab}
@@ -664,13 +1178,18 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           onToggleNotifications={() => setShowNotifications(p => !p)}
           onOpenCalculator={() => widgetManager.openWidget('calculator')}
           onOpenHelp={() => setHelpOpen(true)}
+          onOpenSearch={() => setSearchOpen(true)}
           onToggleSidebar={() => setIsSidebarOpen(p => !p)}
           bcvRate={rates.tasaBCV}
           customRates={customRates}
+          usingStaleRate={usingStaleRate}
+          lastUpdated={rates.lastUpdated}
+          onRefreshRate={() => { void forceRefreshBCV(); }}
         />
 
-        <main className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-8 relative custom-scroll">
-          <div className="max-w-[1440px] mx-auto h-full">
+        <main className="flex-1 overflow-y-auto p-2 sm:p-3 lg:p-4 relative custom-scroll">
+          <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>}>
+          <div className="max-w-[1800px] mx-auto h-full">
             {/* Custom extra tabs from registry — rendered before standard tabs */}
             {customization.extraTabs?.map(tab =>
               activeTab === tab.id ? (
@@ -700,20 +1219,45 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                 : <LockedModule moduleName="Cajas / Terminales POS" requiredPlan="starter" />
             )}
             {activeTab === 'despacho' && (
-              <DespachoPanel businessId={businessId} />
+              (user?.role === 'owner' || user?.role === 'admin' || user?.role === 'almacenista' || user?.role === 'inventario')
+                ? <DespachoPanel businessId={businessId} />
+                : <NoAccess />
             )}
             {activeTab === 'citas' && (
-              <CitasPanel
+              !presetAllows('hasAppointments') ? <NoAccess /> :
+              !canAccess('citas')
+                ? <LockedModule moduleName="Sistema de Citas" requiredPlan="vertical" />
+                : <CitasPanel
+                    businessId={businessId}
+                    currentUserId={userProfile?.id || firebaseUser?.uid || ''}
+                    currentUserName={userProfile?.fullName || 'Admin'}
+                  />
+            )}
+            {activeTab === 'prepedidos' && (
+              !presetAllows('hasPreorders') ? <NoAccess /> :
+              !canAccess('prepedidos')
+                ? <LockedModule moduleName="Pre-Pedidos" requiredPlan="vertical" />
+                : <PrePedidosPanel businessId={businessId} currentUserName={userProfile?.fullName || 'Admin'} />
+            )}
+            {activeTab === 'reparaciones' && (
+              !presetAllows('hasRepairTickets') ? <NoAccess /> :
+              !canAccess('tickets_reparacion')
+                ? <LockedModule moduleName="Tickets de Reparación" requiredPlan="vertical" />
+                : <RepairTicketsPanel businessId={businessId} currentUserName={userProfile?.fullName || 'Admin'} />
+            )}
+            {activeTab === 'cotizaciones' && (
+              <QuotesPanel
                 businessId={businessId}
-                currentUserId={userProfile?.id || firebaseUser?.uid || ''}
+                currentUserId={firebaseUser?.uid || ''}
                 currentUserName={userProfile?.fullName || 'Admin'}
               />
             )}
-            {activeTab === 'prepedidos' && (
-              <PrePedidosPanel businessId={businessId} currentUserName={userProfile?.fullName || 'Admin'} />
-            )}
-            {activeTab === 'reparaciones' && (
-              <RepairTicketsPanel businessId={businessId} currentUserName={userProfile?.fullName || 'Admin'} />
+            {activeTab === 'recurrentes' && (
+              <RecurringBillingPanel
+                businessId={businessId}
+                currentUserId={firebaseUser?.uid || ''}
+                currentUserName={userProfile?.fullName || 'Admin'}
+              />
             )}
             {activeTab === 'rrhh' && (
               !canView('rrhh') ? <NoAccess /> :
@@ -721,16 +1265,68 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                 ? <RecursosHumanos />
                 : <LockedModule moduleName="Recursos Humanos" requiredPlan="negocio" />
             )}
+            {activeTab === 'comisiones' && (
+              isAdmin ? <ComisionesReporte businessId={businessId} /> : <NoAccess />
+            )}
+            {activeTab === 'flujocaja' && (
+              <CashFlowPanel businessId={businessId} />
+            )}
+            {activeTab === 'pareto' && (
+              <ParetoPanel businessId={businessId} />
+            )}
+            {activeTab === 'estadisticas' && (
+              <Estadisticas businessId={businessId} movements={movements} inventoryItems={inventoryItems as any} customers={customers as any} />
+            )}
+            {activeTab === 'transferencias' && (
+              <TransferenciasPanel businessId={businessId} />
+            )}
+            {activeTab === 'tesoreria' && (
+              !canView('tesoreria') ? <NoAccess /> :
+              canAccess('tesoreria')
+                ? <Tesoreria
+                    businessId={businessId}
+                    businessName={(userProfile as any)?.businessName}
+                    currentUserId={firebaseUser?.uid || ''}
+                    currentUserName={user?.name || 'Usuario'}
+                    userRole={user?.role || 'member'}
+                    customers={customers as any}
+                  />
+                : <LockedModule moduleName="Tesorería" requiredPlan="basico" />
+            )}
+            {activeTab === 'aprobaciones' && (
+              <AprobacionesPanel
+                pendings={pendingMovementsList}
+                currentUserId={firebaseUser?.uid || ''}
+                hasCapability={canCapability('aprobarMovimientos' as any)}
+                onApprove={approvePendingMovement}
+                onReject={rejectPendingMovement}
+                onCancel={cancelPendingMovement}
+              />
+            )}
+            {activeTab === 'verificacion' && (
+              canCapability('aprobarPagos' as any)
+                ? <VerificacionPanel
+                    movements={movements}
+                    businessId={businessId}
+                    currentUserId={firebaseUser?.uid || ''}
+                    currentUserName={user?.name || 'Usuario'}
+                    canVerify={canCapability('aprobarPagos' as any)}
+                  />
+                : <NoAccess />
+            )}
             {activeTab === 'sucursales' && (
               !canView('sucursales') ? <NoAccess /> :
               canAccess('sucursales')
                 ? <SucursalesManager />
                 : <LockedModule moduleName="Sucursales" requiredPlan="negocio" />
             )}
+            {activeTab === 'rentabilidad' && (
+              <RentabilidadPage businessId={businessId} />
+            )}
             {activeTab === 'reportes' && (
               !canView('reportes') ? <NoAccess /> :
               canAccess('reportes')
-                ? <ReportesSection movements={movements} customers={customers} />
+                ? <ReportesSection movements={movements} customers={customers} bcvRate={rates.tasaBCV} />
                 : <LockedModule moduleName="Reportes" requiredPlan="starter" />
             )}
             {activeTab === 'conciliacion' && (
@@ -768,6 +1364,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                 <CxCPage
                   customers={customers}
                   movements={movements}
+                  suppliers={suppliers}
                   rates={legacyRates as any}
                   bcvRate={rates.tasaBCV}
                   customRates={customRates ?? []}
@@ -775,6 +1372,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                   userRole={user?.role || 'member'}
                   isolationMode={isolationMode}
                   currentUserId={firebaseUser?.uid}
+                  approvalConfig={approvalConfig}
+                  validatorCount={countValidators(businessUsersList, roleCapabilities).count}
+                  pendingMovements={pendingMovementsList}
+                  canDelete={canCapability('eliminarDatos' as any)}
+                  canCreateCustomer={canCapability('crearClientes' as any)}
                   onSaveMovement={handleRegisterMovement}
                   onUpdateMovement={updateMovement}
                   onDeleteMovement={deleteMovement}
@@ -783,6 +1385,24 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                   onDeleteCustomer={handleDeleteCustomer}
                 />
               ) : <LockedModule moduleName="Clientes / CxC" requiredPlan="starter" />
+            )}
+
+            {activeTab === 'cobranza' && (
+              <AgendaCobranza
+                movements={movements}
+                customers={customers}
+                businessId={businessId}
+                businessName={(userProfile as any)?.businessName || ''}
+              />
+            )}
+
+            {activeTab === 'portalchat' && (
+              <PortalChatAdmin
+                businessId={businessId}
+                businessName={(userProfile as any)?.businessName || ''}
+                userName={(userProfile as any)?.displayName || firebaseUser?.displayName || 'Admin'}
+                customers={customers}
+              />
             )}
 
             {activeTab === 'contabilidad' && (
@@ -794,6 +1414,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                   employees={employees}
                   rates={legacyRates as any}
                   config={{} as any}
+                  businessName={(userProfile as any)?.businessName}
                   onUpdateMovement={updateMovement}
                   onDeleteMovement={deleteMovement}
                 />
@@ -804,6 +1425,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               canAccess('proveedores') ? (
                 <CxPPage
                   suppliers={suppliers}
+                  customers={customers}
                   movements={movements}
                   rates={legacyRates as any}
                   bcvRate={rates.tasaBCV}
@@ -812,6 +1434,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                   userRole={user?.role || 'member'}
                   isolationMode={isolationMode}
                   currentUserId={firebaseUser?.uid}
+                  approvalConfig={approvalConfig}
+                  validatorCount={countValidators(businessUsersList, roleCapabilities).count}
+                  pendingMovements={pendingMovementsList}
+                  canDelete={canCapability('eliminarDatos' as any)}
+                  canCreateCustomer={canCapability('crearClientes' as any)}
                   onSaveMovement={handleRegisterMovement}
                   onUpdateMovement={updateMovement}
                   onDeleteMovement={deleteMovement}
@@ -825,6 +1452,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             {activeTab === 'solicitudes' && (
               <PaymentRequestsPanel
                 businessId={businessId}
+                businessName={(userProfile as any)?.businessName || 'tu negocio'}
                 userRole={user?.role || 'member'}
                 userId={firebaseUser?.uid || ''}
                 userName={user?.name || 'Vendedor'}
@@ -832,8 +1460,18 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               />
             )}
 
+            {activeTab === 'reclamos' && (
+              <DisputesPanel
+                businessId={businessId}
+                businessName={(userProfile as any)?.businessName || 'tu negocio'}
+                userId={firebaseUser?.uid || ''}
+                userName={user?.name || 'Admin'}
+              />
+            )}
+
             <Outlet />
           </div>
+          </Suspense>
         </main>
 
         {/* STATUS BAR — hidden on mobile to save space */}
@@ -849,7 +1487,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         </footer>
 
         {/* LEGAL DISCLAIMER — shown once on first login */}
-        <LegalDisclaimerModal />
+        <LegalDisclaimerModal businessId={userProfile?.businessId} userId={firebaseUser?.uid} />
       </div>
 
       {/* NOTIFICATION CENTER */}
@@ -868,9 +1506,22 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       {/* HELP PANEL */}
       <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
 
+      {/* GLOBAL SEARCH (Ctrl+K) */}
+      <GlobalSearchPalette
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        customers={customers}
+        products={inventoryItems as any}
+        movements={movements}
+        onNavigate={(tab) => goTab(tab)}
+      />
+
+      {/* KEYBOARD SHORTCUTS OVERLAY (?) */}
+      <KeyboardShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
       {/* MODALS */}
       <UserProfileModalComp isOpen={isProfileOpen} profile={userProfile as any} onClose={() => setIsProfileOpen(false)} onSave={handleSaveProfile} />
-      <DataImporter open={isImporterOpen} onClose={() => setIsImporterOpen(false)} onImport={() => {}} onImportMovements={(rows) => rows.forEach(row => handleRegisterMovement(row))} customers={customers} onCreateCustomer={handleRegisterCustomer} />
+      <DataImporter open={isImporterOpen} onClose={() => setIsImporterOpen(false)} onImport={() => {}} onImportMovements={(rows) => rows.forEach(row => handleRegisterMovementHistorical(row))} customers={customers} onCreateCustomer={handleRegisterCustomer} />
 
       {confirmState && <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />}
 
@@ -880,6 +1531,14 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       {widgetManager.widgets.priceChecker.isOpen && <PriceCheckerWidget inventory={inventoryItems as any} rates={legacyRates as any} isOpen={true} isMinimized={widgetManager.widgets.priceChecker.isMinimized} position={widgetManager.widgets.priceChecker.position} onClose={() => widgetManager.closeWidget('priceChecker')} onMinimize={() => widgetManager.setMinimized('priceChecker', !widgetManager.widgets.priceChecker.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('priceChecker', pos)} />}
       {widgetManager.widgets.speedDial.isOpen && <SpeedDialWidget isOpen={true} isMinimized={widgetManager.widgets.speedDial.isMinimized} position={widgetManager.widgets.speedDial.position} onClose={() => widgetManager.closeWidget('speedDial')} onMinimize={() => widgetManager.setMinimized('speedDial', !widgetManager.widgets.speedDial.isMinimized)} onPositionChange={(pos) => widgetManager.setPosition('speedDial', pos)} />}
 
+      {/* SESSION LOCK — Fase A.7 */}
+      <SessionLockOverlay
+        locked={sessionLocked}
+        masterPin={(userProfile as any)?.pin}
+        userName={user?.name}
+        onUnlock={() => setSessionLocked(false)}
+        onForceLogout={() => { setSessionLocked(false); auth.signOut(); }}
+      />
     </div>
   );
 };

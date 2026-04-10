@@ -43,7 +43,7 @@ export function getVerticalPrice(tipoNegocio: string): number {
 }
 
 // ─── Vertical plan modules per business type ────────────────────────────────
-const VERTICAL_BASE_MODULES = ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas'];
+const VERTICAL_BASE_MODULES = ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas', 'tesoreria'];
 
 const VERTICAL_EXTRA_MODULES: Record<string, string[]> = {
   barberia:    ['citas', 'comisiones'],
@@ -158,10 +158,10 @@ export const ALL_MODULES = [
 export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   trial:      { users: 25, products: -1,   sucursales: 3,  modules: ['*'] },
   gratis:     { users: 1,  products: 50,   sucursales: 0,  modules: ['pos_detal', 'inventario', 'libro_ventas'] },
-  basico:     { users: 3,  products: 500,  sucursales: 0,  modules: ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas'] },
-  vertical:   { users: 5,  products: 500,  sucursales: 0,  modules: ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas'] }, // dynamic — use getVerticalLimits()
-  negocio:    { users: 10, products: 2000, sucursales: 1,  modules: ['pos_detal', 'pos_mayor', 'inventario', 'tasas', 'clientes', 'proveedores', 'cajas', 'rrhh', 'reportes', 'sucursales', 'contabilidad', 'comparar', 'libro_ventas', 'cxc', 'cxp', 'precios_dinamicos'] },
-  pro:        { users: 25, products: -1,   sucursales: 3,  modules: ['pos_detal', 'pos_mayor', 'inventario', 'tasas', 'clientes', 'proveedores', 'cajas', 'rrhh', 'reportes', 'sucursales', 'contabilidad', 'comparar', 'libro_ventas', 'cxc', 'cxp', 'precios_dinamicos', 'portal_clientes', 'embajador', 'vision', 'catalogo', 'conciliacion'] },
+  basico:     { users: 3,  products: 500,  sucursales: 0,  modules: ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas', 'tesoreria'] },
+  vertical:   { users: 5,  products: 500,  sucursales: 0,  modules: ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas', 'tesoreria'] }, // dynamic — use getVerticalLimits()
+  negocio:    { users: 10, products: 2000, sucursales: 1,  modules: ['pos_detal', 'pos_mayor', 'inventario', 'tasas', 'clientes', 'proveedores', 'cajas', 'rrhh', 'reportes', 'sucursales', 'contabilidad', 'comparar', 'libro_ventas', 'cxc', 'cxp', 'precios_dinamicos', 'tesoreria'] },
+  pro:        { users: 25, products: -1,   sucursales: 3,  modules: ['pos_detal', 'pos_mayor', 'inventario', 'tasas', 'clientes', 'proveedores', 'cajas', 'rrhh', 'reportes', 'sucursales', 'contabilidad', 'comparar', 'libro_ventas', 'cxc', 'cxp', 'precios_dinamicos', 'portal_clientes', 'embajador', 'vision', 'catalogo', 'conciliacion', 'tesoreria'] },
   enterprise: { users: -1, products: -1,   sucursales: -1, modules: ['*'] },
   custom:     { users: -1, products: -1,   sucursales: -1, modules: ['*'] },
   // Legacy alias
@@ -219,7 +219,7 @@ export const PLANS: PlanInfo[] = [
       'Hasta 50 productos',
       'POS Detal básico',
       'Inventario',
-      'Libro de Ventas',
+      'Reporte de Ventas',
     ],
   },
   {
@@ -339,7 +339,7 @@ export const COMPARE_ROWS: CompareRow[] = [
   { cat: 'Ventas',      label: 'Tasas multi-cuenta (BCV+custom)', g: false,    b: false,       n: true,       p: true,       e: true },
   { cat: 'Ventas',      label: 'IGTF e IVA automático',           g: true,     b: true,        n: true,       p: true,       e: true },
   { cat: 'Ventas',      label: 'Ticket 80mm / WhatsApp',          g: true,     b: true,        n: true,       p: true,       e: true },
-  { cat: 'Ventas',      label: 'Libro de Ventas',                 g: true,     b: true,        n: true,       p: true,       e: true },
+  { cat: 'Ventas',      label: 'Reporte de Ventas',                 g: true,     b: true,        n: true,       p: true,       e: true },
   { cat: 'Ventas',      label: 'Catálogo digital compartible',    g: false,    b: false,       n: false,      p: true,       e: true },
   // Finanzas
   { cat: 'Finanzas',    label: 'CxC — Cuentas por cobrar',        g: false,    b: false,       n: true,       p: true,       e: true },

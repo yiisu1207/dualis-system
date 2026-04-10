@@ -10,6 +10,7 @@ import {
   setDoc,
   updateDoc,
   query,
+  where,
   orderBy,
   limit,
   Timestamp,
@@ -59,6 +60,8 @@ import {
   Truck,
   Camera,
   ImageIcon,
+  ClipboardCheck,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { db } from '../firebase/config';
@@ -67,9 +70,13 @@ import { useSubscription } from '../hooks/useSubscription';
 import { useRates } from '../context/RatesContext';
 import { computeDynamicPrices, isDynamicProduct, findCustomRate } from '../utils/dynamicPricing';
 import { uploadToCloudinary } from '../utils/cloudinary';
+import { getAlmacenStock, getTotalStock } from '../utils/stockHelpers';
 import type { Supplier, Movement } from '../../types';
 import RecepcionModal from '../components/inventory/RecepcionModal';
+import PhysicalCountModal from '../components/inventory/PhysicalCountModal';
+import TransferStockModal from '../components/inventory/TransferStockModal';
 import ExpirationAlerts from '../components/inventory/ExpirationAlerts';
+import SmartRestockAlerts from '../components/inventory/SmartRestockAlerts';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type Product = {
@@ -102,8 +109,35 @@ type Product = {
   pendingBy?: string;
   unitType?: 'unidad' | 'kg' | 'g' | 'ton' | 'lt' | 'ml' | 'lb';
   imageUrl?: string;
+  images?: string[];       // Fase G.9: galería multi-foto (URLs Cloudinary)
+  // Fase F.4 — Precios por tier de fidelidad. Override de precioDetal/precioMayor
+  // según el tier del cliente. Si no existe, se usa el precio base.
+  pricesByTier?: Record<string, { precioDetal?: number; precioMayor?: number }>;
   fechaVencimiento?: string;  // ISO date YYYY-MM-DD
   lote?: string;
+  unidadesPorBulto?: number;  // Fase B: ej. 12 (1 bulto = 12 unidades). Default 1/undefined = legacy unidad
+  barcode?: string;           // Fase B: código de barras (lector USB / cámara)
+  // Fase G — Combos / Kits. Si isKit=true, al vender el kit se descuentan los componentes
+  // (no el kit). El kit puede tener su propio precio (promo), distinto a la suma de partes.
+  // Stock del kit es informativo: el límite real es min(componente.stock / qty) por componente.
+  isKit?: boolean;
+  kitComponents?: Array<{ productId: string; productName?: string; qty: number }>;
+  // Fase 9.4 — Variantes (talla, color, etc.). Cada variante hereda precio/IVA
+  // del padre salvo override. Stock se gestiona POR variante, no en el padre.
+  hasVariants?: boolean;
+  variantAttributes?: string[];  // ej: ['Talla','Color']
+  variants?: ProductVariant[];
+};
+
+type ProductVariant = {
+  id: string;           // nanoid o auto
+  sku: string;          // código único de la variante
+  values: Record<string, string>; // { Talla: 'M', Color: 'Rojo' }
+  stock: number;
+  precioDetal?: number; // override — si undefined, hereda del padre
+  precioMayor?: number;
+  costoUSD?: number;
+  barcode?: string;
 };
 
 type StockMovement = {
@@ -157,10 +191,18 @@ const initialProduct: Omit<Product, 'id'> = {
   margenMayor: 0,
   margenDetal: 0,
   unitType: 'unidad',
+  unidadesPorBulto: 1,
+  barcode: '',
+  isKit: false,
+  kitComponents: [],
+  hasVariants: false,
+  variantAttributes: [],
+  variants: [],
+  images: [],
 };
 
 // ─── IMPORT AUTO-DETECTION ────────────────────────────────────────────────────
-const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuenta' | 'stockByAlmacen' | 'status' | 'pendingBy' | 'unitType' | 'imageUrl' | 'fechaVencimiento' | 'lote'> | 'margen', string[]> = {
+const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuenta' | 'stockByAlmacen' | 'status' | 'pendingBy' | 'unitType' | 'imageUrl' | 'images' | 'fechaVencimiento' | 'lote' | 'unidadesPorBulto' | 'barcode' | 'isKit' | 'kitComponents' | 'hasVariants' | 'variantAttributes' | 'variants' | 'pricesByTier'> | 'margen', string[]> = {
   codigo:       ['código','codigo','code','sku','barcode','cod','upc','ean','referencia','ref'],
   nombre:       ['nombre','name','producto','descripción','descripcion','description','item','artículo','articulo','denominacion'],
   categoria:    ['categoría','categoria','category','grupo','tipo','type','familia','rubro'],
@@ -322,6 +364,7 @@ export default function Inventario() {
   const [bulkCalc, setBulkCalc] = useState({ costoBulto: 0, unidades: 0 });
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // Stock adjustment states
   const [adjModalOpen, setAdjModalOpen] = useState(false);
@@ -335,6 +378,8 @@ export default function Inventario() {
   // Suppliers (for stock adjustment + recepción)
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [showRecepcion, setShowRecepcion] = useState(false);
+  const [showPhysicalCount, setShowPhysicalCount] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
 
   // Delete confirmation state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -505,8 +550,29 @@ export default function Inventario() {
   // Load suppliers for stock adjustment proveedor dropdown
   useEffect(() => {
     if (!tenantId) return;
-    const unsub = onSnapshot(collection(db, `businesses/${tenantId}/suppliers`), (snap) => {
+    // Canonical source: root `suppliers` collection filtered by businessId
+    // (same as CxP / MainSystem). The per-tenant subcollection was unused.
+    const qSupp = query(collection(db, 'suppliers'), where('businessId', '==', tenantId));
+    const unsub = onSnapshot(qSupp, (snap) => {
       setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier)));
+    });
+    return () => unsub();
+  }, [tenantId]);
+
+  // Load preset categories/units (seeded by Onboarding) — used as fallback
+  // suggestions when the catalog is empty.
+  const [presetCategories, setPresetCategories] = useState<string[]>([]);
+  const [presetUnits, setPresetUnits] = useState<string[]>([]);
+  // Recepción de mercancía — default true (costo promedio + lotes FEFO implementados).
+  // El admin puede desactivar desde Configuración → Inventario si lo prefiere.
+  const [recepcionEnabled, setRecepcionEnabled] = useState<boolean>(true);
+  useEffect(() => {
+    if (!tenantId) return;
+    const unsub = onSnapshot(doc(db, 'businessConfigs', tenantId), (snap) => {
+      const data = snap.data() || {};
+      if (Array.isArray(data.presetCategories)) setPresetCategories(data.presetCategories);
+      if (Array.isArray(data.presetUnits)) setPresetUnits(data.presetUnits);
+      setRecepcionEnabled(data?.inventoryConfig?.recepcionEnabled !== false);
     });
     return () => unsub();
   }, [tenantId]);
@@ -542,7 +608,7 @@ export default function Inventario() {
   const handleDeleteAlmacen = async (almacen: Almacen) => {
     if (!tenantId) return;
     // Check if any product has stock in this almacén
-    const hasStock = products.some(p => (p.stockByAlmacen?.[almacen.id] ?? 0) > 0);
+    const hasStock = products.some(p => getAlmacenStock(p, almacen.id) > 0);
     if (hasStock) {
       alert(`No se puede eliminar "${almacen.nombre}" porque tiene productos con stock asignado.`);
       return;
@@ -694,8 +760,13 @@ export default function Inventario() {
     setForm(f => ({ ...f, codigo: `SKU-${Date.now().toString(36).toUpperCase()}` }));
 
   const existingCategories = useMemo(
-    () => [...new Set(products.map(p => p.categoria).filter(Boolean))].slice(0, 8),
-    [products],
+    () => {
+      const fromProducts = [...new Set(products.map(p => p.categoria).filter(Boolean))];
+      if (fromProducts.length > 0) return fromProducts.slice(0, 8);
+      // Fallback to preset categories seeded by Onboarding
+      return presetCategories.slice(0, 8);
+    },
+    [products, presetCategories],
   );
   const pendingProducts = useMemo(
     () => products.filter(p => p.status === 'pending_review'),
@@ -718,7 +789,13 @@ export default function Inventario() {
     if (filterCategoria !== 'all') list = list.filter(p => p.categoria === filterCategoria);
     if (filterStock === 'low') list = list.filter(p => p.stock > 0 && p.stock < (p.stockMinimo || 5));
     if (filterStock === 'out') list = list.filter(p => p.stock === 0);
-    if (filterAlmacen !== 'all') list = list.filter(p => p.stockByAlmacen != null);
+    if (filterAlmacen !== 'all') {
+      // Show products that have an entry in this almacen, or legacy products under 'principal'
+      list = list.filter(p =>
+        (p.stockByAlmacen && Object.prototype.hasOwnProperty.call(p.stockByAlmacen, filterAlmacen)) ||
+        (filterAlmacen === 'principal')
+      );
+    }
     list = [...list].sort((a, b) => {
       let va: any, vb: any;
       if (sortBy === 'nombre') { va = (a.nombre || '').toLowerCase(); vb = (b.nombre || '').toLowerCase(); }
@@ -810,6 +887,22 @@ export default function Inventario() {
     const addedQty = Number(adjData.quantity);
     const newStock = selectedProduct.stock + addedQty;
     const updatePayload: Record<string, any> = { stock: newStock };
+
+    // Mantener stockByAlmacen en sync con la operación.
+    // Si el producto ya tiene el mapa, actualizamos el almacén seleccionado.
+    // Si no lo tiene (legacy), lo inicializamos con el stock total en 'principal'
+    // antes de aplicar el ajuste, para que productos viejos migren al modelo nuevo
+    // sin perder data.
+    const targetAlmacen = (filterAlmacen !== 'all' ? filterAlmacen : selectedAlmacenId) || 'principal';
+    const existingMap = selectedProduct.stockByAlmacen || {};
+    const baseAlmacenStock = Object.prototype.hasOwnProperty.call(existingMap, targetAlmacen)
+      ? Number(existingMap[targetAlmacen] || 0)
+      : (targetAlmacen === 'principal' ? Number(selectedProduct.stock || 0) : 0);
+    const newAlmacenStock = Math.max(0, baseAlmacenStock + addedQty);
+    updatePayload.stockByAlmacen = {
+      ...existingMap,
+      [targetAlmacen]: newAlmacenStock,
+    };
 
     // Costo promedio ponderado — siempre activo en entradas
     const oldStock = selectedProduct.stock;
@@ -1271,10 +1364,29 @@ export default function Inventario() {
           </div>
           {canRegisterNew && (
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowRecepcion(true)}
-              className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-emerald-500/25 active:scale-95">
-              <Truck size={16} /> Recibir Mercancía
+            {almacenes.filter(a => a.activo !== false).length >= 2 && (
+              <button onClick={() => setShowTransfer(true)}
+                className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-sky-600 to-cyan-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-sky-500/25 active:scale-95">
+                <ArrowRightLeft size={16} /> Transferir
+              </button>
+            )}
+            <button onClick={() => setShowPhysicalCount(true)}
+              className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-amber-500/25 active:scale-95">
+              <ClipboardCheck size={16} /> Conteo Físico
             </button>
+            {recepcionEnabled ? (
+              <button onClick={() => setShowRecepcion(true)}
+                className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-emerald-500/25 active:scale-95">
+                <Truck size={16} /> Recibir Mercancía
+              </button>
+            ) : (
+              <button
+                disabled
+                title="Módulo en construcción. Actívalo desde Configuración → Inventario si quieres probar la beta."
+                className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-slate-200 dark:bg-white/[0.04] text-slate-400 dark:text-white/30 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] cursor-not-allowed border border-dashed border-slate-300 dark:border-white/10">
+                <Truck size={16} /> Recibir Mercancía · Próximamente
+              </button>
+            )}
             <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setCustomMarginDetal(''); setCustomMarginMayor(''); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
               className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
               <Plus size={16} /> Nuevo Producto
@@ -1282,6 +1394,9 @@ export default function Inventario() {
           </div>
           )}
         </div>
+
+        {/* SMART RESTOCK ALERTS (velocity-based) */}
+        {tenantId && <SmartRestockAlerts businessId={tenantId} products={products} />}
 
         {/* EXPIRATION ALERTS (farmacia, etc.) */}
         <ExpirationAlerts products={products} />
@@ -1559,7 +1674,10 @@ export default function Inventario() {
                       const isSelected = selectedIds.has(p.id);
                       const marginDetal = p.costoUSD > 0 ? Math.round(((p.precioDetal - p.costoUSD) / p.costoUSD) * 100) : 0;
                       const isPending = p.status === 'pending_review';
-                      const stockValue = filterAlmacen !== 'all' ? (p.stockByAlmacen?.[filterAlmacen] ?? 0) : p.stock;
+                      const rawStock = p.hasVariants && (p.variants || []).length > 0
+                        ? (p.variants || []).reduce((s, v) => s + (v.stock || 0), 0)
+                        : p.stock;
+                      const stockValue = filterAlmacen !== 'all' ? (p.stockByAlmacen?.[filterAlmacen] ?? 0) : rawStock;
                       return (
                       <tr key={p.id} className={`transition-colors group border-b border-slate-50 dark:border-white/[0.04] ${isPending ? 'bg-amber-50/30 dark:bg-amber-500/[0.04]' : isSelected ? 'bg-indigo-50/40 dark:bg-indigo-500/[0.06]' : 'hover:bg-slate-50 dark:hover:bg-white/[0.03]'}`}>
                         {/* Checkbox */}
@@ -1583,6 +1701,12 @@ export default function Inventario() {
                                   <span className="px-1.5 py-0.5 bg-amber-500/15 text-amber-500 text-[7px] font-black uppercase rounded shrink-0 border border-amber-500/20">
                                     {customRates.find(r => r.id === p.tipoTasa)?.name?.charAt(0) || 'D'}
                                   </span>
+                                )}
+                                {p.isKit && (
+                                  <span className="px-1.5 py-0.5 bg-violet-500/15 text-violet-500 text-[7px] font-black uppercase rounded shrink-0 border border-violet-500/20">Kit</span>
+                                )}
+                                {p.hasVariants && (
+                                  <span className="px-1.5 py-0.5 bg-sky-500/15 text-sky-500 text-[7px] font-black uppercase rounded shrink-0 border border-sky-500/20">{(p.variants || []).length} var</span>
                                 )}
                                 {isPending && (
                                   <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-400 text-[9px] font-black border border-amber-500/20 shrink-0">
@@ -1908,8 +2032,8 @@ export default function Inventario() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {almacenes.map(almacen => {
-                    const totalStock = products.reduce((sum, p) => sum + (p.stockByAlmacen?.[almacen.id] ?? 0), 0);
-                    const productCount = products.filter(p => (p.stockByAlmacen?.[almacen.id] ?? 0) > 0).length;
+                    const totalStock = products.reduce((sum, p) => sum + getAlmacenStock(p, almacen.id), 0);
+                    const productCount = products.filter(p => getAlmacenStock(p, almacen.id) > 0).length;
                     return (
                       <div key={almacen.id} className={`bg-white dark:bg-slate-900 border rounded-2xl p-5 flex flex-col gap-3 transition-all hover:shadow-lg ${almacen.activo ? 'border-indigo-100 dark:border-indigo-500/20 hover:shadow-indigo-500/10' : 'border-slate-100 dark:border-white/[0.06] opacity-60'}`}>
                         <div className="flex items-start justify-between gap-2">
@@ -2079,30 +2203,60 @@ export default function Inventario() {
                 </div>
               </div>
 
-              {/* ── IMAGE UPLOAD ── */}
-              <div className="flex items-center gap-3">
-                <input ref={imageInputRef} type="file" accept="image/*" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = ''; }} />
-                {form.imageUrl ? (
-                  <div className="relative group">
-                    <img src={form.imageUrl} alt="" className="h-16 w-16 rounded-xl object-cover border-2 border-slate-200 dark:border-white/10" />
+              {/* ── IMAGE UPLOAD + GALLERY ── */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <input ref={imageInputRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = ''; }} />
+                  {form.imageUrl ? (
+                    <div className="relative group">
+                      <img src={form.imageUrl} alt="" className="h-16 w-16 rounded-xl object-cover border-2 border-slate-200 dark:border-white/10" />
+                      <button type="button" onClick={() => imageInputRef.current?.click()}
+                        className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <Camera size={16} className="text-white" />
+                      </button>
+                    </div>
+                  ) : (
                     <button type="button" onClick={() => imageInputRef.current?.click()}
-                      className="absolute inset-0 bg-black/50 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                      <Camera size={16} className="text-white" />
+                      className="h-16 w-16 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/15 flex flex-col items-center justify-center gap-1 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all shrink-0">
+                      {uploadingImage
+                        ? <Loader2 size={16} className="text-indigo-500 animate-spin" />
+                        : <><ImageIcon size={16} className="text-slate-300 dark:text-white/20" /><span className="text-[7px] font-bold text-slate-400 dark:text-white/20 uppercase">Foto</span></>}
                     </button>
+                  )}
+                  {form.imageUrl && (
+                    <button type="button" onClick={() => setForm(f => ({ ...f, imageUrl: '' }))}
+                      className="text-[9px] font-bold text-rose-400 hover:text-rose-500 uppercase tracking-widest">Quitar</button>
+                  )}
+                </div>
+                {/* Gallery — additional images */}
+                {(form.images && form.images.length > 0) && (
+                  <div className="flex flex-wrap gap-2">
+                    {form.images.map((url, idx) => (
+                      <div key={idx} className="relative group">
+                        <img src={url} alt="" className="h-12 w-12 rounded-lg object-cover border border-slate-200 dark:border-white/10" />
+                        <button type="button" onClick={() => setForm(f => ({ ...f, images: (f.images || []).filter((_, i) => i !== idx) }))}
+                          className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[8px]">×</button>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  <button type="button" onClick={() => imageInputRef.current?.click()}
-                    className="h-16 w-16 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/15 flex flex-col items-center justify-center gap-1 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-500/5 transition-all shrink-0">
-                    {uploadingImage
-                      ? <Loader2 size={16} className="text-indigo-500 animate-spin" />
-                      : <><ImageIcon size={16} className="text-slate-300 dark:text-white/20" /><span className="text-[7px] font-bold text-slate-400 dark:text-white/20 uppercase">Foto</span></>}
-                  </button>
                 )}
-                {form.imageUrl && (
-                  <button type="button" onClick={() => setForm(f => ({ ...f, imageUrl: '' }))}
-                    className="text-[9px] font-bold text-rose-400 hover:text-rose-500 uppercase tracking-widest">Quitar</button>
-                )}
+                <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden"
+                  onChange={async e => {
+                    const files = e.target.files;
+                    if (!files || files.length === 0) return;
+                    e.target.value = '';
+                    for (const file of Array.from(files) as File[]) {
+                      try {
+                        const result = await uploadToCloudinary(file, 'dualis_products');
+                        setForm(f => ({ ...f, images: [...(f.images || []), result.secure_url] }));
+                      } catch (err) { console.error('[gallery upload]', err); }
+                    }
+                  }} />
+                <button type="button" onClick={() => galleryInputRef.current?.click()}
+                  className="text-[9px] font-bold text-indigo-400 hover:text-indigo-300 uppercase tracking-widest flex items-center gap-1">
+                  <Plus size={10} /> Agregar más fotos
+                </button>
               </div>
 
               {/* ── ROW 2: PRECIOS ── */}
@@ -2340,6 +2494,62 @@ export default function Inventario() {
                       </div>
                     </div>
 
+                    {/* ── CALCULADORA DE RENTABILIDAD ── */}
+                    {form.costoUSD > 0 && form.precioDetal > 0 && (() => {
+                      const costo = form.costoUSD;
+                      const pvp = form.precioDetal;
+                      const pvpMayor = form.precioMayor || pvp;
+                      const gananciaDetal = pvp - costo;
+                      const gananciaMayor = pvpMayor - costo;
+                      const margenDetal = (gananciaDetal / costo) * 100;
+                      const margenMayor = (gananciaMayor / costo) * 100;
+                      const stockActual = form.stock || 0;
+                      const gananciaPotencialDetal = gananciaDetal * stockActual;
+                      const gananciaPotencialMayor = gananciaMayor * stockActual;
+                      // Markup sobre precio de venta (margen bruto clásico)
+                      const markupDetal = pvp > 0 ? (gananciaDetal / pvp) * 100 : 0;
+                      const healthColor =
+                        margenDetal < 10 ? 'text-rose-400' :
+                        margenDetal < 25 ? 'text-amber-400' :
+                        'text-emerald-400';
+                      const healthLabel =
+                        margenDetal < 10 ? 'Margen crítico' :
+                        margenDetal < 25 ? 'Margen aceptable' :
+                        'Margen saludable';
+                      return (
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] px-3.5 py-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400/70">Rentabilidad</span>
+                            <span className={`text-[9px] font-black uppercase tracking-wider ${healthColor}`}>
+                              {healthLabel}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div>
+                              <p className="text-[9px] text-slate-400 dark:text-white/30 font-bold">Ganancia Detal</p>
+                              <p className="text-sm font-black text-emerald-400 font-mono">${gananciaDetal.toFixed(2)}</p>
+                              <p className="text-[9px] text-white/40">{margenDetal.toFixed(0)}% sobre costo</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-slate-400 dark:text-white/30 font-bold">Ganancia Mayor</p>
+                              <p className="text-sm font-black text-violet-400 font-mono">${gananciaMayor.toFixed(2)}</p>
+                              <p className="text-[9px] text-white/40">{margenMayor.toFixed(0)}% sobre costo</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-slate-400 dark:text-white/30 font-bold">Markup</p>
+                              <p className="text-sm font-black text-sky-400 font-mono">{markupDetal.toFixed(0)}%</p>
+                              <p className="text-[9px] text-white/40">sobre venta</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-slate-400 dark:text-white/30 font-bold">Potencial ({stockActual} ud)</p>
+                              <p className="text-sm font-black text-amber-400 font-mono">${gananciaPotencialDetal.toFixed(2)}</p>
+                              <p className="text-[9px] text-white/40">mayor: ${gananciaPotencialMayor.toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* ── PRECIOS POR CUENTA (MAYOR) — siempre visible si hay cuentas ── */}
                     {hasDynamicPricing && customRates.length > 0 && (
                       <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] px-3.5 pb-3.5 pt-3 space-y-3">
@@ -2569,6 +2779,257 @@ export default function Inventario() {
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                 </div>
+
+                {/* Fase B: Unidades por Bulto + Código de Barras */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">
+                      Unidades por Bulto <span className="font-medium normal-case tracking-normal text-slate-400/60">ej: 12 = 1 bulto trae 12 unid.</span>
+                    </label>
+                    <input type="number" min="1" step="1" value={form.unidadesPorBulto ?? 1}
+                      onChange={e => setForm(f => ({ ...f, unidadesPorBulto: Math.max(1, Number(e.target.value) || 1) }))}
+                      placeholder="1"
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">
+                      Código de Barras <span className="font-medium normal-case tracking-normal text-slate-400/60">escanea o pega</span>
+                    </label>
+                    <input type="text" value={form.barcode || ''}
+                      onChange={e => setForm(f => ({ ...f, barcode: e.target.value.trim() || undefined }))}
+                      placeholder="7591234567890"
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  </div>
+                </div>
+
+                {/* Fase G — Combos / Kits. Producto compuesto: al vender, descuenta los componentes.
+                    El precio del kit es independiente (promo). Un kit no puede contener otro kit. */}
+                <div className="pt-2 border-t border-slate-100 dark:border-white/[0.05]">
+                  <label className="flex items-center gap-2.5 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={!!form.isKit}
+                      onChange={e => setForm(f => ({ ...f, isKit: e.target.checked, kitComponents: e.target.checked ? (f.kitComponents || []) : [], hasVariants: false, variantAttributes: [], variants: [] }))}
+                      disabled={!!form.hasVariants}
+                      className="w-4 h-4 rounded accent-violet-600 disabled:opacity-40"
+                    />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-white/60 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
+                      Producto compuesto / Combo
+                    </span>
+                    <span className="text-[9px] font-medium normal-case tracking-normal text-slate-400/60">al vender se descuentan los componentes</span>
+                  </label>
+
+                  {form.isKit && (
+                    <div className="mt-3 p-3 rounded-xl bg-violet-50/50 dark:bg-violet-500/[0.04] border border-violet-200/60 dark:border-violet-500/20 space-y-2">
+                      {(form.kitComponents || []).length === 0 && (
+                        <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                          ⚠ Agrega al menos un componente
+                        </div>
+                      )}
+                      {(form.kitComponents || []).map((comp, idx) => {
+                        const compProduct = products.find(p => p.id === comp.productId);
+                        return (
+                          <div key={idx} className="flex items-center gap-2">
+                            <select
+                              value={comp.productId}
+                              onChange={e => {
+                                const newProductId = e.target.value;
+                                const newProduct = products.find(p => p.id === newProductId);
+                                setForm(f => ({
+                                  ...f,
+                                  kitComponents: (f.kitComponents || []).map((c, i) =>
+                                    i === idx ? { ...c, productId: newProductId, productName: newProduct?.nombre } : c
+                                  ),
+                                }));
+                              }}
+                              className="flex-1 min-w-0 px-2 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-[11px] font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none"
+                            >
+                              <option value="">— Seleccionar producto —</option>
+                              {products
+                                .filter(p => !p.isKit && p.id !== editingId)
+                                .map(p => (
+                                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                                ))}
+                            </select>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={comp.qty}
+                              onChange={e => {
+                                const q = Math.max(1, Number(e.target.value) || 1);
+                                setForm(f => ({
+                                  ...f,
+                                  kitComponents: (f.kitComponents || []).map((c, i) => (i === idx ? { ...c, qty: q } : c)),
+                                }));
+                              }}
+                              className="w-16 px-2 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-[11px] font-black text-center text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setForm(f => ({ ...f, kitComponents: (f.kitComponents || []).filter((_, i) => i !== idx) }))}
+                              className="p-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                              title="Quitar componente"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, kitComponents: [...(f.kitComponents || []), { productId: '', qty: 1 }] }))}
+                        className="w-full py-2 rounded-lg border border-dashed border-violet-300 dark:border-violet-500/40 text-[10px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400 hover:bg-violet-100/50 dark:hover:bg-violet-500/10 transition-colors"
+                      >
+                        + Agregar componente
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Fase 9.4 — Variantes de producto (Talla, Color, etc.) */}
+                {!form.isKit && (
+                <div className="pt-2 border-t border-slate-100 dark:border-white/[0.05]">
+                  <label className="flex items-center gap-2.5 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={!!form.hasVariants}
+                      onChange={e => setForm(f => ({
+                        ...f,
+                        hasVariants: e.target.checked,
+                        variantAttributes: e.target.checked ? (f.variantAttributes?.length ? f.variantAttributes : ['Talla']) : [],
+                        variants: e.target.checked ? (f.variants || []) : [],
+                      }))}
+                      className="w-4 h-4 rounded accent-sky-600"
+                    />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-white/60 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
+                      Producto con variantes
+                    </span>
+                    <span className="text-[9px] font-medium normal-case tracking-normal text-slate-400/60">talla, color, medida, etc.</span>
+                  </label>
+
+                  {form.hasVariants && (
+                    <div className="mt-3 p-3 rounded-xl bg-sky-50/50 dark:bg-sky-500/[0.04] border border-sky-200/60 dark:border-sky-500/20 space-y-3">
+                      {/* Attribute names */}
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-1.5 block">Atributos</label>
+                        <div className="flex flex-wrap gap-2">
+                          {(form.variantAttributes || []).map((attr, i) => (
+                            <div key={i} className="flex items-center gap-1 bg-white dark:bg-white/[0.06] border border-sky-200 dark:border-sky-500/20 rounded-lg px-2 py-1.5">
+                              <input
+                                value={attr}
+                                onChange={e => {
+                                  const newAttrs = [...(form.variantAttributes || [])];
+                                  newAttrs[i] = e.target.value;
+                                  setForm(f => ({ ...f, variantAttributes: newAttrs }));
+                                }}
+                                className="w-20 bg-transparent text-[11px] font-bold text-slate-900 dark:text-white outline-none"
+                                placeholder="Ej: Talla"
+                              />
+                              <button type="button" onClick={() => {
+                                const newAttrs = (form.variantAttributes || []).filter((_, idx) => idx !== i);
+                                const newVars = (form.variants || []).map(v => {
+                                  const newVals = { ...v.values };
+                                  delete newVals[attr];
+                                  return { ...v, values: newVals };
+                                });
+                                setForm(f => ({ ...f, variantAttributes: newAttrs, variants: newVars }));
+                              }} className="text-rose-400 hover:text-rose-600"><X size={12} /></button>
+                            </div>
+                          ))}
+                          <button type="button" onClick={() => setForm(f => ({
+                            ...f, variantAttributes: [...(f.variantAttributes || []), ''],
+                          }))} className="px-2 py-1.5 rounded-lg border border-dashed border-sky-300 dark:border-sky-500/30 text-[10px] font-bold text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-500/10">
+                            + Atributo
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Variants list */}
+                      {(form.variantAttributes || []).filter(a => a.trim()).length > 0 && (
+                        <div>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-1.5 block">
+                            Variantes ({(form.variants || []).length})
+                          </label>
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                            {(form.variants || []).map((v, vi) => (
+                              <div key={v.id} className="flex items-center gap-1.5 text-[10px]">
+                                {(form.variantAttributes || []).filter(a => a.trim()).map(attr => (
+                                  <input
+                                    key={attr}
+                                    value={v.values[attr] || ''}
+                                    onChange={e => {
+                                      const newVars = [...(form.variants || [])];
+                                      newVars[vi] = { ...newVars[vi], values: { ...newVars[vi].values, [attr]: e.target.value } };
+                                      setForm(f => ({ ...f, variants: newVars }));
+                                    }}
+                                    placeholder={attr}
+                                    className="w-16 px-1.5 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg font-bold text-slate-900 dark:text-white outline-none text-[10px]"
+                                  />
+                                ))}
+                                <input
+                                  value={v.sku}
+                                  onChange={e => {
+                                    const newVars = [...(form.variants || [])];
+                                    newVars[vi] = { ...newVars[vi], sku: e.target.value };
+                                    setForm(f => ({ ...f, variants: newVars }));
+                                  }}
+                                  placeholder="SKU"
+                                  className="w-20 px-1.5 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg font-mono font-bold text-slate-900 dark:text-white outline-none text-[10px]"
+                                />
+                                <input
+                                  type="number" min="0"
+                                  value={v.stock}
+                                  onChange={e => {
+                                    const newVars = [...(form.variants || [])];
+                                    newVars[vi] = { ...newVars[vi], stock: Number(e.target.value) || 0 };
+                                    setForm(f => ({ ...f, variants: newVars }));
+                                  }}
+                                  placeholder="Stock"
+                                  className="w-14 px-1.5 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg font-black text-center text-slate-900 dark:text-white outline-none text-[10px]"
+                                />
+                                <input
+                                  type="number" step="0.01" min="0"
+                                  value={v.precioDetal ?? ''}
+                                  onChange={e => {
+                                    const newVars = [...(form.variants || [])];
+                                    const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                    newVars[vi] = { ...newVars[vi], precioDetal: val };
+                                    setForm(f => ({ ...f, variants: newVars }));
+                                  }}
+                                  placeholder={`$${form.precioDetal || 0}`}
+                                  title="Precio detal (vacío = hereda del padre)"
+                                  className="w-16 px-1.5 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg font-black text-center text-slate-900 dark:text-white outline-none text-[10px]"
+                                />
+                                <button type="button" onClick={() => {
+                                  setForm(f => ({ ...f, variants: (f.variants || []).filter((_, i) => i !== vi) }));
+                                }} className="p-1 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg">
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <button type="button" onClick={() => {
+                            const id = Math.random().toString(36).slice(2, 10);
+                            const values: Record<string, string> = {};
+                            (form.variantAttributes || []).filter(a => a.trim()).forEach(a => { values[a] = ''; });
+                            setForm(f => ({
+                              ...f,
+                              variants: [...(f.variants || []), { id, sku: '', values, stock: 0 }],
+                            }));
+                          }} className="mt-2 w-full py-2 rounded-lg border border-dashed border-sky-300 dark:border-sky-500/40 text-[10px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 hover:bg-sky-100/50 dark:hover:bg-sky-500/10 transition-colors">
+                            + Agregar variante
+                          </button>
+                        </div>
+                      )}
+
+                      <p className="text-[9px] text-sky-500/60 italic">
+                        El stock del producto padre se ignora — se usa el stock de cada variante. Si el precio está vacío, hereda del padre.
+                      </p>
+                    </div>
+                  )}
+                </div>
+                )}
               </div>}
               </div>
             </form>
@@ -3176,8 +3637,10 @@ export default function Inventario() {
         currentUserId={userProfile?.id || ''}
         currentUserName={userProfile?.fullName || 'Admin'}
         onSaveMovement={async (data) => {
-          // Save CxP movement directly to Firestore
-          await addDoc(collection(db, `businesses/${tenantId}/movements`), {
+          // Canonical path: root `movements` collection filtered by businessId
+          // (same as CxP / useBusinessData). The per-tenant subcollection was
+          // invisible to CxP, so auto-facturas never appeared in the supplier ledger.
+          await addDoc(collection(db, 'movements'), {
             ...data,
             businessId: tenantId,
             ownerId: userProfile?.id,
@@ -3186,15 +3649,30 @@ export default function Inventario() {
             createdAt: new Date().toISOString(),
           });
         }}
-        onAdjustStock={async (productId, qty, newCosto, proveedorId, proveedorNombre, nroFactura) => {
+        onAdjustStock={async (productId, qty, newCosto, proveedorId, proveedorNombre, nroFactura, lote, fechaVencimiento) => {
           const product = products.find(p => p.id === productId);
           if (!product || !tenantId) return;
           const newStock = product.stock + qty;
-          await setDoc(doc(db, `businesses/${tenantId}/products`, productId), {
+          // Populate stockByAlmacen so legacy products become visible in warehouse views
+          const targetAlmacen = (filterAlmacen !== 'all' ? filterAlmacen : selectedAlmacenId) || 'principal';
+          const existingMap = product.stockByAlmacen || {};
+          const baseAlmacenStock = Object.prototype.hasOwnProperty.call(existingMap, targetAlmacen)
+            ? Number(existingMap[targetAlmacen] || 0)
+            : (targetAlmacen === 'principal' ? Number(product.stock || 0) : 0);
+          const newAlmacenStock = Math.max(0, baseAlmacenStock + qty);
+          const updatePayload: Record<string, any> = {
             stock: newStock,
             costoUSD: newCosto,
             previousCostoUSD: product.costoUSD || 0,
-          }, { merge: true });
+            stockByAlmacen: {
+              ...existingMap,
+              [targetAlmacen]: newAlmacenStock,
+            },
+          };
+          // Write lot/expiry to product doc if provided
+          if (lote) updatePayload.lote = lote;
+          if (fechaVencimiento) updatePayload.fechaVencimiento = fechaVencimiento;
+          await setDoc(doc(db, `businesses/${tenantId}/products`, productId), updatePayload, { merge: true });
           await addDoc(collection(db, `businesses/${tenantId}/stock_movements`), {
             productId,
             productName: product.nombre,
@@ -3205,10 +3683,33 @@ export default function Inventario() {
             previousCost: product.costoUSD || 0,
             proveedorId,
             proveedorNombre,
+            ...(lote ? { lote } : {}),
+            ...(fechaVencimiento ? { fechaVencimiento } : {}),
             userName: userProfile?.fullName || 'Admin',
             createdAt: serverTimestamp(),
           });
         }}
+      />
+
+      {/* ═══════════════ MODAL: CONTEO FÍSICO ═══════════════ */}
+      <PhysicalCountModal
+        open={showPhysicalCount}
+        onClose={() => setShowPhysicalCount(false)}
+        businessId={tenantId || ''}
+        operatorName={userProfile?.fullName || 'Admin'}
+        products={products}
+        almacenes={almacenes}
+        categorias={uniqueCategories}
+      />
+
+      {/* ═══════════════ MODAL: TRANSFERENCIA ENTRE ALMACENES ═══════════════ */}
+      <TransferStockModal
+        open={showTransfer}
+        onClose={() => setShowTransfer(false)}
+        businessId={tenantId || ''}
+        operatorName={userProfile?.fullName || 'Admin'}
+        products={products}
+        almacenes={almacenes}
       />
     </div>
   );

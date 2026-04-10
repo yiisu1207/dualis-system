@@ -1238,7 +1238,7 @@ const CustomerViewer: React.FC<CustomerViewerProps> = ({
   };
 
   const resolveReportAccount = (value: 'ALL' | AccountType): ReportAccount =>
-    value === 'ALL' ? 'GLOBAL' : value;
+    value === 'ALL' ? 'GLOBAL' : (value as ReportAccount);
 
   const resolveAccountLabel = (account: ReportAccount) =>
     account === 'GLOBAL' ? 'CUENTA GLOBAL' : `CUENTA ${account}`;

@@ -1,11 +1,13 @@
 import React, { useMemo } from 'react';
 import { AlertTriangle, Calendar, Clock } from 'lucide-react';
+import { getTotalStock } from '../../utils/stockHelpers';
 
 interface Product {
   id: string;
   nombre: string;
   codigo?: string;
   stock: number;
+  stockByAlmacen?: Record<string, number>;
   fechaVencimiento?: string;
   lote?: string;
 }
@@ -24,7 +26,7 @@ export default function ExpirationAlerts({ products, warningDays = 90 }: Props) 
     const expiringSoon: (Product & { daysLeft: number })[] = [];
 
     for (const p of products) {
-      if (!p.fechaVencimiento || p.stock <= 0) continue;
+      if (!p.fechaVencimiento || getTotalStock(p) <= 0) continue;
       const expDate = new Date(p.fechaVencimiento + 'T00:00:00');
       const diffMs = expDate.getTime() - today.getTime();
       const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
@@ -61,7 +63,7 @@ export default function ExpirationAlerts({ products, warningDays = 90 }: Props) 
                   <p className="text-[10px] text-rose-400/50">
                     {p.codigo && `${p.codigo} — `}
                     {p.lote && `Lote: ${p.lote} — `}
-                    Stock: {p.stock}
+                    Stock: {getTotalStock(p)}
                   </p>
                 </div>
                 <span className="text-[10px] font-black text-rose-400 bg-rose-500/10 px-2 py-1 rounded-lg">
@@ -93,7 +95,7 @@ export default function ExpirationAlerts({ products, warningDays = 90 }: Props) 
                   <p className="text-[10px] text-amber-400/50">
                     {p.codigo && `${p.codigo} — `}
                     {p.lote && `Lote: ${p.lote} — `}
-                    Stock: {p.stock}
+                    Stock: {getTotalStock(p)}
                   </p>
                 </div>
                 <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${

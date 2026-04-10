@@ -13,7 +13,7 @@ import {
 import { formatCurrency, getMovementUsdAmount } from '../../utils/formatters';
 import { buildClientStatus } from '../../utils/clientStatus';
 import ClientStatusBadge from '../ClientStatusBadge';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, onSnapshot, query, orderBy, limit as fbLimit } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import {
   ArrowLeft,
@@ -29,9 +29,18 @@ import {
   Copy,
   Check,
   MessageSquare,
+  Mail,
   Save,
   Tag,
+  Phone,
+  MapPin,
+  StickyNote,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  Send,
 } from 'lucide-react';
+import { shareViaWhatsApp, shareViaEmail, messageTemplates } from '../../utils/shareLink';
 import {
   getInitials,
   formatPhone,
@@ -46,6 +55,44 @@ import {
   hasActiveDiscount,
 } from './cxcHelpers';
 import { doc, updateDoc } from 'firebase/firestore';
+import { useSubdomain } from '../../context/SubdomainContext';
+import CommunicationModal from './CommunicationModal';
+
+/* ── Communication helpers ─────────────────────────────────── */
+
+interface Communication {
+  id: string;
+  type: string;
+  content: string;
+  date: any;
+  outcome?: string;
+  userName?: string;
+}
+
+const COMM_TYPE_META: Record<string, { icon: React.ReactNode; label: string }> = {
+  llamada:  { icon: <Phone size={14} />,          label: 'Llamada' },
+  visita:   { icon: <MapPin size={14} />,          label: 'Visita' },
+  whatsapp: { icon: <MessageSquare size={14} />,   label: 'WhatsApp' },
+  email:    { icon: <Mail size={14} />,            label: 'Email' },
+  sms:      { icon: <Send size={14} />,            label: 'SMS' },
+  nota:     { icon: <StickyNote size={14} />,      label: 'Nota' },
+};
+
+const OUTCOME_COLORS: Record<string, string> = {
+  promesa_pago: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400',
+  no_contesto:  'bg-slate-100 dark:bg-white/[0.07] text-slate-500 dark:text-slate-400',
+  rechazo:      'bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-400',
+  acuerdo:      'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+  informativo:  'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400',
+};
+
+const OUTCOME_LABELS: Record<string, string> = {
+  promesa_pago: 'Promesa de pago',
+  no_contesto:  'No contestó',
+  rechazo:      'Rechazo',
+  acuerdo:      'Acuerdo',
+  informativo:  'Informativo',
+};
 
 interface Props {
   entityId: string;
@@ -55,6 +102,7 @@ interface Props {
   movements: Movement[];
   rates: ExchangeRates;
   config: AppConfig;
+  businessName?: string;
   customRates?: CustomRate[];
   onBack: () => void;
   onViewLedger: () => void;
@@ -71,6 +119,7 @@ export default function CxCClientProfile({
   movements,
   rates,
   config,
+  businessName,
   customRates = [],
   onBack,
   onViewLedger,
@@ -78,6 +127,7 @@ export default function CxCClientProfile({
   onShareWhatsApp,
   onExportPdf,
 }: Props) {
+  const { slug } = useSubdomain();
   const [portalLink, setPortalLink] = useState('');
   const [portalPin, setPortalPin] = useState('');
   const [portalGenerating, setPortalGenerating] = useState(false);
@@ -102,6 +152,7 @@ export default function CxCClientProfile({
   }, [portalLink]);
 
   // Internal notes
+  const [showWhatsAppMenu, setShowWhatsAppMenu] = useState(false);
   const [internalNotes, setInternalNotes] = useState(customer?.internalNotes ?? '');
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
@@ -122,10 +173,76 @@ export default function CxCClientProfile({
     }
   };
 
+  // Tags
+  const [tags, setTags] = useState<string[]>(customer?.tags ?? []);
+  const [tagInput, setTagInput] = useState('');
+  const [tagsSaving, setTagsSaving] = useState(false);
+
+  const handleAddTag = () => {
+    const t = tagInput.trim().toLowerCase();
+    if (!t || tags.includes(t)) { setTagInput(''); return; }
+    const next = [...tags, t];
+    setTags(next);
+    setTagInput('');
+    void saveTagsToDb(next);
+  };
+
+  const handleRemoveTag = (tag: string) => {
+    const next = tags.filter(t => t !== tag);
+    setTags(next);
+    void saveTagsToDb(next);
+  };
+
+  const saveTagsToDb = async (newTags: string[]) => {
+    if (!businessId || !customer) return;
+    setTagsSaving(true);
+    try {
+      await updateDoc(doc(db, 'businesses', businessId, 'customers', customer.id), { tags: newTags });
+    } catch (e) { console.error('[Tags save]', e); }
+    finally { setTagsSaving(false); }
+  };
+
+  // Birthday
+  const [birthday, setBirthday] = useState(customer?.birthday ?? '');
+  const [birthdaySaving, setBirthdaySaving] = useState(false);
+  const [birthdaySaved, setBirthdaySaved] = useState(false);
+
+  const handleSaveBirthday = async () => {
+    if (!businessId || !customer) return;
+    setBirthdaySaving(true);
+    try {
+      await updateDoc(doc(db, 'businesses', businessId, 'customers', customer.id), { birthday: birthday || null });
+      setBirthdaySaved(true);
+      setTimeout(() => setBirthdaySaved(false), 2000);
+    } catch (e) { console.error('[Birthday save]', e); }
+    finally { setBirthdaySaving(false); }
+  };
+
   // Credit score
   const creditScore = useMemo(() => calcCreditScore(
     movements.filter(m => m.entityId === entityId)
   ), [movements, entityId]);
+
+  // Communications
+  const [commModalOpen, setCommModalOpen] = useState(false);
+  const [commsOpen, setCommsOpen] = useState(false);
+  const [communications, setCommunications] = useState<Communication[]>([]);
+
+  useEffect(() => {
+    if (!businessId || !entityId) return;
+    const customerId = customer?.id || entityId;
+    const q = query(
+      collection(db, 'businesses', businessId, 'customers', customerId, 'communications'),
+      orderBy('date', 'desc'),
+      fbLimit(20),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setCommunications(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() } as Communication)),
+      );
+    }, (err) => console.error('[Communications listener]', err));
+    return unsub;
+  }, [businessId, entityId, customer?.id]);
 
   const handleGeneratePortalAccess = async () => {
     if (portalGenerating) return;
@@ -145,7 +262,9 @@ export default function CxCClientProfile({
         token
       );
       const host = window.location.origin;
-      const link = `${host}/${businessId}/portal?token=${docRef.id}`;
+      const link = slug
+        ? `${host}/portal/${slug}?token=${docRef.id}`
+        : `${host}/portal?token=${docRef.id}`;
       setPortalLink(link);
       setPortalPin(pin);
     } catch (err) {
@@ -354,6 +473,43 @@ export default function CxCClientProfile({
                   <span className="font-black text-slate-600 dark:text-slate-300">Dir:</span>
                   <span className="truncate">{getEntityField(customer.direccion)}</span>
                 </div>
+              </div>
+            )}
+
+            {/* WhatsApp quick-contact */}
+            {customer?.telefono && (
+              <div className="mt-3 relative">
+                <button
+                  onClick={() => setShowWhatsAppMenu(v => !v)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest transition-all"
+                >
+                  <MessageSquare size={13} />
+                  Enviar WhatsApp
+                </button>
+                {showWhatsAppMenu && (
+                  <>
+                    <div className="fixed inset-0 z-[60]" onClick={() => setShowWhatsAppMenu(false)} />
+                    <div className="absolute left-0 top-full mt-1 z-[61] w-64 bg-slate-800 border border-white/10 rounded-xl shadow-2xl p-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
+                      {[
+                        { label: 'Recordatorio suave', fn: () => messageTemplates.reminderSoft(businessName || 'Nuestro negocio', customer.nombre || entityId, formatCurrency(balances.total, '$'), '') },
+                        { label: 'Recordatorio urgente', fn: () => messageTemplates.reminderUrgent(businessName || 'Nuestro negocio', customer.nombre || entityId, formatCurrency(balances.total, '$')) },
+                        { label: 'Aviso de vencimiento', fn: () => messageTemplates.reminderOverdue(businessName || 'Nuestro negocio', customer.nombre || entityId, formatCurrency(balances.total, '$'), 15) },
+                        { label: 'Aviso final', fn: () => messageTemplates.reminderFinal(businessName || 'Nuestro negocio', customer.nombre || entityId, formatCurrency(balances.total, '$'), 30) },
+                      ].map((tpl) => (
+                        <button
+                          key={tpl.label}
+                          onClick={() => {
+                            shareViaWhatsApp(customer.telefono!, tpl.fn());
+                            setShowWhatsAppMenu(false);
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-300 hover:bg-white/[0.07] transition-colors"
+                        >
+                          {tpl.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -699,6 +855,154 @@ export default function CxCClientProfile({
         </div>
       </div>
 
+      {/* TAGS + BIRTHDAY */}
+      <div className="app-panel p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Tag size={14} className="text-slate-400" />
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Etiquetas</h3>
+          {tagsSaving && <span className="text-[9px] text-amber-500 font-bold">Guardando...</span>}
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {tags.map(t => (
+            <span key={t} className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
+              {t}
+              <button onClick={() => handleRemoveTag(t)} className="ml-0.5 hover:text-rose-500 transition-colors">&times;</button>
+            </span>
+          ))}
+          {tags.length === 0 && <span className="text-xs text-slate-400 italic">Sin etiquetas</span>}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={tagInput}
+            onChange={e => setTagInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
+            placeholder="Ej: VIP, mayorista, referido..."
+            className="flex-1 px-3 py-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-300 dark:placeholder:text-white/20 font-medium"
+          />
+          <button onClick={handleAddTag} disabled={!tagInput.trim()} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 transition-all disabled:opacity-40">
+            Agregar
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 mt-6 mb-3">
+          <Calendar size={14} className="text-slate-400" />
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cumpleaños</h3>
+        </div>
+        <div className="flex gap-2 items-center">
+          <input
+            type="date"
+            value={birthday}
+            onChange={e => setBirthday(e.target.value)}
+            className="flex-1 max-w-[200px] px-3 py-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+          />
+          <button
+            onClick={handleSaveBirthday}
+            disabled={birthdaySaving || birthday === (customer?.birthday ?? '')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 transition-all disabled:opacity-40"
+          >
+            {birthdaySaved ? <><Check size={12} /> Guardado</> : <><Save size={12} /> Guardar</>}
+          </button>
+        </div>
+      </div>
+
+      {/* COMUNICACIONES */}
+      <div className="app-panel overflow-hidden">
+        <button
+          onClick={() => setCommsOpen(!commsOpen)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Phone size={14} className="text-indigo-500" />
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+              Comunicaciones
+            </h3>
+            {communications.length > 0 && (
+              <span className="text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-white/[0.07] px-2 py-0.5 rounded-full">
+                {communications.length}
+              </span>
+            )}
+          </div>
+          {commsOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+        </button>
+
+        {commsOpen && (
+          <div className="border-t border-slate-200 dark:border-white/10">
+            {/* Registrar contacto button */}
+            <div className="px-6 py-3 border-b border-slate-100 dark:border-white/[0.07]">
+              <button
+                onClick={() => setCommModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-md shadow-indigo-500/25"
+              >
+                <Plus size={12} /> Registrar Contacto
+              </button>
+            </div>
+
+            {/* Communications list */}
+            <div className="divide-y divide-slate-100 dark:divide-white/[0.07] max-h-[400px] overflow-y-auto">
+              {communications.length === 0 ? (
+                <div className="py-10 text-center text-slate-400 text-sm italic">
+                  Sin comunicaciones registradas
+                </div>
+              ) : (
+                communications.map((comm) => {
+                  const meta = COMM_TYPE_META[comm.type] || { icon: <StickyNote size={14} />, label: comm.type };
+                  const dateStr = comm.date?.toDate
+                    ? comm.date.toDate().toLocaleString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : comm.date
+                    ? new Date(comm.date).toLocaleString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : '';
+                  return (
+                    <div
+                      key={comm.id}
+                      className="px-6 py-3 flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0 mt-0.5">
+                        {meta.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            {meta.label}
+                          </span>
+                          {comm.outcome && (
+                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${OUTCOME_COLORS[comm.outcome] || 'bg-slate-100 dark:bg-white/[0.07] text-slate-500'}`}>
+                              {OUTCOME_LABELS[comm.outcome] || comm.outcome}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                          {comm.content}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 dark:text-slate-500">
+                          <span>{dateStr}</span>
+                          {comm.userName && (
+                            <>
+                              <span className="text-slate-300 dark:text-slate-600">·</span>
+                              <span>{comm.userName}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Communication Modal */}
+      <CommunicationModal
+        open={commModalOpen}
+        onClose={() => setCommModalOpen(false)}
+        customerId={customer?.id || entityId}
+        customerName={entityId}
+        businessId={businessId}
+        userId={userId}
+        userName=""
+      />
+
       {/* ACTIONS */}
       <div className="app-panel p-6">
         <div className="flex flex-wrap gap-3">
@@ -755,12 +1059,49 @@ export default function CxCClientProfile({
                 <p className="text-xs font-black text-slate-600 dark:text-slate-400 mb-3">
                   PIN: <span className="text-sky-600 dark:text-sky-400 tracking-widest">{portalPin}</span>
                 </p>
-                <button
-                  onClick={copyPortalLink}
-                  className="px-4 py-2.5 rounded-xl bg-sky-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-sky-600 transition-all"
-                >
-                  {portalCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={copyPortalLink}
+                    className="px-4 py-2.5 rounded-xl bg-sky-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-sky-600 transition-all"
+                  >
+                    {portalCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+                  </button>
+                  {customer?.telefono && (
+                    <button
+                      onClick={() => shareViaWhatsApp(
+                        customer.telefono!,
+                        messageTemplates.portalAccess(
+                          businessName || 'tu negocio',
+                          customer.nombre || 'Cliente',
+                          portalLink,
+                          portalPin,
+                        ),
+                      )}
+                      className="px-4 py-2.5 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-600 transition-all"
+                      title="Enviar por WhatsApp"
+                    >
+                      <MessageSquare size={12} /> WhatsApp
+                    </button>
+                  )}
+                  {customer?.email && (
+                    <button
+                      onClick={() => shareViaEmail(
+                        customer.email!,
+                        `Acceso a tu portal — ${businessName || 'tu negocio'}`,
+                        messageTemplates.portalAccess(
+                          businessName || 'tu negocio',
+                          customer.nombre || 'Cliente',
+                          portalLink,
+                          portalPin,
+                        ),
+                      )}
+                      className="px-4 py-2.5 rounded-xl bg-violet-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-violet-600 transition-all"
+                      title="Enviar por email"
+                    >
+                      <Mail size={12} /> Email
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
             <p className="text-[10px] text-sky-500/60 dark:text-sky-400/40 mt-3 text-center">

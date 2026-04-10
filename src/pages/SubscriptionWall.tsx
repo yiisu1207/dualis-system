@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useTenantSafe } from '../context/TenantContext';
 import {
   Zap, Building2, Crown, Check, ArrowRight, Copy, CheckCheck,
   Shield, Sparkles, Clock, Loader2, Send, AlertTriangle, Store,
@@ -57,16 +58,16 @@ function CopyRow({ label, value, id, copied, onCopy }: { label: string; value: s
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function SubscriptionWall() {
   const navigate = useNavigate();
-  const { empresa_id } = useParams<{ empresa_id: string }>();
+  const { tenantId } = useTenantSafe();
   const { userProfile } = useAuth();
 
-  const businessId  = userProfile?.businessId || empresa_id || '';
+  const businessId  = tenantId || userProfile?.businessId || '';
 
   // If subscription already exists, redirect to dashboard
   const { subscription, loading: subLoading } = useSubscription(businessId);
   useEffect(() => {
     if (!subLoading && subscription) {
-      navigate(`/${empresa_id}/admin/dashboard`, { replace: true });
+      navigate('/admin/dashboard', { replace: true });
     }
   }, [subLoading, subscription]);
 
@@ -110,7 +111,7 @@ export default function SubscriptionWall() {
           createdAt: serverTimestamp(),
         }
       }, { merge: true });
-      navigate(`/${empresa_id}/admin/dashboard`, { replace: true });
+      navigate('/admin/dashboard', { replace: true });
     } catch {
       setError('Error al iniciar el trial. Inténtalo de nuevo.');
       setLoading(false);
@@ -147,7 +148,7 @@ export default function SubscriptionWall() {
           createdAt: serverTimestamp(),
         }
       }, { merge: true });
-      navigate(`/${empresa_id}/admin/dashboard`, { replace: true });
+      navigate('/admin/dashboard', { replace: true });
     } catch {
       setError('Error al enviar. Inténtalo de nuevo.');
       setLoading(false);

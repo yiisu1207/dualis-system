@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, doc, query, where } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../../firebase/config';
-import { RepairTicket, TicketStatus } from '../../../types';
+import { RepairTicket, TicketStatus, Customer } from '../../../types';
 import {
-  Plus, Wrench, Clock, CheckCircle, Package, Truck, XCircle,
-  ChevronRight, Loader2, Search, Smartphone, Monitor, Printer,
+  Plus, Wrench, ChevronRight, Loader2, Search, DollarSign, User as UserIcon, XCircle,
 } from 'lucide-react';
 
 interface Props {
@@ -27,7 +27,9 @@ const STATUS_CONFIG: Record<TicketStatus, { label: string; color: string }> = {
 const DEVICE_TYPES = ['Laptop', 'PC', 'Teléfono', 'Tablet', 'Impresora', 'Monitor', 'Consola', 'Otro'];
 
 export default function RepairTicketsPanel({ businessId, currentUserName }: Props) {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<RepairTicket[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchQ, setSearchQ] = useState('');
@@ -35,10 +37,12 @@ export default function RepairTicketsPanel({ businessId, currentUserName }: Prop
 
   // Form
   const [form, setForm] = useState({
-    customerName: '', customerPhone: '', deviceType: 'Teléfono',
+    customerId: '', customerName: '', customerPhone: '', deviceType: 'Teléfono',
     deviceBrand: '', deviceModel: '', serialNumber: '',
     issueDescription: '', estimatedCostUSD: 0,
   });
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
   useEffect(() => {
     if (!businessId) return;
@@ -47,6 +51,43 @@ export default function RepairTicketsPanel({ businessId, currentUserName }: Prop
     });
     return unsub;
   }, [businessId]);
+
+  // Load customers for selector
+  useEffect(() => {
+    if (!businessId) return;
+    const q = query(collection(db, 'customers'), where('businessId', '==', businessId));
+    const unsub = onSnapshot(q, snap => {
+      setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer)));
+    });
+    return () => unsub();
+  }, [businessId]);
+
+  const customerMatches = useMemo(() => {
+    const term = customerSearch.trim().toLowerCase();
+    if (!term) return customers.slice(0, 8);
+    return customers.filter(c =>
+      ((c as any).fullName || (c as any).nombre || '').toLowerCase().includes(term)
+      || ((c as any).cedula || '').toLowerCase().includes(term)
+      || ((c as any).telefono || (c as any).phone || '').toLowerCase().includes(term)
+    ).slice(0, 8);
+  }, [customers, customerSearch]);
+
+  const pickCustomer = (c: Customer) => {
+    const name = (c as any).fullName || (c as any).nombre || '';
+    setForm(f => ({
+      ...f,
+      customerId: c.id,
+      customerName: name,
+      customerPhone: (c as any).telefono || (c as any).phone || '',
+    }));
+    setCustomerSearch(name);
+    setShowCustomerDropdown(false);
+  };
+
+  const clearCustomer = () => {
+    setForm(f => ({ ...f, customerId: '', customerName: '', customerPhone: '' }));
+    setCustomerSearch('');
+  };
 
   const filtered = useMemo(() => {
     let list = tickets;
@@ -69,12 +110,15 @@ export default function RepairTicketsPanel({ businessId, currentUserName }: Prop
   };
 
   const handleSave = async () => {
-    if (!form.customerName || !form.issueDescription || saving) return;
+    // P1.7: customerId obligatorio — sin esto el ticket no se factura ni
+    // aparece en el portal del cliente.
+    if (!form.customerId || !form.customerName || !form.issueDescription || saving) return;
     setSaving(true);
     try {
       await addDoc(collection(db, `businesses/${businessId}/repair_tickets`), {
         businessId,
         ticketNumber: generateTicketNumber(),
+        customerId: form.customerId || undefined,
         customerName: form.customerName,
         customerPhone: form.customerPhone,
         deviceType: form.deviceType,
@@ -89,7 +133,9 @@ export default function RepairTicketsPanel({ businessId, currentUserName }: Prop
         createdAt: new Date().toISOString(),
       });
       setShowNew(false);
-      setForm({ customerName: '', customerPhone: '', deviceType: 'Teléfono', deviceBrand: '', deviceModel: '', serialNumber: '', issueDescription: '', estimatedCostUSD: 0 });
+      setForm({ customerId: '', customerName: '', customerPhone: '', deviceType: 'Teléfono', deviceBrand: '', deviceModel: '', serialNumber: '', issueDescription: '', estimatedCostUSD: 0 });
+      setCustomerSearch('');
+      setShowCustomerDropdown(false);
     } catch (err) {
       console.error('Error saving ticket:', err);
     } finally {
@@ -173,12 +219,47 @@ export default function RepairTicketsPanel({ businessId, currentUserName }: Prop
                       <p className="text-[10px] text-emerald-400 mt-0.5">Estimado: ${ticket.estimatedCostUSD}</p>
                     )}
                   </div>
-                  {isActive && (
-                    <button onClick={() => advanceStatus(ticket)}
-                      className={`px-3 py-2 rounded-lg bg-${cfg.color}-500/10 text-${cfg.color}-400 text-[9px] font-bold uppercase hover:opacity-80 transition-all flex items-center gap-1 shrink-0`}>
-                      <ChevronRight size={12} /> Avanzar
-                    </button>
-                  )}
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    {isActive && (
+                      <button onClick={() => advanceStatus(ticket)}
+                        className={`px-3 py-2 rounded-lg bg-${cfg.color}-500/10 text-${cfg.color}-400 text-[9px] font-bold uppercase hover:opacity-80 transition-all flex items-center gap-1`}>
+                        <ChevronRight size={12} /> Avanzar
+                      </button>
+                    )}
+                    {(ticket.status === 'ready' || ticket.status === 'delivered') && ((ticket.finalCostUSD ?? ticket.estimatedCostUSD ?? 0) > 0) && !(ticket as any).invoiceMovementId && (
+                      <button
+                        onClick={() => {
+                          const cost = ticket.finalCostUSD ?? ticket.estimatedCostUSD ?? 0;
+                          try {
+                            sessionStorage.setItem('dualis_pending_pos_sale', JSON.stringify({
+                              source: 'reparacion',
+                              sourceId: ticket.id,
+                              customerId: ticket.customerId,
+                              customerName: ticket.customerName,
+                              customerPhone: (ticket as any).customerPhone,
+                              items: [{
+                                id: `rt-${ticket.id}`,
+                                nombre: `Reparación ${ticket.ticketNumber} — ${ticket.deviceType}`,
+                                name: `Reparación ${ticket.ticketNumber} — ${ticket.deviceType}`,
+                                price: cost,
+                                qty: 1,
+                              }],
+                            }));
+                          } catch {}
+                          navigate('/admin/cajas');
+                        }}
+                        className="px-3 py-2 rounded-lg bg-emerald-500/15 text-emerald-400 text-[9px] font-bold uppercase hover:opacity-80 transition-all flex items-center gap-1"
+                        title="Facturar este ticket en POS"
+                      >
+                        <DollarSign size={12} /> Facturar
+                      </button>
+                    )}
+                    {(ticket as any).invoiceMovementId && (
+                      <span className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 text-[9px] font-black uppercase">
+                        Facturado
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -192,17 +273,69 @@ export default function RepairTicketsPanel({ businessId, currentUserName }: Prop
           <div className="bg-[#0d1424] rounded-2xl border border-white/[0.07] p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-black text-white mb-5">Nuevo Ticket</h3>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              <div className="space-y-3">
+                <div className="relative">
                   <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Cliente</label>
-                  <input value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm outline-none" />
+                  {form.customerId ? (
+                    <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <UserIcon size={14} className="text-emerald-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-white truncate">{form.customerName}</p>
+                          {form.customerPhone && <p className="text-[9px] text-white/40">{form.customerPhone}</p>}
+                        </div>
+                      </div>
+                      <button type="button" onClick={clearCustomer} className="text-rose-400 hover:bg-rose-500/10 rounded-lg p-1">
+                        <XCircle size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative">
+                        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                        <input
+                          value={customerSearch}
+                          onChange={e => { setCustomerSearch(e.target.value); setShowCustomerDropdown(true); }}
+                          onFocus={() => setShowCustomerDropdown(true)}
+                          placeholder="Buscar cliente registrado..."
+                          className="w-full pl-8 pr-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm outline-none"
+                        />
+                      </div>
+                      {showCustomerDropdown && customerMatches.length === 0 && customerSearch.trim() && (
+                        <p className="mt-1.5 text-[9px] text-amber-400 font-bold">
+                          No hay coincidencias. Registra el cliente desde CxC para abrir el ticket.
+                        </p>
+                      )}
+                      {showCustomerDropdown && customerMatches.length > 0 && (
+                        <div className="absolute z-10 left-0 right-0 mt-1 bg-[#0f1828] border border-white/[0.08] rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                          {customerMatches.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => pickCustomer(c)}
+                              className="w-full text-left px-3 py-2 hover:bg-white/[0.05] flex items-center gap-2 border-b border-white/[0.04] last:border-b-0"
+                            >
+                              <div className="h-7 w-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 text-xs font-black shrink-0">
+                                {((c as any).fullName || (c as any).nombre || '?').charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-white truncate">{(c as any).fullName || (c as any).nombre}</p>
+                                <p className="text-[9px] text-white/30">{(c as any).telefono || (c as any).phone || (c as any).cedula || ''}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Teléfono</label>
-                  <input value={form.customerPhone} onChange={e => setForm({ ...form, customerPhone: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm outline-none" />
-                </div>
+                {!form.customerId && (
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-1 block">Teléfono</label>
+                    <input value={form.customerPhone} onChange={e => setForm({ ...form, customerPhone: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm outline-none" />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -246,7 +379,7 @@ export default function RepairTicketsPanel({ businessId, currentUserName }: Prop
 
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowNew(false)} className="flex-1 py-3 rounded-xl border border-white/10 text-white/40 text-[10px] font-black uppercase tracking-widest">Cancelar</button>
-              <button onClick={handleSave} disabled={!form.customerName || !form.issueDescription || saving}
+              <button onClick={handleSave} disabled={!form.customerId || !form.customerName || !form.issueDescription || saving}
                 className="flex-1 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[10px] font-black uppercase tracking-widest disabled:opacity-40 flex items-center justify-center gap-2">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Wrench size={14} />}
                 Crear Ticket

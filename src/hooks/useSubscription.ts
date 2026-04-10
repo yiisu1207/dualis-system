@@ -4,6 +4,7 @@ import { db } from '../firebase/config';
 import {
   PlanId, SubscriptionStatus, PLAN_LIMITS, PLAN_PRICES,
   FEATURE_LABELS, buildUpgradeWhatsApp, buildQuoteWhatsApp,
+  getVerticalLimits,
 } from '../utils/planConfig';
 
 // Re-export for backward compat
@@ -55,6 +56,7 @@ export interface SubscriptionData {
 
 export function useSubscription(businessId: string) {
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
+  const [tipoNegocio, setTipoNegocio]   = useState<string>('general');
   const [loading, setLoading]           = useState(true);
 
   useEffect(() => {
@@ -62,6 +64,7 @@ export function useSubscription(businessId: string) {
 
     const unsub = onSnapshot(doc(db, 'businesses', businessId), snap => {
       const raw = snap.data()?.subscription as any;
+      setTipoNegocio(snap.data()?.tipoNegocio || 'general');
 
       if (raw) {
         setSubscription({
@@ -151,7 +154,10 @@ export function useSubscription(businessId: string) {
     if (!subscription) return false;
     if (isExpired) return false;
 
-    const limits = PLAN_LIMITS[subscription.plan] ?? PLAN_LIMITS['gratis'];
+    // Vertical plan uses per-vertical limits (distinct module list per tipoNegocio)
+    const limits = subscription.plan === 'vertical'
+      ? getVerticalLimits(tipoNegocio)
+      : (PLAN_LIMITS[subscription.plan] ?? PLAN_LIMITS['gratis']);
 
     // '*' = all modules (trial, enterprise, custom)
     if (limits.modules.includes('*')) return true;
@@ -207,14 +213,20 @@ export function useSubscription(businessId: string) {
 
   const maxUsers = (() => {
     if (!subscription) return 0;
-    const base = PLAN_LIMITS[subscription.plan]?.users ?? 1;
+    const limits = subscription.plan === 'vertical'
+      ? getVerticalLimits(tipoNegocio)
+      : PLAN_LIMITS[subscription.plan];
+    const base = limits?.users ?? 1;
     if (base === -1) return Infinity;
     return base + (subscription.addOns.extraUsers ?? 0);
   })();
 
   const maxProducts = (() => {
     if (!subscription) return 0;
-    const base = PLAN_LIMITS[subscription.plan]?.products ?? 50;
+    const limits = subscription.plan === 'vertical'
+      ? getVerticalLimits(tipoNegocio)
+      : PLAN_LIMITS[subscription.plan];
+    const base = limits?.products ?? 50;
     if (base === -1) return Infinity;
     return base + (subscription.addOns.extraProducts ?? 0) * 1000;
   })();

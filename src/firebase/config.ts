@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
 export const firebaseConfig = {
   apiKey: 'AIzaSyDhogwFlgTEePSm0Mgda10lSDt-ljzauT4',
@@ -16,13 +15,9 @@ export const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// App Check — protege Firestore/Storage de bots y scrapers
-if (typeof window !== 'undefined') {
-  initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider('6LeuQIosAAAAAI0lS_E6NmZGP9EtjU2EFFEBJaMw-'),
-    isTokenAutoRefreshEnabled: true,
-  });
-}
+// NOTE: AppCheck (ReCaptcha V3) fue removido — nunca funcionó en producción.
+// La defensa ahora vive en firestore.rules (tenant isolation + shape validation)
+// + rate limiting client+server (Fase J). Ver SUPERPLAN Fase A.2 + Fase J.
 
 // Persistence con API moderna (multi-tab compatible)
 export const db = typeof window !== 'undefined'

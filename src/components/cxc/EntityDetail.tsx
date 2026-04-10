@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2 } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore } from '../../../types';
+import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
 import {
   calcAccountBalances,
@@ -13,6 +13,7 @@ import {
   formatDateTime,
 } from './cxcHelpers';
 import { AccountCard } from './AccountCard';
+import VerificationBadge from '../VerificationBadge';
 import { LedgerView } from './LedgerView';
 
 interface EntityDetailProps {
@@ -27,11 +28,16 @@ interface EntityDetailProps {
   onDeleteMovement?: (id: string) => void;
   onUpdateEntity?: (id: string, data: Partial<Customer>) => Promise<void>;
   onCompensate?: (fromAccount: string, toAccount: string, amountUSD: number) => Promise<void>;
+  /** D.6 — cross-compensate CxC↔CxP when entity is both client and supplier */
+  onCrossCompensate?: (amountUSD: number, direction: 'cxc-to-cxp' | 'cxp-to-cxc') => Promise<void>;
+  /** Name of the linked counterpart (supplier if mode=cxc, customer if mode=cxp) */
+  linkedCounterpartName?: string;
   onBack?: () => void;
   canEdit: boolean;
+  pendingMovements?: PendingMovement[];
 }
 
-type Tab = 'resumen' | 'movimientos' | 'config';
+type Tab = 'resumen' | 'movimientos' | 'pendientes' | 'config';
 
 const SCORE_STYLES: Record<string, { bg: string; text: string }> = {
   EXCELENTE: { bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
@@ -52,12 +58,19 @@ export function EntityDetail({
   onDeleteMovement,
   onUpdateEntity,
   onCompensate,
+  onCrossCompensate,
+  linkedCounterpartName,
   onBack,
   canEdit,
+  pendingMovements = [],
 }: EntityDetailProps) {
   const [tab, setTab] = useState<Tab>('resumen');
   const [compOpen, setCompOpen] = useState(false);
   const [compFrom, setCompFrom] = useState('');
+  const [crossCompOpen, setCrossCompOpen] = useState(false);
+  const [crossCompAmount, setCrossCompAmount] = useState('');
+  const [crossCompDirection, setCrossCompDirection] = useState<'cxc-to-cxp' | 'cxp-to-cxc'>('cxc-to-cxp');
+  const [crossCompSaving, setCrossCompSaving] = useState(false);
   const [compTo, setCompTo] = useState('');
   const [compAmount, setCompAmount] = useState('');
   const [compSaving, setCompSaving] = useState(false);
@@ -71,6 +84,16 @@ export function EntityDetail({
   const entityMovements = useMemo(
     () => movements.filter(m => m.entityId === entity.id && (isCxC ? !m.isSupplierMovement : m.isSupplierMovement)),
     [movements, entity.id, isCxC]
+  );
+
+  // Fase D.0 — pendings filtrados por esta entidad, solo los que aún están en cola
+  const entityPendings = useMemo(
+    () => pendingMovements.filter(p =>
+      p.status === 'pending' &&
+      p.movementDraft?.entityId === entity.id &&
+      (isCxC ? !p.movementDraft?.isSupplierMovement : p.movementDraft?.isSupplierMovement)
+    ),
+    [pendingMovements, entity.id, isCxC]
   );
 
   const accountBalances = useMemo(
@@ -123,8 +146,12 @@ export function EntityDetail({
   );
 
   // Credit config state (CxC only)
+  // `defaultDays` es `number | null` — null significa "sin período predefinido"
+  // (el vendedor lo elige al facturar). Antes defaulteaba a 30 aunque el cliente
+  // no tuviera nada guardado → causaba "cables sueltos" con NewClientModal que
+  // sí usa null. Unificado 2026-04-09.
   const [creditLimit, setCreditLimit] = useState(customer?.creditLimit?.toString() || '0');
-  const [defaultDays, setDefaultDays] = useState(customer?.defaultPaymentDays ?? 30);
+  const [defaultDays, setDefaultDays] = useState<number | null>(customer?.defaultPaymentDays ?? null);
   const [creditApproved, setCreditApproved] = useState(customer?.creditApproved ?? false);
   const [internalNotes, setInternalNotes] = useState(customer?.internalNotes || '');
   const [savingConfig, setSavingConfig] = useState(false);
@@ -133,9 +160,12 @@ export function EntityDetail({
     if (!onUpdateEntity || !customer) return;
     setSavingConfig(true);
     try {
+      // Solo escribimos defaultPaymentDays cuando el usuario eligió un período.
+      // Si está en null, omitimos el campo para no sobrescribir con un default
+      // espurio (mismo patrón que NewClientModal).
       await onUpdateEntity(customer.id, {
         creditLimit: parseFloat(creditLimit) || 0,
-        defaultPaymentDays: defaultDays,
+        ...(defaultDays !== null ? { defaultPaymentDays: defaultDays } : {}),
         creditApproved,
         internalNotes: internalNotes.trim(),
       });
@@ -195,7 +225,7 @@ export function EntityDetail({
               onClick={() => onRegisterMovement('FACTURA')}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 text-rose-400 text-[10px] font-black uppercase tracking-wider hover:bg-rose-500/20 transition-all"
             >
-              <FileText size={12} /> Factura
+              <FileText size={12} /> {isCxC ? 'Cargo' : 'Factura'}
             </button>
             <button
               onClick={() => onRegisterMovement('ABONO')}
@@ -210,6 +240,7 @@ export function EntityDetail({
         <div className="flex gap-0">
           {tabBtn('resumen', 'Resumen')}
           {tabBtn('movimientos', 'Movimientos')}
+          {tabBtn('pendientes', `Pendientes${entityPendings.length ? ` (${entityPendings.length})` : ''}`)}
           {isCxC && tabBtn('config', 'Config')}
         </div>
       </div>
@@ -341,6 +372,87 @@ export function EntityDetail({
               </div>
             )}
 
+            {/* D.6 — Cross-compensation CxC↔CxP */}
+            {canEdit && onCrossCompensate && linkedCounterpartName && (
+              <div>
+                {!crossCompOpen ? (
+                  <button
+                    onClick={() => {
+                      setCrossCompAmount('');
+                      setCrossCompDirection(isCxC ? 'cxc-to-cxp' : 'cxp-to-cxc');
+                      setCrossCompOpen(true);
+                    }}
+                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-400 hover:text-amber-300 transition-colors"
+                  >
+                    <Repeat size={12} /> Compensar con {isCxC ? 'CxP' : 'CxC'} ({linkedCounterpartName})
+                  </button>
+                ) : (
+                  <div className="rounded-xl bg-amber-500/[0.04] border border-amber-500/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-400">
+                        Compensación cruzada {isCxC ? 'CxC → CxP' : 'CxP → CxC'}
+                      </p>
+                      <button onClick={() => setCrossCompOpen(false)} className="text-white/30 hover:text-white/60"><ChevronLeft size={14} /></button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 dark:text-white/30">
+                      {isCxC
+                        ? `Usa saldo a favor del cliente para pagar deuda con el proveedor "${linkedCounterpartName}", o viceversa.`
+                        : `Usa crédito del proveedor para cubrir deuda del cliente "${linkedCounterpartName}", o viceversa.`}
+                    </p>
+                    <div>
+                      <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Dirección</label>
+                      <select
+                        value={crossCompDirection}
+                        onChange={(e) => setCrossCompDirection(e.target.value as 'cxc-to-cxp' | 'cxp-to-cxc')}
+                        className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs dark:text-white outline-none"
+                      >
+                        <option value="cxc-to-cxp">CxC → CxP (reducir deuda del cliente, pagar al proveedor)</option>
+                        <option value="cxp-to-cxc">CxP → CxC (usar crédito del proveedor, abonar al cliente)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Monto USD</label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={crossCompAmount}
+                        onChange={(e) => setCrossCompAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs dark:text-white outline-none font-mono"
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => setCrossCompOpen(false)}
+                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-white/60"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        disabled={crossCompSaving || !(parseFloat(crossCompAmount) > 0)}
+                        onClick={async () => {
+                          setCrossCompSaving(true);
+                          try {
+                            await onCrossCompensate(parseFloat(crossCompAmount), crossCompDirection);
+                            setCrossCompOpen(false);
+                          } catch (err) {
+                            console.error(err);
+                          } finally {
+                            setCrossCompSaving(false);
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-500 disabled:opacity-40 transition-all"
+                      >
+                        {crossCompSaving ? <Loader2 size={12} className="animate-spin" /> : <Repeat size={12} />}
+                        Compensar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Aging (CxC only) */}
             {isCxC && aging && (aging.current + aging.d31_60 + aging.d61_90 + aging.d90plus) > 0 && (
               <div>
@@ -370,8 +482,16 @@ export function EntityDetail({
                     <BarChart data={trendData} barGap={2}>
                       <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
                       <Tooltip
-                        contentStyle={{ background: '#0d1424', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, fontSize: 11, fontWeight: 700 }}
-                        formatter={(value: number, name: string) => [`$${value.toFixed(2)}`, name === 'facturas' ? 'Facturas' : 'Abonos']}
+                        // Tooltip legible en dark y light. Antes solo tenía
+                        // contentStyle con bg oscuro → en light mode el texto
+                        // default de recharts (casi blanco) quedaba ilegible.
+                        // Fix 2026-04-09: bg semi-opaco slate-900 universal +
+                        // color blanco forzado en item/label.
+                        cursor={{ fill: 'rgba(148,163,184,0.08)' }}
+                        contentStyle={{ background: 'rgba(15,23,42,0.96)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11, fontWeight: 700, color: '#ffffff', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}
+                        labelStyle={{ color: '#ffffff', fontWeight: 800, marginBottom: 4 }}
+                        itemStyle={{ color: '#ffffff', padding: 0 }}
+                        formatter={(value: number, name: string) => [`$${value.toFixed(2)}`, name === 'facturas' ? (isCxC ? 'Ventas' : 'Facturas') : 'Abonos']}
                       />
                       <Bar dataKey="facturas" radius={[4, 4, 0, 0]} maxBarSize={20}>
                         {trendData.map((_, i) => <Cell key={i} fill="rgba(244,63,94,0.6)" />)}
@@ -397,9 +517,12 @@ export function EntityDetail({
                       <div key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFactura ? 'bg-rose-500' : 'bg-emerald-500'}`} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-slate-700 dark:text-white/60 truncate">
-                            {isFactura ? 'Factura' : 'Abono'} · {resolveAccountLabel(m.accountType as string, customRates)}
-                          </p>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className="text-xs font-bold text-slate-700 dark:text-white/60 truncate">
+                              {isFactura ? (isCxC ? 'Venta' : 'Factura') : 'Abono'} · {resolveAccountLabel(m.accountType as string, customRates)}
+                            </p>
+                            <VerificationBadge movement={m} size="xs" />
+                          </div>
                           <p className="text-[9px] text-slate-400 dark:text-white/25">{m.concept || '-'}</p>
                         </div>
                         <div className="text-right shrink-0">
@@ -459,6 +582,64 @@ export function EntityDetail({
           </div>
         )}
 
+        {/* ═══ TAB: PENDIENTES (Fase D.0 — drafts en cola de aprobación) ═══ */}
+        {tab === 'pendientes' && (
+          <div className="p-5">
+            {entityPendings.length === 0 ? (
+              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-8 text-center">
+                <ShieldCheck size={24} className="mx-auto text-slate-300 dark:text-white/15 mb-2" />
+                <p className="text-sm font-bold text-slate-300 dark:text-white/15">Sin movimientos en cola</p>
+                <p className="text-[10px] font-bold text-slate-300 dark:text-white/10 mt-1">
+                  Los movimientos que requieran aprobación aparecerán aquí mientras esperan firmas.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {entityPendings.map(p => {
+                  const draft = p.movementDraft || {};
+                  const type = String(draft.movementType || '');
+                  const amount = Number(draft.amountInUSD || draft.amount || 0);
+                  const progress = `${p.approvals?.length || 0}/${p.quorumRequired}`;
+                  return (
+                    <div
+                      key={p.id}
+                      className="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-500">
+                              {type}
+                            </span>
+                            <span className="text-sm font-black text-slate-900 dark:text-white font-mono">
+                              ${amount.toFixed(2)}
+                            </span>
+                          </div>
+                          {draft.concept && (
+                            <p className="text-[11px] font-bold text-slate-500 dark:text-white/40 mt-1 truncate">
+                              {draft.concept}
+                            </p>
+                          )}
+                          <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 mt-1">
+                            Creado por {p.createdByName || 'usuario'} · {new Date(p.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-amber-500/60">Progreso</p>
+                          <p className="text-sm font-black text-amber-500 font-mono mt-0.5">{progress}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-[10px] font-bold text-slate-400 dark:text-white/25 text-center pt-2">
+                  Aprueba o rechaza estos movimientos desde el panel de Aprobaciones.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ═══ TAB: CONFIG (CxC only) ═══ */}
         {tab === 'config' && isCxC && customer && (
           <div className="p-5 space-y-5">
@@ -475,22 +656,35 @@ export function EntityDetail({
                 />
               </div>
               <div>
-                <label className={lbl}>Dias pago por defecto</label>
-                <div className="flex gap-1.5">
-                  {[0, 15, 30, 45, 60].map(d => (
-                    <button
-                      key={d}
-                      onClick={() => setDefaultDays(d)}
-                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${
-                        defaultDays === d
-                          ? 'bg-indigo-500/20 border-indigo-500/30 text-indigo-400'
-                          : 'border-slate-200 dark:border-white/[0.06] text-slate-400 dark:text-white/30'
-                      }`}
-                    >
-                      {d === 0 ? 'Contado' : `${d}d`}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-2 mb-1">
+                  <label className={lbl}>Dias pago por defecto</label>
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 dark:text-white/25 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.04]">Opcional</span>
                 </div>
+                <div className="flex gap-1.5">
+                  {[0, 15, 30, 45, 60].map(d => {
+                    const selected = defaultDays === d;
+                    return (
+                      <button
+                        key={d}
+                        // Click en pill ya seleccionado → toggle-off a null.
+                        // Mismo patrón que NewClientModal para coherencia UX.
+                        onClick={() => setDefaultDays(selected ? null : d)}
+                        className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${
+                          selected
+                            ? 'bg-indigo-500/20 border-indigo-500/30 text-indigo-400'
+                            : 'border-slate-200 dark:border-white/[0.06] text-slate-400 dark:text-white/30'
+                        }`}
+                      >
+                        {d === 0 ? 'Contado' : `${d}d`}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-[9px] text-slate-400 dark:text-white/25 font-medium">
+                  {defaultDays === null
+                    ? 'Sin período predefinido. Podrás elegirlo al facturar.'
+                    : 'Este período se pre-seleccionará al crear facturas a crédito.'}
+                </p>
               </div>
             </div>
 

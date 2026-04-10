@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import type { Supplier, Movement, CustomRate, ExchangeRates } from '../../types';
+import type { Supplier, Customer, Movement, CustomRate, ExchangeRates, ApprovalConfig, PendingMovement } from '../../types';
 import { CxPSupplierList } from '../components/cxc/CxPSupplierList';
 import { EntityDetail } from '../components/cxc/EntityDetail';
 import { MovementFormPanel } from '../components/cxc/MovementFormPanel';
@@ -15,7 +15,16 @@ interface CxPPageProps {
   userRole: string;
   isolationMode?: 'individual' | 'shared';
   currentUserId?: string;
-  onSaveMovement: (data: Partial<Movement>) => Promise<void>;
+  approvalConfig?: ApprovalConfig;
+  validatorCount?: number;
+  pendingMovements?: PendingMovement[];
+  /** Fase C.5 — eliminarDatos capability. */
+  canDelete?: boolean;
+  /** Fase C.5 — crearClientes capability (reutilizada para suppliers). */
+  canCreateCustomer?: boolean;
+  /** D.6 — customers list for cross-compensation CxP↔CxC */
+  customers?: Customer[];
+  onSaveMovement: (data: Partial<Movement>) => Promise<void | string>;
   onUpdateMovement: (id: string, data: Partial<Movement>) => Promise<void>;
   onDeleteMovement: (id: string) => Promise<void>;
   onCreateSupplier: (data: Partial<Supplier>) => Promise<void>;
@@ -33,6 +42,12 @@ export default function CxPPage({
   userRole,
   isolationMode,
   currentUserId,
+  approvalConfig,
+  validatorCount = 0,
+  pendingMovements = [],
+  canDelete,
+  canCreateCustomer,
+  customers = [],
   onSaveMovement,
   onUpdateMovement,
   onDeleteMovement,
@@ -55,7 +70,10 @@ export default function CxPPage({
     );
   }, [movements, isolationMode, userRole, currentUserId]);
 
-  const canEdit = ['owner', 'admin'].includes(userRole);
+  const isOwnerOrAdmin = ['owner', 'admin'].includes(userRole);
+  const canEdit = isOwnerOrAdmin;
+  const effectiveCanDelete = canDelete ?? isOwnerOrAdmin;
+  const effectiveCanCreateSupplier = canCreateCustomer ?? isOwnerOrAdmin;
 
   const openForm = useCallback((type: 'FACTURA' | 'ABONO', accountPreset?: string) => {
     setFormType(type);
@@ -87,6 +105,83 @@ export default function CxPPage({
     await onUpdateSupplier(id, data as any);
   }, [onUpdateSupplier]);
 
+  // D.6 — find if selected supplier is also a customer (by RIF)
+  const linkedCustomer = useMemo(() => {
+    if (!selectedSupplier) return null;
+    const supRif = (selectedSupplier.rif || '').replace(/\s/g, '').toUpperCase();
+    if (!supRif) return null;
+    return customers.find(c => {
+      const cRif = ((c as any).rif || (c as any).cedula || '').replace(/\s/g, '').toUpperCase();
+      return cRif && cRif === supRif;
+    }) || null;
+  }, [selectedSupplier, customers]);
+
+  const handleCrossCompensate = useCallback(async (amountUSD: number, direction: 'cxc-to-cxp' | 'cxp-to-cxc') => {
+    if (!selectedSupplier || !linkedCustomer) return;
+    const now = new Date().toISOString();
+    const compensationPairId = `cross_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const supplierName = selectedSupplier.contacto || selectedSupplier.rif || '';
+    const clientName = (linkedCustomer as any).fullName || (linkedCustomer as any).nombre || '';
+
+    if (direction === 'cxp-to-cxc') {
+      await onSaveMovement({
+        entityId: selectedSupplier.id,
+        entityName: supplierName,
+        businessId,
+        date: now.slice(0, 10),
+        amountInUSD: amountUSD,
+        amount: amountUSD,
+        currency: 'USD' as any,
+        movementType: 'FACTURA' as any,
+        accountType: 'BCV' as any,
+        concept: `Compensación cruzada CxP→CxC (cliente: ${clientName})`,
+        compensationPairId,
+        isCxP: true,
+      } as any);
+      await onSaveMovement({
+        entityId: linkedCustomer.id,
+        entityName: clientName,
+        businessId,
+        date: now.slice(0, 10),
+        amountInUSD: amountUSD,
+        amount: amountUSD,
+        currency: 'USD' as any,
+        movementType: 'ABONO' as any,
+        accountType: (linkedCustomer as any).defaultAccountType || 'BCV',
+        concept: `Compensación cruzada CxC←CxP (proveedor: ${supplierName})`,
+        compensationPairId,
+      });
+    } else {
+      await onSaveMovement({
+        entityId: linkedCustomer.id,
+        entityName: clientName,
+        businessId,
+        date: now.slice(0, 10),
+        amountInUSD: amountUSD,
+        amount: amountUSD,
+        currency: 'USD' as any,
+        movementType: 'ABONO' as any,
+        accountType: (linkedCustomer as any).defaultAccountType || 'BCV',
+        concept: `Compensación cruzada CxC→CxP (proveedor: ${supplierName})`,
+        compensationPairId,
+      });
+      await onSaveMovement({
+        entityId: selectedSupplier.id,
+        entityName: supplierName,
+        businessId,
+        date: now.slice(0, 10),
+        amountInUSD: amountUSD,
+        amount: amountUSD,
+        currency: 'USD' as any,
+        movementType: 'ABONO' as any,
+        accountType: 'BCV' as any,
+        concept: `Compensación cruzada CxP←CxC (cliente: ${clientName})`,
+        compensationPairId,
+        isCxP: true,
+      } as any);
+    }
+  }, [selectedSupplier, linkedCustomer, businessId, onSaveMovement]);
+
   return (
     <div className="h-full flex">
       {/* Left Panel — Supplier List */}
@@ -99,7 +194,7 @@ export default function CxPPage({
           rates={rates}
           selectedId={selectedSupplier?.id}
           onSelect={setSelectedSupplier}
-          onCreateNew={() => setNewSupplierOpen(true)}
+          onCreateNew={effectiveCanCreateSupplier ? () => setNewSupplierOpen(true) : undefined}
         />
       </div>
 
@@ -117,10 +212,13 @@ export default function CxPPage({
             customRates={customRates}
             onRegisterMovement={openForm}
             onEditMovement={canEdit ? openEditForm : undefined}
-            onDeleteMovement={canEdit ? handleDeleteMovement : undefined}
+            onDeleteMovement={effectiveCanDelete ? handleDeleteMovement : undefined}
             onUpdateEntity={canEdit ? handleUpdateEntity : undefined}
+            onCrossCompensate={canEdit && linkedCustomer ? handleCrossCompensate : undefined}
+            linkedCounterpartName={linkedCustomer ? ((linkedCustomer as any).fullName || (linkedCustomer as any).nombre) : undefined}
             onBack={() => setSelectedSupplier(null)}
             canEdit={canEdit}
+            pendingMovements={pendingMovements}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -148,6 +246,8 @@ export default function CxPPage({
           customRates={customRates}
           rates={rates}
           businessId={businessId}
+          approvalConfig={approvalConfig}
+          validatorCount={validatorCount}
           onSave={handleSaveMovement}
           onClose={() => { setFormOpen(false); setEditingMovement(null); }}
           editingMovement={editingMovement || undefined}

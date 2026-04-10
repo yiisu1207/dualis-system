@@ -987,7 +987,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
             ) : (
               <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 w-fit">
                 <AlertTriangle size={11} className="text-amber-400" />
-                <span className="text-[10px] font-black text-amber-300/80">Modo Compartido — activa el modo individual en Configuración → Despacho/NDE para aislar libros por usuario.</span>
+                <span className="text-[10px] font-black text-amber-300/80">Modo Compartido — activa el modo individual en Configuración → Despacho para aislar libros por usuario.</span>
               </div>
             )}
           </div>

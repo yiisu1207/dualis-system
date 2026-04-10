@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Movement, MovementType, ExchangeRates, AccountType } from '../../../types';
 import { formatCurrency, getMovementUsdAmount } from '../../utils/formatters';
 import { LayoutGrid, Table2, ArrowUpDown, Filter } from 'lucide-react';
+import VerificationBadge from '../VerificationBadge';
 import {
   ChronoMovement,
   ViewStyle,
@@ -174,7 +175,7 @@ export default function CxCLedgerTable({
                   : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              {f === 'ALL' ? 'Todos' : f === 'FACTURA' ? 'Facturas' : 'Abonos'}
+              {f === 'ALL' ? 'Todos' : f === 'FACTURA' ? 'Cargos' : 'Abonos'}
             </button>
           ))}
         </div>
@@ -259,8 +260,11 @@ export default function CxCLedgerTable({
                       <td className="px-2 py-1 text-slate-400">
                         {(mov as any).nroControl || '—'}
                       </td>
-                      <td className="px-2 py-1 text-slate-700 dark:text-slate-300 truncate max-w-[200px] font-sans text-xs">
-                        {mov.concept}
+                      <td className="px-2 py-1 text-slate-700 dark:text-slate-300 max-w-[240px] font-sans text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{mov.concept}</span>
+                          <VerificationBadge movement={mov} size="xs" />
+                        </div>
                       </td>
                       <td className="px-2 py-1 text-center text-slate-400 text-[9px]">
                         {mov.accountType}
@@ -334,10 +338,11 @@ export default function CxCLedgerTable({
                       {formatDateTime(mov.createdAt || mov.date)}
                     </div>
                     <div
-                      className="col-span-2 font-medium text-slate-700 dark:text-slate-300 truncate pr-4"
+                      className="col-span-2 font-medium text-slate-700 dark:text-slate-300 pr-4 flex items-center gap-1.5 min-w-0"
                       title={mov.concept}
                     >
-                      {mov.concept}
+                      <span className="truncate">{mov.concept}</span>
+                      <VerificationBadge movement={mov} size="xs" />
                     </div>
                     <div className="col-span-1 text-center font-mono text-slate-400 text-[10px]">
                       {mov.reference || '-'}

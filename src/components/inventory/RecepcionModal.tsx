@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { X, Search, Plus, Trash2, Truck, Loader2 } from 'lucide-react';
+import { X, Search, Plus, Trash2, Truck, Loader2, ArrowRight } from 'lucide-react';
+import { weightedAverageCost } from '../../utils/costAveraging';
 import type { Supplier, Movement, CustomRate, ExchangeRates } from '../../../types';
 import { MovementType } from '../../../types';
 
@@ -19,6 +20,8 @@ interface RecepcionLine {
   costPerUnit: number;
   oldStock: number;
   oldCost: number;
+  lote: string;
+  fechaVencimiento: string;
 }
 
 interface RecepcionModalProps {
@@ -32,7 +35,7 @@ interface RecepcionModalProps {
   currentUserId: string;
   currentUserName: string;
   onSaveMovement: (data: Partial<Movement>) => Promise<void>;
-  onAdjustStock: (productId: string, qty: number, newCosto: number, proveedorId: string, proveedorNombre: string, nroFactura: string) => Promise<void>;
+  onAdjustStock: (productId: string, qty: number, newCosto: number, proveedorId: string, proveedorNombre: string, nroFactura: string, lote?: string, fechaVencimiento?: string) => Promise<void>;
 }
 
 export default function RecepcionModal({
@@ -49,6 +52,7 @@ export default function RecepcionModal({
   const [showSearch, setShowSearch] = useState(false);
   const [saving, setSaving] = useState(false);
   const [autoCxP, setAutoCxP] = useState(true);
+  const [costSummary, setCostSummary] = useState<{ name: string; oldCost: number; newCost: number }[]>([]);
 
   const selectedSupplier = useMemo(() => suppliers.find(s => s.id === supplierId), [suppliers, supplierId]);
 
@@ -79,12 +83,14 @@ export default function RecepcionModal({
       costPerUnit: p.costoUSD || 0,
       oldStock: p.stock,
       oldCost: p.costoUSD || 0,
+      lote: '',
+      fechaVencimiento: '',
     }]);
     setShowSearch(false);
     setSearchTerm('');
   }, []);
 
-  const updateLine = useCallback((idx: number, field: keyof RecepcionLine, value: number) => {
+  const updateLine = useCallback((idx: number, field: keyof RecepcionLine, value: number | string) => {
     setLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l));
   }, []);
 
@@ -101,12 +107,15 @@ export default function RecepcionModal({
       const provNombre = selectedSupplier?.contacto || selectedSupplier?.rif || '';
 
       // 1. Update stock + weighted avg cost for each product
+      const costChanges: { name: string; oldCost: number; newCost: number }[] = [];
       for (const line of lines) {
-        const totalStock = line.oldStock + line.qty;
-        const weightedCost = totalStock > 0
-          ? parseFloat(((line.oldStock * line.oldCost + line.qty * line.costPerUnit) / totalStock).toFixed(4))
-          : line.costPerUnit;
-        await onAdjustStock(line.productId, line.qty, weightedCost, supplierId, provNombre, nroFactura);
+        const newCost = parseFloat(
+          weightedAverageCost(line.oldStock, line.oldCost, line.qty, line.costPerUnit).toFixed(4)
+        );
+        await onAdjustStock(line.productId, line.qty, newCost, supplierId, provNombre, nroFactura, line.lote || undefined, line.fechaVencimiento || undefined);
+        if (Math.abs(newCost - line.oldCost) >= 0.01) {
+          costChanges.push({ name: line.productName, oldCost: line.oldCost, newCost });
+        }
       }
 
       // 2. Create CxP invoice if enabled
@@ -129,8 +138,12 @@ export default function RecepcionModal({
         } as Partial<Movement>);
       }
 
-      onClose();
-      // Reset
+      if (costChanges.length > 0) {
+        setCostSummary(costChanges);
+      } else {
+        onClose();
+      }
+      // Reset form (keep costSummary visible if present)
       setSupplierId('');
       setNroFactura('');
       setLines([]);
@@ -146,7 +159,7 @@ export default function RecepcionModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden animate-in zoom-in-95 duration-300 max-h-[95vh] flex flex-col">
+      <div className="relative bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden animate-in zoom-in-95 duration-300 max-h-[95vh] flex flex-col">
         {/* Header */}
         <div className="p-6 border-b border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -172,12 +185,21 @@ export default function RecepcionModal({
               <select
                 value={supplierId}
                 onChange={e => setSupplierId(e.target.value)}
-                className="w-full px-3 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                className="w-full px-3 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-white"
               >
                 <option value="">Seleccionar...</option>
-                {suppliers.map(s => (
-                  <option key={s.id} value={s.id}>{s.contacto || s.rif}</option>
-                ))}
+                {suppliers.map(s => {
+                  // CxP uses the Firestore doc id as the primary display name
+                  // (see CxPSupplierList.tsx:146) — suppliers are created with
+                  // custom ids like "64566" or "DISTRIBUIDOR ADAD".
+                  const label = (s as any).nombre || s.id || s.contacto || s.rif || 'Sin nombre';
+                  const extra = s.rif && s.rif !== s.id ? ` — ${s.rif}` : '';
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {label}{extra}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div className="space-y-1.5">
@@ -265,46 +287,62 @@ export default function RecepcionModal({
                 </div>
                 {lines.map((line, idx) => {
                   const subtotal = line.qty * line.costPerUnit;
-                  const totalStock = line.oldStock + line.qty;
-                  const newWeightedCost = totalStock > 0
-                    ? (line.oldStock * line.oldCost + line.qty * line.costPerUnit) / totalStock
-                    : line.costPerUnit;
+                  const newWeightedCost = weightedAverageCost(line.oldStock, line.oldCost, line.qty, line.costPerUnit);
                   return (
-                    <div key={line.productId} className="grid grid-cols-12 gap-2 items-center px-3 py-2 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/5">
-                      <div className="col-span-12 sm:col-span-4">
-                        <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{line.productName}</p>
-                        <p className="text-[10px] text-slate-400">Stock: {line.oldStock} | Costo actual: ${line.oldCost.toFixed(2)}</p>
+                    <div key={line.productId} className="px-3 py-2 bg-slate-50 dark:bg-white/[0.04] rounded-xl border border-slate-100 dark:border-white/5 space-y-2">
+                      <div className="grid grid-cols-12 gap-2 items-center">
+                        <div className="col-span-12 sm:col-span-4">
+                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{line.productName}</p>
+                          <p className="text-[10px] text-slate-400">Stock: {line.oldStock} | Costo actual: ${line.oldCost.toFixed(2)}</p>
+                        </div>
+                        <div className="col-span-4 sm:col-span-2">
+                          <input
+                            type="number"
+                            min={1}
+                            value={line.qty}
+                            onChange={e => updateLine(idx, 'qty', Math.max(1, Number(e.target.value)))}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-bold text-center text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                        <div className="col-span-4 sm:col-span-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            value={line.costPerUnit || ''}
+                            onChange={e => updateLine(idx, 'costPerUnit', Number(e.target.value))}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-bold text-center text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                            placeholder="$0.00"
+                          />
+                        </div>
+                        <div className="col-span-2 sm:col-span-2 text-center">
+                          <p className="text-sm font-black text-slate-900 dark:text-white">${subtotal.toFixed(2)}</p>
+                        </div>
+                        <div className="col-span-1 text-center hidden sm:block">
+                          <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">${newWeightedCost.toFixed(2)}</p>
+                        </div>
+                        <div className="col-span-2 sm:col-span-1 flex justify-end">
+                          <button onClick={() => removeLine(idx)} className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-500/10 transition-colors">
+                            <Trash2 size={14} className="text-rose-500" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="col-span-4 sm:col-span-2">
+                      {/* Lot / Expiry row */}
+                      <div className="flex gap-2 pl-0 sm:pl-1">
                         <input
-                          type="number"
-                          min={1}
-                          value={line.qty}
-                          onChange={e => updateLine(idx, 'qty', Math.max(1, Number(e.target.value)))}
-                          className="w-full px-2 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-bold text-center text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          type="text"
+                          value={line.lote}
+                          onChange={e => updateLine(idx, 'lote', e.target.value)}
+                          placeholder="Lote/Batch"
+                          className="w-1/2 sm:w-36 px-2 py-1 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-white/20 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                         />
-                      </div>
-                      <div className="col-span-4 sm:col-span-2">
                         <input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          value={line.costPerUnit || ''}
-                          onChange={e => updateLine(idx, 'costPerUnit', Number(e.target.value))}
-                          className="w-full px-2 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-bold text-center text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                          placeholder="$0.00"
+                          type="date"
+                          value={line.fechaVencimiento}
+                          onChange={e => updateLine(idx, 'fechaVencimiento', e.target.value)}
+                          className="w-1/2 sm:w-40 px-2 py-1 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          title="Fecha de vencimiento"
                         />
-                      </div>
-                      <div className="col-span-2 sm:col-span-2 text-center">
-                        <p className="text-sm font-black text-slate-900 dark:text-white">${subtotal.toFixed(2)}</p>
-                      </div>
-                      <div className="col-span-1 text-center hidden sm:block">
-                        <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">${newWeightedCost.toFixed(2)}</p>
-                      </div>
-                      <div className="col-span-2 sm:col-span-1 flex justify-end">
-                        <button onClick={() => removeLine(idx)} className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-500/10 transition-colors">
-                          <Trash2 size={14} className="text-rose-500" />
-                        </button>
                       </div>
                     </div>
                   );
@@ -363,6 +401,36 @@ export default function RecepcionModal({
             </div>
           )}
         </div>
+
+        {/* Cost Summary Overlay */}
+        {costSummary.length > 0 && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-2xl">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 p-6 mx-4 max-w-md w-full space-y-4 animate-in zoom-in-95 duration-300">
+              <h3 className="text-sm font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+                Costos actualizados
+              </h3>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {costSummary.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 dark:bg-white/[0.04] rounded-lg">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate flex-1">{item.name}</span>
+                    <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap flex items-center gap-1">
+                      ${item.oldCost.toFixed(2)} <ArrowRight size={10} className="text-emerald-500" /> ${item.newCost.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Costo promedio ponderado aplicado a {costSummary.length} producto{costSummary.length !== 1 ? 's' : ''}.
+              </p>
+              <button
+                onClick={() => { setCostSummary([]); onClose(); }}
+                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-md shadow-emerald-500/25 active:scale-95 transition-all"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="p-6 border-t border-slate-200 dark:border-white/10 flex gap-4 shrink-0">

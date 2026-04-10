@@ -90,11 +90,19 @@ export function CxCClientList({
 }: CxCClientListProps) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<QuickFilter>('ALL');
+  const [tagFilter, setTagFilter] = useState('');
 
   const summaries = useMemo(
     () => buildSummaries(customers, movements, rates),
     [customers, movements, rates]
   );
+
+  // Collect all unique tags for the filter dropdown
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    summaries.forEach(s => (s.customer.tags ?? []).forEach(t => set.add(t)));
+    return Array.from(set).sort();
+  }, [summaries]);
 
   const filtered = useMemo(() => {
     let result = summaries;
@@ -104,13 +112,19 @@ export function CxCClientList({
     if (filter === 'AT_LIMIT') result = result.filter(s => s.customer.creditLimit && s.totalBalance >= s.customer.creditLimit * 0.9);
     if (filter === 'ZERO') result = result.filter(s => Math.abs(s.totalBalance) < 0.01);
 
-    // Search
+    // Tag filter
+    if (tagFilter) {
+      result = result.filter(s => (s.customer.tags ?? []).includes(tagFilter));
+    }
+
+    // Search (also matches tags)
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(s => {
         const name = s.customer.fullName || s.customer.nombre || s.customer.id || '';
         const doc = s.customer.cedula || s.customer.rif || '';
-        return name.toLowerCase().includes(q) || doc.toLowerCase().includes(q);
+        const tags = (s.customer.tags ?? []).join(' ');
+        return name.toLowerCase().includes(q) || doc.toLowerCase().includes(q) || tags.includes(q);
       });
     }
 
@@ -123,7 +137,7 @@ export function CxCClientList({
       const nameB = (b.customer.fullName || b.customer.nombre || b.customer.id || '').toLowerCase();
       return nameA.localeCompare(nameB);
     });
-  }, [summaries, search, filter]);
+  }, [summaries, search, filter, tagFilter]);
 
   const counts = useMemo(() => ({
     all: summaries.length,
@@ -182,6 +196,18 @@ export function CxCClientList({
           {filterPill('AT_LIMIT', 'Al limite', counts.atLimit, Clock)}
           {filterPill('ZERO', 'Sin deuda', counts.zero, CheckCircle)}
         </div>
+
+        {/* Tag filter */}
+        {allTags.length > 0 && (
+          <select
+            value={tagFilter}
+            onChange={e => setTagFilter(e.target.value)}
+            className="w-full px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] text-[10px] font-bold text-slate-600 dark:text-white/50 outline-none focus:ring-2 focus:ring-indigo-500/30"
+          >
+            <option value="">Todas las etiquetas</option>
+            {allTags.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
       </div>
 
       {/* List */}
@@ -244,6 +270,9 @@ export function CxCClientList({
                         ${s.overdueBalance.toFixed(0)} vencido
                       </span>
                     )}
+                    {(s.customer.tags ?? []).slice(0, 3).map(t => (
+                      <span key={t} className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-indigo-500/10 text-indigo-400">{t}</span>
+                    ))}
                   </div>
                 </div>
               </div>

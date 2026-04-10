@@ -30,7 +30,7 @@ interface Guide {
 const FAQ_ITEMS: FAQItem[] = [
   {
     question: '¿Cómo registro un pago?',
-    answer: 'Ve a la sección "Pagar" desde el menú. Selecciona la cuenta (BCV, Grupo o Divisa), elige las facturas que deseas pagar, ingresa el monto, método de pago y número de referencia. Tu pago será enviado para aprobación del administrador.',
+    answer: 'Ve a la sección "Pagar" desde el menú. Selecciona la cuenta (BCV, Grupo o Divisa), elige los documentos que deseas abonar, ingresa el monto, método de pago y número de referencia. Tu pago será enviado para aprobación del administrador.',
   },
   {
     question: '¿Cuánto tarda en aprobarse mi pago?',
@@ -38,19 +38,19 @@ const FAQ_ITEMS: FAQItem[] = [
   },
   {
     question: '¿Qué es Pronto Pago?',
-    answer: 'Pronto Pago es un programa de descuento por pago anticipado. Si pagas tu factura antes de la fecha de vencimiento, puedes obtener un descuento. El porcentaje varía según los días de anticipación. Consulta la sección "Pronto Pago" para ver las facturas elegibles.',
+    answer: 'Pronto Pago es un programa de descuento por pago anticipado. Si abonas tu cuenta antes de la fecha de vencimiento, puedes obtener un descuento. El porcentaje varía según los días de anticipación. Consulta la sección "Pronto Pago" para ver los documentos elegibles.',
   },
   {
     question: '¿Qué significan las cuentas BCV, Grupo y Divisa?',
-    answer: 'Son los tipos de cuenta con diferentes tasas de cambio. BCV usa la tasa oficial del Banco Central de Venezuela. Grupo y Divisa son tasas paralelas. Cada factura está asociada a una cuenta específica y el abono debe hacerse a la misma cuenta.',
+    answer: 'Son los tipos de cuenta con diferentes tasas de cambio. BCV usa la tasa oficial del Banco Central de Venezuela. Grupo y Divisa son tasas paralelas. Cada documento está asociado a una cuenta específica y el abono debe hacerse a la misma cuenta.',
   },
   {
-    question: '¿Puedo pagar facturas de diferentes cuentas a la vez?',
+    question: '¿Puedo pagar documentos de diferentes cuentas a la vez?',
     answer: 'No, cada pago debe ser para una cuenta específica (BCV, Grupo o Divisa). Si tienes deudas en diferentes cuentas, debes registrar un pago por cada cuenta.',
   },
   {
     question: '¿Qué es el estado de cuenta?',
-    answer: 'El estado de cuenta muestra el historial completo de tus transacciones: facturas (débitos) y pagos (créditos). Puedes filtrar por tipo de cuenta y ver tu saldo actualizado con el balance corrido.',
+    answer: 'El estado de cuenta muestra el historial completo de tus movimientos: cargos (débitos) y pagos (créditos). Puedes filtrar por tipo de cuenta y ver tu saldo actualizado con el balance corrido.',
   },
   {
     question: '¿Mi sesión expira?',
@@ -66,7 +66,11 @@ const FAQ_ITEMS: FAQItem[] = [
   },
   {
     question: '¿Las tasas de cambio se actualizan automáticamente?',
-    answer: 'Sí, las tasas se actualizan según la configuración del administrador. Puedes ver las tasas vigentes en el Dashboard. Ten en cuenta que el monto final en bolívares depende de la tasa al momento de la facturación.',
+    answer: 'Sí, las tasas se actualizan según la configuración del administrador. Puedes ver las tasas vigentes en el Dashboard. Ten en cuenta que el monto final en bolívares depende de la tasa al momento de la operación.',
+  },
+  {
+    question: '¿Los documentos del portal tienen validez fiscal?',
+    answer: 'No. Los documentos y reportes que ves en este portal son administrativos internos y no sustituyen facturas fiscales emitidas por máquina fiscal, imprenta autorizada o sistema homologado por el SENIAT. Para tus registros tributarios solicita al negocio el comprobante fiscal correspondiente.',
   },
 ];
 
@@ -78,22 +82,22 @@ const GUIDES: Guide[] = [
     color: 'indigo',
     steps: [
       { title: 'Selecciona la cuenta', description: 'En la pantalla de "Pagar", elige la cuenta a la que deseas abonar: BCV, Grupo o Divisa. Verás el saldo pendiente de cada una.' },
-      { title: 'Elige las facturas', description: 'Selecciona las facturas que cubre tu pago. Esto es opcional pero ayuda al administrador a aplicar el abono correctamente.' },
-      { title: 'Ingresa el monto', description: 'Escribe el monto en USD que estás pagando. Si seleccionaste facturas, puedes usar el botón "Usar total seleccionado" para llenar el monto automáticamente.' },
+      { title: 'Elige los documentos', description: 'Selecciona los documentos que cubre tu pago. Esto es opcional pero ayuda al administrador a aplicar el abono correctamente.' },
+      { title: 'Ingresa el monto', description: 'Escribe el monto en USD que estás pagando. Si seleccionaste documentos, puedes usar el botón "Usar total seleccionado" para llenar el monto automáticamente.' },
       { title: 'Método y referencia', description: 'Selecciona cómo pagaste (transferencia, Pago Móvil, Zelle, etc.) e ingresa el número de referencia del comprobante.' },
       { title: 'Envía el pago', description: 'Presiona "Enviar Pago para Aprobación". Tu pago quedará pendiente hasta que el administrador lo revise y apruebe.' },
     ],
   },
   {
     id: 'view-invoices',
-    title: 'Consultar Facturas',
+    title: 'Consultar Movimientos',
     icon: FileText,
     color: 'sky',
     steps: [
-      { title: 'Accede a Facturas', description: 'Desde el menú, toca "Facturas" para ver todas tus facturas emitidas.' },
-      { title: 'Filtra por estado', description: 'Usa los filtros de estado (Todas, Pendientes, Pagadas) para encontrar rápidamente lo que buscas.' },
-      { title: 'Filtra por cuenta', description: 'Si deseas ver solo facturas de BCV, Grupo o Divisa, usa el filtro de tipo de cuenta.' },
-      { title: 'Busca por concepto', description: 'Usa la barra de búsqueda para encontrar una factura específica por concepto o número de control.' },
+      { title: 'Accede a Movimientos', description: 'Desde el menú, toca "Movimientos" para ver el historial de cargos y abonos de tu cuenta.' },
+      { title: 'Filtra por estado', description: 'Usa los filtros de estado (Todos, Pendientes, Pagados) para encontrar rápidamente lo que buscas.' },
+      { title: 'Filtra por cuenta', description: 'Si deseas ver solo movimientos de BCV, Grupo o Divisa, usa el filtro de tipo de cuenta.' },
+      { title: 'Busca por concepto', description: 'Usa la barra de búsqueda para encontrar un movimiento específico por concepto o referencia interna.' },
     ],
   },
   {
@@ -102,10 +106,10 @@ const GUIDES: Guide[] = [
     icon: Zap,
     color: 'emerald',
     steps: [
-      { title: 'Ve a Pronto Pago', description: 'Desde el menú, accede a "Pronto Pago" para ver las facturas elegibles para descuento.' },
+      { title: 'Ve a Pronto Pago', description: 'Desde el menú, accede a "Pronto Pago" para ver los documentos elegibles para descuento.' },
       { title: 'Revisa los niveles de descuento', description: 'En la parte superior verás los niveles de descuento según los días de anticipación (ej: 5% si pagas en 7 días, 3% en 15 días).' },
-      { title: 'Identifica facturas elegibles', description: 'Las facturas con el ícono verde son elegibles. Verás el descuento calculado y el monto neto a pagar.' },
-      { title: 'Registra el pago', description: 'Presiona el botón de pago para ir directamente al formulario con las facturas preseleccionadas.' },
+      { title: 'Identifica documentos elegibles', description: 'Los documentos con el ícono verde son elegibles. Verás el descuento calculado y el monto neto a pagar.' },
+      { title: 'Registra el pago', description: 'Presiona el botón de pago para ir directamente al formulario con los documentos preseleccionados.' },
     ],
   },
   {
@@ -116,7 +120,7 @@ const GUIDES: Guide[] = [
     steps: [
       { title: 'Accede al estado de cuenta', description: 'Desde el menú, toca "Estado" para ver tu estado de cuenta completo.' },
       { title: 'Selecciona la cuenta', description: 'Puedes filtrar por BCV, Grupo, Divisa o ver todas las cuentas juntas.' },
-      { title: 'Lee el historial', description: 'La tabla muestra cada transacción con: fecha, concepto, Debe (facturas), Haber (pagos) y saldo acumulado.' },
+      { title: 'Lee el historial', description: 'La tabla muestra cada transacción con: fecha, concepto, Debe (cargos), Haber (pagos) y saldo acumulado.' },
       { title: 'Verifica tu balance', description: 'Al final de la tabla encontrarás el total de débitos, créditos y tu saldo actual.' },
     ],
   },
@@ -285,7 +289,7 @@ export default function PortalHelp() {
           <div>
             <p className="text-xs font-black text-white/80">Datos en Tiempo Real</p>
             <p className="text-[9px] text-white/30 mt-0.5 leading-relaxed">
-              Tu balance, facturas y tasas se actualizan automáticamente
+              Tu balance, movimientos y tasas se actualizan automáticamente
             </p>
           </div>
         </div>

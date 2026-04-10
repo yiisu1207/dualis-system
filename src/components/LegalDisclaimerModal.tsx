@@ -1,19 +1,88 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, ShieldAlert, X, CheckSquare, Square } from 'lucide-react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
-const STORAGE_KEY = 'dualis_legal_v1_accepted';
+// Persistencia dual:
+//  1. localStorage — cache local para no mostrar el modal otra vez en el mismo
+//     dispositivo antes del round-trip a Firestore (evita flash visual al reload).
+//  2. Firestore `businessConfigs/{bid}.legalDisclaimerAccepted` — fuente de
+//     verdad por business. Si un dueño acepta desde un device, cualquier
+//     usuario del mismo business no vuelve a ver el modal (el disclaimer es
+//     a nivel empresa, no a nivel user — lo firma el responsable legal).
+//  Legacy: STORAGE_KEY antiguo se respeta para no bombardear a usuarios A y B
+//  que ya aceptaron la versión v2 en localStorage. En el primer login post-fix
+//  se migra silenciosamente a Firestore.
+const STORAGE_KEY = 'dualis_legal_v2_accepted';
 
-export default function LegalDisclaimerModal() {
+interface LegalDisclaimerModalProps {
+  businessId?: string;
+  userId?: string;
+}
+
+export default function LegalDisclaimerModal({ businessId, userId }: LegalDisclaimerModalProps) {
   const [open,    setOpen]    = useState(false);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    if (!localStorage.getItem(STORAGE_KEY)) setOpen(true);
-  }, []);
+    let cancelled = false;
+    const check = async () => {
+      // 1. Cache local primero — evita flash visual
+      const localAccepted = localStorage.getItem(STORAGE_KEY);
 
-  const accept = () => {
+      // 2. Firestore como fuente de verdad — si hay businessId
+      if (businessId) {
+        try {
+          const snap = await getDoc(doc(db, 'businessConfigs', businessId));
+          const acceptedAt = snap.exists() ? (snap.data() as any)?.legalDisclaimerAccepted : null;
+          if (cancelled) return;
+          if (acceptedAt) {
+            // Sync con local por si el usuario cambió de device
+            if (!localAccepted) localStorage.setItem(STORAGE_KEY, acceptedAt);
+            setOpen(false);
+            return;
+          }
+          // Firestore vacío pero local tiene → migración: escribir a Firestore
+          if (localAccepted) {
+            await setDoc(
+              doc(db, 'businessConfigs', businessId),
+              { legalDisclaimerAccepted: localAccepted, legalDisclaimerAcceptedBy: userId || null },
+              { merge: true },
+            );
+            setOpen(false);
+            return;
+          }
+          // Nadie aceptó nunca → mostrar
+          setOpen(true);
+        } catch (e) {
+          // Si Firestore falla, caer al comportamiento legacy
+          if (!cancelled && !localAccepted) setOpen(true);
+        }
+      } else {
+        // Sin businessId (signup flow, onboarding) → solo local
+        if (!localAccepted) setOpen(true);
+      }
+    };
+    void check();
+    return () => { cancelled = true; };
+  }, [businessId, userId]);
+
+  const accept = async () => {
     if (!checked) return;
-    localStorage.setItem(STORAGE_KEY, new Date().toISOString());
+    const now = new Date().toISOString();
+    localStorage.setItem(STORAGE_KEY, now);
+    if (businessId) {
+      try {
+        await setDoc(
+          doc(db, 'businessConfigs', businessId),
+          { legalDisclaimerAccepted: now, legalDisclaimerAcceptedBy: userId || null },
+          { merge: true },
+        );
+      } catch (e) {
+        // Best-effort: local ya quedó escrito
+        console.warn('[LegalDisclaimer] No se pudo persistir en Firestore:', e);
+      }
+    }
     setOpen(false);
   };
 
@@ -30,41 +99,48 @@ export default function LegalDisclaimerModal() {
           </div>
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-0.5">Aviso Legal Obligatorio</p>
-            <h2 className="text-sm font-black text-white">Software en Período de Prueba — Beta</h2>
+            <h2 className="text-sm font-black text-white">Sistema Administrativo — No Homologado SENIAT</h2>
           </div>
         </div>
 
         {/* Body */}
         <div className="px-7 py-6 space-y-4 max-h-[60vh] overflow-y-auto">
 
-          {/* Beta notice */}
+          {/* Nature of the system */}
           <div className="bg-amber-500/[0.07] border border-amber-500/20 rounded-2xl p-4">
             <p className="text-[11px] font-black text-amber-400 uppercase tracking-widest mb-2">
-              ⚠ Versión Beta — No Oficial
+              Sistema Administrativo — No Homologado
             </p>
             <p className="text-xs text-amber-300/70 leading-relaxed">
-              <strong className="text-amber-300">Dualis ERP</strong> es un sistema administrativo en fase de desarrollo y período de prueba.
-              Esta versión <strong className="text-amber-300">NO ha sido homologada</strong> ante el <strong className="text-amber-300">SENIAT</strong> ni ante ningún organismo fiscal venezolano.
+              <strong className="text-amber-300">Dualis ERP</strong> es un sistema administrativo y de gestión interna.
+              <strong className="text-amber-300"> NO es un sistema de facturación homologado por el SENIAT</strong>,
+              ni bajo la Providencia SNAT/2011/00071 (imprenta autorizada/forma libre),
+              ni bajo la SNAT/2024/000102 (facturación digital),
+              ni bajo la SNAT/2024/000121 (proveedores de software de facturación).
             </p>
           </div>
 
           {/* Fiscal disclaimer */}
           <div className="bg-red-500/[0.07] border border-red-500/20 rounded-2xl p-4">
             <p className="text-[11px] font-black text-red-400 uppercase tracking-widest mb-2">
-              Limitaciones Fiscales
+              Los Documentos Internos NO Son Fiscales
             </p>
             <ul className="space-y-1.5 text-xs text-red-300/70 leading-relaxed">
               <li className="flex items-start gap-2">
                 <span className="text-red-400 shrink-0 mt-0.5">·</span>
-                Los comprobantes, facturas y reportes generados por este sistema <strong className="text-red-300">NO tienen validez fiscal oficial</strong> ante el SENIAT ni el COT (Código Orgánico Tributario).
+                Los comprobantes de venta, comprobantes internos de despacho, registros de devolución y reportes generados por Dualis son <strong className="text-red-300">documentos administrativos internos sin valor tributario</strong>.
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-red-400 shrink-0 mt-0.5">·</span>
-                El sistema <strong className="text-red-300">no sustituye</strong> la obligación de emitir facturas mediante máquina fiscal homologada según la <strong className="text-red-300">Providencia Administrativa SNAT/2011/0071</strong>.
+                <strong className="text-red-300">NO sustituyen</strong> la factura, nota de débito, nota de crédito, orden de entrega ni guía de despacho reguladas por la Providencia SNAT/2011/00071 (Arts. 6, 7, 13, 21, 22).
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-red-400 shrink-0 mt-0.5">·</span>
-                Los datos fiscales (IVA, IGTF, descuentos) son referenciales y <strong className="text-red-300">no constituyen declaración tributaria</strong>.
+                El usuario debe mantener su medio de emisión fiscal externo (máquina fiscal Tipo I/II/III, imprenta autorizada o sistema digital homologado) para cumplir con sus obligaciones tributarias.
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-red-400 shrink-0 mt-0.5">·</span>
+                Los cálculos de IVA, IGTF y retenciones son <strong className="text-red-300">referenciales</strong>, no generan crédito ni débito fiscal y no constituyen declaración tributaria.
               </li>
             </ul>
           </div>
@@ -75,10 +151,10 @@ export default function LegalDisclaimerModal() {
               Responsabilidad del Usuario
             </p>
             <p className="text-xs text-white/40 leading-relaxed">
-              El usuario es el único responsable del cumplimiento de sus obligaciones tributarias ante el SENIAT. Dualis ERP, sus desarrolladores y distribuidores <strong className="text-white/60">no se hacen responsables</strong> de sanciones, multas o reparos fiscales derivados del uso de este software en sustitución de medios fiscales oficiales.
+              El usuario es el único responsable del cumplimiento de sus obligaciones tributarias ante el SENIAT. Dualis ERP, sus desarrolladores y distribuidores <strong className="text-white/60">no asumen responsabilidad solidaria</strong> bajo el Art. 12 de la Providencia SNAT/2024/000121 ni por sanciones, multas, clausuras o reparos fiscales derivados del uso de este software como sustituto de medios fiscales oficiales.
             </p>
             <p className="text-xs text-white/30 leading-relaxed mt-2">
-              Refs. legales: Ley del IVA (Art. 54–57) · COT Arts. 100–107 · Providencia SNAT/2011/0071 · Ley Orgánica de Procedimientos Administrativos.
+              Refs. legales: Ley del IVA Arts. 54–57 · Reglamento LIVA · COT 2020 Arts. 100–107 · Providencia SNAT/2011/00071 · Providencia SNAT/2024/000102 · Providencia SNAT/2024/000121.
             </p>
           </div>
 
@@ -88,7 +164,7 @@ export default function LegalDisclaimerModal() {
               Uso Previsto
             </p>
             <p className="text-xs text-indigo-300/70 leading-relaxed">
-              Dualis ERP está diseñado como <strong className="text-indigo-300">herramienta administrativa interna</strong>: control de inventario, cuentas por cobrar/pagar, gestión de equipos y reportes operativos. Su uso es complementario — nunca sustitutivo — de los medios fiscales exigidos por la ley venezolana.
+              Dualis ERP está diseñado como <strong className="text-indigo-300">herramienta administrativa interna</strong>: control de inventario, cuentas por cobrar/pagar, gestión de equipos, reportes operativos y registro de ventas internas. Dualis ofrece un campo opcional "Nº Factura Fiscal Externa" para vincular cada venta interna con el documento fiscal emitido por el medio autorizado del usuario. Su uso es complementario — nunca sustitutivo — de los medios fiscales exigidos por la ley venezolana.
             </p>
           </div>
         </div>
@@ -104,7 +180,7 @@ export default function LegalDisclaimerModal() {
               : <Square size={16} className="text-white/20 shrink-0 mt-0.5 group-hover:text-white/40 transition-colors" />
             }
             <p className="text-xs text-white/40 leading-relaxed group-hover:text-white/60 transition-colors">
-              He leído y comprendo que este sistema está en período de prueba, no está homologado ante el SENIAT y no puede utilizarse como medio fiscal oficial. Acepto ser el único responsable de mis obligaciones tributarias.
+              He leído y comprendo que Dualis ERP es un sistema administrativo de gestión interna, <strong className="text-white/70">NO está homologado</strong> por el SENIAT y sus documentos no sustituyen factura, nota de crédito/débito ni guía de despacho fiscal. Me comprometo a usar mi propio medio de emisión fiscal (máquina fiscal, imprenta autorizada o sistema homologado) y asumo plena responsabilidad por mis obligaciones tributarias conforme a la Providencia SNAT/2011/00071, SNAT/2024/000102, SNAT/2024/000121 y el COT.
             </p>
           </button>
           <button

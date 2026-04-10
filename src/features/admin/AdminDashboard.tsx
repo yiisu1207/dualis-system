@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { Movement, InventoryItem } from '../../../types';
+import { getTotalStock } from '../../utils/stockHelpers';
 import {
   Loader2,
   TrendingUp,
@@ -273,13 +274,13 @@ export default function AdminDashboard({
   // Inventario
   const LOW = 10;
   const stockTotal = useMemo(
-    () => products.reduce((s, p) => s + ((p as any).stock || (p as any).quantity || 0), 0),
+    () => products.reduce((s, p) => s + (getTotalStock(p as any) || (p as any).quantity || 0), 0),
     [products],
   );
   const lowStockItems = useMemo(
     () => products
-      .filter(p => ((p as any).stock || (p as any).quantity || 0) < LOW)
-      .sort((a, b) => ((a as any).stock || 0) - ((b as any).stock || 0))
+      .filter(p => (getTotalStock(p as any) || (p as any).quantity || 0) < LOW)
+      .sort((a, b) => getTotalStock(a as any) - getTotalStock(b as any))
       .slice(0, 6),
     [products],
   );
@@ -329,7 +330,7 @@ export default function AdminDashboard({
     products.forEach(p => {
       const cat = (p as any).categoria || (p as any).category || 'Sin Categoría';
       const tipoTasa = (p as any).tipoTasa || 'BCV';
-      const stock = (p as any).stock || (p as any).quantity || 0;
+      const stock = getTotalStock(p as any) || (p as any).quantity || 0;
       let valorUnit = 0;
       if (isDynamicProduct(tipoTasa) && zoherEnabled) {
         const cr = findCustomRate(customRates, tipoTasa);
@@ -379,9 +380,9 @@ export default function AdminDashboard({
 
   // Salud del inventario (normal / crítico / agotado)
   const saludInventario = useMemo(() => {
-    const agotado = products.filter(p => ((p as any).stock || 0) === 0).length;
+    const agotado = products.filter(p => getTotalStock(p as any) === 0).length;
     const critico = products.filter(p => {
-      const stock = (p as any).stock || 0;
+      const stock = getTotalStock(p as any);
       const min = (p as any).stockMinimo || (p as any).minStock || 10;
       return stock > 0 && stock < min;
     }).length;
@@ -403,12 +404,12 @@ export default function AdminDashboard({
     });
     return products
       .filter(p => {
-        const stock = (p as any).stock || 0;
+        const stock = getTotalStock(p as any);
         const vendidos = itemVentas[p.id] || 0;
         return stock > 0 && vendidos > 0;
       })
       .map(p => {
-        const stock = (p as any).stock || 0;
+        const stock = getTotalStock(p as any);
         const vendidos = itemVentas[p.id] || 0;
         const ventaDiaria = vendidos / diasPeriodo;
         const diasRestantes = Math.floor(stock / ventaDiaria);
@@ -890,7 +891,7 @@ export default function AdminDashboard({
               ) : (
                 <div className="space-y-3">
                   {lowStockItems.map((item, i) => {
-                    const qty = (item as any).stock || (item as any).quantity || 0;
+                    const qty = getTotalStock(item as any) || (item as any).quantity || 0;
                     const pct = Math.min(100, (qty / LOW) * 100);
                     const barColor = qty === 0
                       ? 'bg-rose-500'

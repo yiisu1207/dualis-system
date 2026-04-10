@@ -7,9 +7,17 @@ import { db } from '../firebase/config';
 import {
   X, RotateCcw, Clock, CheckCircle2, AlertTriangle, Loader2,
   ChevronDown, ChevronUp, Monitor, User, CreditCard, Package,
-  Calendar, DollarSign, Timer, Hash,
+  Calendar, DollarSign, Timer, Hash, FileMinus,
 } from 'lucide-react';
 import HelpTooltip from './HelpTooltip';
+import ReturnSaleModal from './ReturnSaleModal';
+// Re-impresión / re-descarga desde historial — el usuario pidió 2026-04-09
+// poder volver a abrir un documento pasado y re-imprimirlo / descargarlo.
+// NDEReceiptModal ya tiene el botón IMPRIMIR que genera PDF vía window.print(),
+// así que solo tenemos que re-abrirlo pasándole el Movement guardado.
+import NDEReceiptModal from './NDEReceiptModal';
+import { Printer } from 'lucide-react';
+import VerificationBadge from './VerificationBadge';
 
 interface SaleItem {
   id: string;
@@ -45,6 +53,12 @@ interface Sale {
   cajaName?: string;
   vendedorNombre?: string;
   nroControl?: string;
+  // Fase D.0.1 — verificación de llegada al banco (informativa)
+  verificationStatus?: 'unverified' | 'verified' | 'not_arrived';
+  verifiedAt?: string;
+  verifiedByName?: string;
+  verificationNote?: string;
+  reconciledAt?: string;
 }
 
 interface SaleHistoryPanelProps {
@@ -96,6 +110,8 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
   const [anulando, setAnulando] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [returnSale, setReturnSale] = useState<Sale | null>(null);
+  const [reprintSale, setReprintSale] = useState<Sale | null>(null);
 
   const accent = accentColor === 'violet'
     ? { btn: 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:opacity-90 shadow-md shadow-violet-500/25' }
@@ -276,6 +292,18 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
                               #{sale.nroControl}
                             </span>
                           )}
+                          <VerificationBadge
+                            movement={{
+                              movementType: 'FACTURA',
+                              metodoPago: sale.metodoPago,
+                              verificationStatus: sale.verificationStatus,
+                              reconciledAt: sale.reconciledAt,
+                              verifiedAt: sale.verifiedAt,
+                              verifiedByName: sale.verifiedByName,
+                              verificationNote: sale.verificationNote,
+                            }}
+                            size="xs"
+                          />
                         </div>
 
                         {/* Row 2: time + method */}
@@ -475,20 +503,44 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
                         )}
                       </div>
 
-                      {/* Anular button */}
-                      {!readOnly && !sale.anulada && (
+                      {/* Re-imprimir / Re-descargar — disponible siempre,
+                          incluso para ventas anuladas (para tener el registro
+                          histórico) salvo en modo solo-lectura */}
+                      {!readOnly && (
                         <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={() => setReprintSale(sale)}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-[10px] font-black uppercase transition-all"
+                          >
+                            <Printer size={11} />
+                            Ver / Imprimir
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Anular / Devolver buttons */}
+                      {!readOnly && !sale.anulada && (
+                        <div className="flex items-center gap-2 pt-1 flex-wrap">
+                          {sale.items && sale.items.length > 0 && (
+                            <button
+                              onClick={() => setReturnSale(sale)}
+                              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20 text-[10px] font-black uppercase transition-all"
+                            >
+                              <FileMinus size={11} />
+                              Devolución / NC
+                            </button>
+                          )}
                           <button
                             disabled={anulando === sale.id}
                             onClick={() => handleAnular(sale)}
                             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-[10px] font-black uppercase transition-all disabled:opacity-50"
                           >
                             {anulando === sale.id ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
-                            Anular Venta
+                            Anular
                           </button>
                           <HelpTooltip
-                            title="Anular Venta"
-                            text="Cancela esta venta, crea un abono de reverso y restaura el stock. No se puede deshacer."
+                            title="Devolución vs. Anular"
+                            text="Devolución / NC permite regresar ítems específicos (total o parcial) con motivo. Anular cancela toda la venta de golpe."
                             side="right"
                           />
                         </div>
@@ -512,6 +564,26 @@ const SaleHistoryPanel: React.FC<SaleHistoryPanelProps> = ({
           </button>
         </div>
       </div>
+
+      {/* RE-IMPRIMIR — reutiliza NDEReceiptModal, que ya tiene el botón
+          IMPRIMIR internamente (window.print con CSS A4/80mm según config) */}
+      {reprintSale && (
+        <NDEReceiptModal
+          movement={reprintSale as any}
+          businessId={tenantId}
+          onClose={() => setReprintSale(null)}
+        />
+      )}
+
+      {/* RETURN / CREDIT NOTE MODAL */}
+      <ReturnSaleModal
+        open={!!returnSale}
+        onClose={() => setReturnSale(null)}
+        sale={returnSale as any}
+        tenantId={tenantId}
+        operatorName="Admin"
+        onDone={() => { setReturnSale(null); loadSales(); setMsg({ type: 'ok', text: 'Nota de crédito emitida correctamente.' }); setTimeout(() => setMsg(null), 3000); }}
+      />
     </div>
   );
 };

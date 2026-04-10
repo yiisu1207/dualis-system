@@ -24,6 +24,10 @@ import {
   FileSpreadsheet,
   FileText,
   Calendar,
+  ShieldCheck,
+  PenLine,
+  XCircle,
+  Ban,
 } from 'lucide-react';
 
 interface AuditEntry {
@@ -51,6 +55,22 @@ const ACTION_META: Record<AuditAction, { label: string; color: string; bg: strin
   LOGIN:    { label: 'Acceso',    color: 'text-violet-700 dark:text-violet-400',   bg: 'bg-violet-50 border-violet-100 dark:bg-violet-500/10 dark:border-violet-500/20',     Icon: LogIn },
   AJUSTE:   { label: 'Ajuste',    color: 'text-amber-700 dark:text-amber-400',     bg: 'bg-amber-50 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20',         Icon: SlidersHorizontal },
   EXPORTAR: { label: 'Exportado', color: 'text-slate-600 dark:text-slate-400',     bg: 'bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/10',            Icon: FileOutput },
+  APROBAR:  { label: 'Aprobado',  color: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-50 border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20', Icon: ShieldCheck },
+  FIRMAR:   { label: 'Firmado',   color: 'text-cyan-700 dark:text-cyan-400',       bg: 'bg-cyan-50 border-cyan-100 dark:bg-cyan-500/10 dark:border-cyan-500/20',             Icon: PenLine },
+  RECHAZAR: { label: 'Rechazado', color: 'text-rose-700 dark:text-rose-400',       bg: 'bg-rose-50 border-rose-100 dark:bg-rose-500/10 dark:border-rose-500/20',             Icon: XCircle },
+  CANCELAR:          { label: 'Cancelado',          color: 'text-slate-600 dark:text-slate-400',     bg: 'bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/10',            Icon: Ban },
+  LOGOUT:            { label: 'Cierre sesión',      color: 'text-violet-700 dark:text-violet-400',   bg: 'bg-violet-50 border-violet-100 dark:bg-violet-500/10 dark:border-violet-500/20',     Icon: LogIn },
+  VERIFY_PAYMENT:    { label: 'Pago verificado',    color: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-50 border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20', Icon: ShieldCheck },
+  REVERT_PAYMENT:    { label: 'Pago revertido',     color: 'text-rose-700 dark:text-rose-400',       bg: 'bg-rose-50 border-rose-100 dark:bg-rose-500/10 dark:border-rose-500/20',             Icon: XCircle },
+  APPROVE_PAYMENT:   { label: 'Pago aprobado',      color: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-50 border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20', Icon: ShieldCheck },
+  REJECT_PAYMENT:    { label: 'Pago rechazado',     color: 'text-rose-700 dark:text-rose-400',       bg: 'bg-rose-50 border-rose-100 dark:bg-rose-500/10 dark:border-rose-500/20',             Icon: XCircle },
+  IMPORT_DATA:       { label: 'Importación',        color: 'text-blue-700 dark:text-blue-400',       bg: 'bg-blue-50 border-blue-100 dark:bg-blue-500/10 dark:border-blue-500/20',             Icon: FileOutput },
+  CHANGE_ROLE:       { label: 'Cambio de rol',      color: 'text-amber-700 dark:text-amber-400',     bg: 'bg-amber-50 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/20',         Icon: ShieldCheck },
+  CLOSE_REGISTER:    { label: 'Cierre de caja',     color: 'text-cyan-700 dark:text-cyan-400',       bg: 'bg-cyan-50 border-cyan-100 dark:bg-cyan-500/10 dark:border-cyan-500/20',             Icon: SlidersHorizontal },
+  RECONCILE:         { label: 'Conciliación',       color: 'text-blue-700 dark:text-blue-400',       bg: 'bg-blue-50 border-blue-100 dark:bg-blue-500/10 dark:border-blue-500/20',             Icon: ShieldCheck },
+  APPROVE_MOVEMENT:  { label: 'Mov. aprobado',      color: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-50 border-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20', Icon: ShieldCheck },
+  REJECT_MOVEMENT:   { label: 'Mov. rechazado',     color: 'text-rose-700 dark:text-rose-400',       bg: 'bg-rose-50 border-rose-100 dark:bg-rose-500/10 dark:border-rose-500/20',             Icon: XCircle },
+  TRANSFER_STOCK:    { label: 'Transferencia',      color: 'text-sky-700 dark:text-sky-400',         bg: 'bg-sky-50 border-sky-100 dark:bg-sky-500/10 dark:border-sky-500/20',                 Icon: SlidersHorizontal },
 };
 
 // Tipos de movimiento para el filtro Kardex
@@ -230,6 +250,10 @@ const AuditLogViewer: React.FC<Props> = ({ businessId }) => {
           </thead>
           <tbody>${tableRows || '<tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8;">Sin registros</td></tr>'}</tbody>
         </table>
+        <div style="margin-top:20px;padding:8px;border:1px dashed #666;font-size:8px;text-align:center;color:#555;line-height:1.4">
+          DOCUMENTO INTERNO ADMINISTRATIVO &middot; REGISTRO DE AUDITORÍA &middot; SIN VALOR FISCAL<br/>
+          Sistema administrativo no homologado ante el SENIAT.
+        </div>
       </body>
       </html>
     `);

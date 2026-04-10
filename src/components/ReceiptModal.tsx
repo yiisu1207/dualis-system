@@ -1,7 +1,9 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Movement, MovementType, AppConfig } from '../../types';
 import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
-import { MessageCircle, Printer, Download, X as XIcon } from 'lucide-react';
+import { MessageCircle, Printer, Download, X as XIcon, FileCheck2 } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 interface ReceiptModalProps {
   movement: Movement;
@@ -11,7 +13,7 @@ interface ReceiptModalProps {
 }
 
 /* ── 80mm thermal ticket ───────────────────────────────────────────────── */
-function printTicket(movement: any, companyName: string) {
+function printTicket(movement: any, companyName: string, ticketFooter?: string) {
   const saleItems: any[] = movement.items || [];
   const itemsHtml = saleItems.map((item: any) => `
     <tr>
@@ -21,7 +23,7 @@ function printTicket(movement: any, companyName: string) {
       <td style="padding:2px 0;text-align:right">$${parseFloat(item.subtotal ?? item.qty * item.price ?? 0).toFixed(2)}</td>
     </tr>`).join('');
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Comprobante</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Comprobante Interno</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Courier New',monospace;font-size:10px;width:80mm;max-width:80mm;padding:8px}
@@ -33,13 +35,16 @@ function printTicket(movement: any, companyName: string) {
     td{vertical-align:top}
     .big{font-size:14px;font-weight:bold}
     .nf{font-size:8px;font-weight:bold;text-align:center;margin:4px 0;letter-spacing:1px}
+    .ivaref{font-size:7px;font-style:italic;text-align:right;color:#555}
+    .legal{font-size:6px;text-align:center;margin-top:6px;padding:4px;border:1px dashed #000;line-height:1.3}
     .noPrint{margin-top:8px;text-align:center}
     @media print{.noPrint{display:none}}
   </style></head><body>
   <h1>${companyName}</h1>
   <div class="nf">COMPROBANTE DE VENTA - NO FISCAL</div>
   <div class="c" style="font-size:9px">${movement.date || new Date().toLocaleDateString('es-VE')}</div>
-  ${movement.nroControl ? `<div class="c" style="font-size:8px;margin-top:2px">N. Control: ${movement.nroControl}</div>` : ''}
+  ${movement.nroControl ? `<div class="c" style="font-size:8px;margin-top:2px">N. Interno: ${movement.nroControl}</div>` : ''}
+  ${movement.nroFacturaFiscalExterna ? `<div class="c" style="font-size:9px;font-weight:bold;margin-top:2px">Factura Fiscal: ${movement.nroFacturaFiscalExterna}</div>` : ''}
   <div class="sep"></div>
   <div class="row"><span>Cliente:</span><span>${movement.entityId === 'CONSUMIDOR_FINAL' ? 'Consumidor Final' : (movement.entityId || '-')}</span></div>
   <div class="row"><span>Pago:</span><span>${movement.metodoPago || '-'}</span></div>
@@ -52,7 +57,7 @@ function printTicket(movement: any, companyName: string) {
   </table>
   <div class="sep"></div>` : ''}
   ${movement.subtotalUSD ? `<div class="row"><span>Base</span><span>$${parseFloat(movement.subtotalUSD).toFixed(2)}</span></div>` : ''}
-  ${movement.ivaAmount ? `<div class="row"><span>IVA</span><span>+$${parseFloat(movement.ivaAmount).toFixed(2)}</span></div>` : ''}
+  ${movement.ivaAmount ? `<div class="row"><span>IVA (ref.)</span><span>+$${parseFloat(movement.ivaAmount).toFixed(2)}</span></div><div class="ivaref">IVA referencial &middot; no genera cr&eacute;dito fiscal</div>` : ''}
   ${movement.discountAmount ? `<div class="row"><span>Descuento</span><span>-$${parseFloat(movement.discountAmount).toFixed(2)}</span></div>` : ''}
   ${movement.igtfAmount ? `<div class="row"><span>IGTF</span><span>+$${parseFloat(movement.igtfAmount).toFixed(2)}</span></div>` : ''}
   <div class="sep"></div>
@@ -60,7 +65,12 @@ function printTicket(movement: any, companyName: string) {
   ${movement.rateUsed > 1 ? `<div class="c" style="font-size:8px;margin-top:2px">Tasa Interna: Bs. ${movement.rateUsed}</div>` : ''}
   <div class="sep"></div>
   <div class="nf">DOCUMENTO NO FISCAL</div>
-  <div class="c" style="font-size:8px">Gracias por su compra</div>
+  <div class="legal">
+    DOCUMENTO INTERNO &middot; NO ES FACTURA FISCAL &middot; SIN VALOR TRIBUTARIO<br/>
+    No sustituye factura, nota de d&eacute;bito/cr&eacute;dito ni guía de despacho<br/>
+    conforme a la Providencia SENIAT SNAT/2011/00071. Sistema administrativo no homologado.
+  </div>
+  <div class="c" style="font-size:8px;margin-top:4px">${(ticketFooter || 'Gracias por su compra').replace(/</g, '&lt;')}</div>
   <div style="margin-top:10px;border-top:1px dashed #ccc;padding-top:7px;text-align:center;">
     <img src="/logo.png" alt="Dualis" style="height:16px;width:auto;display:block;margin:0 auto 3px;" onerror="this.style.display='none'" />
     <p style="font-size:7px;color:#aaa;margin:0;letter-spacing:1px;text-transform:uppercase;">Con tecnolog&#237;a Dualis &middot; dualis.online</p>
@@ -80,6 +90,26 @@ function printTicket(movement: any, companyName: string) {
 const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerPhone, onClose }) => {
   const receiptRef = useRef<HTMLDivElement>(null);
   const initial = (config.companyName || 'D').charAt(0).toUpperCase();
+  const [nroFiscalExterna, setNroFiscalExterna] = useState<string>((movement as any).nroFacturaFiscalExterna || '');
+  const [savingFiscal, setSavingFiscal] = useState(false);
+  const [fiscalSaved, setFiscalSaved] = useState(false);
+
+  const saveNroFiscalExterna = async () => {
+    if (!movement.id) return;
+    setSavingFiscal(true);
+    try {
+      await updateDoc(doc(db, 'movements', movement.id), {
+        nroFacturaFiscalExterna: nroFiscalExterna.trim() || null,
+      });
+      (movement as any).nroFacturaFiscalExterna = nroFiscalExterna.trim() || null;
+      setFiscalSaved(true);
+      setTimeout(() => setFiscalSaved(false), 2000);
+    } catch (err) {
+      console.error('Error saving nroFacturaFiscalExterna', err);
+    } finally {
+      setSavingFiscal(false);
+    }
+  };
 
   const downloadReceipt = async () => {
     if (!receiptRef.current) return;
@@ -123,8 +153,14 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
           <div className="px-8 py-6 space-y-3">
             {(movement as any).nroControl && (
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">N. Control</span>
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">N. Interno</span>
                 <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 font-mono">{(movement as any).nroControl}</span>
+              </div>
+            )}
+            {(movement as any).nroFacturaFiscalExterna && (
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-amber-500 dark:text-amber-400 uppercase tracking-wider">Factura Fiscal</span>
+                <span className="text-xs font-black text-amber-600 dark:text-amber-400 font-mono">{(movement as any).nroFacturaFiscalExterna}</span>
               </div>
             )}
             <div className="flex justify-between items-center">
@@ -146,7 +182,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
                     : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                 }`}
               >
-                {movement.movementType}
+                {movement.movementType === MovementType.FACTURA ? 'VENTA' : 'ABONO'}
               </span>
             </div>
             {movement.concept && (
@@ -186,9 +222,12 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
                       <span>{formatCurrency((movement as any).subtotalUSD ?? totalUsd)}</span>
                     </div>
                     <div className="flex justify-between font-semibold text-sky-600 dark:text-sky-400">
-                      <span>IVA</span>
+                      <span>IVA (referencial)</span>
                       <span>+{formatCurrency((movement as any).ivaAmount)}</span>
                     </div>
+                    <p className="text-[8px] italic text-sky-500/70 dark:text-sky-400/60 text-right">
+                      IVA referencial · no genera crédito fiscal
+                    </p>
                   </>
                 )}
                 {(movement as any).discountAmount > 0 && (
@@ -234,11 +273,41 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ movement, config, customerP
           <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-black/60 dark:bg-black rounded-full" />
         </div>
 
+        {/* ── Fiscal external invoice number ── */}
+        {movement.id && movement.movementType === MovementType.FACTURA && (
+          <div className="bg-white dark:bg-[#0d1424] px-8 pt-4 pb-1">
+            <div className="rounded-xl border border-dashed border-amber-400/40 bg-amber-500/[0.04] p-3">
+              <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400 mb-1.5">
+                <FileCheck2 size={11} /> Nº Factura Fiscal Externa (opcional)
+              </label>
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={nroFiscalExterna}
+                  onChange={(e) => setNroFiscalExterna(e.target.value)}
+                  placeholder="Ej: 00-001234"
+                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 text-[11px] font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500/40 outline-none"
+                />
+                <button
+                  onClick={saveNroFiscalExterna}
+                  disabled={savingFiscal}
+                  className="px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-[9px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400 transition-all disabled:opacity-50"
+                >
+                  {savingFiscal ? '...' : fiscalSaved ? '✓' : 'Guardar'}
+                </button>
+              </div>
+              <p className="text-[8px] text-slate-500 dark:text-white/30 mt-1.5 leading-tight">
+                Vincula este comprobante interno con tu factura fiscal externa (máquina fiscal / imprenta autorizada / sistema homologado).
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ── Action buttons ── */}
-        <div className="bg-white dark:bg-[#0d1424] px-8 pb-8 pt-6 rounded-b-2xl flex flex-col gap-2.5">
+        <div className="bg-white dark:bg-[#0d1424] px-8 pb-8 pt-4 rounded-b-2xl flex flex-col gap-2.5">
           <div className="grid grid-cols-2 gap-2.5">
             <button
-              onClick={() => printTicket(movement, config.companyName)}
+              onClick={() => printTicket(movement, config.companyName, (config as any).ticketFooter)}
               className="flex items-center justify-center gap-2 py-3.5 bg-slate-900 dark:bg-white/[0.08] text-white rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-700 dark:hover:bg-white/[0.14] transition-all"
             >
               <Printer size={14} /> Imprimir

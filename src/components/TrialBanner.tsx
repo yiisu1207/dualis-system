@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AlertTriangle, X, ArrowRight, Clock, Zap, CreditCard, ShieldAlert } from 'lucide-react';
 import { useSubscription } from '../hooks/useSubscription';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 interface Props {
   businessId: string;
@@ -14,8 +14,7 @@ export default function TrialBanner({ businessId }: Props) {
   } = useSubscription(businessId);
   const [dismissed, setDismissed] = useState(false);
   const navigate = useNavigate();
-  const { empresa_id } = useParams();
-  const billingPath = `/${empresa_id}/billing`;
+  const billingPath = '/billing';
 
   if (!subscription || dismissed) return null;
 

@@ -7,6 +7,7 @@ import {
   ArrowUpDown, CheckCircle2, XCircle, HelpCircle,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import PortalPaymentTimeline from '../components/portal/PortalPaymentTimeline';
 
 export default function PortalDashboard() {
   const { businessId, customerId, customerName } = usePortal();
@@ -52,6 +53,9 @@ export default function PortalDashboard() {
           Resumen de tu cuenta al {new Date().toLocaleDateString('es-VE')}
         </p>
       </div>
+
+      {/* Timeline de pagos en curso (últimos 7 días) */}
+      <PortalPaymentTimeline businessId={businessId} payments={portalPayments} />
 
       {/* Exchange Rates — BCV + dynamic custom rates */}
       {(rates.bcv > 0 || rates.customRates.some(r => r.enabled && r.value > 0)) && (() => {

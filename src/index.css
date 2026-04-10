@@ -363,3 +363,53 @@
   background: #e2e8f0;
   border-radius: 10px;
 }
+
+/* ── MOBILE / RESPONSIVE ──────────────────────────────────────────────── */
+
+/* Safe area inset variables (iOS notch, Dynamic Island, home indicator) */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* Prevent iOS zoom on focus for inputs with font-size < 16px */
+@media (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+@media (min-width: 768px) {
+  input, select, textarea {
+    font-size: inherit;
+  }
+}
+
+/* Bottom sheet animation */
+.bottom-sheet-enter {
+  transform: translateY(100%);
+}
+.bottom-sheet-enter-active {
+  transform: translateY(0);
+  transition: transform 200ms ease-out;
+}
+
+/* Skeleton loading animation */
+.skeleton {
+  background: linear-gradient(90deg, rgba(148,163,184,0.1) 25%, rgba(148,163,184,0.2) 50%, rgba(148,163,184,0.1) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Touch-friendly tap highlight */
+@media (hover: none) {
+  button, a, [role="button"] {
+    -webkit-tap-highlight-color: rgba(99, 102, 241, 0.15);
+  }
+}

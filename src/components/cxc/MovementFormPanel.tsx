@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, FileText, CreditCard, Settings2 } from 'lucide-react';
-import type { Movement, Customer, Supplier, CustomRate, ExchangeRates } from '../../../types';
+import { X, FileText, CreditCard, Settings2, ShieldCheck } from 'lucide-react';
+import type { Movement, Customer, Supplier, CustomRate, ExchangeRates, ApprovalConfig } from '../../../types';
 import { resolveAccountLabel, resolveAccountColor, resolveRateForAccount } from './cxcHelpers';
+import { mapMovementToApprovalKind } from '../../utils/approvalHelpers';
 
 export type PanelPosition = 'right' | 'left' | 'center' | 'bottom' | 'top';
 
@@ -60,6 +61,8 @@ interface MovementFormPanelProps {
   onSave: (data: Partial<Movement>) => Promise<void>;
   onClose: () => void;
   editingMovement?: Movement;
+  approvalConfig?: ApprovalConfig;
+  validatorCount?: number;
 }
 
 const PAYMENT_METHODS = ['Transferencia', 'Pago Movil', 'Efectivo USD', 'Efectivo Bs', 'Zelle', 'Binance', 'Punto de Venta'];
@@ -80,6 +83,8 @@ export function MovementFormPanel({
   onSave,
   onClose,
   editingMovement,
+  approvalConfig,
+  validatorCount = 0,
 }: MovementFormPanelProps) {
   const isEditing = !!editingMovement;
 
@@ -153,6 +158,21 @@ export function MovementFormPanel({
     return name;
   }, []);
 
+  // Quorum banner — Fase D.0
+  const needsApproval = useMemo(() => {
+    if (isEditing) return false;
+    if (!approvalConfig || !approvalConfig.enabled) return false;
+    const quorumRequired = Math.max(2, approvalConfig.quorumRequired || 2);
+    if (validatorCount < quorumRequired) return false;
+    const kind = mapMovementToApprovalKind({
+      movementType: movType,
+      isSupplierMovement: mode === 'cxp',
+      anulada: false,
+    });
+    if (!kind || !approvalConfig.appliesTo.includes(kind)) return false;
+    return true;
+  }, [isEditing, approvalConfig, validatorCount, movType, mode]);
+
   const dueDate = useMemo(() => {
     if (movType !== 'FACTURA' || paymentDays <= 0) return null;
     const d = new Date(date);
@@ -182,7 +202,7 @@ export function MovementFormPanel({
         rateUsed: parsedRate,
         date,
         createdAt: isEditing ? editingMovement!.createdAt : new Date().toISOString(),
-        concept: concept.trim() || (movType === 'FACTURA' ? 'Factura' : 'Abono'),
+        concept: concept.trim() || (movType === 'FACTURA' ? (mode === 'cxp' ? 'Factura' : 'Venta') : 'Abono'),
         nroControl: nroControl.trim(),
         isSupplierMovement: mode === 'cxp',
       };
@@ -230,7 +250,7 @@ export function MovementFormPanel({
           <div className="flex items-center gap-3">
             {movType === 'FACTURA' ? <FileText size={16} className="text-rose-400" /> : <CreditCard size={16} className="text-emerald-400" />}
             <h2 className="text-sm font-black text-slate-800 dark:text-white">
-              {isEditing ? 'Editar' : 'Nueva'} {movType === 'FACTURA' ? 'Factura' : 'Abono'}
+              {isEditing ? 'Editar' : 'Nuevo'} {movType === 'FACTURA' ? (mode === 'cxp' ? 'Factura' : 'Cargo') : 'Abono'}
             </h2>
           </div>
           <div className="flex items-center gap-1">
@@ -283,9 +303,24 @@ export function MovementFormPanel({
                       : 'text-slate-400 dark:text-white/30 hover:text-slate-600 dark:hover:text-white/50'
                   }`}
                 >
-                  {t}
+                  {t === 'FACTURA' ? (mode === 'cxp' ? 'FACTURA' : 'CARGO') : 'ABONO'}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Approval quorum banner — Fase D.0 */}
+          {needsApproval && (
+            <div className="rounded-xl bg-amber-500/[0.08] border border-amber-500/30 px-4 py-3 flex items-start gap-3">
+              <ShieldCheck size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-black uppercase tracking-wider text-amber-400">
+                  Requiere aprobación
+                </p>
+                <p className="text-[10px] font-bold text-amber-300/80 mt-0.5 leading-snug">
+                  Este movimiento quedará pendiente hasta reunir {Math.max(2, approvalConfig?.quorumRequired || 2)} firmas de validadores distintos.
+                </p>
+              </div>
             </div>
           )}
 
@@ -316,6 +351,8 @@ export function MovementFormPanel({
                   value={entitySearch}
                   onChange={e => setEntitySearch(e.target.value)}
                   placeholder={`Buscar ${mode === 'cxc' ? 'cliente' : 'proveedor'}...`}
+                  inputMode="search"
+                  enterKeyHint="search"
                   className={inp}
                 />
                 {filteredEntities.length > 0 && (
@@ -385,6 +422,8 @@ export function MovementFormPanel({
                 type="number"
                 step="0.01"
                 min="0"
+                inputMode="decimal"
+                enterKeyHint="next"
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 placeholder="0.00"
@@ -400,6 +439,8 @@ export function MovementFormPanel({
               <input
                 type="number"
                 step="0.01"
+                inputMode="decimal"
+                enterKeyHint="next"
                 value={rateUsed}
                 onChange={e => setRateUsed(e.target.value)}
                 placeholder="0.00"
@@ -462,6 +503,8 @@ export function MovementFormPanel({
                         step="0.1"
                         min="0"
                         max="100"
+                        inputMode="decimal"
+                        enterKeyHint="done"
                         value={discountPct}
                         onChange={e => setDiscountPct(e.target.value)}
                         className="w-20 px-2 py-1.5 rounded-lg bg-white dark:bg-white/[0.04] border border-emerald-500/20 text-sm font-black text-emerald-500 text-center outline-none"

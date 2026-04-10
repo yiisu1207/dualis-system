@@ -4,6 +4,7 @@
 
 const CLOUD_NAME = 'doaukggrt';
 
+// Note: 'dualis_avatars' is reused for business logos (same characteristics: small, unsigned, no transforms)
 export type CloudinaryPreset = 'dualis_avatars' | 'dualis_payments' | 'dualis_products' | 'dualis_kyc';
 
 export interface CloudinaryResult {
@@ -12,19 +13,24 @@ export interface CloudinaryResult {
 }
 
 /**
- * Uploads a file to Cloudinary using an unsigned upload preset.
+ * Uploads a file or Blob to Cloudinary using an unsigned upload preset.
  * Returns the secure URL and public_id of the uploaded asset.
+ *
+ * For PDFs/raw files, pass `resourceType: 'raw'` (or 'auto' to let Cloudinary decide).
  */
 export async function uploadToCloudinary(
-  file: File,
+  file: File | Blob,
   preset: CloudinaryPreset,
+  resourceType: 'image' | 'raw' | 'auto' = 'image',
+  filename?: string,
 ): Promise<CloudinaryResult> {
   const formData = new FormData();
-  formData.append('file', file);
+  if (filename) formData.append('file', file, filename);
+  else formData.append('file', file);
   formData.append('upload_preset', preset);
 
   const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`,
     { method: 'POST', body: formData },
   );
 

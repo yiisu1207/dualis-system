@@ -2,6 +2,11 @@ User-agent: *
 Allow: /
 Allow: /login
 Allow: /register
+Allow: /terms
+Allow: /privacy
+Allow: /changelog
+Allow: /precios
+Allow: /funciones
 
 # No indexar rutas privadas de tenants
 Disallow: /*/admin/

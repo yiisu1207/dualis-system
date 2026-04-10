@@ -8,23 +8,26 @@ import { RatesProvider } from './context/RatesContext';
 import { ToastProvider } from './context/ToastContext';
 import { SubdomainProvider } from './context/SubdomainContext';
 import AppRouter from './routes/AppRouter';
+import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
   return (
-    <HelmetProvider>
-      <SubdomainProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <RatesProvider>
-              <ToastProvider>
-                <BrowserRouter>
-                  <AppRouter />
-                </BrowserRouter>
-              </ToastProvider>
-            </RatesProvider>
-          </AuthProvider>
-        </ThemeProvider>
-      </SubdomainProvider>
-    </HelmetProvider>
+    <ErrorBoundary>
+      <HelmetProvider>
+        <SubdomainProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <RatesProvider>
+                <ToastProvider>
+                  <BrowserRouter>
+                    <AppRouter />
+                  </BrowserRouter>
+                </ToastProvider>
+              </RatesProvider>
+            </AuthProvider>
+          </ThemeProvider>
+        </SubdomainProvider>
+      </HelmetProvider>
+    </ErrorBoundary>
   );
 }
