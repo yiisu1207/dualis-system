@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -32,6 +32,7 @@ interface EntityDetailProps {
   onCrossCompensate?: (amountUSD: number, direction: 'cxc-to-cxp' | 'cxp-to-cxc') => Promise<void>;
   /** Name of the linked counterpart (supplier if mode=cxc, customer if mode=cxp) */
   linkedCounterpartName?: string;
+  onDeleteEntity?: (id: string) => Promise<void>;
   onBack?: () => void;
   canEdit: boolean;
   pendingMovements?: PendingMovement[];
@@ -60,6 +61,7 @@ export function EntityDetail({
   onCompensate,
   onCrossCompensate,
   linkedCounterpartName,
+  onDeleteEntity,
   onBack,
   canEdit,
   pendingMovements = [],
@@ -71,6 +73,7 @@ export function EntityDetail({
   const [crossCompAmount, setCrossCompAmount] = useState('');
   const [crossCompDirection, setCrossCompDirection] = useState<'cxc-to-cxp' | 'cxp-to-cxc'>('cxc-to-cxp');
   const [crossCompSaving, setCrossCompSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [compTo, setCompTo] = useState('');
   const [compAmount, setCompAmount] = useState('');
   const [compSaving, setCompSaving] = useState(false);
@@ -233,6 +236,15 @@ export function EntityDetail({
             >
               <CreditCard size={12} /> Abono
             </button>
+            {onDeleteEntity && (
+              <button
+                onClick={() => setDeleteConfirm(true)}
+                className="p-2 rounded-xl text-slate-400 dark:text-white/20 hover:bg-rose-500/10 hover:text-rose-400 transition-all"
+                title="Eliminar cliente"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -735,6 +747,51 @@ export function EntityDetail({
           </div>
         )}
       </div>
+
+      {/* ── Delete confirmation modal ───────────────────────── */}
+      {deleteConfirm && onDeleteEntity && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-sm mx-4 bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.08] rounded-2xl shadow-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center">
+                <Trash2 size={18} className="text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">Eliminar cliente</h3>
+                <p className="text-xs text-slate-400 dark:text-white/30 mt-0.5">{entityName}</p>
+              </div>
+            </div>
+            {entityMovements.length > 0 ? (
+              <div className="mb-4 px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl">
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Este cliente tiene <span className="font-bold">{entityMovements.length} movimiento(s)</span>. Al eliminarlo se perderá el vínculo con esos movimientos.
+                </p>
+              </div>
+            ) : null}
+            <p className="text-sm text-slate-600 dark:text-white/50 mb-5">
+              Esta acción no se puede deshacer. ¿Estás seguro?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-600 dark:text-white/50 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  await onDeleteEntity(entity.id);
+                  setDeleteConfirm(false);
+                  onBack?.();
+                }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-rose-500 hover:bg-rose-600 shadow-lg shadow-rose-500/25 transition-all"
+              >
+                Sí, eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

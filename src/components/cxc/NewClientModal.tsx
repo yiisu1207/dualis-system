@@ -105,17 +105,19 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
   const validate = useCallback((): boolean => {
     const errs: Record<string, string> = {};
     if (!nombre.trim()) errs.nombre = 'El nombre es obligatorio';
-    if (!cedulaNum.trim()) errs.cedula = 'La cédula es obligatoria';
-    else if (!/^\d+$/.test(cedulaNum.trim())) errs.cedula = 'Solo números después del prefijo';
-    else if (cedulaNum.trim().length < 6) errs.cedula = 'Mínimo 6 dígitos';
-    else if (cedulaNum.trim().length > 10) errs.cedula = 'Máximo 10 dígitos';
+    // Cédula es opcional — solo validar formato si se llenó
+    if (cedulaNum.trim()) {
+      if (!/^\d+$/.test(cedulaNum.trim())) errs.cedula = 'Solo números después del prefijo';
+      else if (cedulaNum.trim().length < 6) errs.cedula = 'Mínimo 6 dígitos';
+      else if (cedulaNum.trim().length > 10) errs.cedula = 'Máximo 10 dígitos';
+    }
     if (rifNum) {
       if (!/^\d+$/.test(rifNum.trim())) errs.rif = 'Solo números después del prefijo';
       else if (['J', 'G'].includes(rifPrefix) && rifNum.trim().length !== 9) errs.rif = 'RIF jurídico debe tener 9 dígitos';
       else if (['V', 'E'].includes(rifPrefix) && (rifNum.trim().length < 7 || rifNum.trim().length > 9)) errs.rif = 'RIF personal debe tener 7-9 dígitos';
     }
-    // Block duplicates
-    if (cedulaDuplicate) errs.cedula = `Ya existe: ${cedulaDuplicate.nombre || cedulaDuplicate.fullName}`;
+    // Block duplicates only if fields are filled
+    if (cedulaNum.trim() && cedulaDuplicate) errs.cedula = `Ya existe: ${cedulaDuplicate.nombre || cedulaDuplicate.fullName}`;
     if (rifDuplicate) errs.rif = `Ya existe: ${rifDuplicate.nombre || rifDuplicate.fullName}`;
     if (phoneDuplicate) errs.phone = `Ya existe: ${phoneDuplicate.nombre || phoneDuplicate.fullName}`;
     setErrors(errs);
@@ -130,14 +132,12 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
       const data: Partial<Customer> = {
         nombre: nombre.trim(),
         fullName: nombre.trim(),
-        cedula: fullCedula,
+        cedula: cedulaNum.trim() ? fullCedula : undefined,
         rif: fullRif || undefined,
-        telefono: phoneNum ? `${phoneCode}${phoneNum}` : '',
+        telefono: phoneNum ? `${phoneCode}${phoneNum}` : undefined,
         email: email.trim() || undefined,
-        direccion: direccion.trim(),
+        direccion: direccion.trim() || undefined,
         creditLimit,
-        // Solo incluir defaultPaymentDays si el usuario lo eligió.
-        // null → no se envía el campo (cliente queda sin período predefinido).
         ...(defaultPaymentDays !== null ? { defaultPaymentDays } : {}),
         creditApproved,
       };
@@ -200,7 +200,7 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
 
             {/* Cédula */}
             <div className="mb-3">
-              <label className={labelCls}>Cédula *</label>
+              <label className={labelCls}>Cédula</label>
               <div className="flex gap-2">
                 <select
                   value={cedulaPrefix}

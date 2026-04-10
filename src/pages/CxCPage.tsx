@@ -58,6 +58,7 @@ export default function CxCPage({
   onDeleteMovement,
   onCreateCustomer,
   onUpdateCustomer,
+  onDeleteCustomer,
 }: CxCPageProps) {
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -268,6 +269,7 @@ export default function CxCPage({
             onCompensate={canEdit ? handleCompensate : undefined}
             onCrossCompensate={canEdit && linkedSupplier ? handleCrossCompensate : undefined}
             linkedCounterpartName={linkedSupplier ? (linkedSupplier.contacto || linkedSupplier.rif) : undefined}
+            onDeleteEntity={effectiveCanDelete ? onDeleteCustomer : undefined}
             onBack={() => setSelectedClient(null)}
             canEdit={canEdit}
             pendingMovements={pendingMovements}
