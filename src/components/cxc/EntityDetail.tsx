@@ -15,9 +15,10 @@ import {
 import { AccountCard } from './AccountCard';
 import VerificationBadge from '../VerificationBadge';
 import { LedgerView } from './LedgerView';
-import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { shareViaWhatsApp, shareViaEmail, messageTemplates } from '../../utils/shareLink';
+import { Key } from 'lucide-react';
 import NewClientModal from './NewClientModal';
 
 interface EntityDetailProps {
@@ -108,6 +109,40 @@ export function EntityDetail({
   const [portalCopied, setPortalCopied] = useState(false);
   const [portalTokenId, setPortalTokenId] = useState<string | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [pendingOTP, setPendingOTP] = useState<string | null>(null);
+  const [otpCopied, setOtpCopied] = useState(false);
+
+  // Listen for pending OTP code for this customer (real-time)
+  useEffect(() => {
+    if (!businessId || !entity.id || !isCxC || !portalTokenId) return;
+    const otpRef = doc(db, 'businesses', businessId, 'portalOTP', portalTokenId);
+    const unsub = onSnapshot(otpRef, (snap) => {
+      if (!snap.exists()) { setPendingOTP(null); return; }
+      const data = snap.data();
+      if (data.expiresAt > Date.now()) {
+        setPendingOTP(data.code);
+      } else {
+        setPendingOTP(null);
+      }
+    }, () => setPendingOTP(null));
+    return () => unsub();
+  }, [businessId, entity.id, isCxC, portalTokenId]);
+
+  // Also check by customerId (fallback)
+  useEffect(() => {
+    if (!businessId || !entity.id || !isCxC || portalTokenId) return;
+    const otpRef = doc(db, 'businesses', businessId, 'portalOTP', entity.id);
+    const unsub = onSnapshot(otpRef, (snap) => {
+      if (!snap.exists()) { setPendingOTP(null); return; }
+      const data = snap.data();
+      if (data.expiresAt > Date.now()) {
+        setPendingOTP(data.code);
+      } else {
+        setPendingOTP(null);
+      }
+    }, () => setPendingOTP(null));
+    return () => unsub();
+  }, [businessId, entity.id, isCxC, portalTokenId]);
 
   // Query existing portal access for this customer
   useEffect(() => {
@@ -422,6 +457,27 @@ export function EntityDetail({
                       <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
                         PIN: <span className="text-sky-600 dark:text-sky-400 tracking-widest font-mono">{portalPin}</span>
                       </p>
+                    )}
+                    {/* ── OTP pendiente — para compartir cuando el email no funciona ── */}
+                    {pendingOTP && (
+                      <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-500/[0.06] border border-amber-200 dark:border-amber-500/20 rounded-xl px-4 py-3">
+                        <Key size={14} className="text-amber-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400 mb-0.5">Código OTP pendiente</p>
+                          <p className="text-lg font-black font-mono tracking-[0.4em] text-amber-700 dark:text-amber-300">{pendingOTP}</p>
+                          <p className="text-[9px] text-amber-500/60 dark:text-amber-400/40 mt-0.5">El cliente necesita este código para entrar al portal</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(pendingOTP);
+                            setOtpCopied(true);
+                            setTimeout(() => setOtpCopied(false), 2000);
+                          }}
+                          className="flex items-center gap-1 px-3 py-2 rounded-lg bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 transition-all shrink-0"
+                        >
+                          {otpCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+                        </button>
+                      </div>
                     )}
                     <div className="flex flex-wrap gap-2">
                       <button
