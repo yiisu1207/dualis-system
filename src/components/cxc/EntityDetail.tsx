@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement } from '../../../types';
+import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement, PortalAccessToken } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
 import {
   calcAccountBalances,
@@ -15,6 +15,9 @@ import {
 import { AccountCard } from './AccountCard';
 import VerificationBadge from '../VerificationBadge';
 import { LedgerView } from './LedgerView';
+import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
+import { shareViaWhatsApp, shareViaEmail, messageTemplates } from '../../utils/shareLink';
 
 interface EntityDetailProps {
   mode: 'cxc' | 'cxp';
@@ -36,6 +39,11 @@ interface EntityDetailProps {
   onBack?: () => void;
   canEdit: boolean;
   pendingMovements?: PendingMovement[];
+  /** Portal access — needed to create/show portal link */
+  businessId?: string;
+  userId?: string;
+  slug?: string;
+  businessName?: string;
 }
 
 type Tab = 'resumen' | 'movimientos' | 'pendientes' | 'config';
@@ -65,6 +73,10 @@ export function EntityDetail({
   onBack,
   canEdit,
   pendingMovements = [],
+  businessId,
+  userId,
+  slug,
+  businessName,
 }: EntityDetailProps) {
   const [tab, setTab] = useState<Tab>('resumen');
   const [compOpen, setCompOpen] = useState(false);
@@ -83,6 +95,93 @@ export function EntityDetail({
 
   const entityName = (entity as any).fullName || (entity as any).nombre || entity.id || 'Entidad';
   const entityDoc = (entity as Customer).cedula || (entity as Customer).rif || (entity as Supplier).rif || '';
+
+  // ── Portal access state ──
+  const [portalLink, setPortalLink] = useState<string | null>(null);
+  const [portalPin, setPortalPin] = useState<string | null>(null);
+  const [portalGenerating, setPortalGenerating] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalCopied, setPortalCopied] = useState(false);
+  const [portalTokenId, setPortalTokenId] = useState<string | null>(null);
+
+  // Query existing portal access for this customer
+  useEffect(() => {
+    if (!businessId || !entity.id || !isCxC) return;
+    let cancelled = false;
+    setPortalLoading(true);
+    (async () => {
+      try {
+        const q = query(
+          collection(db, 'businesses', businessId, 'portalAccess'),
+          where('customerId', '==', entity.id),
+          where('active', '==', true),
+        );
+        const snap = await getDocs(q);
+        if (cancelled) return;
+        if (!snap.empty) {
+          const tokenDoc = snap.docs[0];
+          const data = tokenDoc.data() as PortalAccessToken;
+          const host = window.location.origin;
+          const link = slug
+            ? `${host}/portal/${slug}?token=${tokenDoc.id}`
+            : `${host}/portal?token=${tokenDoc.id}`;
+          setPortalLink(link);
+          setPortalPin(data.pin || null);
+          setPortalTokenId(tokenDoc.id);
+        } else {
+          setPortalLink(null);
+          setPortalPin(null);
+          setPortalTokenId(null);
+        }
+      } catch (err) {
+        console.error('[Portal access query]', err);
+      } finally {
+        if (!cancelled) setPortalLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [businessId, entity.id, isCxC, slug]);
+
+  const handleCreatePortalAccess = async () => {
+    if (!businessId || !userId || portalGenerating) return;
+    setPortalGenerating(true);
+    try {
+      const pin = String(Math.floor(1000 + Math.random() * 9000));
+      const token: Omit<PortalAccessToken, 'id'> = {
+        customerId: entity.id,
+        customerName: entityName,
+        pin,
+        createdAt: new Date().toISOString(),
+        createdBy: userId,
+        active: true,
+      };
+      const docRef = await addDoc(
+        collection(db, 'businesses', businessId, 'portalAccess'),
+        token,
+      );
+      const host = window.location.origin;
+      const link = slug
+        ? `${host}/portal/${slug}?token=${docRef.id}`
+        : `${host}/portal?token=${docRef.id}`;
+      setPortalLink(link);
+      setPortalPin(pin);
+      setPortalTokenId(docRef.id);
+    } catch (err) {
+      console.error('Error generating portal access:', err);
+    } finally {
+      setPortalGenerating(false);
+    }
+  };
+
+  const copyPortalLink = () => {
+    if (!portalLink) return;
+    const text = portalPin
+      ? `Portal de Cliente\nEnlace: ${portalLink}\nPIN: ${portalPin}`
+      : `Portal de Cliente\nEnlace: ${portalLink}`;
+    navigator.clipboard.writeText(text);
+    setPortalCopied(true);
+    setTimeout(() => setPortalCopied(false), 2000);
+  };
 
   const entityMovements = useMemo(
     () => movements.filter(m => m.entityId === entity.id && (isCxC ? !m.isSupplierMovement : m.isSupplierMovement)),
@@ -284,6 +383,98 @@ export function EntityDetail({
             ) : (
               <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-8 text-center">
                 <p className="text-sm font-bold text-slate-300 dark:text-white/15">Sin movimientos registrados</p>
+              </div>
+            )}
+
+            {/* ── Portal Access Section (CxC only) ── */}
+            {isCxC && businessId && (
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Portal del cliente</p>
+                {portalLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-white/30">
+                    <Loader2 size={14} className="animate-spin" /> Verificando acceso...
+                  </div>
+                ) : portalLink ? (
+                  /* ── Client already has portal access ── */
+                  <div className="rounded-xl bg-sky-50 dark:bg-sky-500/[0.05] border border-sky-200 dark:border-sky-500/20 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Globe size={14} className="text-sky-500" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400">
+                        Portal activo
+                      </span>
+                    </div>
+                    <p className="text-xs font-mono text-slate-600 dark:text-slate-300 truncate">{portalLink}</p>
+                    {portalPin && (
+                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                        PIN: <span className="text-sky-600 dark:text-sky-400 tracking-widest font-mono">{portalPin}</span>
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={copyPortalLink}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 transition-all"
+                      >
+                        {portalCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+                      </button>
+                      {(entity as Customer).telefono && (
+                        <button
+                          onClick={() => shareViaWhatsApp(
+                            (entity as Customer).telefono!,
+                            messageTemplates.portalAccess(
+                              businessName || 'tu negocio',
+                              entityName,
+                              portalLink!,
+                              portalPin || undefined,
+                            ),
+                          )}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all"
+                        >
+                          <MessageSquare size={12} /> WhatsApp
+                        </button>
+                      )}
+                      {(entity as Customer).email && (
+                        <button
+                          onClick={() => shareViaEmail(
+                            (entity as Customer).email!,
+                            `Acceso a tu portal — ${businessName || 'tu negocio'}`,
+                            messageTemplates.portalAccess(
+                              businessName || 'tu negocio',
+                              entityName,
+                              portalLink!,
+                              portalPin || undefined,
+                            ),
+                          )}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-violet-600 transition-all"
+                        >
+                          <Mail size={12} /> Email
+                        </button>
+                      )}
+                      <a
+                        href={portalLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-500/10 text-slate-600 dark:text-white/50 text-[10px] font-black uppercase tracking-widest hover:bg-slate-500/20 transition-all"
+                      >
+                        <ExternalLink size={12} /> Abrir
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── No portal yet — offer to create ── */
+                  <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-dashed border-slate-200 dark:border-white/[0.08] p-4 text-center space-y-3">
+                    <Globe size={20} className="mx-auto text-slate-300 dark:text-white/15" />
+                    <p className="text-xs font-bold text-slate-400 dark:text-white/30">
+                      Este cliente no tiene portal. Crea uno para que pueda ver sus facturas, hacer abonos y más.
+                    </p>
+                    <button
+                      onClick={handleCreatePortalAccess}
+                      disabled={portalGenerating}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:from-sky-400 hover:to-indigo-400 transition-all shadow-lg shadow-sky-500/25 disabled:opacity-40"
+                    >
+                      {portalGenerating ? <><Loader2 size={12} className="animate-spin" /> Generando...</> : <><Globe size={12} /> Crear Portal</>}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

@@ -1377,6 +1377,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                   pendingMovements={pendingMovementsList}
                   canDelete={canCapability('eliminarDatos' as any)}
                   canCreateCustomer={canCapability('crearClientes' as any)}
+                  businessName={(userProfile as any)?.businessName || ''}
                   onSaveMovement={handleRegisterMovement}
                   onUpdateMovement={updateMovement}
                   onDeleteMovement={deleteMovement}

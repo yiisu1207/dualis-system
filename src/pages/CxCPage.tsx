@@ -29,6 +29,7 @@ interface CxCPageProps {
   canCreateCustomer?: boolean;
   /** D.6 — suppliers list for cross-compensation CxC↔CxP */
   suppliers?: Supplier[];
+  businessName?: string;
   onSaveMovement: (data: Partial<Movement>) => Promise<void | string>;
   onUpdateMovement: (id: string, data: Partial<Movement>) => Promise<void>;
   onDeleteMovement: (id: string) => Promise<void>;
@@ -53,6 +54,7 @@ export default function CxCPage({
   canDelete,
   canCreateCustomer,
   suppliers = [],
+  businessName,
   onSaveMovement,
   onUpdateMovement,
   onDeleteMovement,
@@ -273,6 +275,10 @@ export default function CxCPage({
             onBack={() => setSelectedClient(null)}
             canEdit={canEdit}
             pendingMovements={pendingMovements}
+            businessId={businessId}
+            userId={currentUserId}
+            slug={slug}
+            businessName={businessName}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
