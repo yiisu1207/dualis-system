@@ -313,7 +313,12 @@ export async function sendOTPEmail(toEmail: string, toName: string, otp: string)
     console.info(`%c[EmailService] OTP para ${toEmail}: ${otp}`, 'color:#6366f1;font-weight:bold;font-size:14px');
     return;
   }
-  await emailjs.send(SVC, OTP_TPL, {
+  const tpl = OTP_TPL || WELCOME_TPL;
+  if (!tpl) {
+    console.warn('[EmailService] No email template configured for OTP');
+    return;
+  }
+  await emailjs.send(SVC, tpl, {
     to_email:  toEmail,
     to_name:   toName,
     subject:   'Tu codigo de verificacion — Dualis ERP',

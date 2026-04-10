@@ -199,11 +199,17 @@ export default function PortalGuard() {
         expiresAt: Date.now() + 10 * 60 * 1000,
         customerId: tokenData.customerId,
       });
-      await sendOTPEmail(customerEmail, tokenData.customerName, code);
+      // Intentar enviar por email — si falla, el OTP sigue válido en Firestore
+      try {
+        await sendOTPEmail(customerEmail, tokenData.customerName, code);
+      } catch (emailErr) {
+        console.warn('[Portal] Email send failed, OTP still valid in Firestore:', emailErr);
+        // No bloquear — el código se generó, el admin puede verlo en consola o Firestore
+      }
       setOtpSent(true);
     } catch (err) {
-      console.error('OTP send error:', err);
-      setOtpError('Error al enviar el código. Intenta de nuevo.');
+      console.error('OTP generation error:', err);
+      setOtpError('Error al generar el código. Intenta de nuevo.');
     } finally {
       setOtpSending(false);
     }
