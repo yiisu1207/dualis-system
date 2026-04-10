@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, Search, User, Phone, MapPin, Hash, Calendar, Shield, Star } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement, PortalAccessToken } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -50,7 +50,7 @@ interface EntityDetailProps {
   allCustomers?: Customer[];
 }
 
-type Tab = 'resumen' | 'movimientos' | 'pendientes' | 'config';
+type Tab = 'resumen' | 'datos' | 'movimientos' | 'pendientes' | 'config';
 
 const SCORE_STYLES: Record<string, { bg: string; text: string }> = {
   EXCELENTE: { bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
@@ -111,6 +111,68 @@ export function EntityDetail({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [pendingOTP, setPendingOTP] = useState<string | null>(null);
   const [otpCopied, setOtpCopied] = useState(false);
+
+  // SENIAT lookup state
+  const [seniatLoading, setSeniatLoading] = useState(false);
+  const [seniatResult, setSeniatResult] = useState<{ nombre: string; rif: string; agente: string; contribuyente: string; tasa: string } | null>(null);
+  const [seniatError, setSeniatError] = useState<string | null>(null);
+
+  const handleSeniatLookup = async () => {
+    const c = entity as Customer;
+    const rifOrCedula = c.rif || c.cedula;
+    if (!rifOrCedula) { setSeniatError('No hay RIF ni cédula registrada'); return; }
+
+    // Normalize: remove dashes, ensure uppercase prefix
+    let rif = rifOrCedula.replace(/-/g, '').toUpperCase().trim();
+    // If it's just digits, prefix with V
+    if (/^\d+$/.test(rif)) rif = 'V' + rif;
+    // Ensure no dash between letter and number
+    rif = rif.replace(/^([VEJGP])-?(\d+)$/i, '$1$2');
+
+    setSeniatLoading(true);
+    setSeniatError(null);
+    setSeniatResult(null);
+
+    try {
+      // SENIAT endpoint has CORS issues — use a proxy
+      const proxies = [
+        `https://corsproxy.io/?${encodeURIComponent(`http://contribuyente.seniat.gob.ve/getContribuyente/getrif?rif=${rif}`)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(`http://contribuyente.seniat.gob.ve/getContribuyente/getrif?rif=${rif}`)}`,
+      ];
+
+      let xmlText = '';
+      for (const proxyUrl of proxies) {
+        try {
+          const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+          if (res.ok) { xmlText = await res.text(); break; }
+        } catch { continue; }
+      }
+
+      if (!xmlText) { setSeniatError('No se pudo conectar con el SENIAT. Intenta más tarde.'); return; }
+
+      // Parse XML response
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+      const getTag = (tag: string) => xmlDoc.getElementsByTagName(tag)?.[0]?.textContent?.trim() || '';
+
+      const nombre = getTag('Nombre');
+      if (!nombre) { setSeniatError('RIF/Cédula no encontrado en el SENIAT.'); return; }
+
+      setSeniatResult({
+        nombre,
+        rif: getTag('RIF'),
+        agente: getTag('AgenteRetencionIVA'),
+        contribuyente: getTag('ContribuyenteIVA'),
+        tasa: getTag('Tasa'),
+      });
+    } catch (err) {
+      setSeniatError('Error al consultar el SENIAT.');
+      console.error('[SENIAT lookup]', err);
+    } finally {
+      setSeniatLoading(false);
+    }
+  };
 
   // Listen for pending OTP code for this customer (real-time)
   useEffect(() => {
@@ -399,6 +461,7 @@ export function EntityDetail({
         {/* Tabs */}
         <div className="flex gap-0">
           {tabBtn('resumen', 'Resumen')}
+          {isCxC && tabBtn('datos', 'Datos')}
           {tabBtn('movimientos', 'Movimientos')}
           {tabBtn('pendientes', `Pendientes${entityPendings.length ? ` (${entityPendings.length})` : ''}`)}
           {isCxC && tabBtn('config', 'Config')}
@@ -924,6 +987,245 @@ export function EntityDetail({
                 <p className="text-[9px] font-bold text-slate-400 dark:text-white/25 text-right">
                   {Math.max(0, customer.creditLimit - totalBalance).toFixed(2)} USD disponible
                 </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ TAB: DATOS ═══ */}
+        {tab === 'datos' && isCxC && customer && (
+          <div className="p-5 space-y-5">
+            {/* ── Identificación ── */}
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Identificación</p>
+              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] divide-y divide-slate-100 dark:divide-white/[0.04]">
+                {[
+                  { icon: <User size={13} />, label: 'Nombre completo', value: customer.fullName || customer.nombre || '—' },
+                  { icon: <Hash size={13} />, label: 'Cédula', value: customer.cedula || '—' },
+                  { icon: <Hash size={13} />, label: 'RIF', value: customer.rif || '—' },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center gap-3 px-4 py-3">
+                    <span className="text-slate-400 dark:text-white/20 shrink-0">{row.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/25">{row.label}</p>
+                      <p className="text-sm font-bold text-slate-800 dark:text-white/80 truncate">{row.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Contacto ── */}
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Contacto</p>
+              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] divide-y divide-slate-100 dark:divide-white/[0.04]">
+                {[
+                  { icon: <Phone size={13} />, label: 'Teléfono', value: customer.telefono || '—' },
+                  { icon: <Mail size={13} />, label: 'Email', value: customer.email || '—' },
+                  { icon: <MapPin size={13} />, label: 'Dirección', value: customer.direccion || '—' },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center gap-3 px-4 py-3">
+                    <span className="text-slate-400 dark:text-white/20 shrink-0">{row.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/25">{row.label}</p>
+                      <p className="text-sm font-bold text-slate-800 dark:text-white/80 truncate">{row.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Crédito & Fidelidad ── */}
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Crédito y fidelidad</p>
+              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] divide-y divide-slate-100 dark:divide-white/[0.04]">
+                {[
+                  { icon: <CreditCard size={13} />, label: 'Límite de crédito', value: customer.creditLimit ? `$${customer.creditLimit.toFixed(2)}` : '—' },
+                  { icon: <Shield size={13} />, label: 'Crédito aprobado', value: customer.creditApproved ? 'Sí' : 'No' },
+                  { icon: <Calendar size={13} />, label: 'Días de pago por defecto', value: customer.defaultPaymentDays != null ? `${customer.defaultPaymentDays} días` : '—' },
+                  { icon: <Star size={13} />, label: 'Tier de fidelidad', value: customer.loyaltyTier || '—' },
+                  { icon: <Star size={13} />, label: 'Puntos', value: customer.loyaltyPoints != null ? customer.loyaltyPoints.toLocaleString() : '—' },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center gap-3 px-4 py-3">
+                    <span className="text-slate-400 dark:text-white/20 shrink-0">{row.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/25">{row.label}</p>
+                      <p className="text-sm font-bold text-slate-800 dark:text-white/80 truncate">{row.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Portal ── */}
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Portal</p>
+              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] divide-y divide-slate-100 dark:divide-white/[0.04]">
+                {[
+                  { icon: <Globe size={13} />, label: 'Portal habilitado', value: customer.portalEnabled ? 'Sí' : 'No' },
+                  { icon: <Mail size={13} />, label: 'Email del portal', value: customer.portalEmail || '—' },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center gap-3 px-4 py-3">
+                    <span className="text-slate-400 dark:text-white/20 shrink-0">{row.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/25">{row.label}</p>
+                      <p className="text-sm font-bold text-slate-800 dark:text-white/80 truncate">{row.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── KYC ── */}
+            {(customer.kycStatus || customer.cedulaFrontalUrl || customer.cedulaTraseraUrl) && (
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Verificación de identidad (KYC)</p>
+                <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Shield size={13} className="text-slate-400 dark:text-white/20" />
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/25">Estado</p>
+                      <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        customer.kycStatus === 'verified'
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                          : customer.kycStatus === 'pending'
+                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                          : customer.kycStatus === 'rejected'
+                          ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                          : 'bg-slate-100 dark:bg-white/5 text-slate-400'
+                      }`}>
+                        {customer.kycStatus === 'verified' ? 'Verificado' : customer.kycStatus === 'pending' ? 'Pendiente' : customer.kycStatus === 'rejected' ? 'Rechazado' : 'No enviado'}
+                      </span>
+                    </div>
+                  </div>
+                  {(customer.cedulaFrontalUrl || customer.cedulaTraseraUrl) && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {customer.cedulaFrontalUrl && (
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 mb-1">Frente</p>
+                          <a href={customer.cedulaFrontalUrl} target="_blank" rel="noopener noreferrer">
+                            <img src={customer.cedulaFrontalUrl} alt="Cédula frente" className="w-full max-h-32 object-cover rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-80 transition-opacity" />
+                          </a>
+                        </div>
+                      )}
+                      {customer.cedulaTraseraUrl && (
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 mb-1">Reverso</p>
+                          <a href={customer.cedulaTraseraUrl} target="_blank" rel="noopener noreferrer">
+                            <img src={customer.cedulaTraseraUrl} alt="Cédula reverso" className="w-full max-h-32 object-cover rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-80 transition-opacity" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {customer.kycStatus === 'pending' && canEdit && (
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={async () => {
+                          await updateDoc(doc(db, 'customers', entity.id), { kycStatus: 'verified', kycVerifiedAt: new Date().toISOString() });
+                        }}
+                        className="flex-1 py-2 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all"
+                      >
+                        Aprobar
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await updateDoc(doc(db, 'customers', entity.id), { kycStatus: 'rejected' });
+                        }}
+                        className="flex-1 py-2 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-rose-600 transition-all"
+                      >
+                        Rechazar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── Tags ── */}
+            {customer.tags && customer.tags.length > 0 && (
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Etiquetas</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {customer.tags.map((tag, i) => (
+                    <span key={i} className="px-2.5 py-1 rounded-full text-[10px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Registro ── */}
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Registro</p>
+              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] divide-y divide-slate-100 dark:divide-white/[0.04]">
+                {[
+                  { icon: <Calendar size={13} />, label: 'Fecha de registro', value: customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }) : '—' },
+                  ...(customer.birthday ? [{ icon: <Calendar size={13} />, label: 'Cumpleaños', value: new Date(customer.birthday + 'T12:00:00').toLocaleDateString('es-VE', { month: 'long', day: 'numeric' }) }] : []),
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center gap-3 px-4 py-3">
+                    <span className="text-slate-400 dark:text-white/20 shrink-0">{row.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/25">{row.label}</p>
+                      <p className="text-sm font-bold text-slate-800 dark:text-white/80 truncate">{row.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Consulta SENIAT ── */}
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Consulta SENIAT</p>
+              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-4 space-y-3">
+                <p className="text-[10px] text-slate-500 dark:text-white/30">
+                  Consulta el RIF o cédula en el portal del SENIAT para verificar el nombre registrado y el estado fiscal del contribuyente.
+                </p>
+                <button
+                  onClick={handleSeniatLookup}
+                  disabled={seniatLoading || (!customer.rif && !customer.cedula)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:from-sky-400 hover:to-indigo-400 transition-all shadow-lg shadow-sky-500/25 disabled:opacity-40"
+                >
+                  {seniatLoading ? <><Loader2 size={12} className="animate-spin" /> Consultando...</> : <><Search size={12} /> Consultar SENIAT</>}
+                </button>
+
+                {seniatError && (
+                  <div className="px-3 py-2 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20">
+                    <p className="text-[11px] font-bold text-rose-600 dark:text-rose-400">{seniatError}</p>
+                  </div>
+                )}
+
+                {seniatResult && (
+                  <div className="rounded-xl bg-emerald-50 dark:bg-emerald-500/[0.04] border border-emerald-200 dark:border-emerald-500/20 divide-y divide-emerald-100 dark:divide-emerald-500/10">
+                    {[
+                      { label: 'Nombre registrado', value: seniatResult.nombre },
+                      { label: 'RIF', value: seniatResult.rif },
+                      { label: 'Agente de retención IVA', value: seniatResult.agente === 'SI' ? 'Sí' : 'No' },
+                      { label: 'Contribuyente IVA', value: seniatResult.contribuyente === 'SI' ? 'Sí' : 'No' },
+                      ...(seniatResult.tasa ? [{ label: 'Tasa de retención', value: `${seniatResult.tasa}%` }] : []),
+                    ].map((row, i) => (
+                      <div key={i} className="px-4 py-2.5">
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-600/60 dark:text-emerald-400/50">{row.label}</p>
+                        <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{row.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!customer.rif && !customer.cedula && (
+                  <p className="text-[10px] font-bold text-amber-500">Registra un RIF o cédula para poder consultar en el SENIAT.</p>
+                )}
+              </div>
+            </div>
+
+            {/* ── Notas internas ── */}
+            {customer.internalNotes && (
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Notas internas</p>
+                <div className="rounded-xl bg-amber-50 dark:bg-amber-500/[0.04] border border-amber-200 dark:border-amber-500/15 p-4">
+                  <p className="text-xs text-slate-600 dark:text-white/60 whitespace-pre-wrap">{customer.internalNotes}</p>
+                </div>
               </div>
             )}
           </div>
