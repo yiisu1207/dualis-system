@@ -117,45 +117,47 @@ export function EntityDetail({
   const [seniatResult, setSeniatResult] = useState<{ nombre: string; rif: string; agente: string; contribuyente: string; tasa: string } | null>(null);
   const [seniatError, setSeniatError] = useState<string | null>(null);
 
-  const handleSeniatLookup = async () => {
+  // Normalize cédula/RIF for SENIAT query
+  const getSeniatRif = () => {
     const c = entity as Customer;
     const rifOrCedula = c.rif || c.cedula;
-    if (!rifOrCedula) { setSeniatError('No hay RIF ni cédula registrada'); return; }
-
-    // Normalize: remove dashes, ensure uppercase prefix
+    if (!rifOrCedula) return null;
     let rif = rifOrCedula.replace(/-/g, '').toUpperCase().trim();
-    // If it's just digits, prefix with V
     if (/^\d+$/.test(rif)) rif = 'V' + rif;
-    // Ensure no dash between letter and number
     rif = rif.replace(/^([VEJGP])-?(\d+)$/i, '$1$2');
+    return rif;
+  };
+
+  const handleSeniatLookup = async () => {
+    const rif = getSeniatRif();
+    if (!rif) { setSeniatError('No hay RIF ni cédula registrada'); return; }
 
     setSeniatLoading(true);
     setSeniatError(null);
     setSeniatResult(null);
 
     try {
-      // SENIAT endpoint has CORS issues — try multiple proxies
+      // SENIAT endpoint has CORS issues — use allorigins JSON wrapper (more reliable than /raw)
       const seniatUrl = `http://contribuyente.seniat.gob.ve/getContribuyente/getrif?rif=${rif}`;
-      const proxies = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(seniatUrl)}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(seniatUrl)}`,
-        `https://corsproxy.org/?${encodeURIComponent(seniatUrl)}`,
-      ];
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(seniatUrl)}`;
 
       let xmlText = '';
-      for (const proxyUrl of proxies) {
-        try {
-          const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-          if (res.ok) { xmlText = await res.text(); break; }
-        } catch { continue; }
-      }
+      try {
+        const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+        if (res.ok) {
+          const json = await res.json();
+          xmlText = json.contents || '';
+        }
+      } catch { /* fallback below */ }
 
-      if (!xmlText) { setSeniatError('No se pudo conectar con el SENIAT. Intenta más tarde.'); return; }
+      if (!xmlText) {
+        setSeniatError('No se pudo conectar con el SENIAT. Usa el botón de abajo para consultar manualmente.');
+        return;
+      }
 
       // Parse XML response
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-
       const getTag = (tag: string) => xmlDoc.getElementsByTagName(tag)?.[0]?.textContent?.trim() || '';
 
       const nombre = getTag('Nombre');
@@ -169,7 +171,7 @@ export function EntityDetail({
         tasa: getTag('Tasa'),
       });
     } catch (err) {
-      setSeniatError('Error al consultar el SENIAT.');
+      setSeniatError('Error al consultar. Usa el botón de abajo para consultar manualmente.');
       console.error('[SENIAT lookup]', err);
     } finally {
       setSeniatLoading(false);
@@ -1097,13 +1099,15 @@ export function EntityDetail({
               </div>
             </div>
 
-            {/* ── Consulta SENIAT ── */}
+            {/* ── Consulta SENIAT / CNE ── */}
             <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Consulta SENIAT</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Consulta oficial</p>
               <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-4 space-y-3">
                 <p className="text-[10px] text-slate-500 dark:text-white/30">
-                  Consulta el RIF o cédula en el portal del SENIAT para verificar el nombre registrado y el estado fiscal del contribuyente.
+                  Consulta el RIF o cédula en los portales oficiales para verificar datos del contribuyente.
                 </p>
+
+                {/* Botón automático */}
                 <button
                   onClick={handleSeniatLookup}
                   disabled={seniatLoading || (!customer.rif && !customer.cedula)}
@@ -1135,8 +1139,33 @@ export function EntityDetail({
                   </div>
                 )}
 
+                {/* Botones de consulta manual — siempre visibles como fallback */}
+                {(customer.rif || customer.cedula) && (
+                  <div>
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/20 mb-2">Consultar manualmente</p>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={`http://contribuyente.seniat.gob.ve/BuscaRif/BuscaRif.jsp`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-500/10 text-slate-600 dark:text-white/50 text-[10px] font-black uppercase tracking-widest hover:bg-slate-500/20 transition-all"
+                      >
+                        <ExternalLink size={11} /> SENIAT
+                      </a>
+                      <a
+                        href={`https://www.sistemaspnp.com/cedula/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-500/10 text-slate-600 dark:text-white/50 text-[10px] font-black uppercase tracking-widest hover:bg-slate-500/20 transition-all"
+                      >
+                        <ExternalLink size={11} /> CNE / Cédula
+                      </a>
+                    </div>
+                  </div>
+                )}
+
                 {!customer.rif && !customer.cedula && (
-                  <p className="text-[10px] font-bold text-amber-500">Registra un RIF o cédula para poder consultar en el SENIAT.</p>
+                  <p className="text-[10px] font-bold text-amber-500">Registra un RIF o cédula para poder consultar.</p>
                 )}
               </div>
             </div>
