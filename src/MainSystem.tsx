@@ -959,11 +959,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   };
 
   const handleDeleteCustomer = async (id: string) => {
-    withConfirm('¿Eliminar este cliente?', async () => {
-      await deleteDoc(doc(db, 'customers', id));
-      logAudit(businessId, uid, 'ELIMINAR', 'CLIENTE', `ID: ${id}`);
-      toast.success('Cliente eliminado');
-    });
+    await deleteDoc(doc(db, 'customers', id));
+    logAudit(businessId, uid, 'ELIMINAR', 'CLIENTE', `ID: ${id}`);
+    toast.success('Cliente eliminado');
   };
 
   const handleRegisterSupplier = async (s: Supplier) => {

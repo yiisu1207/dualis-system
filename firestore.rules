@@ -285,6 +285,15 @@ service cloud.firestore {
       allow read, update, delete: if isSuperAdmin() || isOpsUser();
     }
 
+    // CLIENTES — root collection, miembros pueden CRUD completo
+    match /customers/{docId} {
+      allow read, write, delete: if isOpsUser() || isSuperAdmin();
+      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow create: if isSignedIn() && belongsToMe(request.resource.data);
+      allow update: if isSignedIn() && belongsToMe(resource.data);
+      allow delete: if isSignedIn() && belongsToMe(resource.data);
+    }
+
     // COLECCIONES OPERATIVAS EN RAÍZ
     // (movements, customers, suppliers, auditLogs, etc.)
     // Ops monitor puede leer/escribir/borrar todo; miembros leen solo lo suyo
