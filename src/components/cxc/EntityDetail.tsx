@@ -583,7 +583,7 @@ export function EntityDetail({
                         <div>
                           <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 mb-1">Frente</p>
                           <a href={customer.cedulaFrontalUrl} target="_blank" rel="noopener noreferrer">
-                            <img src={customer.cedulaFrontalUrl} alt="Cédula frente" className="w-full rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-80 transition-opacity" />
+                            <img src={customer.cedulaFrontalUrl} alt="Cédula frente" className="w-full max-h-40 object-cover rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-80 transition-opacity" />
                           </a>
                         </div>
                       )}
@@ -591,7 +591,7 @@ export function EntityDetail({
                         <div>
                           <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 mb-1">Reverso</p>
                           <a href={customer.cedulaTraseraUrl} target="_blank" rel="noopener noreferrer">
-                            <img src={customer.cedulaTraseraUrl} alt="Cédula reverso" className="w-full rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-80 transition-opacity" />
+                            <img src={customer.cedulaTraseraUrl} alt="Cédula reverso" className="w-full max-h-40 object-cover rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-80 transition-opacity" />
                           </a>
                         </div>
                       )}
