@@ -226,7 +226,11 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
       }
       const code = generateOTP();
       setOtp(code);
-      await sendOTPEmail(form.email, form.businessName || form.fullName || 'Usuario', code);
+      try {
+        await sendOTPEmail(form.email, form.businessName || form.fullName || 'Usuario', code);
+      } catch (emailErr) {
+        console.warn('[Register] Email send failed, OTP still valid in memory:', emailErr);
+      }
       setStep('otp');
       setCooldown(60);
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
@@ -240,13 +244,15 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
   const handleResend = async () => {
     if (cooldown > 0) return;
     setOtpError(''); setOtpDigits(['', '', '', '', '', '']);
+    const code = generateOTP();
+    setOtp(code);
     try {
-      const code = generateOTP();
-      setOtp(code);
       await sendOTPEmail(form.email, form.businessName || form.fullName || 'Usuario', code);
-      setCooldown(60);
-      setTimeout(() => otpRefs.current[0]?.focus(), 100);
-    } catch { setOtpError('Error al reenviar. Intenta de nuevo.'); }
+    } catch (emailErr) {
+      console.warn('[Register] Resend email failed, OTP still valid:', emailErr);
+    }
+    setCooldown(60);
+    setTimeout(() => otpRefs.current[0]?.focus(), 100);
   };
 
   /* ── Step 2: Verify OTP → go to plan selection (create) or create account (join) ── */

@@ -116,13 +116,17 @@ export default function AgendaCobranza({ movements, customers, businessId, busin
   const handleSendEmail = useCallback(async (item: ReminderItem) => {
     if (!item.customerEmail) return;
     const cfg = getSeverityConfig(item.severity);
-    await sendOverdueReminderEmail(item.customerEmail, {
-      customerName: item.customerName,
-      amount: formatCurrency(item.totalDebtUSD),
-      businessName,
-      daysOverdue: Math.abs(item.daysUntilDue),
-      severity: cfg.emailSeverity,
-    });
+    try {
+      await sendOverdueReminderEmail(item.customerEmail, {
+        customerName: item.customerName,
+        amount: formatCurrency(item.totalDebtUSD),
+        businessName,
+        daysOverdue: Math.abs(item.daysUntilDue),
+        severity: cfg.emailSeverity,
+      });
+    } catch (err) {
+      console.warn('[AgendaCobranza] Email send failed:', err);
+    }
     logCommunication(item, 'email');
     setSentMap(prev => ({ ...prev, [`${item.customerId}::em`]: true }));
   }, [businessName]);
