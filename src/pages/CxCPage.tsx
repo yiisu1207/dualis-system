@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, ApprovalConfig, PendingMovement } from '../../types';
 import { CxCClientList } from '../components/cxc/CxCClientList';
 import { EntityDetail } from '../components/cxc/EntityDetail';
@@ -63,6 +63,14 @@ export default function CxCPage({
   onDeleteCustomer,
 }: CxCPageProps) {
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
+
+  // Keep selectedClient in sync with live customers array (e.g. after edit)
+  useEffect(() => {
+    if (!selectedClient) return;
+    const fresh = customers.find(c => c.id === selectedClient.id);
+    if (fresh && fresh !== selectedClient) setSelectedClient(fresh);
+  }, [customers, selectedClient]);
+
   const [formOpen, setFormOpen] = useState(false);
   const [formType, setFormType] = useState<'FACTURA' | 'ABONO'>('FACTURA');
   const [formAccountPreset, setFormAccountPreset] = useState<string | undefined>();
