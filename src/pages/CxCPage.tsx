@@ -279,6 +279,7 @@ export default function CxCPage({
             userId={currentUserId}
             slug={slug}
             businessName={businessName}
+            allCustomers={customers}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">

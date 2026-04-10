@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { User, Phone, Mail, MapPin, CreditCard, ChevronDown, AlertTriangle, X } from 'lucide-react';
+import { User, Phone, Mail, MapPin, CreditCard, ChevronDown, AlertTriangle, X, StickyNote } from 'lucide-react';
 import type { Customer } from '../../../types';
 
 /* ── Props ──────────────────────────────────────────────────── */
@@ -9,6 +9,8 @@ interface NewClientModalProps {
   onClose: () => void;
   onSave: (data: Partial<Customer>) => Promise<void>;
   existingCustomers: Customer[];
+  /** If provided, modal opens in edit mode pre-filled with this customer's data */
+  editCustomer?: Customer | null;
 }
 
 /* ── Constants ──────────────────────────────────────────────── */
@@ -28,7 +30,9 @@ const selectCls =
 
 /* ── Component ──────────────────────────────────────────────── */
 
-export default function NewClientModal({ open, onClose, onSave, existingCustomers }: NewClientModalProps) {
+export default function NewClientModal({ open, onClose, onSave, existingCustomers, editCustomer }: NewClientModalProps) {
+  const isEdit = !!editCustomer;
+
   /* -- State -- */
   const [nombre, setNombre] = useState('');
   const [cedulaPrefix, setCedulaPrefix] = useState<typeof CEDULA_PREFIXES[number]>('V-');
@@ -39,16 +43,9 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
   const [phoneNum, setPhoneNum] = useState('');
   const [email, setEmail] = useState('');
   const [direccion, setDireccion] = useState('');
+  const [notes, setNotes] = useState('');
 
   const [creditLimit, setCreditLimit] = useState(0);
-  // ── defaultPaymentDays: null = sin especificar ─────────────────
-  // Antes era `0` por default, lo que hacía que "Contado" apareciera
-  // siempre pre-seleccionado y el usuario sintiera que estaba obligado
-  // a elegir un período. Ahora arranca en null → ninguna píldora está
-  // marcada y el usuario puede guardar un límite de crédito sin tocar
-  // los días. Pedido del usuario 2026-04-09: "me gustaria que se pueda
-  // elegir el limite de credito sin necesidad de seleccionar los dias".
-  // Click en una píldora ya seleccionada la deselecciona (toggle off).
   const [defaultPaymentDays, setDefaultPaymentDays] = useState<number | null>(null);
   const [creditApproved, setCreditApproved] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);
@@ -57,9 +54,37 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
   const [errors, setErrors] = useState<Record<string, string>>({});
   const backdropRef = useRef<HTMLDivElement>(null);
 
-  /* -- Reset on open -- */
+  /* -- Reset / populate on open -- */
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    if (editCustomer) {
+      // Pre-fill from existing customer
+      setNombre(editCustomer.nombre || editCustomer.fullName || '');
+      const ced = editCustomer.cedula || '';
+      const matchedPrefix = CEDULA_PREFIXES.find(p => ced.startsWith(p));
+      setCedulaPrefix(matchedPrefix || 'V-');
+      setCedulaNum(matchedPrefix ? ced.slice(matchedPrefix.length) : ced.replace(/^[VEJG]-?/i, ''));
+      const rif = editCustomer.rif || '';
+      const matchedRif = RIF_PREFIXES.find(p => rif.startsWith(p));
+      setRifPrefix(matchedRif || 'V');
+      setRifNum(matchedRif ? rif.slice(matchedRif.length) : rif.replace(/^[VEJG]/i, ''));
+      const phone = editCustomer.telefono || '';
+      if (phone.startsWith('+')) {
+        const codeEnd = phone.indexOf(' ') > 0 ? phone.indexOf(' ') : (phone.length > 3 ? 3 : phone.length);
+        setPhoneCode(phone.slice(0, codeEnd));
+        setPhoneNum(phone.slice(codeEnd));
+      } else {
+        setPhoneCode('+58');
+        setPhoneNum(phone);
+      }
+      setEmail(editCustomer.email || '');
+      setDireccion(editCustomer.direccion || '');
+      setNotes(editCustomer.internalNotes || '');
+      setCreditLimit(editCustomer.creditLimit || 0);
+      setDefaultPaymentDays(editCustomer.defaultPaymentDays ?? null);
+      setCreditApproved(editCustomer.creditApproved ?? false);
+      setCreditOpen(!!(editCustomer.creditLimit || editCustomer.creditApproved || editCustomer.defaultPaymentDays));
+    } else {
       setNombre('');
       setCedulaPrefix('V-');
       setCedulaNum('');
@@ -69,34 +94,39 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
       setPhoneNum('');
       setEmail('');
       setDireccion('');
+      setNotes('');
       setCreditLimit(0);
       setDefaultPaymentDays(null);
       setCreditApproved(false);
       setCreditOpen(false);
-      setSaving(false);
-      setErrors({});
     }
-  }, [open]);
+    setSaving(false);
+    setErrors({});
+  }, [open, editCustomer]);
 
   /* -- Duplicate detection -- */
   const fullCedula = `${cedulaPrefix}${cedulaNum}`;
   const fullRif = rifNum ? `${rifPrefix}${rifNum}` : '';
 
+  // Exclude the customer being edited from duplicate detection
+  const otherCustomers = isEdit
+    ? existingCustomers.filter(c => c.id !== editCustomer!.id)
+    : existingCustomers;
+
   const cedulaDuplicate = cedulaNum.length >= 3
-    ? existingCustomers.find(c => c.cedula?.replace(/[\s.-]/g, '').toUpperCase() === fullCedula.replace(/[\s.-]/g, '').toUpperCase())
+    ? otherCustomers.find(c => c.cedula?.replace(/[\s.-]/g, '').toUpperCase() === fullCedula.replace(/[\s.-]/g, '').toUpperCase())
     : null;
 
   const rifDuplicate = fullRif.length >= 3
-    ? existingCustomers.find(c => c.rif?.replace(/[\s.-]/g, '').toUpperCase() === fullRif.replace(/[\s.-]/g, '').toUpperCase())
+    ? otherCustomers.find(c => c.rif?.replace(/[\s.-]/g, '').toUpperCase() === fullRif.replace(/[\s.-]/g, '').toUpperCase())
     : null;
 
   // Phone duplicate: compare last 7+ digits to catch format variations (+58, 0, -, spaces)
   const phoneDigits = phoneNum.replace(/\D/g, '');
   const phoneDuplicate = phoneDigits.length >= 7
-    ? existingCustomers.find(c => {
+    ? otherCustomers.find(c => {
         const otherDigits = String(c.telefono || (c as any).phone || '').replace(/\D/g, '');
         if (otherDigits.length < 7) return false;
-        // Match on last 7 digits to handle +58/0-prefix variations
         return otherDigits.slice(-7) === phoneDigits.slice(-7);
       })
     : null;
@@ -135,11 +165,12 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
         creditLimit,
         creditApproved,
         ...(defaultPaymentDays !== null ? { defaultPaymentDays } : {}),
-        ...(cedulaNum.trim() ? { cedula: fullCedula } : {}),
+        cedula: cedulaNum.trim() ? fullCedula : '',
         ...(fullRif ? { rif: fullRif } : {}),
-        ...(phoneNum ? { telefono: `${phoneCode}${phoneNum}` } : {}),
-        ...(email.trim() ? { email: email.trim() } : {}),
-        ...(direccion.trim() ? { direccion: direccion.trim() } : {}),
+        telefono: phoneNum ? `${phoneCode}${phoneNum}` : '',
+        email: email.trim() || '',
+        direccion: direccion.trim() || '',
+        internalNotes: notes.trim() || '',
       };
       await onSave(data);
       onClose();
@@ -167,7 +198,7 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
       <div className="relative w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.08] rounded-2xl shadow-2xl animate-[slideUp_200ms_ease-out]">
         {/* ── Header ──────────────────────────────────────── */}
         <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white dark:bg-[#0d1424] border-b border-slate-100 dark:border-white/[0.08] rounded-t-2xl">
-          <h2 className="text-base font-extrabold text-slate-900 dark:text-white">Nuevo Cliente</h2>
+          <h2 className="text-base font-extrabold text-slate-900 dark:text-white">{isEdit ? 'Editar Cliente' : 'Nuevo Cliente'}</h2>
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors"
@@ -321,6 +352,7 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
                 placeholder="cliente@ejemplo.com"
                 className={inputCls}
               />
+              <p className="mt-1 text-xs text-amber-400/70">Necesario para crear portal de cliente</p>
             </div>
 
             {/* Dirección */}
@@ -337,6 +369,21 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
                 className={`${inputCls} resize-none`}
               />
             </div>
+          </section>
+
+          {/* ── Notas internas ────────────────────────────── */}
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <StickyNote size={14} className="text-indigo-400" />
+              <span className="text-xs font-extrabold uppercase tracking-widest text-slate-500 dark:text-white/40">Notas internas</span>
+            </div>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Notas privadas sobre este cliente (solo visible para el equipo)..."
+              rows={3}
+              className={`${inputCls} resize-none`}
+            />
           </section>
 
           {/* ── Crédito (collapsible) ─────────────────────── */}
@@ -461,7 +508,7 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
                 Guardando...
               </span>
             ) : (
-              'Guardar Cliente'
+              isEdit ? 'Guardar Cambios' : 'Guardar Cliente'
             )}
           </button>
         </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement, PortalAccessToken } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -18,6 +18,7 @@ import { LedgerView } from './LedgerView';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { shareViaWhatsApp, shareViaEmail, messageTemplates } from '../../utils/shareLink';
+import NewClientModal from './NewClientModal';
 
 interface EntityDetailProps {
   mode: 'cxc' | 'cxp';
@@ -44,6 +45,8 @@ interface EntityDetailProps {
   userId?: string;
   slug?: string;
   businessName?: string;
+  /** All customers — used for duplicate detection in edit modal */
+  allCustomers?: Customer[];
 }
 
 type Tab = 'resumen' | 'movimientos' | 'pendientes' | 'config';
@@ -77,6 +80,7 @@ export function EntityDetail({
   userId,
   slug,
   businessName,
+  allCustomers = [],
 }: EntityDetailProps) {
   const [tab, setTab] = useState<Tab>('resumen');
   const [compOpen, setCompOpen] = useState(false);
@@ -103,6 +107,7 @@ export function EntityDetail({
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalCopied, setPortalCopied] = useState(false);
   const [portalTokenId, setPortalTokenId] = useState<string | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   // Query existing portal access for this customer
   useEffect(() => {
@@ -335,6 +340,15 @@ export function EntityDetail({
             >
               <CreditCard size={12} /> Abono
             </button>
+            {canEdit && onUpdateEntity && isCxC && (
+              <button
+                onClick={() => setEditModalOpen(true)}
+                className="p-2 rounded-xl text-slate-400 dark:text-white/20 hover:bg-indigo-500/10 hover:text-indigo-400 transition-all"
+                title="Editar cliente"
+              >
+                <Pencil size={14} />
+              </button>
+            )}
             {onDeleteEntity && (
               <button
                 onClick={() => setDeleteConfirm(true)}
@@ -475,6 +489,16 @@ export function EntityDetail({
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Internal Notes (if any) */}
+            {isCxC && customer?.internalNotes && (
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Notas internas</p>
+                <div className="rounded-xl bg-amber-50 dark:bg-amber-500/[0.04] border border-amber-200 dark:border-amber-500/15 p-4">
+                  <p className="text-xs text-slate-600 dark:text-white/60 whitespace-pre-wrap">{customer.internalNotes}</p>
+                </div>
               </div>
             )}
 
@@ -940,6 +964,20 @@ export function EntityDetail({
       </div>
 
       {/* ── Delete confirmation modal ───────────────────────── */}
+      {/* ── Edit Client Modal ── */}
+      {isCxC && onUpdateEntity && (
+        <NewClientModal
+          open={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          onSave={async (data) => {
+            await onUpdateEntity(entity.id, data);
+            setEditModalOpen(false);
+          }}
+          existingCustomers={allCustomers}
+          editCustomer={customer}
+        />
+      )}
+
       {deleteConfirm && onDeleteEntity && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-sm mx-4 bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.08] rounded-2xl shadow-2xl p-6">
