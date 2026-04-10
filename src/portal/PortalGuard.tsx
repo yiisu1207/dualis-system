@@ -43,6 +43,7 @@ export default function PortalGuard() {
   const [otpError, setOtpError] = useState('');
   const [otpSending, setOtpSending] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
+  const [emailSendFailed, setEmailSendFailed] = useState(false);
   const [customerEmail, setCustomerEmail] = useState('');
   // KYC state
   const [kycStatus, setKycStatus] = useState<'loading' | 'required' | 'pending' | 'verified' | 'rejected'>('loading');
@@ -200,12 +201,14 @@ export default function PortalGuard() {
         customerId: tokenData.customerId,
       });
       // Intentar enviar por email — si falla, el OTP sigue válido en Firestore
+      let emailFailed = false;
       try {
         await sendOTPEmail(customerEmail, tokenData.customerName, code);
       } catch (emailErr) {
         console.warn('[Portal] Email send failed, OTP still valid in Firestore:', emailErr);
-        // No bloquear — el código se generó, el admin puede verlo en consola o Firestore
+        emailFailed = true;
       }
+      setEmailSendFailed(emailFailed);
       setOtpSent(true);
     } catch (err) {
       console.error('OTP generation error:', err);
@@ -420,8 +423,17 @@ export default function PortalGuard() {
               {otpSent && (
                 <form onSubmit={handleOTPSubmit} className="space-y-4">
                   <div className="text-center mb-2">
-                    <p className="text-xs text-emerald-400 font-black mb-1">Código enviado</p>
-                    <p className="text-[10px] text-white/30">Revisa tu email {maskedEmail}</p>
+                    {emailSendFailed ? (
+                      <>
+                        <p className="text-xs text-amber-400 font-black mb-1">No pudimos enviar el correo</p>
+                        <p className="text-[10px] text-white/40 leading-relaxed">Solicita el código de verificación directamente a {businessName || 'tu proveedor'}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-emerald-400 font-black mb-1">Código enviado</p>
+                        <p className="text-[10px] text-white/30">Revisa tu email {maskedEmail}</p>
+                      </>
+                    )}
                   </div>
                   <input
                     type="text"
