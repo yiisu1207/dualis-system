@@ -1,6 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { uploadToCloudinary } from '../utils/cloudinary';
-import { Camera, Loader2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 
 interface ProfileData {
   uid: string;
@@ -17,7 +15,29 @@ interface UserProfileModalProps {
   isOpen: boolean;
   profile: ProfileData | null;
   onClose: () => void;
-  onSave: (patch: { displayName: string; bio: string; age: number; location: string; photoURL?: string }) => void;
+  onSave: (patch: { displayName: string; bio: string; age: number; location: string }) => void;
+}
+
+/* ── Avatar con inicial + gradiente aleatorio pero determinista ── */
+const GRADIENTS = [
+  'from-indigo-500 to-violet-600',
+  'from-sky-500 to-cyan-400',
+  'from-emerald-500 to-teal-400',
+  'from-rose-500 to-pink-400',
+  'from-amber-500 to-orange-400',
+  'from-fuchsia-500 to-purple-500',
+  'from-lime-500 to-green-400',
+  'from-red-500 to-rose-400',
+];
+
+function getAvatarGradient(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return GRADIENTS[Math.abs(hash) % GRADIENTS.length];
+}
+
+function getInitial(name: string): string {
+  return (name || '?')[0].toUpperCase();
 }
 
 const UserProfileModal: React.FC<UserProfileModalProps> = ({
@@ -31,10 +51,6 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [age, setAge] = useState('');
   const [location, setLocation] = useState('');
   const [error, setError] = useState('');
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isOpen || !profile) return;
@@ -43,16 +59,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
     setAge(profile.age ? String(profile.age) : '');
     setLocation(profile.location || '');
     setError('');
-    setAvatarPreview(null);
-    setAvatarFile(null);
   }, [isOpen, profile]);
-
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setAvatarFile(file);
-    setAvatarPreview(URL.createObjectURL(file));
-  };
 
   if (!isOpen || !profile) return null;
 
@@ -60,7 +67,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
     event.preventDefault();
     const ageValue = Number(age);
     if (!displayName.trim()) {
-      setError('El nombre publico es obligatorio.');
+      setError('El nombre público es obligatorio.');
       return;
     }
     if (!bio.trim()) {
@@ -68,31 +75,20 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
       return;
     }
     if (!location.trim()) {
-      setError('La ubicacion es obligatoria.');
+      setError('La ubicación es obligatoria.');
       return;
     }
     if (!Number.isFinite(ageValue) || ageValue <= 0) {
-      setError('La edad ingresada no es valida.');
+      setError('La edad ingresada no es válida.');
       return;
     }
 
-    let photoURL: string | undefined;
-    if (avatarFile) {
-      try {
-        setUploadingAvatar(true);
-        const result = await uploadToCloudinary(avatarFile, 'dualis_avatars');
-        photoURL = result.secure_url;
-      } catch {
-        setError('Error al subir la imagen. Intenta de nuevo.');
-        setUploadingAvatar(false);
-        return;
-      } finally {
-        setUploadingAvatar(false);
-      }
-    }
-
-    onSave({ displayName: displayName.trim(), bio: bio.trim(), age: ageValue, location: location.trim(), photoURL });
+    onSave({ displayName: displayName.trim(), bio: bio.trim(), age: ageValue, location: location.trim() });
   };
+
+  const avatarName = displayName || profile.fullName || profile.email || '?';
+  const gradient = getAvatarGradient(avatarName);
+  const initial = getInitial(avatarName);
 
   return (
     <div className="fixed inset-0 z-[220] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -103,7 +99,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
               Perfil
             </p>
             <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100">
-              Tu informacion publica
+              Tu información pública
             </h3>
           </div>
           <button
@@ -117,45 +113,20 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
 
-          {/* Avatar picker */}
+          {/* Avatar generado — inicial con gradiente Dualis */}
           <div className="flex items-center gap-4">
-            <div className="relative shrink-0">
-              {avatarPreview || profile?.photoURL ? (
-                <img
-                  src={avatarPreview ?? profile?.photoURL}
-                  alt="Avatar"
-                  className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-500/40 shadow-md"
-                />
-              ) : (
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xl font-black shadow-md">
-                  {(profile?.displayName || profile?.fullName || '?')[0].toUpperCase()}
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg hover:bg-indigo-700 transition-colors"
-              >
-                <Camera size={11} />
-              </button>
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg shadow-indigo-500/20 ring-2 ring-white/10`}>
+              <span className="text-2xl font-black text-white drop-shadow-sm">{initial}</span>
             </div>
             <div>
-              <p className="text-sm font-black text-slate-800 dark:text-slate-100">Foto de perfil</p>
-              <p className="text-[11px] text-slate-400 mt-0.5">JPG, PNG o WEBP · máx 5 MB</p>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="mt-1.5 text-[11px] font-black text-indigo-500 hover:text-indigo-600 transition-colors"
-              >
-                Cambiar foto →
-              </button>
+              <p className="text-sm font-black text-slate-800 dark:text-slate-100">{avatarName}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">{profile.email}</p>
             </div>
           </div>
 
           <div>
             <label className="text-xs font-bold text-slate-600 dark:text-slate-300">
-              Nombre publico
+              Nombre público
             </label>
             <input
               type="text"
@@ -176,7 +147,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
               required
             />
             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-              Maximo 140 caracteres.
+              Máximo 140 caracteres.
             </p>
           </div>
 
@@ -195,7 +166,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </div>
             <div>
               <label className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                Ubicacion
+                Ubicación
               </label>
               <input
                 type="text"
@@ -236,11 +207,9 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={uploadingAvatar}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-black uppercase disabled:opacity-60 flex items-center gap-2"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-black uppercase"
             >
-              {uploadingAvatar && <Loader2 size={12} className="animate-spin" />}
-              {uploadingAvatar ? 'Subiendo foto...' : 'Guardar perfil'}
+              Guardar perfil
             </button>
           </div>
         </form>
