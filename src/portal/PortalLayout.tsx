@@ -3,7 +3,7 @@ import { NavLink, useParams } from 'react-router-dom';
 import { usePortal } from './PortalGuard';
 import {
   LayoutDashboard, FileText, Zap, CreditCard, Receipt, LogOut,
-  Menu, X, HelpCircle, Package, Trophy, ShoppingBag, AlertTriangle,
+  HelpCircle, Package, Trophy, ShoppingBag, AlertTriangle,
   MoreHorizontal, MessageCircle,
 } from 'lucide-react';
 
@@ -14,7 +14,6 @@ interface Props {
 export default function PortalLayout({ children }: Props) {
   const { slug } = useParams<{ slug: string }>();
   const { customerName, businessName, businessLogo, brandColor } = usePortal();
-  const [mobileNav, setMobileNav] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
   // Convert hex to RGB for CSS variable
@@ -28,25 +27,28 @@ export default function PortalLayout({ children }: Props) {
 
   const basePath = `/portal/${slug}`;
 
-  const mainNavItems = [
+  // Bottom bar mobile: solo 4 acciones críticas + botón Más (5 total)
+  const bottomBarItems: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean }[] = [
     { to: basePath, label: 'Inicio', icon: LayoutDashboard, end: true },
-    { to: `${basePath}/facturas`, label: 'Movimientos', icon: FileText },
-    { to: `${basePath}/pronto-pago`, label: 'Pronto Pago', icon: Zap },
     { to: `${basePath}/pagar`, label: 'Pagar', icon: CreditCard },
+    { to: `${basePath}/facturas`, label: 'Movs', icon: FileText },
     { to: `${basePath}/catalogo`, label: 'Catálogo', icon: Package },
-    { to: `${basePath}/fidelidad`, label: 'Fidelidad', icon: Trophy },
-    { to: `${basePath}/estado-cuenta`, label: 'Estado', icon: Receipt },
   ];
 
+  // Sheet "Más" mobile + nav completo desktop
   const moreNavItems: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean }[] = [
+    { to: `${basePath}/pronto-pago`, label: 'Pronto Pago', icon: Zap },
+    { to: `${basePath}/fidelidad`, label: 'Fidelidad', icon: Trophy },
+    { to: `${basePath}/estado-cuenta`, label: 'Estado', icon: Receipt },
     { to: `${basePath}/chat`, label: 'Chat', icon: MessageCircle },
     { to: `${basePath}/pedidos`, label: 'Pedidos', icon: ShoppingBag },
     { to: `${basePath}/reclamo`, label: 'Reclamo', icon: AlertTriangle },
     { to: `${basePath}/ayuda`, label: 'Ayuda', icon: HelpCircle },
   ];
 
+  // Desktop muestra todos los items principales
   const allNavItems = [
-    ...mainNavItems,
+    ...bottomBarItems,
     ...moreNavItems,
   ];
 
@@ -128,40 +130,42 @@ export default function PortalLayout({ children }: Props) {
         {children}
       </main>
 
-      {/* Mobile Bottom Tab Bar */}
+      {/* Mobile Bottom Tab Bar — 4 acciones + Más (5 columnas exactas) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0d1424]/95 backdrop-blur-xl border-t border-white/[0.07] safe-area-bottom">
-        <div className="flex items-center justify-around px-1 py-1.5">
-          {mainNavItems.map((item) => (
+        <div className="grid grid-cols-5 items-center px-1 py-1.5">
+          {bottomBarItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[52px] transition-all ${
+                `flex flex-col items-center gap-0.5 py-1.5 rounded-xl transition-all ${
                   isActive
                     ? 'text-indigo-400'
-                    : 'text-white/30 active:text-white/50'
+                    : 'text-white/40 active:text-white/60'
                 }`
               }
             >
               {({ isActive }) => (
                 <>
                   <div className={`p-1.5 rounded-lg transition-all ${isActive ? 'bg-indigo-500/15' : ''}`}>
-                    <item.icon size={18} />
+                    <item.icon size={20} />
                   </div>
-                  <span className="text-[8px] font-black uppercase tracking-wider">{item.label}</span>
+                  <span className="text-[9px] font-black uppercase tracking-wider">{item.label}</span>
                 </>
               )}
             </NavLink>
           ))}
           <button
             onClick={() => setMoreOpen(true)}
-            className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[52px] transition-all text-white/30 active:text-white/50"
+            className={`flex flex-col items-center gap-0.5 py-1.5 rounded-xl transition-all ${
+              moreOpen ? 'text-indigo-400' : 'text-white/40 active:text-white/60'
+            }`}
           >
-            <div className="p-1.5 rounded-lg transition-all">
-              <MoreHorizontal size={18} />
+            <div className={`p-1.5 rounded-lg transition-all ${moreOpen ? 'bg-indigo-500/15' : ''}`}>
+              <MoreHorizontal size={20} />
             </div>
-            <span className="text-[8px] font-black uppercase tracking-wider">Más</span>
+            <span className="text-[9px] font-black uppercase tracking-wider">Más</span>
           </button>
         </div>
       </nav>
