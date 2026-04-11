@@ -3,7 +3,7 @@ import { NavLink, useParams } from 'react-router-dom';
 import { usePortal } from './PortalGuard';
 import {
   LayoutDashboard, FileText, Zap, CreditCard, Receipt, LogOut,
-  HelpCircle, Package, Trophy, ShoppingBag, AlertTriangle,
+  HelpCircle, Package, Trophy, AlertTriangle,
   MoreHorizontal, MessageCircle,
 } from 'lucide-react';
 
@@ -41,7 +41,6 @@ export default function PortalLayout({ children }: Props) {
     { to: `${basePath}/fidelidad`, label: 'Fidelidad', icon: Trophy },
     { to: `${basePath}/estado-cuenta`, label: 'Estado', icon: Receipt },
     { to: `${basePath}/chat`, label: 'Chat', icon: MessageCircle },
-    { to: `${basePath}/pedidos`, label: 'Pedidos', icon: ShoppingBag },
     { to: `${basePath}/reclamo`, label: 'Reclamo', icon: AlertTriangle },
     { to: `${basePath}/ayuda`, label: 'Ayuda', icon: HelpCircle },
   ];

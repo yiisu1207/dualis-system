@@ -2,13 +2,13 @@ import React, { useMemo, useState } from 'react';
 import { usePortal } from './PortalGuard';
 import { usePortalData } from './usePortalData';
 import { formatCurrency } from '../utils/formatters';
-import { AccountType, MovementType } from '../../types';
+import { MovementType } from '../../types';
 import { Download, Loader2 } from 'lucide-react';
 
 export default function PortalStatement() {
   const { businessId, customerId, customerName, businessName } = usePortal();
-  const { movements, loading, balances } = usePortalData(businessId, customerId);
-  const [accountFilter, setAccountFilter] = useState<'ALL' | AccountType>('ALL');
+  const { movements, loading, balances, rates } = usePortalData(businessId, customerId);
+  const [accountFilter, setAccountFilter] = useState<string>('ALL');
   const [generating, setGenerating] = useState(false);
 
   const statementData = useMemo(() => {
@@ -130,40 +130,61 @@ export default function PortalStatement() {
         )}
       </div>
 
-      {/* Balance summary */}
-      <div className="bg-[#0d1424] rounded-2xl border border-white/[0.07] p-4 sm:p-6 shadow-lg">
-        <h3 className="text-[9px] font-black uppercase tracking-widest text-white/40 mb-3">
-          Saldo por Cuenta
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-          {([
-            { label: 'BCV', value: balances.bcv, color: 'sky', acct: AccountType.BCV },
-            { label: 'Grupo', value: balances.grupo, color: 'violet', acct: AccountType.GRUPO },
-            { label: 'Divisa', value: balances.divisa, color: 'emerald', acct: AccountType.DIVISA },
-            { label: 'Total', value: balances.total, color: 'indigo', acct: 'ALL' as any },
-          ] as const).map((item) => (
-            <button
-              key={item.label}
-              onClick={() => setAccountFilter(item.acct)}
-              className={`rounded-xl p-3 sm:p-4 text-center border transition-all active:scale-[0.97] ${
-                accountFilter === item.acct
-                  ? `border-${item.color}-500/40 bg-${item.color}-500/10`
-                  : 'border-white/[0.07] bg-white/[0.02] hover:border-white/[0.12]'
-              }`}
-            >
-              <div className="flex items-center justify-center gap-1.5 mb-1">
-                <span className={`w-1.5 h-1.5 rounded-full bg-${item.color}-500`} />
-                <span className="text-[8px] sm:text-[9px] font-black uppercase text-white/40">{item.label}</span>
-              </div>
-              <p className={`text-base sm:text-lg font-black font-mono ${
-                item.value > 0.01 ? 'text-rose-400' : 'text-emerald-400'
-              }`}>
-                {formatCurrency(Math.abs(item.value), '$')}
-              </p>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Balance summary — dinámico por cuentas con movimientos */}
+      {(() => {
+        const accountKeys = Object.keys(balances.byAccount).filter(
+          (k) => Math.abs(balances.byAccount[k]) > 0.001
+        ).sort();
+        if (accountKeys.length === 0) return null;
+        const labelFor = (acct: string) => {
+          const cr = rates.customRates.find((r) => r.id === acct);
+          return cr?.name || acct;
+        };
+        const cards: { label: string; value: number; acct: string }[] = [
+          ...accountKeys.map((k) => ({ label: labelFor(k), value: balances.byAccount[k], acct: k })),
+          { label: 'Total', value: balances.total, acct: 'ALL' },
+        ];
+        // Grid: hasta 4 columnas en sm, ajusta según cantidad
+        const gridCols = cards.length <= 2 ? 'grid-cols-2' : cards.length === 3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4';
+        return (
+          <div className="bg-[#0d1424] rounded-2xl border border-white/[0.07] p-4 sm:p-6 shadow-lg">
+            <h3 className="text-[9px] font-black uppercase tracking-widest text-white/40 mb-3">
+              Saldo por Cuenta
+            </h3>
+            <div className={`grid ${gridCols} gap-2 sm:gap-4`}>
+              {cards.map((item) => {
+                const isTotal = item.acct === 'ALL';
+                const active = accountFilter === item.acct;
+                return (
+                  <button
+                    key={item.acct}
+                    onClick={() => setAccountFilter(item.acct)}
+                    className={`rounded-xl p-3 sm:p-4 text-center border transition-all active:scale-[0.97] ${
+                      active
+                        ? isTotal
+                          ? 'border-indigo-500/40 bg-indigo-500/10'
+                          : 'border-sky-500/40 bg-sky-500/10'
+                        : 'border-white/[0.07] bg-white/[0.02] hover:border-white/[0.12]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${isTotal ? 'bg-indigo-500' : 'bg-sky-500'}`} />
+                      <span className="text-[8px] sm:text-[9px] font-black uppercase text-white/40 truncate max-w-[80px]">
+                        {item.label}
+                      </span>
+                    </div>
+                    <p className={`text-base sm:text-lg font-black font-mono ${
+                      item.value > 0.01 ? 'text-rose-400' : 'text-emerald-400'
+                    }`}>
+                      {formatCurrency(Math.abs(item.value), '$')}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Desktop table */}
       <div className="bg-[#0d1424] rounded-2xl border border-white/[0.07] overflow-hidden shadow-lg hidden sm:block">

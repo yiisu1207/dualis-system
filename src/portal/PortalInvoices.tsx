@@ -2,20 +2,37 @@ import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { usePortal } from './PortalGuard';
 import { usePortalData } from './usePortalData';
 import { formatCurrency } from '../utils/formatters';
-import { AccountType, MovementType } from '../../types';
+import { MovementType } from '../../types';
 import { FileText, Receipt, Filter, Search, PenTool, Check, X, Loader2 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 type StatusFilter = 'ALL' | 'PENDIENTE' | 'PAGADO';
-type AcctFilter = 'ALL' | AccountType;
+type AcctFilter = string; // 'ALL' o cualquier accountType dinámico
 
 export default function PortalInvoices() {
   const { businessId, customerId, customerName } = usePortal();
-  const { movements, loading } = usePortalData(businessId, customerId);
+  const { movements, loading, rates } = usePortalData(businessId, customerId);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [acctFilter, setAcctFilter] = useState<AcctFilter>('ALL');
   const [search, setSearch] = useState('');
+
+  // Tipos de cuenta presentes en los movimientos del cliente (dinámico)
+  const availableAccountTypes = useMemo(() => {
+    const set = new Set<string>();
+    movements.forEach((m) => {
+      if ((m as any).anulada) return;
+      const acct = String(m.accountType || '').trim();
+      if (acct) set.add(acct);
+    });
+    return Array.from(set).sort();
+  }, [movements]);
+
+  // Helper para mostrar nombre legible: customRates.name si existe, sino el id raw
+  const labelForAccount = (acct: string) => {
+    const cr = rates.customRates.find((r) => r.id === acct);
+    return cr?.name || acct;
+  };
 
   // Signature state
   const [sigMovId, setSigMovId] = useState<string | null>(null);
@@ -149,21 +166,23 @@ export default function PortalInvoices() {
           ))}
         </div>
 
-        <div className="flex bg-white/[0.06] rounded-xl p-0.5 border border-white/[0.08]">
-          {(['ALL', AccountType.BCV, AccountType.GRUPO, AccountType.DIVISA] as AcctFilter[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setAcctFilter(f)}
-              className={`flex-1 sm:flex-none px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                acctFilter === f
-                  ? 'bg-white/[0.1] text-white'
-                  : 'text-white/30 active:text-white/50'
-              }`}
-            >
-              {f === 'ALL' ? 'Todas' : f}
-            </button>
-          ))}
-        </div>
+        {availableAccountTypes.length > 0 && (
+          <div className="flex bg-white/[0.06] rounded-xl p-0.5 border border-white/[0.08] overflow-x-auto">
+            {(['ALL', ...availableAccountTypes] as AcctFilter[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setAcctFilter(f)}
+                className={`flex-1 sm:flex-none px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                  acctFilter === f
+                    ? 'bg-white/[0.1] text-white'
+                    : 'text-white/30 active:text-white/50'
+                }`}
+              >
+                {f === 'ALL' ? 'Todas' : labelForAccount(f)}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="relative flex-1 min-w-0">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />

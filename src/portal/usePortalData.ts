@@ -8,6 +8,8 @@ export interface PortalBalances {
   grupo: number;
   divisa: number;
   total: number;
+  /** Saldo por cada accountType que aparece en los movimientos del cliente. Key = accountType. */
+  byAccount: Record<string, number>;
 }
 
 export interface AgingBuckets {
@@ -117,22 +119,23 @@ export function usePortalData(businessId: string, customerId: string) {
     })();
   }, [businessId, customerId]);
 
-  // Compute balances
+  // Compute balances dinámicamente por cada accountType presente en los movimientos
   const balances = useMemo<PortalBalances>(() => {
-    const calc = (acct: AccountType) => {
-      const acctMovs = movements.filter((m) => m.accountType === acct);
-      const debt = acctMovs
-        .filter((m) => m.movementType === MovementType.FACTURA)
-        .reduce((s, m) => s + (m.amountInUSD || m.amount), 0);
-      const paid = acctMovs
-        .filter((m) => m.movementType === MovementType.ABONO)
-        .reduce((s, m) => s + (m.amountInUSD || m.amount), 0);
-      return debt - paid;
-    };
-    const bcv = calc(AccountType.BCV);
-    const grupo = calc(AccountType.GRUPO);
-    const divisa = calc(AccountType.DIVISA);
-    return { bcv, grupo, divisa, total: bcv + grupo + divisa };
+    const byAccount: Record<string, number> = {};
+    movements.forEach((m) => {
+      if ((m as any).anulada) return;
+      const acct = String(m.accountType || '');
+      if (!acct) return;
+      const amt = m.amountInUSD || m.amount;
+      const sign = m.movementType === MovementType.FACTURA ? 1 : m.movementType === MovementType.ABONO ? -1 : 0;
+      if (!sign) return;
+      byAccount[acct] = (byAccount[acct] || 0) + amt * sign;
+    });
+    const bcv = byAccount[AccountType.BCV] || 0;
+    const grupo = byAccount[AccountType.GRUPO] || 0;
+    const divisa = byAccount[AccountType.DIVISA] || 0;
+    const total = Object.values(byAccount).reduce((s, v) => s + v, 0);
+    return { bcv, grupo, divisa, total, byAccount };
   }, [movements]);
 
   // Aging buckets
