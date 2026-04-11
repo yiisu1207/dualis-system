@@ -22,7 +22,6 @@ import { useToast } from './context/ToastContext';
 import { useBusinessData } from './hooks/useBusinessData';
 import { useRolePermissions } from './hooks/useRolePermissions';
 import { useVendor } from './context/VendorContext';
-import { getPreset } from './data/businessPresets';
 import { getCustomization } from './customizations/index';
 import { fireWebhook } from './utils/webhookTrigger';
 import { useTranslation } from 'react-i18next';
@@ -55,7 +54,6 @@ import HelpCenter from './components/HelpCenter';
 import WidgetLaunchpad from './components/WidgetLaunchpad';
 import AdminPosManager from './pages/AdminPosManager';
 import DespachoPanel from './pages/DespachoPanel';
-import CitasPanel from './pages/CitasPanel';
 const QuotesPanel = lazy(() => import('./pages/QuotesPanel'));
 const RecurringBillingPanel = lazy(() => import('./pages/RecurringBillingPanel'));
 const CashFlowPanel = lazy(() => import('./pages/CashFlowPanel'));
@@ -63,8 +61,6 @@ const ParetoPanel = lazy(() => import('./pages/ParetoPanel'));
 const Estadisticas = lazy(() => import('./pages/Estadisticas'));
 const TransferenciasPanel = lazy(() => import('./pages/TransferenciasPanel'));
 const RentabilidadPage = lazy(() => import('./pages/RentabilidadPage'));
-import PrePedidosPanel from './components/inventory/PrePedidosPanel';
-import RepairTicketsPanel from './components/inventory/RepairTicketsPanel';
 const SucursalesManager = lazy(() => import('./pages/SucursalesManager'));
 import TrialBanner from './components/TrialBanner';
 import NotificationCenter from './components/NotificationCenter';
@@ -345,7 +341,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [pendingCompareCount, setPendingCompareCount] = useState(0);
   const [pendingProductsCount, setPendingProductsCount] = useState(0);
   const [overduePaymentsCount, setOverduePaymentsCount] = useState(0);
-  const [tipoNegocio, setTipoNegocio] = useState('general');
   // Fase D.0 — Quórum de aprobación CxC/CxP
   const [approvalConfig, setApprovalConfig] = useState<ApprovalConfig>(DEFAULT_APPROVAL_CONFIG);
   const [pendingMovementsList, setPendingMovementsList] = useState<PendingMovement[]>([]);
@@ -420,9 +415,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     conciliacion:  `${adminBase}/conciliacion`,
     cajas:         `${adminBase}/cajas`,
     despacho:      `${adminBase}/despacho`,
-    citas:         `${adminBase}/citas`,
-    prepedidos:    `${adminBase}/prepedidos`,
-    reparaciones:  `${adminBase}/reparaciones`,
     sucursales:    `${adminBase}/sucursales`,
     fiscal:        `${adminBase}/fiscal`,
     reclamos:      `${adminBase}/reclamos`,
@@ -641,24 +633,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     return () => { cancelled = true; clearTimeout(t); };
   }, [businessId, userProfile?.role, userProfile?.email]);
 
-  // ── Listener: tipo de negocio (para UI adaptativa) ─────────────────────────
-  useEffect(() => {
-    if (!businessId) return;
-    const unsub = onSnapshot(doc(db, 'businesses', businessId), snap => {
-      const data = snap.data();
-      if (data?.tipoNegocio) setTipoNegocio(data.tipoNegocio);
-    });
-    return unsub;
-  }, [businessId]);
-
-  const preset = useMemo(() => getPreset(tipoNegocio), [tipoNegocio]);
-
-  // Safe-default flag: if tipoNegocio is empty/general, do NOT hide tabs — only
-  // filter when the user picked an explicit vertical that negates the module.
-  const presetAllows = useCallback((flag: keyof typeof preset) => {
-    if (!tipoNegocio || tipoNegocio === 'general') return true;
-    return Boolean((preset as any)[flag]);
-  }, [preset, tipoNegocio]);
 
   // ── F.7 Birthday auto-greeting (cron-less, runs once per day per mount) ──────
   useEffect(() => {
@@ -1115,24 +1089,16 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const tabTitles: Record<string, string> = useMemo(() => ({
     resumen: 'Resumen', clientes: 'Clientes', contabilidad: 'Contabilidad',
     proveedores: 'Proveedores', rrhh: 'RRHH',
-    inventario: preset.hasServices ? 'Servicios y Productos' : 'Inventario',
+    inventario: 'Inventario',
     reportes: 'Reportes', vision: 'VisionLab', widgets: 'Herramientas',
     comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
-    cajas: 'Cajas', despacho: 'Panel Despacho', citas: 'Citas',
-    prepedidos: 'Pre-Pedidos', reparaciones: 'Reparaciones', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Reporte de Ventas',
+    cajas: 'Cajas', despacho: 'Panel Despacho', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Reporte de Ventas',
     tesoreria: 'Tesorería', comisiones: 'Reporte de Comisiones',
     aprobaciones: 'Aprobaciones',
     verificacion: 'Verificación',
     reclamos: 'Reclamos',
     config: 'Configuración', help: 'Ayuda',
-  }), [preset]);
-
-  const sidebarLabelOverrides = useMemo(() => {
-    const o: Record<string, string> = {};
-    if (preset.hasServices) o.inventario = 'Servicios y Productos';
-    if (preset.hasAppointments) o.citas = 'Citas';
-    return o;
-  }, [preset]);
+  }), []);
 
   // Fase D.0 — Count de pendientes que esperan firma del current user (excluye propios y ya firmados)
   const pendingApprovalInboxCount = useMemo(() => {
@@ -1157,12 +1123,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           rolePermissions={rolePermissions}
           canCompare={canAccess('comparar')}
           badges={{ comparar: pendingCompareCount, tesoreria: overduePaymentsCount, aprobaciones: pendingApprovalInboxCount }}
-          labelOverrides={sidebarLabelOverrides}
-          presetFlags={tipoNegocio && tipoNegocio !== 'general' ? {
-            hasAppointments: preset.hasAppointments,
-            hasPreorders: preset.hasPreorders,
-            hasRepairTickets: preset.hasRepairTickets,
-          } : undefined}
           onLogout={() => auth.signOut()}
           onOpenProfile={() => setIsProfileOpen(true)}
         />
@@ -1222,28 +1182,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               (user?.role === 'owner' || user?.role === 'admin' || user?.role === 'almacenista' || user?.role === 'inventario')
                 ? <DespachoPanel businessId={businessId} />
                 : <NoAccess />
-            )}
-            {activeTab === 'citas' && (
-              !presetAllows('hasAppointments') ? <NoAccess /> :
-              !canAccess('citas')
-                ? <LockedModule moduleName="Sistema de Citas" requiredPlan="vertical" />
-                : <CitasPanel
-                    businessId={businessId}
-                    currentUserId={userProfile?.id || firebaseUser?.uid || ''}
-                    currentUserName={userProfile?.fullName || 'Admin'}
-                  />
-            )}
-            {activeTab === 'prepedidos' && (
-              !presetAllows('hasPreorders') ? <NoAccess /> :
-              !canAccess('prepedidos')
-                ? <LockedModule moduleName="Pre-Pedidos" requiredPlan="vertical" />
-                : <PrePedidosPanel businessId={businessId} currentUserName={userProfile?.fullName || 'Admin'} />
-            )}
-            {activeTab === 'reparaciones' && (
-              !presetAllows('hasRepairTickets') ? <NoAccess /> :
-              !canAccess('tickets_reparacion')
-                ? <LockedModule moduleName="Tickets de Reparación" requiredPlan="vertical" />
-                : <RepairTicketsPanel businessId={businessId} currentUserName={userProfile?.fullName || 'Admin'} />
             )}
             {activeTab === 'cotizaciones' && (
               <QuotesPanel

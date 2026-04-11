@@ -5,10 +5,9 @@ import { Award, Filter, Calendar, Users, TrendingUp, Download } from 'lucide-rea
 
 interface CommissionRecord {
   id: string;
-  type: 'cita' | 'venta' | 'despacho' | string;
+  type: 'venta' | 'despacho' | string;
   staffId?: string;
   staffName?: string;
-  appointmentId?: string;
   movementId?: string;
   serviceId?: string;
   serviceName?: string;

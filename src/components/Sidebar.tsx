@@ -46,11 +46,6 @@ interface SidebarProps {
   rolePermissions?: RolePermissions;
   badges?: Record<string, number>;
   labelOverrides?: Record<string, string>;
-  presetFlags?: {
-    hasAppointments?: boolean;
-    hasPreorders?: boolean;
-    hasRepairTickets?: boolean;
-  };
   onLogout: () => void;
   onOpenProfile: () => void;
 }
@@ -85,9 +80,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'inventario',   label: 'Inventario',       Icon: Package,         path: 'inventario'   },
       { id: 'cajas',        label: 'Ventas / Cajas',   Icon: ShoppingCart,    path: 'cajas'        },
       { id: 'despacho',     label: 'Panel Despacho',   Icon: Truck,           path: 'despacho'     },
-      { id: 'citas',        label: 'Citas',            Icon: CalendarDays,    path: 'citas'        },
-      { id: 'prepedidos',   label: 'Pre-Pedidos',      Icon: Package,         path: 'prepedidos'   },
-      { id: 'reparaciones', label: 'Reparaciones',     Icon: ClipboardCheck,  path: 'reparaciones' },
       { id: 'cotizaciones', label: 'Cotizaciones',     Icon: FileText,        path: 'cotizaciones' },
       { id: 'recurrentes', label: 'Recurrentes',      Icon: Clock,           path: 'recurrentes'  },
       { id: 'transferencias',label: 'Transferencias',   Icon: ArrowLeftRight,  path: 'transferencias'},
@@ -159,9 +151,6 @@ const moduleMap: Record<string, string> = {
   conciliacion: 'reconciliation',
   rrhh:         'nomina',
   vision:       'vision',
-  citas:        'citas',
-  prepedidos:   'prepedidos',
-  reparaciones: 'tickets_reparacion',
 };
 
 // Accent colors per group index for icons
@@ -244,7 +233,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   rolePermissions,
   badges = {},
   labelOverrides = {},
-  presetFlags,
   onLogout,
   onOpenProfile,
 }) => {
@@ -341,14 +329,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   const isVisible = (item: NavItem): boolean => {
     if (moduleHidden(item.id)) return false;
     if (item.id === 'help') return true;
-
-    // Preset-based gating — vertical presets hide irrelevant tabs unless forced
-    // If presetFlags is not supplied, behave as before (no gating)
-    if (presetFlags && !moduleForced(item.id)) {
-      if (item.id === 'citas' && presetFlags.hasAppointments === false) return false;
-      if (item.id === 'prepedidos' && presetFlags.hasPreorders === false) return false;
-      if (item.id === 'reparaciones' && presetFlags.hasRepairTickets === false) return false;
-    }
 
     const modKey = moduleMap[item.id];
     if (modKey && (config as any).modules?.[modKey] === false && !moduleForced(item.id)) return false;

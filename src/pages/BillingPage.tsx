@@ -1,19 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTenantSafe } from '../context/TenantContext';
 import {
   Check, Zap, Crown, Building2, ArrowLeft, Copy, CheckCheck,
   AlertTriangle, Clock, Loader2, Send, ChevronRight, Shield,
-  ImagePlus, X, Store,
+  ImagePlus, X,
 } from 'lucide-react';
-import { doc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../context/AuthContext';
 import { uploadToCloudinary } from '../utils/cloudinary';
 import {
   PLANS as PLAN_CONFIG, PAYMENT_INFO, type PayMethod,
-  getVerticalPrice, getVerticalPlanInfo,
 } from '../utils/planConfig';
 
 // ─── Plan data (enriched from planConfig) ─────────────────────────────────────
@@ -32,7 +31,6 @@ interface Plan {
 
 const PLAN_STYLE_MAP: Record<string, { Icon: React.FC<{ size?: number; className?: string }>; color: string; gradient: string; shadow: string }> = {
   gratis:     { Icon: Zap,       color: 'slate',   gradient: 'from-slate-500 to-slate-600',     shadow: 'shadow-slate-500/25'  },
-  vertical:   { Icon: Store,     color: 'emerald',  gradient: 'from-emerald-500 to-teal-600',    shadow: 'shadow-emerald-500/25'},
   basico:     { Icon: Zap,       color: 'sky',      gradient: 'from-sky-500 to-blue-600',        shadow: 'shadow-sky-500/25'    },
   negocio:    { Icon: Building2, color: 'indigo',   gradient: 'from-indigo-500 to-violet-600',   shadow: 'shadow-indigo-500/25' },
   pro:        { Icon: Crown,     color: 'violet',   gradient: 'from-violet-500 to-purple-600',   shadow: 'shadow-violet-500/25' },
@@ -41,22 +39,9 @@ const PLAN_STYLE_MAP: Record<string, { Icon: React.FC<{ size?: number; className
 
 const DEFAULT_STYLE = { Icon: Zap, color: 'slate', gradient: 'from-slate-500 to-slate-600', shadow: 'shadow-slate-500/25' };
 
-function buildPlans(tipoNegocio: string): Plan[] {
+function buildPlans(): Plan[] {
   return PLAN_CONFIG.map(p => {
     const style = PLAN_STYLE_MAP[p.id] ?? DEFAULT_STYLE;
-    // For vertical plan, resolve dynamic price and features
-    if (p.id === 'vertical') {
-      const info = getVerticalPlanInfo(tipoNegocio);
-      return {
-        id: p.id,
-        name: info.name,
-        monthlyPrice: info.price,
-        features: info.features,
-        popular: false,
-        isEnterprise: false,
-        ...style,
-      };
-    }
     return {
       id: p.id,
       name: p.name,
@@ -87,15 +72,7 @@ export default function BillingPage() {
 
   const { subscription, trialDaysLeft, isExpired } = useSubscription(businessId);
 
-  const [tipoNegocio, setTipoNegocio] = useState('general');
-  useEffect(() => {
-    if (!businessId) return;
-    getDoc(doc(db, 'businesses', businessId)).then(snap => {
-      if (snap.exists() && snap.data()?.tipoNegocio) setTipoNegocio(snap.data().tipoNegocio);
-    }).catch(() => {});
-  }, [businessId]);
-
-  const PLANS = useMemo(() => buildPlans(tipoNegocio), [tipoNegocio]);
+  const PLANS = useMemo(() => buildPlans(), []);
 
   const [selectedPlan, setSelectedPlan]   = useState<Plan['id'] | null>(null);
   const [annual, setAnnual]               = useState(false);

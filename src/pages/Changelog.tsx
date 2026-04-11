@@ -27,7 +27,6 @@ const CHANGELOG: ChangelogEntry[] = [
       'Agenda de cobranza con recordatorios progresivos y calendario',
       'Chat portal bidireccional en tiempo real',
       'Permisos granulares por rol (owner, admin, cajero, vendedor, almacenista)',
-      'Gating por tipo de negocio y presets verticales',
       'ErrorBoundary global con logging a Firestore y Sentry',
       'Timeout de sesión configurable con bloqueo PIN',
       'Font scaling accesible (xs a xl)',

@@ -12,74 +12,12 @@ export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'cancelled';
 
 export const PLAN_PRICES: Record<Exclude<PlanId, 'trial' | 'gratis' | 'enterprise' | 'custom'>, number> = {
   basico:    15,
-  vertical:  15,   // base price — actual price from getVerticalPrice()
+  vertical:  15,
   negocio:   35,
   pro:       65,
   // Legacy
   starter:   15,
 };
-
-// ─── Vertical plan pricing per business type ────────────────────────────────
-export const VERTICAL_PRICES: Record<string, number> = {
-  peluqueria:  12,
-  barberia:    12,
-  boutique:    12,
-  bodega:      12,
-  floristeria: 12,
-  licoreria:   12,
-  ferreteria:  15,
-  panaderia:   15,
-  reposteria:  15,
-  tecnologia:  15,
-  servicios:   15,
-  general:     15,
-  veterinaria: 15,
-  farmacia:    18,
-  restaurant:  18,
-};
-
-export function getVerticalPrice(tipoNegocio: string): number {
-  return VERTICAL_PRICES[tipoNegocio] ?? 15;
-}
-
-// ─── Vertical plan modules per business type ────────────────────────────────
-const VERTICAL_BASE_MODULES = ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas', 'tesoreria'];
-
-const VERTICAL_EXTRA_MODULES: Record<string, string[]> = {
-  barberia:    ['citas', 'comisiones'],
-  peluqueria:  ['citas', 'comisiones'],
-  veterinaria: ['citas'],
-  panaderia:   ['recetas', 'prepedidos'],
-  reposteria:  ['recetas', 'prepedidos'],
-  restaurant:  ['recetas', 'reservaciones', 'pos_mayor'],
-  tecnologia:  ['tickets_reparacion', 'pos_mayor'],
-  farmacia:    ['vencimientos', 'alertas'],
-  boutique:    ['variantes'],
-};
-
-const VERTICAL_LIMITS: Record<string, { users: number; products: number }> = {
-  peluqueria:  { users: 5,  products: 200  },
-  barberia:    { users: 5,  products: 200  },
-  boutique:    { users: 3,  products: 500  },
-  panaderia:   { users: 5,  products: 500  },
-  reposteria:  { users: 5,  products: 500  },
-  tecnologia:  { users: 5,  products: 1000 },
-  farmacia:    { users: 5,  products: 2000 },
-  restaurant:  { users: 8,  products: 500  },
-  veterinaria: { users: 5,  products: 500  },
-  general:     { users: 3,  products: 500  },
-};
-
-export function getVerticalLimits(tipoNegocio: string): PlanLimits {
-  const lim = VERTICAL_LIMITS[tipoNegocio] ?? { users: 3, products: 500 };
-  const extraModules = VERTICAL_EXTRA_MODULES[tipoNegocio] ?? [];
-  return {
-    users:      lim.users,
-    products:   lim.products,
-    sucursales: 0,
-    modules:    [...VERTICAL_BASE_MODULES, ...extraModules],
-  };
-}
 
 export const ANNUAL_DISCOUNT = 0.20;
 
@@ -159,7 +97,7 @@ export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
   trial:      { users: 25, products: -1,   sucursales: 3,  modules: ['*'] },
   gratis:     { users: 1,  products: 50,   sucursales: 0,  modules: ['pos_detal', 'inventario', 'libro_ventas'] },
   basico:     { users: 3,  products: 500,  sucursales: 0,  modules: ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas', 'tesoreria'] },
-  vertical:   { users: 5,  products: 500,  sucursales: 0,  modules: ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas', 'tesoreria'] }, // dynamic — use getVerticalLimits()
+  vertical:   { users: 5,  products: 500,  sucursales: 0,  modules: ['pos_detal', 'inventario', 'libro_ventas', 'reportes', 'rrhh', 'cajas', 'tesoreria'] },
   negocio:    { users: 10, products: 2000, sucursales: 1,  modules: ['pos_detal', 'pos_mayor', 'inventario', 'tasas', 'clientes', 'proveedores', 'cajas', 'rrhh', 'reportes', 'sucursales', 'contabilidad', 'comparar', 'libro_ventas', 'cxc', 'cxp', 'precios_dinamicos', 'tesoreria'] },
   pro:        { users: 25, products: -1,   sucursales: 3,  modules: ['pos_detal', 'pos_mayor', 'inventario', 'tasas', 'clientes', 'proveedores', 'cajas', 'rrhh', 'reportes', 'sucursales', 'contabilidad', 'comparar', 'libro_ventas', 'cxc', 'cxp', 'precios_dinamicos', 'portal_clientes', 'embajador', 'vision', 'catalogo', 'conciliacion', 'tesoreria'] },
   enterprise: { users: -1, products: -1,   sucursales: -1, modules: ['*'] },
@@ -185,11 +123,6 @@ export const FEATURE_LABELS: Record<string, { name: string; minPlan: string; add
   dualis_pay:       { name: 'Dualis Pay',                 minPlan: 'Add-on',  addonKey: 'dualisPay',    addonPrice: ADDON_PRICES.dualisPay    },
   whatsapp_auto:    { name: 'WhatsApp/Email Automático',  minPlan: 'Add-on',  addonKey: 'whatsappAuto', addonPrice: ADDON_PRICES.whatsappAuto },
   precios_dinamicos:{ name: 'Precios Dinámicos',          minPlan: 'Negocio' },
-  citas:            { name: 'Sistema de Citas',           minPlan: 'Vertical' },
-  recetas:          { name: 'Recetas y Costeo',           minPlan: 'Vertical' },
-  vencimientos:     { name: 'Control de Vencimientos',    minPlan: 'Vertical' },
-  tickets_reparacion:{ name: 'Tickets de Reparación',     minPlan: 'Vertical' },
-  reservaciones:    { name: 'Reservaciones',              minPlan: 'Vertical' },
   embajador:        { name: 'Programa Embajador',         minPlan: 'Pro'      },
   api_publica:      { name: 'API Pública',                minPlan: 'Enterprise' },
   white_label:      { name: 'White-label',                minPlan: 'Enterprise' },
@@ -201,11 +134,10 @@ export interface PlanInfo {
   id: Exclude<PlanId, 'trial' | 'custom' | 'starter'>;
   name: string;
   tagline: string;
-  price: number | null;  // null = cotización, -1 = dynamic (vertical)
+  price: number | null;  // null = cotización
   features: string[];
   popular?: boolean;
   isEnterprise?: boolean;
-  isVertical?: boolean;
 }
 
 export const PLANS: PlanInfo[] = [
@@ -220,23 +152,6 @@ export const PLANS: PlanInfo[] = [
       'POS Detal básico',
       'Inventario',
       'Reporte de Ventas',
-    ],
-  },
-  {
-    id: 'vertical',
-    name: 'Tu Negocio',
-    tagline: 'Hecho para tu tipo de negocio',
-    price: -1,  // dynamic — use getVerticalPrice(tipoNegocio)
-    isVertical: true,
-    features: [
-      'Hasta 5 usuarios',
-      'Hasta 500 productos',
-      'POS Detal completo',
-      'Inventario',
-      'Reportes y estadísticas',
-      'RRHH básico',
-      'Módulos de tu vertical',
-      'IVA + IGTF automático',
     ],
   },
   {
@@ -421,61 +336,3 @@ export function buildQuoteWhatsApp(businessName?: string): string {
   return `https://wa.me/${DUALIS_WHATSAPP}?text=${msg}`;
 }
 
-// ─── Vertical plan display helpers ──────────────────────────────────────────
-
-const VERTICAL_LABELS: Record<string, string> = {
-  peluqueria:  'Peluquería',
-  barberia:    'Barbería',
-  boutique:    'Boutique',
-  bodega:      'Bodega',
-  floristeria: 'Floristería',
-  licoreria:   'Licorería',
-  ferreteria:  'Ferretería',
-  panaderia:   'Panadería',
-  reposteria:  'Repostería',
-  tecnologia:  'Tecnología',
-  servicios:   'Servicios',
-  general:     'General',
-  veterinaria: 'Veterinaria',
-  farmacia:    'Farmacia',
-  restaurant:  'Restaurant',
-};
-
-/** Returns a PlanInfo customized for the given business type */
-export function getVerticalPlanInfo(tipoNegocio: string): PlanInfo {
-  const price = getVerticalPrice(tipoNegocio);
-  const lim = getVerticalLimits(tipoNegocio);
-  const label = VERTICAL_LABELS[tipoNegocio] || tipoNegocio;
-  const extraModules = VERTICAL_EXTRA_MODULES[tipoNegocio] ?? [];
-
-  const featureNames: Record<string, string> = {
-    citas: 'Sistema de Citas',
-    comisiones: 'Comisiones por empleado',
-    recetas: 'Recetas y Costeo',
-    prepedidos: 'Pre-pedidos con depósito',
-    reservaciones: 'Reservaciones',
-    tickets_reparacion: 'Tickets de Reparación',
-    vencimientos: 'Control de Vencimientos',
-    alertas: 'Alertas de inventario',
-    variantes: 'Variantes (talla/color)',
-    pos_mayor: 'POS Mayor',
-  };
-
-  return {
-    id: 'vertical',
-    name: `Plan ${label}`,
-    tagline: `Hecho para tu ${label.toLowerCase()}`,
-    price,
-    isVertical: true,
-    features: [
-      `${lim.users} usuarios`,
-      `${lim.products} productos`,
-      'POS Detal completo',
-      'Inventario + Kardex',
-      'Reportes y estadísticas',
-      'RRHH básico',
-      ...extraModules.map(m => featureNames[m] || m),
-      'IVA + IGTF automático',
-    ],
-  };
-}

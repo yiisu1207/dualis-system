@@ -2,41 +2,19 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Check, Minus, ArrowRight, Zap, ChevronDown, Sparkles, Crown,
-  Building2, Rocket, Star, ShieldCheck, MessageSquare, TrendingUp,
+  Building2, Rocket, ShieldCheck, MessageSquare, TrendingUp,
   Award, Globe, ShoppingCart, Brain, Users, Activity, Wallet,
-  Scissors, Pill, Wrench, Cake, Wine, Flower2, Hammer, Cpu,
-  Stethoscope, UtensilsCrossed, Shirt, Store, Briefcase, Package,
 } from 'lucide-react';
 import SEO from '../../components/SEO';
 import {
   PLANS, COMPARE_ROWS, ADDON_PRICES,
-  VERTICAL_PRICES, ANNUAL_DISCOUNT,
+  ANNUAL_DISCOUNT,
   buildQuoteWhatsApp, DUALIS_WHATSAPP,
 } from '../../utils/planConfig';
-
-// ─── Verticales con iconos ──────────────────────────────────────────────────
-const VERTICAL_OPTIONS: { value: string; label: string; icon: React.ComponentType<{ size?: number; className?: string }>; color: string }[] = [
-  { value: 'general',     label: 'General',     icon: Briefcase,        color: 'from-slate-500 to-slate-600'   },
-  { value: 'peluqueria',  label: 'Peluquería',  icon: Scissors,         color: 'from-pink-500 to-rose-500'     },
-  { value: 'barberia',    label: 'Barbería',    icon: Scissors,         color: 'from-amber-500 to-orange-600'  },
-  { value: 'boutique',    label: 'Boutique',    icon: Shirt,            color: 'from-fuchsia-500 to-pink-600'  },
-  { value: 'bodega',      label: 'Bodega',      icon: Store,            color: 'from-emerald-500 to-teal-600'  },
-  { value: 'floristeria', label: 'Floristería', icon: Flower2,          color: 'from-rose-400 to-pink-500'     },
-  { value: 'licoreria',   label: 'Licorería',   icon: Wine,             color: 'from-red-500 to-rose-700'      },
-  { value: 'ferreteria',  label: 'Ferretería',  icon: Hammer,           color: 'from-slate-500 to-zinc-700'    },
-  { value: 'panaderia',   label: 'Panadería',   icon: Cake,             color: 'from-amber-400 to-yellow-600'  },
-  { value: 'reposteria',  label: 'Repostería',  icon: Cake,             color: 'from-pink-400 to-amber-500'    },
-  { value: 'tecnologia',  label: 'Tecnología',  icon: Cpu,              color: 'from-cyan-500 to-blue-600'     },
-  { value: 'servicios',   label: 'Servicios',   icon: Wrench,           color: 'from-indigo-500 to-violet-600' },
-  { value: 'veterinaria', label: 'Veterinaria', icon: Stethoscope,      color: 'from-teal-500 to-emerald-600'  },
-  { value: 'farmacia',    label: 'Farmacia',    icon: Pill,             color: 'from-emerald-500 to-green-700' },
-  { value: 'restaurant',  label: 'Restaurant',  icon: UtensilsCrossed,  color: 'from-orange-500 to-red-600'    },
-];
 
 // ─── Iconos por plan ───────────────────────────────────────────────────────
 const PLAN_ICONS: Record<string, { Icon: React.ComponentType<{ size?: number; className?: string }>; gradient: string; glow: string }> = {
   gratis:     { Icon: Sparkles,  gradient: 'from-slate-400 to-slate-600',     glow: 'shadow-slate-500/20'  },
-  vertical:   { Icon: Star,      gradient: 'from-emerald-400 to-teal-600',    glow: 'shadow-emerald-500/30' },
   basico:     { Icon: Zap,       gradient: 'from-sky-400 to-blue-600',        glow: 'shadow-sky-500/20'    },
   negocio:    { Icon: Building2, gradient: 'from-indigo-500 to-violet-600',   glow: 'shadow-indigo-500/40' },
   pro:        { Icon: Crown,     gradient: 'from-violet-500 to-fuchsia-600',  glow: 'shadow-violet-500/30' },
@@ -52,7 +30,7 @@ const pricingSchema = {
   offers: PLANS.filter(p => typeof p.price === 'number' && p.price !== null && p.price > 0).map(p => ({
     '@type': 'Offer',
     name: p.name,
-    price: p.price === -1 ? 12 : p.price,
+    price: p.price,
     priceCurrency: 'USD',
     description: p.tagline,
     eligibleDuration: 'P1M',
@@ -63,12 +41,9 @@ const pricingSchema = {
 export default function PreciosPage() {
   const navigate = useNavigate();
   const [annual, setAnnual] = useState(false);
-  const [vertical, setVertical] = useState<string>('general');
   const [openCats, setOpenCats] = useState<Set<string>>(new Set(['Ventas', 'Finanzas']));
 
   const cats = useMemo(() => [...new Set(COMPARE_ROWS.map(r => r.cat))], []);
-  const verticalPrice = VERTICAL_PRICES[vertical] ?? 15;
-  const verticalLabel = VERTICAL_OPTIONS.find(v => v.value === vertical)?.label ?? 'General';
 
   const toggleCat = (cat: string) => setOpenCats(prev => {
     const n = new Set(prev);
@@ -79,7 +54,6 @@ export default function PreciosPage() {
   const computePrice = (price: number | null) => {
     if (price === null) return null;
     if (price === 0)    return 0;
-    if (price === -1)   return annual ? +(verticalPrice * (1 - ANNUAL_DISCOUNT)).toFixed(0) : verticalPrice;
     return annual ? +(price * (1 - ANNUAL_DISCOUNT)).toFixed(0) : price;
   };
 
@@ -88,8 +62,8 @@ export default function PreciosPage() {
   return (
     <>
       <SEO
-        title="Precios — Dualis ERP | Desde $12/mes"
-        description="Planes de Dualis ERP para empresas venezolanas. Plan vertical desde $12/mes según tu rubro, Negocio $35, Pro $65. 30 días gratis sin tarjeta. POS, inventario, CxC, RRHH y más."
+        title="Precios — Dualis ERP | Desde Gratis"
+        description="Planes de Dualis ERP para empresas venezolanas. Negocio $35, Pro $65. 30 días gratis sin tarjeta. POS, inventario, CxC, RRHH y más."
         url="https://dualis.online/precios"
         jsonLd={pricingSchema}
       />
@@ -158,47 +132,14 @@ export default function PreciosPage() {
             </div>
           </div>
 
-          {/* ── VERTICAL SELECTOR ─────────────────────────── */}
-          <div className="mb-16">
-            <div className="text-center mb-6">
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400 mb-2">Elige tu rubro</p>
-              <h2 className="text-2xl sm:text-3xl font-black text-white">¿Qué tipo de negocio tienes?</h2>
-              <p className="text-white/40 text-sm mt-2">El plan vertical incluye módulos hechos a medida para ti</p>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-8 gap-2.5">
-              {VERTICAL_OPTIONS.map(opt => {
-                const isActive = vertical === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    onClick={() => setVertical(opt.value)}
-                    className={`group relative flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all ${
-                      isActive
-                        ? 'bg-white/[0.08] border-indigo-500/50 ring-2 ring-indigo-500/30 scale-105'
-                        : 'bg-white/[0.02] border-white/[0.07] hover:bg-white/[0.05] hover:border-white/[0.15]'
-                    }`}
-                  >
-                    <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${opt.color} shadow-lg flex items-center justify-center`}>
-                      <opt.icon size={16} className="text-white" />
-                    </div>
-                    <span className={`text-[10px] font-black uppercase tracking-wider ${isActive ? 'text-white' : 'text-white/50 group-hover:text-white/80'}`}>
-                      {opt.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {/* ── PLAN CARDS ────────────────────────────────── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 mb-16">
             {PLANS.map(plan => {
               const price = computePrice(plan.price);
               const meta = PLAN_ICONS[plan.id] ?? PLAN_ICONS.basico;
               const isPopular = plan.popular;
-              const isVertical = plan.isVertical;
               const isEnterprise = plan.isEnterprise;
-              const monthlyForSavings = plan.price === -1 ? verticalPrice : (typeof plan.price === 'number' ? plan.price : 0);
+              const monthlyForSavings = typeof plan.price === 'number' ? plan.price : 0;
               const savings = monthlyForSavings > 0 && annual ? monthlyToAnnualSavings(monthlyForSavings) : 0;
 
               return (
@@ -207,20 +148,14 @@ export default function PreciosPage() {
                   className={`group relative flex flex-col rounded-3xl border p-6 transition-all hover:-translate-y-1 ${
                     isPopular
                       ? 'bg-gradient-to-b from-indigo-600/[0.18] via-violet-600/[0.08] to-transparent border-indigo-500/40 ring-1 ring-indigo-500/30 shadow-2xl shadow-indigo-500/10'
-                      : isVertical
-                        ? 'bg-gradient-to-b from-emerald-600/[0.12] via-teal-600/[0.04] to-transparent border-emerald-500/30 ring-1 ring-emerald-500/20'
-                        : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.05] hover:border-white/[0.15]'
+                      : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.05] hover:border-white/[0.15]'
                   }`}
                 >
                   {/* Badge */}
-                  {(isPopular || isVertical) && (
+                  {isPopular && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-                      <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-white whitespace-nowrap shadow-lg ${
-                        isPopular
-                          ? 'bg-gradient-to-r from-indigo-600 to-violet-600 shadow-indigo-500/40'
-                          : 'bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-500/40'
-                      }`}>
-                        {isPopular ? '⭐ Más popular' : `Para tu ${verticalLabel}`}
+                      <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-white whitespace-nowrap shadow-lg bg-gradient-to-r from-indigo-600 to-violet-600 shadow-indigo-500/40">
+                        ⭐ Más popular
                       </span>
                     </div>
                   )}
@@ -275,9 +210,7 @@ export default function PreciosPage() {
                     className={`w-full py-3 rounded-xl font-black text-xs mb-6 flex items-center justify-center gap-1.5 transition-all ${
                       isPopular
                         ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:opacity-95'
-                        : isVertical
-                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-500/25 hover:opacity-95'
-                          : 'bg-white/[0.08] border border-white/[0.1] text-white/80 hover:bg-white/[0.12] hover:text-white'
+                        : 'bg-white/[0.08] border border-white/[0.1] text-white/80 hover:bg-white/[0.12] hover:text-white'
                     }`}
                   >
                     {isEnterprise ? 'Cotizar' : plan.id === 'gratis' ? 'Empezar gratis' : 'Empezar trial'}
@@ -418,7 +351,6 @@ export default function PreciosPage() {
                 { q: '¿Necesito tarjeta de crédito para empezar?', a: 'No. Los 30 días de prueba del Plan Pro son gratuitos y no requieren tarjeta. Después puedes elegir el plan que prefieras.' },
                 { q: '¿Qué pasa cuando termina el período de prueba?', a: 'Puedes elegir un plan de pago en cualquier momento. Tus datos se conservan 30 días adicionales antes de eliminarse, así nunca pierdes información.' },
                 { q: '¿Puedo cambiar de plan?', a: 'Sí, puedes subir o bajar de plan cuando quieras desde Configuración → Suscripción. La diferencia se prorratea automáticamente.' },
-                { q: '¿Qué es el Plan Vertical?', a: 'Es un plan diseñado para tu tipo específico de negocio. Por ejemplo: si tienes una barbería, incluye sistema de citas y comisiones. Si tienes una farmacia, incluye control de vencimientos. Cada rubro tiene módulos hechos a medida.' },
                 { q: '¿Cómo se paga?', a: 'Aceptamos Binance Pay (USDT), Pago Móvil, Transferencia bancaria a cuenta venezolana, y PayPal.' },
                 { q: '¿Qué pasa si supero el límite de productos o usuarios?', a: 'Te avisamos antes de que llegues al límite. Puedes subir de plan o agregar add-ons como "Pack 5 Usuarios" sin necesidad de cambiar todo el plan.' },
                 { q: '¿Hay descuento por pago anual?', a: 'Sí, ahorras 20% pagando anualmente. También tenemos planes semestrales con 20% off y la promo "Triple Play": pagas 2 meses y obtienes 3.' },

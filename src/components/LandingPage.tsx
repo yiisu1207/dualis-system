@@ -126,7 +126,6 @@ const FEATURE_CATEGORIES = [
       { icon: Heart, text: 'Panel de fidelidad con puntos, tier y beneficios visibles' },
       { icon: FileText, text: 'Estado de cuenta PDF descargable por el cliente' },
       { icon: ShoppingCart, text: 'Auto-pedidos desde catalogo del portal' },
-      { icon: Wrench, text: 'Seguimiento de reparaciones en linea' },
       { icon: KeyRound, text: 'Acceso seguro con OTP por email (sin passwords)' },
       { icon: Smartphone, text: 'Mobile-first: funciona perfecto desde cualquier celular' },
     ],
@@ -155,11 +154,8 @@ const FEATURE_CATEGORIES = [
     icon: CalendarDays,
     color: 'amber',
     title: 'Operaciones',
-    subtitle: 'Citas, pre-pedidos, reparaciones',
+    subtitle: 'Herramientas operativas',
     features: [
-      { icon: CalendarDays, text: 'Agenda de citas conectada al POS y comisiones' },
-      { icon: Package, text: 'Pre-pedidos con deposito, entrega y decremento de stock' },
-      { icon: Wrench, text: 'Tickets de reparacion con facturacion y portal cliente' },
       { icon: Users, text: 'RRHH completo: nomina, vales, cortes, historial salarial' },
       { icon: Truck, text: 'Panel de despacho con firma digital del receptor' },
       { icon: Calculator, text: 'Reporte de comisiones por empleado y servicio' },
@@ -581,7 +577,6 @@ export default function LandingPage() {
                   { Icon: Users,        label: 'RRHH' },
                   { Icon: Globe,        label: 'Portal' },
                   { Icon: Heart,        label: 'Fidelidad' },
-                  { Icon: CalendarDays, label: 'Citas' },
                   { Icon: BarChart3,    label: 'Estadisticas' },
                   { Icon: Brain,        label: 'Auditoria IA' },
                   { Icon: FileText,     label: 'Cotizaciones' },
@@ -678,7 +673,7 @@ export default function LandingPage() {
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-indigo-400 mb-3">Precios transparentes</p>
               <h2 className="text-3xl sm:text-4xl font-black tracking-tight">Planes desde $12/mes</h2>
               <p className="text-white/40 mt-3 text-sm max-w-xl mx-auto">
-                Plan vertical hecho para tu tipo de negocio, o planes generales que escalan contigo.
+                Planes que escalan contigo, desde gratis hasta enterprise.
               </p>
             </div>
           </FadeIn>
@@ -686,7 +681,6 @@ export default function LandingPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
             {[
               { name: 'Gratis',     price: '$0',    desc: '1 usuario, 50 productos, POS basico', gradient: 'from-slate-400 to-slate-500' },
-              { name: 'Tu Negocio', price: 'desde $12', desc: 'Plan vertical con modulos de tu rubro', gradient: 'from-sky-400 to-blue-500' },
               { name: 'Negocio',    price: '$35',   desc: 'CxC, CxP, tesoreria, multi-cuenta, portal', gradient: 'from-indigo-500 to-violet-600', popular: true },
               { name: 'Pro',        price: '$65',   desc: 'Vision IA, embajador, 3 sucursales, todo', gradient: 'from-violet-500 to-purple-600' },
             ].map(p => (

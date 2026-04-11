@@ -41,10 +41,7 @@ const PortalAbonoForm  = lazy(() => import('../portal/PortalAbonoForm'));
 const PortalStatement  = lazy(() => import('../portal/PortalStatement'));
 const PortalHelp       = lazy(() => import('../portal/PortalHelp'));
 const PortalCatalog    = lazy(() => import('../portal/PortalCatalog'));
-const PortalBooking    = lazy(() => import('../portal/PortalBooking'));
 const PortalLoyalty    = lazy(() => import('../portal/PortalLoyalty'));
-const PortalPedidos    = lazy(() => import('../portal/PortalPedidos'));
-const PortalReparaciones = lazy(() => import('../portal/PortalReparaciones'));
 const PortalPaymentVerify = lazy(() => import('../portal/PortalPaymentVerify'));
 const PortalDispute    = lazy(() => import('../portal/PortalDispute'));
 const PortalChat       = lazy(() => import('../portal/PortalChat'));
@@ -391,10 +388,7 @@ export default function AppRouter() {
           <Route path="pagar" element={<PortalAbonoForm />} />
           <Route path="estado-cuenta" element={<PortalStatement />} />
           <Route path="catalogo" element={<PortalCatalog />} />
-          <Route path="citas" element={<PortalBooking />} />
           <Route path="fidelidad" element={<PortalLoyalty />} />
-          <Route path="pedidos" element={<PortalPedidos />} />
-          <Route path="reparaciones" element={<PortalReparaciones />} />
           <Route path="reclamo" element={<PortalDispute />} />
           <Route path="chat" element={<PortalChat />} />
           <Route path="ayuda" element={<PortalHelp />} />

@@ -10,9 +10,8 @@ import {
 } from '../hooks/useRolePermissions';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { AppConfig, Service, StaffSchedule, LoyaltyConfig } from '../../types';
+import { AppConfig, LoyaltyConfig } from '../../types';
 import { DEFAULT_LOYALTY_CONFIG, TIER_ORDER, TIER_LABELS } from '../utils/loyaltyEngine';
-import { BUSINESS_PRESETS, PRESET_IDS } from '../data/businessPresets';
 import {
   getBusinessConfig,
   listUsers,
@@ -79,13 +78,12 @@ import {
   Unlock,
   Smartphone,
   BarChart3,
-  CalendarDays,
   Trophy,
   ArrowRight,
   Download,
 } from 'lucide-react';
 import { updatePassword, updateProfile, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { acceptRequest, rejectRequest } from '../firebase/api';
@@ -94,10 +92,9 @@ import { uploadToCloudinary } from '../utils/cloudinary';
 import { DEFAULT_APPROVAL_CONFIG } from '../utils/approvalHelpers';
 import type { ApprovalConfig, ApprovalMovementKind } from '../../types';
 
-type SectionType = 'perfil' | 'identidad' | 'facturacion' | 'equipo' | 'aprobaciones' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'servicios' | 'fidelidad' | 'devtest';
+type SectionType = 'perfil' | 'identidad' | 'facturacion' | 'equipo' | 'aprobaciones' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'fidelidad' | 'devtest';
 
 interface ConfigData {
-  tipoNegocio: string;
   companyName: string;
   companyRif: string;
   companyPhone: string;
@@ -262,14 +259,6 @@ const Configuracion: React.FC = () => {
   const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig>(DEFAULT_LOYALTY_CONFIG);
   const [savingLoyalty, setSavingLoyalty] = useState(false);
 
-  // Services & Schedules (Citas)
-  const [svcList, setSvcList] = useState<Service[]>([]);
-  const [scheduleList, setScheduleList] = useState<StaffSchedule[]>([]);
-  const [editingSvc, setEditingSvc] = useState<Partial<Service> | null>(null);
-  const [editingSchedule, setEditingSchedule] = useState<Partial<StaffSchedule> | null>(null);
-  const [savingSvc, setSavingSvc] = useState(false);
-  const [savingSchedule, setSavingSchedule] = useState(false);
-
   // POS config
   const [posConfig, setPosConfig] = useState({
     allowManualDiscount: true,
@@ -334,7 +323,6 @@ const Configuracion: React.FC = () => {
   const logoFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [configData, setConfigData] = useState<ConfigData>({
-    tipoNegocio: 'general',
     companyName: '',
     companyRif: '',
     companyPhone: '',
@@ -373,10 +361,7 @@ const Configuracion: React.FC = () => {
             ...prev,
             ...configSnap,
             defaultIva: Number(configSnap.defaultIva || 16),
-            tipoNegocio: bizSnap?.tipoNegocio || prev.tipoNegocio,
           }));
-        } else if (bizSnap?.tipoNegocio) {
-          setConfigData(prev => ({ ...prev, tipoNegocio: bizSnap.tipoNegocio }));
         }
         if (bizSnap?.logoUrl || bizSnap?.logo) {
           setBusinessLogoUrl(bizSnap.logoUrl || bizSnap.logo);
@@ -531,77 +516,6 @@ const Configuracion: React.FC = () => {
       toast.error('Error al guardar');
     } finally {
       setSavingLoyalty(false);
-    }
-  };
-
-  // Load services & staff schedules (for Citas section)
-  useEffect(() => {
-    if (!businessId) return;
-    const unsubs = [
-      onSnapshot(collection(db, `businesses/${businessId}/services`), snap => {
-        setSvcList(snap.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
-      }),
-      onSnapshot(collection(db, `businesses/${businessId}/staffSchedules`), snap => {
-        setScheduleList(snap.docs.map(d => ({ staffId: d.id, ...d.data() } as StaffSchedule)));
-      }),
-    ];
-    return () => unsubs.forEach(u => u());
-  }, [businessId]);
-
-  // ── Service CRUD handlers ─────────────────────────────────────────────────
-  const handleSaveSvc = async () => {
-    if (!businessId || !editingSvc?.name || savingSvc) return;
-    setSavingSvc(true);
-    try {
-      const payload = {
-        name: editingSvc.name,
-        duration: editingSvc.duration || 30,
-        price: editingSvc.price || 0,
-        staffIds: editingSvc.staffIds || [],
-        category: editingSvc.category || '',
-        active: editingSvc.active !== false,
-        businessId,
-      };
-      if (editingSvc.id) {
-        await updateDoc(doc(db, `businesses/${businessId}/services`, editingSvc.id), payload);
-      } else {
-        await addDoc(collection(db, `businesses/${businessId}/services`), payload);
-      }
-      setEditingSvc(null);
-      toast.success(editingSvc.id ? 'Servicio actualizado' : 'Servicio creado');
-    } catch {
-      toast.error('Error al guardar servicio');
-    } finally {
-      setSavingSvc(false);
-    }
-  };
-
-  const handleDeleteSvc = async (id: string) => {
-    if (!businessId) return;
-    await deleteDoc(doc(db, `businesses/${businessId}/services`, id));
-    toast.success('Servicio eliminado');
-  };
-
-  // ── Staff Schedule handlers ───────────────────────────────────────────────
-  const handleSaveSchedule = async () => {
-    if (!businessId || !editingSchedule?.staffId || savingSchedule) return;
-    setSavingSchedule(true);
-    try {
-      const payload = {
-        staffName: editingSchedule.staffName || '',
-        weeklyHours: editingSchedule.weeklyHours || {},
-        breaks: editingSchedule.breaks || [],
-        bufferMinutes: editingSchedule.bufferMinutes || 10,
-        daysOff: editingSchedule.daysOff || [],
-        businessId,
-      };
-      await setDoc(doc(db, `businesses/${businessId}/staffSchedules`, editingSchedule.staffId), payload, { merge: true });
-      setEditingSchedule(null);
-      toast.success('Horario guardado');
-    } catch {
-      toast.error('Error al guardar horario');
-    } finally {
-      setSavingSchedule(false);
     }
   };
 
@@ -951,7 +865,6 @@ const Configuracion: React.FC = () => {
         { id: 'facturacion',label: 'Facturación y POS',    icon: Receipt },
         { id: 'despacho',   label: 'Despacho',              icon: Truck },
         { id: 'comisiones', label: 'Comisiones',            icon: Package },
-        { id: 'servicios', label: 'Servicios y Citas',     icon: CalendarDays },
         { id: 'fidelidad', label: 'Fidelidad',             icon: Trophy },
         { id: 'equipo',     label: 'Equipo y Permisos',    icon: Users2 },
         { id: 'aprobaciones', label: 'Aprobaciones',       icon: ShieldCheck },
@@ -1346,48 +1259,6 @@ const Configuracion: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  {/* Tipo de Negocio */}
-                  <div className="mb-6 space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Negocio</label>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                      {PRESET_IDS.map(pid => {
-                        const preset = BUSINESS_PRESETS[pid];
-                        const selected = configData.tipoNegocio === pid;
-                        return (
-                          <button
-                            key={pid}
-                            type="button"
-                            onClick={async () => {
-                              setConfigData(prev => ({ ...prev, tipoNegocio: pid }));
-                              // Persist immediately
-                              if (businessId) {
-                                try {
-                                  await setDoc(doc(db, 'businesses', businessId), { tipoNegocio: pid }, { merge: true });
-                                  toast.success(`Tipo: ${preset.label}`);
-                                } catch { toast.error('Error al guardar tipo'); }
-                              }
-                            }}
-                            className={`flex flex-col items-center gap-1 px-1.5 py-2.5 rounded-xl border-2 transition-all text-center ${
-                              selected
-                                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 shadow-md'
-                                : 'border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] hover:border-slate-300'
-                            }`}
-                          >
-                            <span className="text-lg">{preset.emoji}</span>
-                            <span className={`text-[8px] font-black uppercase tracking-widest leading-tight ${selected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
-                              {preset.label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {configData.tipoNegocio !== 'general' && (
-                      <p className="text-[10px] text-indigo-500 dark:text-indigo-400 font-bold ml-2">
-                        {BUSINESS_PRESETS[configData.tipoNegocio]?.description}
-                      </p>
-                    )}
-                  </div>
-
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2 flex items-center gap-2"><Globe size={12} /> Nombre Comercial</label>
@@ -3375,250 +3246,6 @@ const Configuracion: React.FC = () => {
                   </button>
                 </div>
 
-              </div>
-            )}
-
-            {/* ── SECTION: SERVICIOS Y CITAS ── */}
-            {activeSection === 'servicios' && (
-              <div className="space-y-6 animate-in fade-in">
-                {/* ── Services CRUD ── */}
-                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 space-y-5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-black text-slate-800 dark:text-white">Servicios</h3>
-                      <p className="text-xs text-slate-500 dark:text-white/30 mt-0.5">Define los servicios que ofreces y sus precios</p>
-                    </div>
-                    <button
-                      onClick={() => setEditingSvc({ name: '', duration: 30, price: 0, staffIds: [], active: true })}
-                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/25 flex items-center gap-2"
-                    >
-                      <Plus size={14} /> Nuevo Servicio
-                    </button>
-                  </div>
-
-                  {svcList.length === 0 ? (
-                    <p className="text-xs text-white/20 text-center py-8">No hay servicios configurados</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {svcList.map(svc => (
-                        <div key={svc.id} className="flex items-center justify-between bg-slate-50 dark:bg-white/[0.03] rounded-xl px-4 py-3 border border-slate-100 dark:border-white/[0.06]">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-bold text-slate-800 dark:text-white">{svc.name}</p>
-                              {svc.active === false && (
-                                <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400">Inactivo</span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-slate-500 dark:text-white/30">
-                              {svc.duration} min — ${svc.price}
-                              {svc.category && ` — ${svc.category}`}
-                            </p>
-                          </div>
-                          <div className="flex gap-1.5">
-                            <button onClick={() => setEditingSvc(svc)} className="p-2 rounded-lg hover:bg-white/[0.06] transition-all text-white/30 hover:text-white/60">
-                              <Sliders size={14} />
-                            </button>
-                            <button onClick={() => handleDeleteSvc(svc.id)} className="p-2 rounded-lg hover:bg-rose-500/10 transition-all text-white/30 hover:text-rose-400">
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Inline service editor */}
-                  {editingSvc && (
-                    <div className="bg-slate-100 dark:bg-white/[0.04] rounded-xl p-5 border border-slate-200 dark:border-white/[0.08] space-y-4">
-                      <p className="text-xs font-black uppercase tracking-widest text-white/30">{editingSvc.id ? 'Editar Servicio' : 'Nuevo Servicio'}</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div className="col-span-2">
-                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Nombre</label>
-                          <input value={editingSvc.name || ''} onChange={e => setEditingSvc({ ...editingSvc, name: e.target.value })}
-                            className={inputClasses} placeholder="Corte Fade" />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Duración (min)</label>
-                          <input type="number" value={editingSvc.duration || ''} onChange={e => setEditingSvc({ ...editingSvc, duration: +e.target.value })}
-                            className={inputClasses} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Precio USD</label>
-                          <input type="number" step="0.01" value={editingSvc.price || ''} onChange={e => setEditingSvc({ ...editingSvc, price: +e.target.value })}
-                            className={inputClasses} />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Categoría</label>
-                          <input value={editingSvc.category || ''} onChange={e => setEditingSvc({ ...editingSvc, category: e.target.value })}
-                            className={inputClasses} placeholder="Cortes, Barba, Color..." />
-                        </div>
-                        <div className="flex items-end gap-3">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" checked={editingSvc.active !== false}
-                              onChange={e => setEditingSvc({ ...editingSvc, active: e.target.checked })}
-                              className="w-4 h-4 rounded border-white/20 bg-white/5 text-indigo-500" />
-                            <span className="text-xs font-bold text-white/40">Activo</span>
-                          </label>
-                        </div>
-                      </div>
-                      {/* Staff assignment */}
-                      {users.length > 0 && (
-                        <div>
-                          <label className="text-[10px] font-bold text-white/20 mb-2 block">Asignar a empleados</label>
-                          <div className="flex flex-wrap gap-2">
-                            {users.filter(u => u.status !== 'PENDING_APPROVAL').map(u => {
-                              const selected = (editingSvc.staffIds || []).includes(u.id);
-                              return (
-                                <button key={u.id}
-                                  onClick={() => {
-                                    const ids = editingSvc.staffIds || [];
-                                    setEditingSvc({ ...editingSvc, staffIds: selected ? ids.filter(i => i !== u.id) : [...ids, u.id] });
-                                  }}
-                                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
-                                    selected ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' : 'border-white/[0.08] text-white/30 hover:bg-white/[0.03]'
-                                  }`}
-                                >
-                                  {u.displayName || u.fullName || u.email}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                      <div className="flex gap-2 justify-end">
-                        <button onClick={() => setEditingSvc(null)} className="px-4 py-2 rounded-xl border border-white/10 text-white/40 text-xs font-bold hover:bg-white/[0.04]">Cancelar</button>
-                        <button onClick={handleSaveSvc} disabled={!editingSvc.name || savingSvc}
-                          className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold disabled:opacity-40 flex items-center gap-2">
-                          {savingSvc ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                          Guardar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* ── Staff Schedules ── */}
-                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 space-y-5">
-                  <div>
-                    <h3 className="text-lg font-black text-slate-800 dark:text-white">Horarios del Personal</h3>
-                    <p className="text-xs text-slate-500 dark:text-white/30 mt-0.5">Configura los horarios de trabajo de cada empleado</p>
-                  </div>
-
-                  {users.filter(u => u.status !== 'PENDING_APPROVAL').length === 0 ? (
-                    <p className="text-xs text-white/20 text-center py-8">Agrega empleados en la sección "Equipo" primero</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {users.filter(u => u.status !== 'PENDING_APPROVAL').map(u => {
-                        const schedule = scheduleList.find(s => s.staffId === u.id);
-                        return (
-                          <div key={u.id} className="flex items-center justify-between bg-slate-50 dark:bg-white/[0.03] rounded-xl px-4 py-3 border border-slate-100 dark:border-white/[0.06]">
-                            <div>
-                              <p className="text-sm font-bold text-slate-800 dark:text-white">{u.displayName || u.fullName || u.email}</p>
-                              <p className="text-[10px] text-slate-500 dark:text-white/30">
-                                {schedule ? `Buffer: ${schedule.bufferMinutes} min` : 'Sin horario configurado'}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => setEditingSchedule(schedule || {
-                                staffId: u.id,
-                                staffName: u.displayName || u.fullName || u.email || '',
-                                weeklyHours: {
-                                  1: { start: '08:00', end: '18:00' },
-                                  2: { start: '08:00', end: '18:00' },
-                                  3: { start: '08:00', end: '18:00' },
-                                  4: { start: '08:00', end: '18:00' },
-                                  5: { start: '08:00', end: '18:00' },
-                                  6: { start: '08:00', end: '13:00' },
-                                },
-                                breaks: [{ start: '12:00', end: '13:00' }],
-                                bufferMinutes: 10,
-                                daysOff: [],
-                              })}
-                              className="px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs font-bold text-white/40 hover:bg-white/[0.06] transition-all flex items-center gap-2"
-                            >
-                              <Clock size={13} /> {schedule ? 'Editar' : 'Configurar'}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Inline schedule editor */}
-                  {editingSchedule && (
-                    <div className="bg-slate-100 dark:bg-white/[0.04] rounded-xl p-5 border border-slate-200 dark:border-white/[0.08] space-y-4">
-                      <p className="text-xs font-black uppercase tracking-widest text-white/30">
-                        Horario de {editingSchedule.staffName}
-                      </p>
-
-                      {/* Weekly hours */}
-                      <div className="space-y-2">
-                        {(['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] as const).map((dayName, dayIdx) => {
-                          const hours = (editingSchedule.weeklyHours || {})[dayIdx];
-                          const isActive = !!hours;
-                          return (
-                            <div key={dayIdx} className="flex items-center gap-3">
-                              <label className="flex items-center gap-2 w-20">
-                                <input type="checkbox" checked={isActive}
-                                  onChange={e => {
-                                    const wh = { ...(editingSchedule.weeklyHours || {}) };
-                                    if (e.target.checked) {
-                                      wh[dayIdx] = { start: '08:00', end: '18:00' };
-                                    } else {
-                                      wh[dayIdx] = null as any;
-                                    }
-                                    setEditingSchedule({ ...editingSchedule, weeklyHours: wh });
-                                  }}
-                                  className="w-3.5 h-3.5 rounded border-white/20 bg-white/5 text-indigo-500" />
-                                <span className={`text-xs font-bold ${isActive ? 'text-white' : 'text-white/20'}`}>{dayName}</span>
-                              </label>
-                              {isActive && hours && (
-                                <div className="flex items-center gap-2">
-                                  <input type="time" value={hours.start}
-                                    onChange={e => {
-                                      const wh = { ...(editingSchedule.weeklyHours || {}) };
-                                      wh[dayIdx] = { ...hours, start: e.target.value };
-                                      setEditingSchedule({ ...editingSchedule, weeklyHours: wh });
-                                    }}
-                                    className="px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-white text-xs font-bold outline-none" />
-                                  <span className="text-white/20 text-xs">a</span>
-                                  <input type="time" value={hours.end}
-                                    onChange={e => {
-                                      const wh = { ...(editingSchedule.weeklyHours || {}) };
-                                      wh[dayIdx] = { ...hours, end: e.target.value };
-                                      setEditingSchedule({ ...editingSchedule, weeklyHours: wh });
-                                    }}
-                                    className="px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-white text-xs font-bold outline-none" />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Buffer */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[10px] font-bold text-white/20 mb-1 block">Buffer entre citas (min)</label>
-                          <input type="number" value={editingSchedule.bufferMinutes || 10}
-                            onChange={e => setEditingSchedule({ ...editingSchedule, bufferMinutes: +e.target.value })}
-                            className={inputClasses} />
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2 justify-end">
-                        <button onClick={() => setEditingSchedule(null)} className="px-4 py-2 rounded-xl border border-white/10 text-white/40 text-xs font-bold hover:bg-white/[0.04]">Cancelar</button>
-                        <button onClick={handleSaveSchedule} disabled={savingSchedule}
-                          className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold disabled:opacity-40 flex items-center gap-2">
-                          {savingSchedule ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                          Guardar Horario
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
 

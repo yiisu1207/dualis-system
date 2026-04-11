@@ -3,7 +3,7 @@ import { NavLink, useParams } from 'react-router-dom';
 import { usePortal } from './PortalGuard';
 import {
   LayoutDashboard, FileText, Zap, CreditCard, Receipt, LogOut,
-  Menu, X, HelpCircle, Package, CalendarDays, Trophy, ShoppingBag, Wrench, AlertTriangle,
+  Menu, X, HelpCircle, Package, Trophy, ShoppingBag, AlertTriangle,
   MoreHorizontal, MessageCircle,
 } from 'lucide-react';
 
@@ -34,7 +34,6 @@ export default function PortalLayout({ children }: Props) {
     { to: `${basePath}/pronto-pago`, label: 'Pronto Pago', icon: Zap },
     { to: `${basePath}/pagar`, label: 'Pagar', icon: CreditCard },
     { to: `${basePath}/catalogo`, label: 'Catálogo', icon: Package },
-    { to: `${basePath}/citas`, label: 'Citas', icon: CalendarDays },
     { to: `${basePath}/fidelidad`, label: 'Fidelidad', icon: Trophy },
     { to: `${basePath}/estado-cuenta`, label: 'Estado', icon: Receipt },
   ];
@@ -42,7 +41,6 @@ export default function PortalLayout({ children }: Props) {
   const moreNavItems: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean }[] = [
     { to: `${basePath}/chat`, label: 'Chat', icon: MessageCircle },
     { to: `${basePath}/pedidos`, label: 'Pedidos', icon: ShoppingBag },
-    { to: `${basePath}/reparaciones`, label: 'Reparaciones', icon: Wrench },
     { to: `${basePath}/reclamo`, label: 'Reclamo', icon: AlertTriangle },
     { to: `${basePath}/ayuda`, label: 'Ayuda', icon: HelpCircle },
   ];

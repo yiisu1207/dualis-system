@@ -509,7 +509,7 @@ const PosContent = () => {
   const [almacenes, setAlmacenes] = useState<{ id: string; nombre: string; activo: boolean }[]>([]);
   const [selectedAlmacenId, setSelectedAlmacenId] = useState<string>('principal');
 
-  // Bridge meta from another module (Citas, Pre-pedidos, Reparaciones)
+  // Bridge meta from another module
   const [bridgeMeta, setBridgeMeta] = useState<{
     source: string;
     sourceId: string;
@@ -550,7 +550,7 @@ const PosContent = () => {
     }
   }, []);
 
-  // ── Bridge: auto-load a pending sale from another module (Citas, Pre-pedidos, Reparaciones) ──
+  // ── Bridge: auto-load a pending sale from another module ──
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem('dualis_pending_pos_sale');
@@ -581,9 +581,6 @@ const PosContent = () => {
           });
         }
         const sourceLabel =
-          payload.source === 'cita' ? 'Citas' :
-          payload.source === 'prepedido' ? 'Pre-Pedidos' :
-          payload.source === 'reparacion' ? 'Reparaciones' :
           payload.source === 'cotizacion' ? 'Cotización' :
           'módulo';
         setSuccess(`Cargado desde ${sourceLabel}: ${payload.customerName || ''}`);
@@ -970,9 +967,6 @@ const PosContent = () => {
 
       // Wire bridge metadata if this sale was loaded from another module
       if (bridgeMeta) {
-        if (bridgeMeta.source === 'cita') movementPayload.appointmentId = bridgeMeta.sourceId;
-        if (bridgeMeta.source === 'prepedido') movementPayload.preorderId = bridgeMeta.sourceId;
-        if (bridgeMeta.source === 'reparacion') movementPayload.repairTicketId = bridgeMeta.sourceId;
         if (bridgeMeta.source === 'cotizacion') movementPayload.quoteId = bridgeMeta.sourceId;
         if (bridgeMeta.customerId && !movementPayload.entityId) {
           movementPayload.entityId = bridgeMeta.customerId;
@@ -984,22 +978,7 @@ const PosContent = () => {
       // Back-fill the source document so it can't be re-billed and the user can trace the link
       if (bridgeMeta) {
         try {
-          if (bridgeMeta.source === 'reparacion') {
-            await updateDoc(doc(db, `businesses/${empresa_id}/repair_tickets`, bridgeMeta.sourceId), {
-              invoiceMovementId: movRef.id,
-              finalCostUSD: grandTotal,
-            });
-          } else if (bridgeMeta.source === 'prepedido') {
-            await updateDoc(doc(db, `businesses/${empresa_id}/preorders`, bridgeMeta.sourceId), {
-              deliveredMovementId: movRef.id,
-              status: 'delivered',
-            });
-          } else if (bridgeMeta.source === 'cita') {
-            await updateDoc(doc(db, `businesses/${empresa_id}/appointments`, bridgeMeta.sourceId), {
-              movementId: movRef.id,
-              status: 'completed',
-            });
-          } else if (bridgeMeta.source === 'cotizacion') {
+          if (bridgeMeta.source === 'cotizacion') {
             await updateDoc(doc(db, `businesses/${empresa_id}/quotes`, bridgeMeta.sourceId), {
               convertedMovementId: movRef.id,
               convertedAt: isoDate,
