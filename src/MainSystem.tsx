@@ -72,6 +72,7 @@ const DisputesPanel = lazy(() => import('./components/DisputesPanel'));
 import ExchangeRatesSection from './components/ExchangeRatesSection';
 import GlobalSearchPalette from './components/GlobalSearchPalette';
 import KeyboardShortcutsOverlay from './components/KeyboardShortcutsOverlay';
+import QuickActionsFAB from './components/QuickActionsFAB';
 
 // WIDGETS
 import RateConverterWidget from './components/RateConverterWidget';
@@ -1419,6 +1420,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           </div>
           </Suspense>
         </main>
+
+        <QuickActionsFAB />
 
         {/* STATUS BAR — hidden on mobile to save space */}
         <footer className="hidden md:block bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-white/[0.06] px-4 lg:px-7 shrink-0">
