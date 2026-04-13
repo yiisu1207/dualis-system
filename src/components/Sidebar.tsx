@@ -57,6 +57,7 @@ interface SidebarProps {
   rolePermissions?: RolePermissions;
   badges?: Record<string, number>;
   kpis?: SidebarKpis;
+  shortcutHints?: Record<string, string>;
   labelOverrides?: Record<string, string>;
   onLogout: () => void;
   onOpenProfile: () => void;
@@ -245,6 +246,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   rolePermissions,
   badges = {},
   kpis,
+  shortcutHints = {},
   labelOverrides = {},
   onLogout,
   onOpenProfile,
@@ -679,6 +681,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                             onNavigate={() => setIsOpen(false)}
                             isFavorite={favorites.includes(item.id)}
                             onToggleFavorite={() => toggleFavorite(item.id)}
+                            shortcutHint={shortcutHints[item.id]}
                           />
                         ))}
                       </div>
@@ -699,6 +702,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       onNavigate={() => setIsOpen(false)}
                       isFavorite={favorites.includes(item.id)}
                       onToggleFavorite={() => toggleFavorite(item.id)}
+                      shortcutHint={shortcutHints[item.id]}
                     />
                   ))}
                 </div>
@@ -876,10 +880,11 @@ interface NavItemRowProps {
   onNavigate: () => void;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
+  shortcutHint?: string;
 }
 
 const NavItemRow: React.FC<NavItemRowProps> = ({
-  item, href, isActive, iconColor, badge, collapsed, indented, onNavigate, isFavorite, onToggleFavorite,
+  item, href, isActive, iconColor, badge, collapsed, indented, onNavigate, isFavorite, onToggleFavorite, shortcutHint,
 }) => (
   <NavLink
     to={href}
@@ -914,11 +919,16 @@ const NavItemRow: React.FC<NavItemRowProps> = ({
     <span className={`text-[13px] font-medium tracking-tight truncate relative z-10 transition-colors ${collapsed ? 'lg:hidden' : ''} ${isActive ? 'text-white' : ''}`}>
       {item.label}
     </span>
+    {!collapsed && shortcutHint && (
+      <span className="shrink-0 text-[8px] font-mono font-bold text-white/10 group-hover:text-white/20 transition-colors ml-auto mr-0.5">
+        {shortcutHint.replace('Alt+', '⌥')}
+      </span>
+    )}
     {!collapsed && onToggleFavorite && (
       <span
         role="button"
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(); }}
-        className={`shrink-0 cursor-pointer z-20 ml-auto transition-all duration-150 ${isFavorite ? 'text-amber-400 opacity-100' : 'text-white/10 opacity-0 group-hover:opacity-100 hover:text-amber-400/60'}`}
+        className={`shrink-0 cursor-pointer z-20 ${shortcutHint ? '' : 'ml-auto'} transition-all duration-150 ${isFavorite ? 'text-amber-400 opacity-100' : 'text-white/10 opacity-0 group-hover:opacity-100 hover:text-amber-400/60'}`}
       >
         <Star size={10} className={isFavorite ? 'fill-amber-400' : ''} />
       </span>

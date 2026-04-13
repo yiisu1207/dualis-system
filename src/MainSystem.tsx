@@ -451,7 +451,27 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     if (tabRoutes[tab]) navigate(tabRoutes[tab]);
   }, [navigate, tabRoutes]);
 
-  // ── Global hotkeys: Ctrl+K (search), ? (shortcuts overlay), Ctrl+L (lock) ──
+  // ── Navigation shortcuts: Alt+1..9 for quick module access ──────────────────
+  const NAV_SHORTCUTS: Array<{ key: string; tab: string; label: string }> = useMemo(() => [
+    { key: '1', tab: 'resumen',    label: 'Dashboard' },
+    { key: '2', tab: 'inventario', label: 'Inventario' },
+    { key: '3', tab: 'cajas',     label: 'Ventas / Cajas' },
+    { key: '4', tab: 'clientes',  label: 'CxC' },
+    { key: '5', tab: 'tesoreria', label: 'Tesorería' },
+    { key: '6', tab: 'despacho',  label: 'Despacho' },
+    { key: '7', tab: 'reportes',  label: 'Reportes' },
+    { key: '8', tab: 'rrhh',     label: 'RRHH' },
+    { key: '9', tab: 'config',   label: 'Configuración' },
+  ], []);
+
+  // Build shortcutHints map for Sidebar display: { resumen: 'Alt+1', ... }
+  const shortcutHints = useMemo(() => {
+    const map: Record<string, string> = {};
+    NAV_SHORTCUTS.forEach(s => { map[s.tab] = `Alt+${s.key}`; });
+    return map;
+  }, [NAV_SHORTCUTS]);
+
+  // ── Global hotkeys: Ctrl+K (search), ? (shortcuts overlay), Ctrl+L (lock), Alt+N (nav) ──
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Ctrl+K / Cmd+K → búsqueda global
@@ -466,6 +486,15 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         setSessionLocked(true);
         return;
       }
+      // Alt+1..9 → navegación rápida a módulos
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key >= '1' && e.key <= '9') {
+        const sc = NAV_SHORTCUTS.find(s => s.key === e.key);
+        if (sc) {
+          e.preventDefault();
+          goTab(sc.tab);
+        }
+        return;
+      }
       // "?" (Shift+/) → overlay de atajos — solo si no estás escribiendo en un input
       if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
@@ -478,7 +507,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [NAV_SHORTCUTS, goTab]);
 
   // ── Fase A.7: Leer timeout de sesión desde businessConfigs ──────────────────
   useEffect(() => {
@@ -1168,6 +1197,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           rolePermissions={rolePermissions}
           canCompare={canAccess('comparar')}
           kpis={sidebarKpis}
+          shortcutHints={shortcutHints}
           badges={{
             comparar: pendingCompareCount,
             tesoreria: overduePaymentsCount,
