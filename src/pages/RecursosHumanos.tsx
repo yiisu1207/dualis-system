@@ -14,7 +14,7 @@ import {
   ChevronRight, RotateCcw, History,
   Eye, ArrowLeftRight, Calendar,
 } from 'lucide-react';
-import { printVoucherSheet, printPayslip, printPayrollRunPDF, exportNominaCSV, accrueVacationDays, fmtHR } from '../utils/hrUtils';
+import { printVoucherSheet, printPayslip, printPayrollRunPDF, printCortePDF, exportNominaCSV, accrueVacationDays, fmtHR } from '../utils/hrUtils';
 import { logAudit } from '../utils/auditLogger';
 import { useRates } from '../context/RatesContext';
 
@@ -2169,17 +2169,26 @@ export default function RecursosHumanos() {
                     ? selectedCorte.executedAt.toDate().toLocaleDateString('es-VE',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})
                     : '—'}
                   {' · '}por {selectedCorte.executedByName}
+                  {selectedCorte.frequency && ` · ${FREQ_LABEL[selectedCorte.frequency]}`}
                 </p>
               </div>
-              <button onClick={()=>setSelectedCorte(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl text-slate-400"><X size={18}/></button>
+              <div className="flex items-center gap-2">
+                <button onClick={()=>printCortePDF(selectedCorte, businessName)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400 text-[10px] font-black uppercase tracking-widest hover:bg-violet-100 dark:hover:bg-violet-500/25 transition-all border border-violet-100 dark:border-violet-500/25"
+                  title="Descargar PDF">
+                  <Download size={12}/> PDF
+                </button>
+                <button onClick={()=>setSelectedCorte(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl text-slate-400"><X size={18}/></button>
+              </div>
             </div>
 
             {/* KPIs */}
-            <div className="grid grid-cols-3 divide-x divide-slate-50 dark:divide-white/[0.06] border-b border-slate-50 dark:border-white/[0.06] shrink-0">
+            <div className={`grid ${selectedCorte.totalNetUSD ? 'grid-cols-4' : 'grid-cols-3'} divide-x divide-slate-50 dark:divide-white/[0.06] border-b border-slate-50 dark:border-white/[0.06] shrink-0`}>
               {[
+                {l:'Empleados', v: String(selectedCorte.employeeCount || '—'), c:'text-slate-700 dark:text-slate-300'},
                 {l:'Vales descontados', v: String(selectedCorte.voucherCount), c:'text-slate-700 dark:text-slate-300'},
-                {l:'Total USD', v:`$${fmtHR(selectedCorte.totalUSD)}`, c:'text-rose-600 dark:text-rose-400'},
-                {l:'Total Bs', v:`Bs ${fmtHR(selectedCorte.totalBs)}`, c:'text-sky-600 dark:text-sky-400'},
+                {l:'Total Vales USD', v:`$${fmtHR(selectedCorte.totalUSD)}`, c:'text-rose-600 dark:text-rose-400'},
+                ...(selectedCorte.totalNetUSD ? [{l:'Neto Pagado', v:`$${fmtHR(selectedCorte.totalNetUSD)}`, c:'text-emerald-600 dark:text-emerald-400'}] : []),
               ].map((k,i)=>(
                 <div key={i} className="px-4 py-3 text-center">
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-0.5">{k.l}</p>

@@ -175,9 +175,9 @@ export function printPayslip(
   const pGrossUSD = pSalUSD + pBonusUSD;
   const pGrossBs  = pSalBs  + pBonusBs;
 
-  // Per-period deductions (IVSS/Paro are monthly, divide by period)
-  const pIVSS   = (row.ivssUSD    || 0) / freqDiv;
-  const pParo   = (row.paroUSD    || 0) / freqDiv;
+  // IVSS/Paro already come period-proportional from nominaRows
+  const pIVSS   = row.ivssUSD    || 0;
+  const pParo   = row.paroUSD    || 0;
   // Vouchers and loan installments are already period-based
   const pVales  = row.voucherDedUSD || 0;
   const pLoans  = row.loanDedUSD    || 0;
@@ -467,6 +467,135 @@ export function printPayrollRunPDF(
   Sistema administrativo no homologado ante el SENIAT.
 </div>
 <div class="powered">Generado con tecnología Dualis · ${new Date().toLocaleDateString('es-VE')} ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</div>
+</body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
+
+/** Imprimir detalle de corte de vales como PDF */
+export function printCortePDF(corte: any, businessName = 'Mi Negocio') {
+  const w = window.open('', '_blank', 'width=794,height=1123');
+  if (!w) return;
+
+  const freqLabel: Record<string,string> = { semanal: 'Semanal', quincenal: 'Quincenal', mensual: 'Mensual' };
+  const dateStr = corte.executedAt?.toDate
+    ? corte.executedAt.toDate().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // Group vouchers by employee
+  const grouped = new Map<string, { name: string; vouchers: any[]; totalUSD: number; totalBs: number }>();
+  (corte.vouchers || []).forEach((v: any) => {
+    const prev = grouped.get(v.employeeId) || { name: v.employeeName, vouchers: [], totalUSD: 0, totalBs: 0 };
+    prev.vouchers.push(v);
+    prev.totalUSD += v.amountUSD || (v.currency === 'USD' ? v.amount : 0);
+    if (v.currency === 'BS') prev.totalBs += v.amount;
+    grouped.set(v.employeeId, prev);
+  });
+
+  const employeeRows = Array.from(grouped.entries()).map(([, g]) => {
+    const voucherLines = g.vouchers.map((v: any) =>
+      `<tr class="sub-row">
+        <td style="padding-left:24px">↳ ${v.reason || 'Vale'}</td>
+        <td class="tc">${v.voucherDate || '—'}</td>
+        <td class="tc">${v.currency}</td>
+        <td class="tr">${v.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(v.amount))}</td>
+        <td class="tr">${v.amountUSD != null ? '$' + fmtHR(Number(v.amountUSD)) : v.currency === 'USD' ? '$' + fmtHR(Number(v.amount)) : '—'}</td>
+      </tr>`
+    ).join('');
+    return `<tr class="emp-header">
+      <td colspan="3"><strong>${g.name}</strong> <span style="color:#888;font-size:9px">(${g.vouchers.length} vale${g.vouchers.length > 1 ? 's' : ''})</span></td>
+      <td class="tr" style="color:#dc2626;font-weight:700">${g.totalBs > 0 ? 'Bs ' + fmtHR(g.totalBs) : ''}</td>
+      <td class="tr" style="color:#dc2626;font-weight:900">$${fmtHR(g.totalUSD)}</td>
+    </tr>${voucherLines}`;
+  }).join('');
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Corte de Vales – ${dateStr}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a1a;padding:28px 32px;max-width:760px;margin:0 auto}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;padding-bottom:12px;border-bottom:2.5px solid #1a1a1a}
+  .biz{font-size:20px;font-weight:900;letter-spacing:-0.5px}
+  .doc-type{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#666;margin-top:2px}
+  .period-box{text-align:right}
+  .period-badge{display:inline-block;background:#1a1a1a;color:#fff;padding:4px 14px;border-radius:20px;font-size:10px;font-weight:900}
+  .period-sub{font-size:9px;color:#888;margin-top:4px}
+  .kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1.5px solid #1a1a1a;border-radius:6px;overflow:hidden;margin-bottom:18px}
+  .kpi{padding:10px 12px;text-align:center;border-right:1px solid #ddd}
+  .kpi:last-child{border-right:none}
+  .kpi-label{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-bottom:3px}
+  .kpi-val{font-size:16px;font-weight:900}
+  table{width:100%;border-collapse:collapse;margin-bottom:14px}
+  th{font-size:7.5px;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#555;padding:6px 6px;border-bottom:2px solid #1a1a1a;text-align:left}
+  td{padding:5px 6px;border-bottom:1px solid #eee;font-size:10px}
+  .tr{text-align:right}.tc{text-align:center}
+  .emp-header td{background:#f7f7f7;border-top:1.5px solid #ddd}
+  .sub-row td{font-size:9px;color:#555;padding:3px 6px;border-bottom:1px solid #f5f5f5}
+  .total-row td{background:#f0f0f0;font-weight:900;border-top:2px solid #1a1a1a;font-size:11px}
+  .sigs{display:grid;grid-template-columns:1fr 1fr;gap:60px;margin-top:40px}
+  .sig-line{border-top:1px solid #111;padding-top:5px;font-size:9px;color:#666;text-align:center}
+  .sig-sub{text-align:center;font-size:8px;color:#aaa;margin-top:2px}
+  @media print{body{padding:16px 20px}}
+</style></head><body>
+
+<div class="header">
+  <div>
+    <div class="biz">${businessName}</div>
+    <div class="doc-type">Detalle de Corte de Vales — Control Interno RRHH</div>
+  </div>
+  <div class="period-box">
+    <div class="period-badge">${freqLabel[corte.frequency] || 'Corte'}</div>
+    <div class="period-sub">Procesado: ${dateStr}</div>
+    <div class="period-sub">Ejecutado por: ${corte.executedByName || '—'}</div>
+  </div>
+</div>
+
+<div class="kpi-strip">
+  <div class="kpi">
+    <div class="kpi-label">Empleados</div>
+    <div class="kpi-val">${corte.employeeCount || grouped.size}</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Vales Descontados</div>
+    <div class="kpi-val">${corte.voucherCount || 0}</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Total USD</div>
+    <div class="kpi-val" style="color:#dc2626">$${fmtHR(corte.totalUSD || 0)}</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Neto Pagado</div>
+    <div class="kpi-val" style="color:#16a34a">${corte.totalNetUSD ? '$' + fmtHR(corte.totalNetUSD) : '—'}</div>
+  </div>
+</div>
+
+${corte.deferredCount > 0 ? `<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:4px;padding:8px 12px;margin-bottom:14px;font-size:10px;color:#92400e;font-weight:700">⏳ ${corte.deferredCount} vale${corte.deferredCount > 1 ? 's' : ''} diferido${corte.deferredCount > 1 ? 's' : ''} al próximo período</div>` : ''}
+
+<table>
+  <thead><tr>
+    <th>Empleado / Concepto</th><th class="tc">Fecha</th><th class="tc">Moneda</th>
+    <th class="tr">Monto</th><th class="tr">Equiv. USD</th>
+  </tr></thead>
+  <tbody>
+    ${employeeRows}
+    <tr class="total-row">
+      <td colspan="3">TOTALES (${corte.voucherCount || 0} vales)</td>
+      <td class="tr">${corte.totalBs > 0 ? 'Bs ' + fmtHR(corte.totalBs) : '—'}</td>
+      <td class="tr">$${fmtHR(corte.totalUSD || 0)}</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="sigs">
+  <div><div class="sig-line">Elaborado por</div><div class="sig-sub">${corte.executedByName || 'RRHH'}</div></div>
+  <div><div class="sig-line">Aprobado por</div><div class="sig-sub">Administración / Dirección</div></div>
+</div>
+
+<div style="margin-top:16px;padding:8px;border:1px dashed #666;font-size:8px;text-align:center;color:#555;line-height:1.4">
+  DOCUMENTO INTERNO ADMINISTRATIVO &middot; NO ES RECIBO FISCAL &middot; SIN VALOR TRIBUTARIO<br/>
+  Sistema administrativo no homologado ante el SENIAT.
+</div>
+<div style="margin-top:10px;text-align:center;font-size:7px;color:#ccc;letter-spacing:.1em;text-transform:uppercase">Generado con tecnología Dualis · ${new Date().toLocaleDateString('es-VE')} ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</div>
 </body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 400);
