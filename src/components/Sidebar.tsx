@@ -35,6 +35,7 @@ import {
   ShieldCheck,
   MessageCircle,
   Search,
+  Star,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -315,6 +316,19 @@ const Sidebar: React.FC<SidebarProps> = ({
     });
   }, [activeTab]);
 
+  // ── Favoritos (pinned modules) ────────────────────────────────────────
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('dualis_favoritos') || '[]'); } catch { return []; }
+  });
+
+  const toggleFavorite = useCallback((itemId: string) => {
+    setFavorites(prev => {
+      const next = prev.includes(itemId) ? prev.filter(id => id !== itemId) : [...prev, itemId];
+      try { localStorage.setItem('dualis_favoritos', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
   // ── Auto-close sidebar on resize past lg breakpoint ────────────────────
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -457,6 +471,40 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
+          {/* ── Favoritos ── */}
+          {!collapsed && !searchQuery && favorites.length > 0 && (
+            <div className="mb-1">
+              <div className="px-2 mb-1">
+                <div className="flex items-center gap-1.5">
+                  <Star size={8} className="text-amber-400/50 fill-amber-400/50" />
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-500/30">Favoritos</p>
+                </div>
+              </div>
+              {favorites.map(tabId => {
+                const item = allItems.find(it => it.id === tabId);
+                if (!item || !isVisible(item)) return null;
+                const gIdx = NAV_GROUPS.findIndex(g => g.items.some(i => i.id === tabId));
+                const iColor = GROUP_ICON_COLOR[gIdx] ?? 'text-white/50';
+                return (
+                  <NavItemRow
+                    key={`fav-${item.id}`}
+                    item={item}
+                    href={toPath(item.path)}
+                    isActive={activeTab === item.id}
+                    iconColor={iColor}
+                    badge={badges[item.id] ?? 0}
+                    collapsed={false}
+                    indented={false}
+                    onNavigate={() => setIsOpen(false)}
+                    isFavorite
+                    onToggleFavorite={() => toggleFavorite(item.id)}
+                  />
+                );
+              })}
+              <div className="mx-3 my-2 h-px bg-gradient-to-r from-transparent via-amber-500/10 to-transparent" />
+            </div>
+          )}
+
           {/* ── Recientes ── */}
           {!collapsed && !searchQuery && recientes.length > 0 && (
             <div className="mb-1">
@@ -482,6 +530,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     collapsed={false}
                     indented={false}
                     onNavigate={() => setIsOpen(false)}
+                    isFavorite={favorites.includes(item.id)}
+                    onToggleFavorite={() => toggleFavorite(item.id)}
                   />
                 );
               })}
@@ -573,6 +623,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                             collapsed={false}
                             indented
                             onNavigate={() => setIsOpen(false)}
+                            isFavorite={favorites.includes(item.id)}
+                            onToggleFavorite={() => toggleFavorite(item.id)}
                           />
                         ))}
                       </div>
@@ -591,6 +643,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                       collapsed={collapsed}
                       indented={false}
                       onNavigate={() => setIsOpen(false)}
+                      isFavorite={favorites.includes(item.id)}
+                      onToggleFavorite={() => toggleFavorite(item.id)}
                     />
                   ))}
                 </div>
@@ -766,10 +820,12 @@ interface NavItemRowProps {
   collapsed: boolean;
   indented: boolean;
   onNavigate: () => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
 }
 
 const NavItemRow: React.FC<NavItemRowProps> = ({
-  item, href, isActive, iconColor, badge, collapsed, indented, onNavigate,
+  item, href, isActive, iconColor, badge, collapsed, indented, onNavigate, isFavorite, onToggleFavorite,
 }) => (
   <NavLink
     to={href}
@@ -804,6 +860,15 @@ const NavItemRow: React.FC<NavItemRowProps> = ({
     <span className={`text-[13px] font-medium tracking-tight truncate relative z-10 transition-colors ${collapsed ? 'lg:hidden' : ''} ${isActive ? 'text-white' : ''}`}>
       {item.label}
     </span>
+    {!collapsed && onToggleFavorite && (
+      <span
+        role="button"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(); }}
+        className={`shrink-0 cursor-pointer z-20 ml-auto transition-all duration-150 ${isFavorite ? 'text-amber-400 opacity-100' : 'text-white/10 opacity-0 group-hover:opacity-100 hover:text-amber-400/60'}`}
+      >
+        <Star size={10} className={isFavorite ? 'fill-amber-400' : ''} />
+      </span>
+    )}
     {collapsed && (
       <span className="hidden lg:block">
         <span className="pointer-events-none absolute left-[calc(100%+12px)] z-[200] flex items-center gap-2 px-3 py-2 rounded-xl bg-[#1a2235] border border-white/[0.08] text-white text-[11px] font-semibold tracking-wide whitespace-nowrap shadow-2xl shadow-black/50 opacity-0 group-hover:opacity-100 translate-x-1 group-hover:translate-x-0 transition-all duration-150 top-1/2 -translate-y-1/2">
