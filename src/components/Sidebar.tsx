@@ -311,6 +311,30 @@ const Sidebar: React.FC<SidebarProps> = ({
     setSwipeX(0);
   }, [swipeX, setIsOpen]);
 
+  // ── Accent theme ───────────────────────────────────────────────────────
+  const ACCENT_THEMES = [
+    { id: 'indigo',  color: '#6366f1', label: 'Indigo' },
+    { id: 'violet',  color: '#8b5cf6', label: 'Violeta' },
+    { id: 'blue',    color: '#3b82f6', label: 'Azul' },
+    { id: 'cyan',    color: '#06b6d4', label: 'Cian' },
+    { id: 'emerald', color: '#10b981', label: 'Esmeralda' },
+    { id: 'amber',   color: '#f59e0b', label: 'Ámbar' },
+    { id: 'rose',    color: '#f43f5e', label: 'Rosa' },
+  ] as const;
+
+  const [accentTheme, setAccentTheme] = useState<string>(() => {
+    try { return localStorage.getItem('dualis_accent') || 'indigo'; } catch { return 'indigo'; }
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-accent', accentTheme);
+  }, [accentTheme]);
+
+  const changeAccent = (id: string) => {
+    setAccentTheme(id);
+    try { localStorage.setItem('dualis_accent', id); } catch { /* ignore */ }
+  };
+
   // ── Inline search ─────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -429,9 +453,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         `}
       >
         {/* Decorative layers */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent pointer-events-none" />
-        <div className="absolute right-0 inset-y-0 w-px bg-gradient-to-b from-transparent via-indigo-500/20 to-transparent pointer-events-none z-10" />
-        <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-40 h-40 bg-indigo-600/[0.12] rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-0 left-0 right-0 h-px pointer-events-none" style={{ background: `linear-gradient(to right, transparent, rgba(var(--accent-500), 0.3), transparent)` }} />
+        <div className="absolute right-0 inset-y-0 w-px pointer-events-none z-10" style={{ background: `linear-gradient(to bottom, transparent, rgba(var(--accent-500), 0.2), transparent)` }} />
+        <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-40 h-40 rounded-full blur-3xl pointer-events-none" style={{ backgroundColor: `rgba(var(--accent-600), 0.12)` }} />
 
         {/* ── LOGO ──────────────────────────────────────────────────── */}
         <div
@@ -811,6 +835,24 @@ const Sidebar: React.FC<SidebarProps> = ({
             );
           })()}
 
+          {/* Accent theme picker */}
+          {!collapsed && (
+            <div className="flex items-center gap-1 px-2 py-1.5">
+              <span className="text-[8px] font-bold text-white/20 uppercase tracking-widest mr-1">Tema</span>
+              {ACCENT_THEMES.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => changeAccent(t.id)}
+                  title={t.label}
+                  className={`w-4 h-4 rounded-full transition-all duration-150 hover:scale-125 ${
+                    accentTheme === t.id ? 'ring-2 ring-white/40 ring-offset-1 ring-offset-[#070b14] scale-110' : 'opacity-50 hover:opacity-100'
+                  }`}
+                  style={{ backgroundColor: t.color }}
+                />
+              ))}
+            </div>
+          )}
+
           {/* Logout */}
           <button
             onClick={onLogout}
@@ -897,13 +939,17 @@ const NavItemRow: React.FC<NavItemRowProps> = ({
         : `gap-2.5 px-2.5 py-2 w-full mb-0.5 ${indented ? 'pl-2.5' : ''}`
       }
       ${isActive
-        ? 'bg-gradient-to-r from-indigo-600/[0.22] to-violet-600/[0.10] border border-indigo-500/[0.15] text-white'
+        ? 'border border-white/[0.08] text-white'
         : `${iconColor} hover:bg-white/[0.07] hover:text-white hover:pl-3 ${badge > 0 ? 'bg-rose-500/[0.04]' : ''}`
       }
     `}
+    style={isActive ? { background: `linear-gradient(to right, rgba(var(--accent-600), 0.22), rgba(var(--accent-500), 0.08))`, borderColor: `rgba(var(--accent-500), 0.15)` } : undefined}
   >
     {isActive && (
-      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full bg-gradient-to-b from-indigo-400 to-violet-400 shadow-[0_0_12px_rgba(99,102,241,0.6)]" />
+      <span
+        className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full"
+        style={{ background: `linear-gradient(to bottom, rgba(var(--accent-400), 1), rgba(var(--accent-500), 1))`, boxShadow: `0 0 12px rgba(var(--accent-500), 0.6)` }}
+      />
     )}
     {!isActive && badge > 0 && (
       <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-3 rounded-r-full bg-rose-400/50 animate-pulse" />
