@@ -506,10 +506,6 @@ export default function RecursosHumanos() {
   const [editingRate, setEditingRate] = useState<{id:string;rate:string;effectiveDate:string;notes:string}|null>(null);
 
   // Dismissible hints (J)
-  const [hintVales, setHintVales] = useState(() => !localStorage.getItem('dualis_hint_vales'));
-  const [hintTe, setHintTe] = useState(() => !localStorage.getItem('dualis_hint_te'));
-  const dismissHintVales = () => { localStorage.setItem('dualis_hint_vales','1'); setHintVales(false); };
-  const dismissHintTe    = () => { localStorage.setItem('dualis_hint_te','1');    setHintTe(false); };
 
   // Abonos (L)
   const [abonos, setAbonos] = useState<Abono[]>([]);
@@ -911,7 +907,7 @@ export default function RecursosHumanos() {
             reason:v.reason, voucherDate:v.voucherDate||'',
           })),
         });
-        toast.success(`Corte ejecutado${deferred.length?` · ${deferred.length} vales pasan al próximo período`:''}`);
+        toast.success(`Corte ejecutado — revisa los detalles en la pestaña Historial${deferred.length?` · ${deferred.length} vales pasan al próximo período`:''}`);
       },
     });
   };
@@ -1237,16 +1233,13 @@ export default function RecursosHumanos() {
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Control de Vales</h3>
                   {currentRate>0&&<span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase rounded-full border border-indigo-100 dark:border-indigo-500/25">Tasa: Bs {fmtHR(currentRate)}</span>}
                 </div>
-                {/* Hint banner (J) */}
-                {hintVales && (
-                  <div className="flex items-start gap-3 p-3 mb-3 bg-amber-50 dark:bg-amber-500/[0.08] border border-amber-200 dark:border-amber-500/25 rounded-xl">
-                    <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5"/>
-                    <p className="text-[10px] text-amber-700 dark:text-amber-300 flex-1">
-                      <strong>Recuerda:</strong> Verifica la fecha del vale antes de registrar. El sistema usa la tasa vigente de esa fecha.
-                    </p>
-                    <button onClick={dismissHintVales} className="text-amber-400 hover:text-amber-600 dark:hover:text-amber-200 transition-all shrink-0"><X size={13}/></button>
-                  </div>
-                )}
+                {/* Hint banner */}
+                <div className="flex items-start gap-3 p-3 mb-3 bg-amber-50 dark:bg-amber-500/[0.08] border border-amber-200 dark:border-amber-500/25 rounded-xl">
+                  <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5"/>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-300 flex-1">
+                    <strong>Recuerda:</strong> Verifica la fecha del vale antes de registrar. El sistema usa la tasa vigente de esa fecha.
+                  </p>
+                </div>
                 {/* Quick form */}
                 <form onSubmit={handleQuickVoucher} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
                   {/* G: Custom colored employee dropdown */}
@@ -1544,16 +1537,13 @@ export default function RecursosHumanos() {
                   <Clock size={18} className="text-violet-500"/>
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Horas Extras, Ausencias y Días Faltantes</h3>
                 </div>
-                {/* Hint banner (J) */}
-                {hintTe && (
-                  <div className="flex items-start gap-3 p-3 mb-3 bg-amber-50 dark:bg-amber-500/[0.08] border border-amber-200 dark:border-amber-500/25 rounded-xl">
-                    <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5"/>
-                    <p className="text-[10px] text-amber-700 dark:text-amber-300 flex-1">
-                      <strong>Recuerda:</strong> Verifica el tipo y la fecha antes de registrar. Las ausencias y días faltantes restan del pago del período.
-                    </p>
-                    <button onClick={dismissHintTe} className="text-amber-400 hover:text-amber-600 dark:hover:text-amber-200 transition-all shrink-0"><X size={13}/></button>
-                  </div>
-                )}
+                {/* Hint banner */}
+                <div className="flex items-start gap-3 p-3 mb-3 bg-amber-50 dark:bg-amber-500/[0.08] border border-amber-200 dark:border-amber-500/25 rounded-xl">
+                  <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5"/>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-300 flex-1">
+                    <strong>Recuerda:</strong> Verifica el tipo y la fecha antes de registrar. Las ausencias y días faltantes restan del pago del período.
+                  </p>
+                </div>
                 <form onSubmit={handleAddTimeEntry} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
                   {/* G: Custom colored employee dropdown */}
                   <div ref={teDropRef} className="relative">
