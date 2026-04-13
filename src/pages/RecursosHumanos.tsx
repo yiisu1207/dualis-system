@@ -678,8 +678,13 @@ export default function RecursosHumanos() {
       const empAbonosUSD = visibleAbonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
         .reduce((s,a)=>s+(a.currency==='USD'?a.amount:(a.amountUSD||0)),0);
       const netVDedUSD = Math.max(0, vDedUSD - empAbonosUSD);
-      const ivssUSD = emp.ivssEnabled?(emp.salaryUSD||0)*(emp.ivssRate||4)/100:0;
-      const paroUSD = emp.paroEnabled?(emp.salaryUSD||0)*(emp.paroRate||2)/100:0;
+      const div = FREQ_DIV[emp.payFrequency] || 1;
+      const periodSalUSD = (emp.salaryUSD||0) / div;
+      const periodBonUSD = (emp.bonusUSD||0) / div;
+      const periodSalBs  = (emp.salaryBs||0) / div;
+      const periodBonBs  = (emp.bonusBs||0) / div;
+      const ivssUSD = emp.ivssEnabled ? periodSalUSD*(emp.ivssRate||4)/100 : 0;
+      const paroUSD = emp.paroEnabled ? periodSalUSD*(emp.paroRate||2)/100 : 0;
       const loanDed = activeLoans.filter(l=>l.employeeId===emp.id)
         .reduce((s,l)=>s+(l.currency==='USD'?l.installmentAmount:(currentRate>0?l.installmentAmount/currentRate:0)),0);
 
@@ -687,10 +692,10 @@ export default function RecursosHumanos() {
       const overtimeUSD = empTimeEntries.filter(t => t.type === 'overtime').reduce((s, t) => s + (t.amountUSD || 0), 0);
       const absenceDeductionUSD = Math.abs(empTimeEntries.filter(t => t.type !== 'overtime').reduce((s, t) => s + (t.amountUSD || 0), 0));
 
-      const grossUSD   = (emp.salaryUSD||0)+(emp.bonusUSD||0)+overtimeUSD;
-      const grossBs    = (emp.salaryBs||0)+(emp.bonusBs||0);
+      const grossUSD   = periodSalUSD + periodBonUSD + overtimeUSD;
+      const grossBs    = periodSalBs + periodBonBs;
       const totalDed   = netVDedUSD+ivssUSD+paroUSD+loanDed+absenceDeductionUSD;
-      const pSal       = periodSal(emp,'USD');
+      const pSal       = periodSalUSD + periodBonUSD;
       return {
         emp, grossUSD, grossBs,
         voucherDedUSD:netVDedUSD, voucherDedBs:vDedBs,
