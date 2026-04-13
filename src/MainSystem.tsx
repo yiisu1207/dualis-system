@@ -1112,6 +1112,29 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     ).length;
   }, [pendingMovementsList, firebaseUser?.uid, canCapability]);
 
+  // ── Sidebar Mini KPIs ────────────────────────────────────────────────────
+  const sidebarKpis = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const ventasHoy = movements.filter(m => m.movementType === 'FACTURA' && m.date?.startsWith(today) && !m.isSupplierMovement && !(m as any).anulada).length;
+
+    // CxC total pendiente
+    let montoCxC = 0;
+    movements
+      .filter(m => !m.isSupplierMovement && !(m as any).pagado && m.entityId !== 'CONSUMIDOR_FINAL' && !(m as any).anulada)
+      .forEach(m => {
+        if (m.movementType === 'FACTURA') montoCxC += (m.amountInUSD || 0);
+        if (m.movementType === 'ABONO') montoCxC -= (m.amountInUSD || 0);
+      });
+    if (montoCxC < 0) montoCxC = 0;
+
+    const stockBajo = inventoryItems.filter(p => {
+      const s = (p as any).stock ?? (p as any).quantity ?? 0;
+      return s < ((p as any).minStock ?? 10);
+    }).length;
+
+    return { ventasHoy, montoCxC, stockBajo };
+  }, [movements, inventoryItems]);
+
   return (
     <div className="h-screen w-full flex bg-slate-50 dark:bg-[#0a0f1e] overflow-hidden font-inter transition-colors">
       {user && (
@@ -1123,6 +1146,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           config={{ companyName: userProfile?.businessId } as any}
           rolePermissions={rolePermissions}
           canCompare={canAccess('comparar')}
+          kpis={sidebarKpis}
           badges={{
             comparar: pendingCompareCount,
             tesoreria: overduePaymentsCount,

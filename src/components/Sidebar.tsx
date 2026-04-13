@@ -36,7 +36,16 @@ import {
   MessageCircle,
   Search,
   Star,
+  AlertTriangle,
+  DollarSign,
 } from 'lucide-react';
+
+interface SidebarKpis {
+  ventasHoy: number;
+  montoCxC: number;
+  stockBajo: number;
+  currencySymbol?: string;
+}
 
 interface SidebarProps {
   activeTab: string;
@@ -47,6 +56,7 @@ interface SidebarProps {
   canCompare?: boolean;
   rolePermissions?: RolePermissions;
   badges?: Record<string, number>;
+  kpis?: SidebarKpis;
   labelOverrides?: Record<string, string>;
   onLogout: () => void;
   onOpenProfile: () => void;
@@ -234,6 +244,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   canCompare = false,
   rolePermissions,
   badges = {},
+  kpis,
   labelOverrides = {},
   onLogout,
   onOpenProfile,
@@ -447,6 +458,49 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
           )}
         </div>
+
+        {/* ── MINI KPIs ─────────────────────────────────────────────── */}
+        {kpis && !collapsed && (
+          <div className="relative z-10 shrink-0 px-3 py-2 border-b border-white/[0.06]">
+            <div className="grid grid-cols-3 gap-1.5">
+              <div className="flex flex-col items-center py-1.5 px-1 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                <ShoppingCart size={10} className="text-indigo-400/60 mb-0.5" />
+                <span className="text-[13px] font-black text-white/80 leading-none">{kpis.ventasHoy}</span>
+                <span className="text-[7px] font-bold text-white/25 uppercase tracking-wider mt-0.5">Ventas</span>
+              </div>
+              <div className="flex flex-col items-center py-1.5 px-1 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                <DollarSign size={10} className="text-emerald-400/60 mb-0.5" />
+                <span className="text-[11px] font-black text-white/80 leading-none font-mono">
+                  {kpis.montoCxC >= 1000 ? `${(kpis.montoCxC / 1000).toFixed(1)}k` : kpis.montoCxC.toFixed(0)}
+                </span>
+                <span className="text-[7px] font-bold text-white/25 uppercase tracking-wider mt-0.5">CxC</span>
+              </div>
+              <div className="flex flex-col items-center py-1.5 px-1 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                <AlertTriangle size={10} className={`mb-0.5 ${kpis.stockBajo > 0 ? 'text-rose-400/70' : 'text-white/20'}`} />
+                <span className={`text-[13px] font-black leading-none ${kpis.stockBajo > 0 ? 'text-rose-400/80' : 'text-white/80'}`}>{kpis.stockBajo}</span>
+                <span className="text-[7px] font-bold text-white/25 uppercase tracking-wider mt-0.5">Bajo</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Collapsed KPIs — compact vertical dots */}
+        {kpis && collapsed && (
+          <div className="relative z-10 shrink-0 flex flex-col items-center gap-1.5 py-2 border-b border-white/[0.06]">
+            <div className="group relative w-9 h-9 rounded-lg bg-white/[0.03] flex flex-col items-center justify-center">
+              <span className="text-[11px] font-black text-white/70 leading-none">{kpis.ventasHoy}</span>
+              <span className="text-[6px] font-bold text-indigo-400/50 uppercase mt-px">VTA</span>
+              <Tip>Ventas hoy: {kpis.ventasHoy}</Tip>
+            </div>
+            {kpis.stockBajo > 0 && (
+              <div className="group relative w-9 h-9 rounded-lg bg-rose-500/[0.06] flex flex-col items-center justify-center">
+                <span className="text-[11px] font-black text-rose-400/80 leading-none">{kpis.stockBajo}</span>
+                <span className="text-[6px] font-bold text-rose-400/40 uppercase mt-px">LOW</span>
+                <Tip>Stock bajo: {kpis.stockBajo}</Tip>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── NAV ───────────────────────────────────────────────────── */}
         <nav
