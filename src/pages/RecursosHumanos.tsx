@@ -23,6 +23,12 @@ const DEPARTMENTS = ['Administración','Ventas','Almacén','Caja','Operaciones',
 const ROLES = ['Administrador','Gerente','Supervisor','Cajero','Vendedor','Almacenista','Servicios','Otro'];
 const FREQ_LABEL: Record<string,string> = { semanal:'Semanal', quincenal:'Quincenal', mensual:'Mensual' };
 const FREQ_DIV:   Record<string,number> = { semanal:4.33, quincenal:2, mensual:1 };
+const FREQ_COLOR: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+  semanal:   { bg:'bg-emerald-50 dark:bg-emerald-500/10', text:'text-emerald-700 dark:text-emerald-400', border:'border-emerald-200 dark:border-emerald-500/20', dot:'bg-emerald-500' },
+  quincenal: { bg:'bg-sky-50 dark:bg-sky-500/10',         text:'text-sky-700 dark:text-sky-400',         border:'border-sky-200 dark:border-sky-500/20',         dot:'bg-sky-500' },
+  mensual:   { bg:'bg-violet-50 dark:bg-violet-500/10',   text:'text-violet-700 dark:text-violet-400',   border:'border-violet-200 dark:border-violet-500/20',   dot:'bg-violet-500' },
+};
+const FREQ_DAYS: Record<string, number> = { semanal: 7, quincenal: 15, mensual: 30 };
 
 // ── TYPES ────────────────────────────────────────────────────────────────────
 interface Employee {
@@ -111,8 +117,11 @@ interface CorteRecord {
   executedAt: any;
   executedBy: string;
   executedByName: string;
+  frequency?: string;
   totalUSD: number;
   totalBs: number;
+  totalNetUSD?: number;
+  employeeCount?: number;
   voucherCount: number;
   deferredCount: number;
   vouchers: CorteVoucherDetail[];
@@ -705,6 +714,37 @@ export default function RecursosHumanos() {
     return emp.salaryUSD>0 && pv>periodSal(emp,'USD');
   }),[employees,currentPeriodVouchers]);
 
+  const loansTotal = useMemo(()=>activeLoans.reduce((s,l)=>{
+    const remaining = (l.totalInstallments - l.paidInstallments) * l.installmentAmount;
+    return s + (l.currency==='USD' ? remaining : (currentRate>0 ? remaining/currentRate : 0));
+  },0),[activeLoans,currentRate]);
+
+  const freqAlerts = useMemo(()=>{
+    const today = new Date();
+    const dow = today.getDay(); // 0=Sun..6=Sat
+    const dom = today.getDate();
+    const lastDay = new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+    const active = employees.filter(e=>e.status==='Activo');
+    const results: { freq: string; label: string; count: number; due: boolean; dueLabel: string }[] = [];
+    const freqs = ['semanal','quincenal','mensual'] as const;
+    for(const f of freqs){
+      const count = active.filter(e=>e.payFrequency===f).length;
+      if(!count) continue;
+      let due = false; let dueLabel = '';
+      if(f==='semanal' && (dow===4||dow===5)){
+        due=true; dueLabel=dow===4?'Mañana toca pagar':'Hoy toca pagar';
+      } else if(f==='quincenal' && (dom===14||dom===15||dom===lastDay-1||dom===lastDay)){
+        due=true; dueLabel=(dom===14||dom===lastDay-1)?'Mañana toca pagar':'Hoy toca pagar';
+      } else if(f==='mensual' && (dom===lastDay-1||dom===lastDay)){
+        due=true; dueLabel=dom===lastDay-1?'Mañana toca pagar':'Hoy toca pagar';
+      }
+      results.push({ freq:f, label:FREQ_LABEL[f], count, due, dueLabel });
+    }
+    return results;
+  },[employees]);
+
+  const dueAlerts = useMemo(()=>freqAlerts.filter(a=>a.due),[freqAlerts]);
+
   const filteredEmps = useMemo(()=>employees.filter(e=>{
     if(deptFilter!=='all'&&e.department!==deptFilter) return false;
     if(statusFilter!=='all'&&e.status!==statusFilter) return false;
@@ -880,87 +920,115 @@ export default function RecursosHumanos() {
     finally { setSaving(false); }
   };
 
-  const handleCorte = () => {
-    const toSettle = pendingVouchers.filter(v=>!v.deferToNextPeriod);
-    const deferred = pendingVouchers.filter(v=>v.deferToNextPeriod);
-    if(!toSettle.length){toast.info('Sin vales para este corte');return;}
-    setConfirm({
-      msg:'¿Ejecutar Corte de Vales?',
-      detail:`${toSettle.length} vales — $${fmtHR(pendingTotalUSD)} USD + Bs ${fmtHR(pendingTotalBs)}${deferred.length?` · ${deferred.length} diferidos al próximo corte`:''}`,
-      onConfirm:async()=>{
-        const batch=writeBatch(db);
-        toSettle.forEach(v=>batch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{status:'DESCONTADO',settledAt:serverTimestamp()}));
-        deferred.forEach(v=>batch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{deferToNextPeriod:false}));
-        await batch.commit();
-        // Persist corte record for historial
-        await addDoc(collection(db,`businesses/${bid}/cortes`),{
-          executedAt: serverTimestamp(),
-          executedBy: userProfile?.uid || '',
-          executedByName: userProfile?.fullName || userProfile?.email || 'Usuario',
-          totalUSD: pendingTotalUSD,
-          totalBs: pendingTotalBs,
-          voucherCount: toSettle.length,
-          deferredCount: deferred.length,
-          vouchers: toSettle.map(v=>({
-            id:v.id, employeeId:v.employeeId, employeeName:v.employeeName,
-            amount:v.amount, currency:v.currency, amountUSD:v.amountUSD||0,
-            reason:v.reason, voucherDate:v.voucherDate||'',
-          })),
-        });
-        toast.success(`Corte ejecutado — revisa los detalles en la pestaña Historial${deferred.length?` · ${deferred.length} vales pasan al próximo período`:''}`);
-      },
-    });
-  };
-
-  const handleProcessPayroll = () => {
+  const handleCerrarPeriodo = (freq: 'semanal'|'quincenal'|'mensual') => {
     if(!nominaRows.length) return;
-    const now=new Date();
-    const period=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-    const freq=freqFilter==='all'?'mixta':freqFilter;
+    // Filter everything by this frequency
+    const freqEmployeeIds = new Set(employees.filter(e=>e.status==='Activo'&&e.payFrequency===freq).map(e=>e.id));
+    const freqRows = nominaRows.filter(n=>freqEmployeeIds.has(n.emp.id));
+    if(!freqRows.length){ toast.info(`Sin empleados ${FREQ_LABEL[freq]?.toLowerCase()}s activos`); return; }
+
+    // Vouchers: only this frequency's employees, exclude deferred
+    const freqVouchers = currentPeriodVouchers.filter(v=>freqEmployeeIds.has(v.employeeId));
+    const freqDeferred = pendingVouchers.filter(v=>v.deferToNextPeriod && freqEmployeeIds.has(v.employeeId));
+    const freqTimeEntries = pendingTimeEntries.filter(t=>freqEmployeeIds.has(t.employeeId));
+    const freqLoans = activeLoans.filter(l=>freqEmployeeIds.has(l.employeeId));
+    const freqAbonos = abonos.filter(a=>a.status==='PENDIENTE'&&freqEmployeeIds.has(a.employeeId));
+
+    const freqTotals = {
+      grossUSD: freqRows.reduce((s,n)=>s+n.grossUSD,0),
+      grossBs:  freqRows.reduce((s,n)=>s+n.grossBs,0),
+      dedUSD:   freqRows.reduce((s,n)=>s+n.totalDedUSD,0),
+      netUSD:   freqRows.reduce((s,n)=>s+n.netUSD,0),
+      netBs:    freqRows.reduce((s,n)=>s+n.netBs,0),
+    };
+    const vTotalUSD = freqVouchers.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
+    const vTotalBs  = freqVouchers.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0);
+
+    const now = new Date();
+    const period = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
     setConfirm({
-      msg:'¿Procesar Nómina?',
-      detail:`${nominaRows.length} empleados · Neto $${fmtHR(nominaTotals.netUSD)} USD`,
+      msg:`¿Cerrar Período ${FREQ_LABEL[freq]}?`,
+      detail:`${freqRows.length} empleados · ${freqVouchers.length} vales · Neto $${fmtHR(freqTotals.netUSD)} USD${freqDeferred.length?` · ${freqDeferred.length} diferidos pasan al próximo`:''}`,
       onConfirm:async()=>{
         setProcLoading(true);
         try {
-          const run:Omit<PayrollRun,'id'>={
-            period,frequency:freq,processedAt:serverTimestamp(),
-            totalGrossUSD:nominaTotals.grossUSD,totalGrossBs:nominaTotals.grossBs,
-            totalDedUSD:nominaTotals.dedUSD,totalNetUSD:nominaTotals.netUSD,totalNetBs:nominaTotals.netBs,
-            employeeCount:nominaRows.length,
-            details:nominaRows.map(n=>({
-              employeeId:n.emp.id,name:n.emp.fullName,department:n.emp.department,
-              grossUSD:n.grossUSD,grossBs:n.grossBs,
-              voucherDedUSD:n.voucherDedUSD,ivssUSD:n.ivssUSD,paroUSD:n.paroUSD,loanDedUSD:n.loanDedUSD,
-              overtimeUSD:n.overtimeUSD,absenceDeductionUSD:n.absenceDeductionUSD,
-              totalDedUSD:n.totalDedUSD,netUSD:n.netUSD,netBs:n.netBs,
-              settledVouchers:pendingVouchers.filter(v=>v.employeeId===n.emp.id)
+          // 1. Create payroll_run record
+          const run: Omit<PayrollRun,'id'> = {
+            period, frequency:freq, processedAt:serverTimestamp(),
+            totalGrossUSD:freqTotals.grossUSD, totalGrossBs:freqTotals.grossBs,
+            totalDedUSD:freqTotals.dedUSD, totalNetUSD:freqTotals.netUSD, totalNetBs:freqTotals.netBs,
+            employeeCount:freqRows.length,
+            details:freqRows.map(n=>({
+              employeeId:n.emp.id, name:n.emp.fullName, department:n.emp.department,
+              grossUSD:n.grossUSD, grossBs:n.grossBs,
+              voucherDedUSD:n.voucherDedUSD, ivssUSD:n.ivssUSD, paroUSD:n.paroUSD, loanDedUSD:n.loanDedUSD,
+              overtimeUSD:n.overtimeUSD, absenceDeductionUSD:n.absenceDeductionUSD,
+              totalDedUSD:n.totalDedUSD, netUSD:n.netUSD, netBs:n.netBs,
+              settledVouchers:freqVouchers.filter(v=>v.employeeId===n.emp.id)
                 .map(v=>({reason:v.reason,amount:v.amount,currency:v.currency,amountUSD:v.amountUSD})),
             })),
           };
           await addDoc(collection(db,`businesses/${bid}/payroll_runs`),run);
-          // Liquidar vales
-          if(pendingVouchers.length){
+
+          // 2. Settle vouchers (only this frequency, only non-deferred)
+          if(freqVouchers.length){
             const batch=writeBatch(db);
-            pendingVouchers.forEach(v=>batch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{status:'DESCONTADO',settledAt:serverTimestamp()}));
+            freqVouchers.forEach(v=>batch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{status:'DESCONTADO',settledAt:serverTimestamp()}));
             await batch.commit();
           }
-          // Liquidar time entries
-          if(pendingTimeEntries.length){
+
+          // 3. Clear deferToNextPeriod flag so deferred appear next period
+          if(freqDeferred.length){
+            const dBatch=writeBatch(db);
+            freqDeferred.forEach(v=>dBatch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{deferToNextPeriod:false}));
+            await dBatch.commit();
+          }
+
+          // 4. Settle time entries (only this frequency)
+          if(freqTimeEntries.length){
             const teBatch=writeBatch(db);
-            pendingTimeEntries.forEach(t=>teBatch.update(doc(db,`businesses/${bid}/time_entries`,t.id),{status:'APLICADO',settledAt:serverTimestamp()}));
+            freqTimeEntries.forEach(t=>teBatch.update(doc(db,`businesses/${bid}/time_entries`,t.id),{status:'APLICADO',settledAt:serverTimestamp()}));
             await teBatch.commit();
           }
-          // Incrementar cuotas de préstamos
-          for(const loan of activeLoans){
+
+          // 5. Advance loan installments (only this frequency)
+          for(const loan of freqLoans){
             const paid=loan.paidInstallments+1;
             await updateDoc(doc(db,`businesses/${bid}/loans`,loan.id),{
               paidInstallments:paid,
               status:paid>=loan.totalInstallments?'PAGADO':'ACTIVO',
             });
           }
-          toast.success(`Nómina ${period} procesada`);
-        } catch { toast.error('Error al procesar nómina'); }
+
+          // 6. Settle abonos (only this frequency)
+          if(freqAbonos.length){
+            const aBatch=writeBatch(db);
+            freqAbonos.forEach(a=>aBatch.update(doc(db,`businesses/${bid}/abonos`,a.id),{status:'APLICADO',settledAt:serverTimestamp()}));
+            await aBatch.commit();
+          }
+
+          // 7. Persist corte record for historial
+          await addDoc(collection(db,`businesses/${bid}/cortes`),{
+            executedAt: serverTimestamp(),
+            executedBy: userProfile?.uid || '',
+            executedByName: userProfile?.fullName || userProfile?.email || 'Usuario',
+            frequency: freq,
+            totalUSD: vTotalUSD,
+            totalBs: vTotalBs,
+            totalNetUSD: freqTotals.netUSD,
+            employeeCount: freqRows.length,
+            voucherCount: freqVouchers.length,
+            deferredCount: freqDeferred.length,
+            vouchers: freqVouchers.map(v=>({
+              id:v.id, employeeId:v.employeeId, employeeName:v.employeeName,
+              amount:v.amount, currency:v.currency, amountUSD:v.amountUSD||0,
+              reason:v.reason, voucherDate:v.voucherDate||'',
+            })),
+          });
+
+          toast.success(`Período ${FREQ_LABEL[freq]} cerrado — ${freqRows.length} empleados · revisa el Historial${freqDeferred.length?` · ${freqDeferred.length} vales pasan al próximo período`:''}`);
+        } catch { toast.error('Error al cerrar el período'); }
         finally { setProcLoading(false); }
       },
     });
@@ -1081,37 +1149,112 @@ export default function RecursosHumanos() {
           </div>
         )}
 
-        {/* KPIs */}
-        <div className="flex flex-wrap gap-4">
-          <KPI title="Plantilla Activa" value={employees.filter(e=>e.status==='Activo').length}
-            sub={`${employees.length} registrados`} icon={Users}
-            color="bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400"
-            bg="dark:bg-gradient-to-br dark:from-indigo-950/60 dark:to-[#0d1424]"/>
-          <KPI title="Vales USD Pend." value={`$${fmtHR(pendingTotalUSD)}`}
-            sub={`${pendingVouchers.filter(v=>v.currency==='USD').length} vales`} icon={DollarSign}
-            color="bg-rose-50 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400"
-            bg="dark:bg-gradient-to-br dark:from-rose-950/40 dark:to-[#0d1424]"/>
-          <KPI title="Vales Bs Pend." value={`Bs ${fmtHR(pendingTotalBs)}`}
-            sub={`Tasa: Bs ${currentRate>0?fmtHR(currentRate):'—'}`} icon={Banknote}
-            color="bg-orange-50 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400"
-            bg="dark:bg-gradient-to-br dark:from-orange-950/40 dark:to-[#0d1424]"/>
-          {overdraftList.length>0 && (
-            <KPI title="Sobregirados" value={overdraftList.length} sub="Vales > salario período" icon={AlertTriangle}
-              color="bg-rose-50 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400"
-              bg="dark:bg-gradient-to-br dark:from-rose-950/40 dark:to-[#0d1424]"/>
-          )}
-          <KPI title="Corte de Vales" value="EJECUTAR" sub="Liquidar pendientes" icon={Scissors}
-            color="bg-slate-100 dark:bg-white/[0.1] text-slate-700 dark:text-white"
-            bg="dark:bg-gradient-to-br dark:from-slate-800/60 dark:to-[#0d1424]"
-            onClick={handleCorte} btn="Corte"/>
+        {/* ── KPI DASHBOARD ─────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Card 1: Empleados con badges de frecuencia */}
+          <div className="p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] shadow-lg">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 flex items-center justify-center">
+                <Users size={18} className="text-indigo-600 dark:text-indigo-400"/>
+              </div>
+              <div>
+                <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/40 tracking-[0.18em]">Plantilla Activa</p>
+                <p className="text-2xl font-black text-slate-900 dark:text-white leading-tight">{employees.filter(e=>e.status==='Activo').length}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {freqAlerts.map(a=>{
+                const fc = FREQ_COLOR[a.freq] || FREQ_COLOR.quincenal;
+                return (
+                  <span key={a.freq} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black ${fc.bg} ${fc.text} border ${fc.border}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${fc.dot}`}/>{a.count} {a.label.toLowerCase()}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Card 2: Vales pendientes */}
+          <div className="p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] shadow-lg">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-500/15 flex items-center justify-center">
+                <Ticket size={18} className="text-rose-600 dark:text-rose-400"/>
+              </div>
+              <div>
+                <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/40 tracking-[0.18em]">Vales Pendientes</p>
+                <p className="text-2xl font-black text-slate-900 dark:text-white leading-tight">${fmtHR(pendingTotalUSD)}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]">
+              <span className="font-bold text-slate-500 dark:text-white/40">
+                <strong className="text-slate-700 dark:text-slate-300">{pendingVouchers.length}</strong> vales
+              </span>
+              {pendingTotalBs > 0 && (
+                <span className="font-bold text-sky-600 dark:text-sky-400">Bs {fmtHR(pendingTotalBs)}</span>
+              )}
+              {overdraftList.length > 0 && (
+                <span className="font-bold text-rose-600 dark:text-rose-400">{overdraftList.length} sobregirados</span>
+              )}
+            </div>
+          </div>
+
+          {/* Card 3: Préstamos activos */}
+          <div className="p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-[#0d1424] shadow-lg">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-500/15 flex items-center justify-center">
+                <CreditCard size={18} className="text-amber-600 dark:text-amber-400"/>
+              </div>
+              <div>
+                <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/40 tracking-[0.18em]">Préstamos Activos</p>
+                <p className="text-2xl font-black text-slate-900 dark:text-white leading-tight">{activeLoans.length}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]">
+              {loansTotal > 0 && (
+                <span className="font-bold text-slate-500 dark:text-white/40">
+                  Saldo: <strong className="text-amber-600 dark:text-amber-400">${fmtHR(loansTotal)}</strong>
+                </span>
+              )}
+              <span className="font-bold text-slate-400 dark:text-white/30">
+                Tasa: Bs {currentRate>0?fmtHR(currentRate):'—'}
+              </span>
+            </div>
+          </div>
         </div>
 
+        {/* ── FREQUENCY ALERT BANNER ─────────────────────────────────── */}
+        {dueAlerts.length > 0 && (
+          <div className="flex flex-wrap gap-3">
+            {dueAlerts.map(a=>{
+              const fc = FREQ_COLOR[a.freq] || FREQ_COLOR.quincenal;
+              return (
+                <div key={a.freq} className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl border ${fc.border} ${fc.bg} flex-1 min-w-[260px]`}>
+                  <div className={`h-9 w-9 rounded-xl ${fc.bg} flex items-center justify-center shrink-0`}>
+                    <Clock size={16} className={fc.text}/>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[10px] font-black uppercase tracking-widest ${fc.text}`}>
+                      {a.dueLabel} a {a.count} empleado{a.count>1?'s':''} {a.label.toLowerCase()}
+                    </p>
+                    <p className="text-[10px] text-slate-500 dark:text-white/30 mt-0.5">
+                      Ve a Nómina → filtra por {a.label} → Cerrar Período
+                    </p>
+                  </div>
+                  <button onClick={()=>{setFreqFilter(a.freq);setActiveTab('nomina');}} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${fc.text} bg-white/60 dark:bg-white/[0.08] hover:bg-white dark:hover:bg-white/[0.15] border ${fc.border} transition-all`}>
+                    Ir a Nómina
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Overdraft banner */}
-        {overdraftList.length>0 && (
+        {overdraftList.length > 0 && (
           <div className="flex items-start gap-3 p-4 bg-rose-50 dark:bg-rose-500/[0.08] border border-rose-200 dark:border-rose-500/25 rounded-2xl">
             <AlertTriangle size={15} className="text-rose-500 shrink-0 mt-0.5"/>
             <div>
-              <p className="text-xs font-black text-rose-700 dark:text-rose-400 uppercase tracking-widest">⚠ Empleados Sobregirados</p>
+              <p className="text-xs font-black text-rose-700 dark:text-rose-400 uppercase tracking-widest">Empleados Sobregirados</p>
               <p className="text-[11px] text-rose-600/70 dark:text-rose-400/60 mt-0.5">{overdraftList.map(e=>e.fullName).join(', ')}</p>
             </div>
           </div>
@@ -1680,10 +1823,16 @@ export default function RecursosHumanos() {
                   className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 dark:hover:bg-white/[0.06] transition-all">
                   <Download size={13}/> Excel
                 </button>
-                <button onClick={handleProcessPayroll} disabled={procLoading||nominaRows.length===0}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/25 disabled:opacity-40 transition-all">
-                  {procLoading?<Loader2 size={13} className="animate-spin"/>:<Save size={13}/>} Procesar
-                </button>
+                {freqFilter==='all' ? (
+                  <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 px-3 py-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl">
+                    Selecciona una frecuencia para cerrar período
+                  </span>
+                ) : (
+                  <button onClick={()=>handleCerrarPeriodo(freqFilter as 'semanal'|'quincenal'|'mensual')} disabled={procLoading||nominaRows.length===0}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/25 disabled:opacity-40 transition-all">
+                    {procLoading?<Loader2 size={13} className="animate-spin"/>:<Scissors size={13}/>} Cerrar {FREQ_LABEL[freqFilter]}
+                  </button>
+                )}
               </div>
               {nominaRows.length===0?(
                 <div className="py-16 text-center"><Users size={48} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin empleados activos</p></div>
@@ -1709,7 +1858,13 @@ export default function RecursosHumanos() {
                             </p>
                             <p className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest mt-0.5">{n.emp.department} · {getCurrencyLabel(n.emp.paymentCurrency)}</p>
                           </td>
-                          <td className="px-4 py-3.5 text-center text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">{FREQ_LABEL[n.emp.payFrequency]?.slice(0,5)}</td>
+                          <td className="px-4 py-3.5 text-center">
+                            {(()=>{const fc=FREQ_COLOR[n.emp.payFrequency]||FREQ_COLOR.quincenal; return (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black ${fc.bg} ${fc.text} border ${fc.border}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${fc.dot}`}/>{FREQ_LABEL[n.emp.payFrequency]?.slice(0,5)}
+                              </span>
+                            );})()}
+                          </td>
                           <td className="px-4 py-3.5 text-right font-black text-slate-700 dark:text-slate-300">{n.grossUSD>0?`$${fmtHR(n.grossUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-rose-600 dark:text-rose-400">{n.voucherDedUSD>0?`-$${fmtHR(n.voucherDedUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400">{n.overtimeUSD>0?`+$${fmtHR(n.overtimeUSD)}`:'—'}</td>
@@ -1902,16 +2057,16 @@ export default function RecursosHumanos() {
               <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.06]">
                 <div className="flex items-center gap-2 mb-1">
                   <History size={18} className="text-violet-500"/>
-                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Historial de Cortes</h3>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Historial de Períodos</h3>
                 </div>
-                <p className="text-[10px] text-slate-400 dark:text-white/40">Cada corte de vales ejecutado queda registrado aquí. Haz clic en uno para ver los detalles.</p>
+                <p className="text-[10px] text-slate-400 dark:text-white/40">Cada período cerrado queda registrado aquí. Haz clic en uno para ver los detalles.</p>
               </div>
 
               {cortes.length === 0 ? (
                 <div className="py-16 text-center">
                   <Scissors size={48} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/>
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin cortes registrados</p>
-                  <p className="text-[10px] text-slate-300 dark:text-white/20 mt-1">Los cortes de vales que ejecutes aparecerán aquí</p>
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin períodos cerrados</p>
+                  <p className="text-[10px] text-slate-300 dark:text-white/20 mt-1">Los períodos que cierres aparecerán aquí</p>
                 </div>
               ) : (
                 <div className="divide-y divide-slate-50 dark:divide-white/[0.04]">
@@ -1919,7 +2074,6 @@ export default function RecursosHumanos() {
                     const dateStr = c.executedAt?.toDate
                       ? c.executedAt.toDate().toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                       : '—';
-                    // Group vouchers by employee for summary
                     const empMap = new Map<string, { name: string; count: number; totalUSD: number }>();
                     (c.vouchers || []).forEach(v => {
                       const prev = empMap.get(v.employeeId) || { name: v.employeeName, count: 0, totalUSD: 0 };
@@ -1927,6 +2081,7 @@ export default function RecursosHumanos() {
                       prev.totalUSD += v.amountUSD || 0;
                       empMap.set(v.employeeId, prev);
                     });
+                    const fc = c.frequency ? FREQ_COLOR[c.frequency] : null;
 
                     return (
                       <button
@@ -1939,14 +2094,26 @@ export default function RecursosHumanos() {
                             <div className="flex items-center gap-2 mb-1">
                               <Calendar size={13} className="text-violet-400 shrink-0"/>
                               <p className="text-xs font-black text-slate-900 dark:text-white">{dateStr}</p>
+                              {fc && (
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black ${fc.bg} ${fc.text} border ${fc.border}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${fc.dot}`}/>{FREQ_LABEL[c.frequency!]}
+                                </span>
+                              )}
                             </div>
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[10px]">
+                              {c.employeeCount != null && (
+                                <span className="text-slate-500 dark:text-white/40">
+                                  <strong className="text-slate-700 dark:text-slate-300">{c.employeeCount}</strong> empleados
+                                </span>
+                              )}
                               <span className="text-slate-500 dark:text-white/40">
                                 <strong className="text-slate-700 dark:text-slate-300">{c.voucherCount}</strong> vales
                               </span>
-                              <span className="text-slate-500 dark:text-white/40">
-                                <strong className="text-slate-700 dark:text-slate-300">{empMap.size}</strong> empleados
-                              </span>
+                              {c.totalNetUSD != null && c.totalNetUSD > 0 && (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                  Neto ${fmtHR(c.totalNetUSD)}
+                                </span>
+                              )}
                               {c.deferredCount > 0 && (
                                 <span className="text-amber-500 dark:text-amber-400">
                                   {c.deferredCount} diferidos
