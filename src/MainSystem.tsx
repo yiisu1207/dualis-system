@@ -124,7 +124,8 @@ const Topbar: React.FC<{
   usingStaleRate?: boolean;
   lastUpdated?: string;
   onRefreshRate?: () => void;
-}> = React.memo(({ topbarTitle, breadcrumbGroup, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, onOpenSearch, onToggleSidebar, bcvRate, customRates, usingStaleRate, lastUpdated, onRefreshRate }) => (
+  lastSyncAt?: number;
+}> = React.memo(({ topbarTitle, breadcrumbGroup, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, onOpenSearch, onToggleSidebar, bcvRate, customRates, usingStaleRate, lastUpdated, onRefreshRate, lastSyncAt }) => (
   <header className="h-14 md:h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.08] px-3 md:px-7 flex items-center justify-between sticky top-0 z-50 transition-colors">
     <div className="flex items-center gap-2 md:gap-3 min-w-0">
       {/* Hamburger menu — mobile only */}
@@ -147,6 +148,15 @@ const Topbar: React.FC<{
             </>
           )}
           <span className="text-slate-500 dark:text-slate-400 capitalize">{topbarTitle.toLowerCase()}</span>
+          {lastSyncAt && (
+            <span
+              className="ml-2 flex items-center gap-1 text-[9px] text-emerald-500/60"
+              title={`Sincronizado: ${new Date(lastSyncAt).toLocaleTimeString('es-VE')}`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="hidden md:inline">En vivo</span>
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -349,6 +359,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [pendingCompareCount, setPendingCompareCount] = useState(0);
   const [pendingProductsCount, setPendingProductsCount] = useState(0);
   const [overduePaymentsCount, setOverduePaymentsCount] = useState(0);
+  // ── Feature 7: Live sync indicator ──
+  const [lastSyncAt, setLastSyncAt] = useState<number>(Date.now());
+  const touchSync = useCallback(() => setLastSyncAt(Date.now()), []);
   // Fase D.0 — Quórum de aprobación CxC/CxP
   const [approvalConfig, setApprovalConfig] = useState<ApprovalConfig>(DEFAULT_APPROVAL_CONFIG);
   const [pendingMovementsList, setPendingMovementsList] = useState<PendingMovement[]>([]);
@@ -513,6 +526,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   useEffect(() => {
     if (!businessId) return;
     const unsub = onSnapshot(doc(db, 'businessConfigs', businessId), (snap) => {
+      touchSync();
       if (!snap.exists()) return;
       const data = snap.data() as any;
       const raw = data?.securityConfig?.sessionTimeoutMinutes;
@@ -550,7 +564,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       where('businessId', '==', businessId),
       where('status', '==', 'PENDING_APPROVAL')
     );
-    const unsub = onSnapshot(q, snap => setPendingJoinCount(snap.size));
+    const unsub = onSnapshot(q, snap => { touchSync(); setPendingJoinCount(snap.size); });
     return unsub;
   }, [businessId, userProfile?.role]);
 
@@ -562,7 +576,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       collection(db, `businesses/${businessId}/products`),
       where('status', '==', 'pending_review')
     );
-    const unsub = onSnapshot(q, snap => setPendingProductsCount(snap.size));
+    const unsub = onSnapshot(q, snap => { touchSync(); setPendingProductsCount(snap.size); });
     return unsub;
   }, [businessId, userProfile?.role]);
 
@@ -592,6 +606,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     if (!businessId) return;
     const q = query(collection(db, `businesses/${businessId}/pendingMovements`));
     const unsub = onSnapshot(q, snap => {
+      touchSync();
       const list: PendingMovement[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
       setPendingMovementsList(list);
     }, () => { /* ignore */ });
@@ -1229,6 +1244,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           usingStaleRate={usingStaleRate}
           lastUpdated={rates.lastUpdated}
           onRefreshRate={() => { void forceRefreshBCV(); }}
+          lastSyncAt={lastSyncAt}
         />
 
         <main className="flex-1 overflow-y-auto p-2 sm:p-3 lg:p-4 relative custom-scroll">
