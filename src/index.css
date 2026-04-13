@@ -106,6 +106,11 @@
   :root {
     --ui-radius: 12px;
     --ui-transition: 0.25s;
+
+    /* Accent theme — indigo fijo */
+    --accent-500: 99 102 241;    /* indigo-500 */
+    --accent-600: 79 70 229;     /* indigo-600 */
+    --accent-400: 129 140 248;   /* indigo-400 */
   }
 
   /* ── DENSITY SYSTEM ────────────────────────────────────────────── */

@@ -311,30 +311,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     setSwipeX(0);
   }, [swipeX, setIsOpen]);
 
-  // ── Accent theme ───────────────────────────────────────────────────────
-  const ACCENT_THEMES = [
-    { id: 'indigo',  color: '#6366f1', label: 'Indigo' },
-    { id: 'violet',  color: '#8b5cf6', label: 'Violeta' },
-    { id: 'blue',    color: '#3b82f6', label: 'Azul' },
-    { id: 'cyan',    color: '#06b6d4', label: 'Cian' },
-    { id: 'emerald', color: '#10b981', label: 'Esmeralda' },
-    { id: 'amber',   color: '#f59e0b', label: 'Ámbar' },
-    { id: 'rose',    color: '#f43f5e', label: 'Rosa' },
-  ] as const;
-
-  const [accentTheme, setAccentTheme] = useState<string>(() => {
-    try { return localStorage.getItem('dualis_accent') || 'indigo'; } catch { return 'indigo'; }
-  });
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-accent', accentTheme);
-  }, [accentTheme]);
-
-  const changeAccent = (id: string) => {
-    setAccentTheme(id);
-    try { localStorage.setItem('dualis_accent', id); } catch { /* ignore */ }
-  };
-
   // ── Inline search ─────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -834,24 +810,6 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
             );
           })()}
-
-          {/* Accent theme picker */}
-          {!collapsed && (
-            <div className="flex items-center gap-1 px-2 py-1.5">
-              <span className="text-[8px] font-bold text-white/20 uppercase tracking-widest mr-1">Tema</span>
-              {ACCENT_THEMES.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => changeAccent(t.id)}
-                  title={t.label}
-                  className={`w-4 h-4 rounded-full transition-all duration-150 hover:scale-125 ${
-                    accentTheme === t.id ? 'ring-2 ring-white/40 ring-offset-1 ring-offset-[#070b14] scale-110' : 'opacity-50 hover:opacity-100'
-                  }`}
-                  style={{ backgroundColor: t.color }}
-                />
-              ))}
-            </div>
-          )}
 
           {/* Logout */}
           <button
