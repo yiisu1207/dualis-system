@@ -221,23 +221,14 @@ const Configuracion: React.FC = () => {
   const [creditConfig, setCreditConfig] = useState({
     enabled: false,
     defaultCreditLimit: 0,
-    creditBlockMode: 'alert' as 'block' | 'alert',
-    creditAlertPct: 90,
     autoMarkup: true,
-    requireApproval: false,
-    maxDaysNoApproval: 30,
-    gracePeriodDays: 30,
     requireAbonoApproval: true,
-    // Portal de clientes (preparar para Fase 4)
+    // Portal de clientes
     portalEnabled: false,
     portalAllowComprobantes: false,
     portalAllowAutoPedido: false,
     portalPinLength: 4 as 4 | 6,
-    portalKycRequired: true, // default true — requires cedula upload before portal access
-    // Recordatorios
-    sendReminderBeforeExpiry: false,
-    reminderDaysBefore: 3,
-    notifyVendedorOverdue: false,
+    portalKycRequired: true,
   });
 
   // Commissions config
@@ -263,8 +254,6 @@ const Configuracion: React.FC = () => {
   const [posConfig, setPosConfig] = useState({
     allowManualDiscount: true,
     maxDiscountWithoutApproval: 10,
-    requireClientAboveAmount: false,
-    requireClientMinAmount: 100,
     showStockInPOS: true,
     enableBultoColumn: true,
   });
