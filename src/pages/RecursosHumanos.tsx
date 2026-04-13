@@ -11,12 +11,11 @@ import {
   Ticket, Scissors, Plus, AlertTriangle, DollarSign, Banknote,
   Gift, FileText, Printer, Download, Filter, RefreshCw,
   ShieldCheck, CreditCard, Sun, Clock, TrendingDown, ChevronDown,
-  ChevronRight, RotateCcw, History, GitCompare, MessageSquare, Send,
-  Eye, CheckCircle2, XCircle, ArrowLeftRight,
+  ChevronRight, RotateCcw, History,
+  Eye, ArrowLeftRight, Calendar,
 } from 'lucide-react';
 import { printVoucherSheet, printPayslip, printPayrollRunPDF, exportNominaCSV, accrueVacationDays, fmtHR } from '../utils/hrUtils';
 import { logAudit } from '../utils/auditLogger';
-import { listUsers } from '../firebase/api';
 import { useRates } from '../context/RatesContext';
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -102,7 +101,23 @@ type NominaRow = {
   totalDedUSD: number; netUSD: number; netBs: number;
   vCount: number; isOverdraft: boolean;
 };
-type SubTab = 'directory'|'vouchers'|'nomina'|'tasas'|'comparar';
+interface CorteVoucherDetail {
+  id: string; employeeId: string; employeeName: string;
+  amount: number; currency: 'USD'|'BS'; amountUSD: number;
+  reason: string; voucherDate?: string;
+}
+interface CorteRecord {
+  id: string;
+  executedAt: any;
+  executedBy: string;
+  executedByName: string;
+  totalUSD: number;
+  totalBs: number;
+  voucherCount: number;
+  deferredCount: number;
+  vouchers: CorteVoucherDetail[];
+}
+type SubTab = 'directory'|'vouchers'|'nomina'|'tasas'|'historial';
 
 const EMPTY_EMP: Omit<Employee,'id'> = {
   fullName:'', cedula:'', phone:'', role:'Vendedor', department:'Ventas',
@@ -529,14 +544,9 @@ export default function RecursosHumanos() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Comparar tab
-  const [compareUsers, setCompareUsers] = useState<{id:string;fullName?:string;email?:string}[]>([]);
-  const [compareTargetId, setCompareTargetId] = useState('');
-  // compareTargetVouchers removed: now we filter the shared vouchers list by registeredBy
-  const [compareLoading, setCompareLoading] = useState(false);
-  const [compareComments, setCompareComments] = useState<{id:string;voucherId:string;text:string;author:string;createdAt:any}[]>([]);
-  const [commentDraft, setCommentDraft] = useState<Record<string,string>>({});
-  const [compareFilter, setCompareFilter] = useState<'all'|'match'|'diff'|'missing'>('all');
+  // Historial de cortes
+  const [cortes, setCortes] = useState<CorteRecord[]>([]);
+  const [selectedCorte, setSelectedCorte] = useState<CorteRecord|null>(null);
 
   // Business name + logo for prints (fetched from Firestore)
   const [businessName, setBusinessName] = useState('Mi Negocio');
@@ -573,7 +583,10 @@ export default function RecursosHumanos() {
     const u8 = onSnapshot(query(collection(db,`businesses/${bid}/exchange_rates_history`),orderBy('date','desc'),limit(200)),
       s=>setBcvHistory(s.docs.map(d=>({date:(d.data() as any).date||d.id, bcv:Number((d.data() as any).bcv)||0}))),
       ()=>{});
-    return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();};
+    const u9 = onSnapshot(query(collection(db,`businesses/${bid}/cortes`),orderBy('executedAt','desc')),
+      s=>setCortes(s.docs.map(d=>({id:d.id,...d.data()} as CorteRecord))),
+      ()=>{});
+    return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();u9();};
   }, [bid]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -881,9 +894,23 @@ export default function RecursosHumanos() {
       onConfirm:async()=>{
         const batch=writeBatch(db);
         toSettle.forEach(v=>batch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{status:'DESCONTADO',settledAt:serverTimestamp()}));
-        // Clear deferToNextPeriod on deferred vales so they apply next corte
         deferred.forEach(v=>batch.update(doc(db,`businesses/${bid}/vouchers`,v.id),{deferToNextPeriod:false}));
         await batch.commit();
+        // Persist corte record for historial
+        await addDoc(collection(db,`businesses/${bid}/cortes`),{
+          executedAt: serverTimestamp(),
+          executedBy: userProfile?.uid || '',
+          executedByName: userProfile?.fullName || userProfile?.email || 'Usuario',
+          totalUSD: pendingTotalUSD,
+          totalBs: pendingTotalBs,
+          voucherCount: toSettle.length,
+          deferredCount: deferred.length,
+          vouchers: toSettle.map(v=>({
+            id:v.id, employeeId:v.employeeId, employeeName:v.employeeName,
+            amount:v.amount, currency:v.currency, amountUSD:v.amountUSD||0,
+            reason:v.reason, voucherDate:v.voucherDate||'',
+          })),
+        });
         toast.success(`Corte ejecutado${deferred.length?` · ${deferred.length} vales pasan al próximo período`:''}`);
       },
     });
@@ -1017,114 +1044,6 @@ export default function RecursosHumanos() {
   const openNew  = () => {setEditId(null);setEmpForm(EMPTY_EMP);setEmpModal(true);};
   const openEdit = (e:Employee) => {setEditId(e.id);setEmpForm(e);setEmpModal(true);};
 
-  // ── Compare: load workspace users ───────────────────────────────────────────
-  useEffect(() => {
-    if (activeTab !== 'comparar' || !bid) return;
-    listUsers(bid).then((u: any[]) => setCompareUsers(u.filter((x: any) => x.id !== userProfile?.uid)));
-  }, [activeTab, bid, userProfile?.uid]);
-
-  // Compare target vouchers now come from the shared `vouchers` state filtered by registeredBy
-  // No separate listener needed — just set compareLoading false when target changes
-  useEffect(() => {
-    if (compareTargetId) setCompareLoading(false);
-  }, [compareTargetId]);
-
-  // ── Compare: load comments ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (!compareTargetId || !bid) { setCompareComments([]); return; }
-    const u = onSnapshot(
-      query(collection(db, `businesses/${bid}/voucher_compare_comments`), orderBy('createdAt', 'desc')),
-      s => setCompareComments(s.docs.map(d => ({ id: d.id, ...d.data() } as any))),
-      () => {},
-    );
-    return () => u();
-  }, [compareTargetId, bid]);
-
-  const handleAddComment = async (voucherId: string) => {
-    const text = commentDraft[voucherId]?.trim();
-    if (!text || !bid) return;
-    await addDoc(collection(db, `businesses/${bid}/voucher_compare_comments`), {
-      voucherId, text,
-      author: userProfile?.fullName || userProfile?.email || 'Usuario',
-      authorId: userProfile?.uid,
-      targetUserId: compareTargetId,
-      createdAt: serverTimestamp(),
-    });
-    setCommentDraft(d => ({ ...d, [voucherId]: '' }));
-    toast.success('Comentario agregado');
-  };
-
-  // ── Compare: diff logic ─────────────────────────────────────────────────────
-  const compareData = useMemo(() => {
-    if (!compareTargetId) return { myVouchers: [], theirVouchers: [], diffs: [] };
-
-    // "My" vouchers = registered by me; "Their" vouchers = registered by target user
-    // Vouchers without registeredBy are treated as "mine" (legacy data)
-    const myUid = userProfile?.uid || '';
-    const allActive = vouchers.filter(v => v.status !== 'CORREGIDO');
-    const myV = allActive.filter(v => !v.registeredBy || v.registeredBy === myUid);
-    const theirV = allActive.filter(v => v.registeredBy === compareTargetId);
-
-    type DiffRow = {
-      key: string;
-      employeeName: string;
-      date: string;
-      myVoucher: Voucher | null;
-      theirVoucher: Voucher | null;
-      status: 'match' | 'diff' | 'only_mine' | 'only_theirs';
-    };
-
-    const rows: DiffRow[] = [];
-    const usedTheirs = new Set<string>();
-
-    for (const mv of myV) {
-      const match = theirV.find(tv => !usedTheirs.has(tv.id) &&
-        tv.employeeId === mv.employeeId &&
-        tv.voucherDate === mv.voucherDate &&
-        tv.amount === mv.amount &&
-        tv.currency === mv.currency
-      );
-      if (match) {
-        usedTheirs.add(match.id);
-        rows.push({ key: mv.id, employeeName: mv.employeeName, date: mv.voucherDate || '', myVoucher: mv, theirVoucher: match, status: 'match' });
-      } else {
-        // Check for partial match (same employee + date but different amount)
-        const partial = theirV.find(tv => !usedTheirs.has(tv.id) &&
-          tv.employeeId === mv.employeeId &&
-          tv.voucherDate === mv.voucherDate
-        );
-        if (partial) {
-          usedTheirs.add(partial.id);
-          rows.push({ key: mv.id, employeeName: mv.employeeName, date: mv.voucherDate || '', myVoucher: mv, theirVoucher: partial, status: 'diff' });
-        } else {
-          rows.push({ key: mv.id, employeeName: mv.employeeName, date: mv.voucherDate || '', myVoucher: mv, theirVoucher: null, status: 'only_mine' });
-        }
-      }
-    }
-
-    // Add unmatched theirs
-    for (const tv of theirV) {
-      if (!usedTheirs.has(tv.id)) {
-        rows.push({ key: tv.id, employeeName: tv.employeeName, date: tv.voucherDate || '', myVoucher: null, theirVoucher: tv, status: 'only_theirs' });
-      }
-    }
-
-    rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-
-    const filtered = compareFilter === 'all' ? rows
-      : compareFilter === 'match' ? rows.filter(r => r.status === 'match')
-      : compareFilter === 'diff' ? rows.filter(r => r.status === 'diff')
-      : rows.filter(r => r.status === 'only_mine' || r.status === 'only_theirs');
-
-    return {
-      myVouchers: myV,
-      theirVouchers: theirV,
-      diffs: filtered,
-      totalMatch: rows.filter(r => r.status === 'match').length,
-      totalDiff: rows.filter(r => r.status === 'diff').length,
-      totalMissing: rows.filter(r => r.status === 'only_mine' || r.status === 'only_theirs').length,
-    };
-  }, [vouchers, compareTargetId, compareFilter, userProfile?.uid]);
 
   const tabCls = (t:SubTab) => `px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
     activeTab===t
@@ -1145,9 +1064,9 @@ export default function RecursosHumanos() {
             <p className="text-slate-400 dark:text-white/40 font-medium text-[10px] mt-2 uppercase tracking-[0.2em]">Nómina · Vales · Préstamos · Tasas</p>
           </div>
           <div className="flex gap-1.5 p-1.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-2xl shadow-sm overflow-x-auto">
-            {(['directory','vouchers','nomina','tasas','comparar'] as SubTab[]).map(t=>(
+            {(['directory','vouchers','nomina','tasas','historial'] as SubTab[]).map(t=>(
               <button key={t} onClick={()=>setActiveTab(t)} className={`${tabCls(t)} whitespace-nowrap shrink-0`}>
-                {t==='directory'?'Directorio':t==='vouchers'?'Vales':t==='nomina'?'Nómina':t==='tasas'?'Tasa Interna':'Comparar'}
+                {t==='directory'?'Directorio':t==='vouchers'?'Vales':t==='nomina'?'Nómina':t==='tasas'?'Tasa Interna':'Historial'}
               </button>
             ))}
           </div>
@@ -1161,7 +1080,7 @@ export default function RecursosHumanos() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Modo Individual Activo</p>
-              <p className="text-[10px] text-indigo-300/60 mt-0.5">Solo ves tus propios registros. Para comparar con otro usuario, usa la pestaña <strong>Comparar</strong>.</p>
+              <p className="text-[10px] text-indigo-300/60 mt-0.5">Solo ves tus propios registros.</p>
             </div>
           </div>
         )}
@@ -1987,193 +1906,176 @@ export default function RecursosHumanos() {
             </>
           )}
 
-          {/* ── COMPARAR VALES ──────────────────────────────────────────── */}
-          {activeTab==='comparar' && (
+          {/* ── HISTORIAL DE CORTES ─────────────────────────────────────── */}
+          {activeTab==='historial' && (
             <>
               <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.06]">
-                <div className="flex items-center gap-2 mb-4">
-                  <ArrowLeftRight size={18} className="text-violet-500"/>
-                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Comparar Vales</h3>
+                <div className="flex items-center gap-2 mb-1">
+                  <History size={18} className="text-violet-500"/>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Historial de Cortes</h3>
                 </div>
-                <p className="text-[10px] text-slate-400 dark:text-white/40 mb-4">Compara tus registros de vales con los de otro usuario del equipo. Detecta diferencias, faltantes y agrega comentarios.</p>
-
-                {/* User selector */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
-                  <div className="flex-1 min-w-0">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Comparar con</label>
-                    <select value={compareTargetId} onChange={e=>setCompareTargetId(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-violet-500">
-                      <option value="">Seleccionar usuario...</option>
-                      {compareUsers.map(u=><option key={u.id} value={u.id}>{u.fullName||u.email||u.id}</option>)}
-                    </select>
-                  </div>
-                  {compareTargetId && (
-                    <div className="flex gap-1.5 p-1 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-xl">
-                      {([['all','Todos'],['match','Iguales'],['diff','Diferentes'],['missing','Faltantes']] as const).map(([k,l])=>(
-                        <button key={k} onClick={()=>setCompareFilter(k)}
-                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                            compareFilter===k
-                              ?'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md'
-                              :'text-slate-400 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.06]'
-                          }`}>{l}</button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <p className="text-[10px] text-slate-400 dark:text-white/40">Cada corte de vales ejecutado queda registrado aquí. Haz clic en uno para ver los detalles.</p>
               </div>
 
-              {/* Compare content */}
-              {!compareTargetId ? (
+              {cortes.length === 0 ? (
                 <div className="py-16 text-center">
-                  <ArrowLeftRight size={48} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/>
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Selecciona un usuario para comparar</p>
-                  <p className="text-[10px] text-slate-300 dark:text-white/20 mt-1">Verás las diferencias entre tus registros y los del otro usuario</p>
+                  <Scissors size={48} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/>
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin cortes registrados</p>
+                  <p className="text-[10px] text-slate-300 dark:text-white/20 mt-1">Los cortes de vales que ejecutes aparecerán aquí</p>
                 </div>
-              ) : compareLoading ? (
-                <div className="py-16 text-center"><Loader2 size={32} className="mx-auto animate-spin text-violet-500"/></div>
               ) : (
-                <>
-                  {/* Summary KPIs */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-50 dark:divide-white/[0.06] border-b border-slate-50 dark:border-white/[0.06]">
-                    <div className="px-4 py-3 text-center">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1">Mis Vales</p>
-                      <p className="text-lg font-black text-slate-700 dark:text-slate-300">{compareData.myVouchers.length}</p>
-                    </div>
-                    <div className="px-4 py-3 text-center">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500 dark:text-emerald-400 mb-1">Coinciden</p>
-                      <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">{compareData.totalMatch}</p>
-                    </div>
-                    <div className="px-4 py-3 text-center">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-amber-500 dark:text-amber-400 mb-1">Diferentes</p>
-                      <p className="text-lg font-black text-amber-600 dark:text-amber-400">{compareData.totalDiff}</p>
-                    </div>
-                    <div className="px-4 py-3 text-center">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-rose-500 dark:text-rose-400 mb-1">Faltantes</p>
-                      <p className="text-lg font-black text-rose-600 dark:text-rose-400">{compareData.totalMissing}</p>
-                    </div>
-                  </div>
+                <div className="divide-y divide-slate-50 dark:divide-white/[0.04]">
+                  {cortes.map(c => {
+                    const dateStr = c.executedAt?.toDate
+                      ? c.executedAt.toDate().toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                      : '—';
+                    // Group vouchers by employee for summary
+                    const empMap = new Map<string, { name: string; count: number; totalUSD: number }>();
+                    (c.vouchers || []).forEach(v => {
+                      const prev = empMap.get(v.employeeId) || { name: v.employeeName, count: 0, totalUSD: 0 };
+                      prev.count++;
+                      prev.totalUSD += v.amountUSD || 0;
+                      empMap.set(v.employeeId, prev);
+                    });
 
-                  {/* Diff table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
-                          <th className="px-4 py-3">Estado</th>
-                          <th className="px-4 py-3">Empleado</th>
-                          <th className="px-4 py-3">Fecha</th>
-                          <th className="px-4 py-3 text-right">Mi Registro</th>
-                          <th className="px-4 py-3 text-right">Su Registro</th>
-                          <th className="px-4 py-3 text-right">Diferencia</th>
-                          <th className="px-4 py-3">Comentarios</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                        {compareData.diffs.length===0 && (
-                          <tr><td colSpan={7} className="px-4 py-12 text-center">
-                            <CheckCircle2 size={36} className="mx-auto text-emerald-300 dark:text-emerald-500/30 mb-2"/>
-                            <p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">
-                              {compareFilter==='all'?'Sin registros para comparar':'Sin resultados en este filtro'}
-                            </p>
-                          </td></tr>
-                        )}
-                        {compareData.diffs.map(row => {
-                          const vComments = compareComments.filter(c => c.voucherId === row.key);
-                          const statusColor = row.status==='match'
-                            ?'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30'
-                            :row.status==='diff'
-                            ?'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/30'
-                            :'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-500/30';
-                          const statusLabel = row.status==='match'?'Igual':row.status==='diff'?'Difiere':row.status==='only_mine'?'Solo mío':'Solo suyo';
-                          const myAmt = row.myVoucher ? `${row.myVoucher.currency==='USD'?'$':'Bs '}${fmtHR(row.myVoucher.amount)}` : '—';
-                          const theirAmt = row.theirVoucher ? `${row.theirVoucher.currency==='USD'?'$':'Bs '}${fmtHR(row.theirVoucher.amount)}` : '—';
-                          const diffAmt = row.myVoucher && row.theirVoucher
-                            ? row.myVoucher.amount - row.theirVoucher.amount
-                            : null;
-
-                          return (
-                            <React.Fragment key={row.key}>
-                              <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] ${row.status!=='match'?'bg-opacity-30':''}`}>
-                                <td className="px-4 py-3">
-                                  <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase border ${statusColor}`}>
-                                    {statusLabel}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 font-black text-slate-900 dark:text-white text-sm">{row.employeeName}</td>
-                                <td className="px-4 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{row.date||'—'}</td>
-                                <td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">
-                                  {myAmt}
-                                  {row.myVoucher?.reason && <p className="text-[9px] text-slate-400 dark:text-white/25 font-normal italic">{row.myVoucher.reason}</p>}
-                                </td>
-                                <td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">
-                                  {theirAmt}
-                                  {row.theirVoucher?.reason && <p className="text-[9px] text-slate-400 dark:text-white/25 font-normal italic">{row.theirVoucher.reason}</p>}
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                  {diffAmt !== null && diffAmt !== 0 ? (
-                                    <span className={`font-black text-sm ${diffAmt>0?'text-rose-600 dark:text-rose-400':'text-emerald-600 dark:text-emerald-400'}`}>
-                                      {diffAmt>0?'+':''}${fmtHR(Math.abs(diffAmt))}
-                                    </span>
-                                  ) : diffAmt === 0 ? (
-                                    <CheckCircle2 size={14} className="inline text-emerald-500"/>
-                                  ) : (
-                                    <span className="text-slate-300 dark:text-white/15">—</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-1.5">
-                                    {vComments.length > 0 && (
-                                      <span className="text-[9px] bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-full font-black border border-violet-100 dark:border-violet-500/25">
-                                        {vComments.length} <MessageSquare size={9} className="inline"/>
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                              {/* Comment section */}
-                              {row.status !== 'match' && (
-                                <tr>
-                                  <td colSpan={7} className="px-4 py-2 bg-slate-50/50 dark:bg-white/[0.02]">
-                                    <div className="flex flex-col gap-1.5">
-                                      {vComments.map(c => (
-                                        <div key={c.id} className="flex items-start gap-2 text-[10px]">
-                                          <span className="font-black text-violet-600 dark:text-violet-400 shrink-0">{c.author}:</span>
-                                          <span className="text-slate-600 dark:text-white/50">{c.text}</span>
-                                          <span className="text-[8px] text-slate-300 dark:text-white/15 shrink-0 ml-auto">
-                                            {c.createdAt?.toDate?.().toLocaleDateString('es-VE')||''}
-                                          </span>
-                                        </div>
-                                      ))}
-                                      <div className="flex items-center gap-1.5 mt-0.5">
-                                        <input
-                                          value={commentDraft[row.key]||''}
-                                          onChange={e=>setCommentDraft(d=>({...d,[row.key]:e.target.value}))}
-                                          onKeyDown={e=>e.key==='Enter'&&handleAddComment(row.key)}
-                                          placeholder="Agregar comentario..."
-                                          className="flex-1 px-2.5 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-[10px] dark:text-white outline-none focus:ring-1 focus:ring-violet-500"
-                                        />
-                                        <button onClick={()=>handleAddComment(row.key)}
-                                          className="p-1.5 bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-all disabled:opacity-50"
-                                          disabled={!commentDraft[row.key]?.trim()}>
-                                          <Send size={10}/>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setSelectedCorte(c)}
+                        className="w-full text-left px-5 py-4 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-all group"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Calendar size={13} className="text-violet-400 shrink-0"/>
+                              <p className="text-xs font-black text-slate-900 dark:text-white">{dateStr}</p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[10px]">
+                              <span className="text-slate-500 dark:text-white/40">
+                                <strong className="text-slate-700 dark:text-slate-300">{c.voucherCount}</strong> vales
+                              </span>
+                              <span className="text-slate-500 dark:text-white/40">
+                                <strong className="text-slate-700 dark:text-slate-300">{empMap.size}</strong> empleados
+                              </span>
+                              {c.deferredCount > 0 && (
+                                <span className="text-amber-500 dark:text-amber-400">
+                                  {c.deferredCount} diferidos
+                                </span>
                               )}
-                            </React.Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                              <span className="text-[9px] text-slate-400 dark:text-white/25">
+                                por {c.executedByName}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            {c.totalUSD > 0 && (
+                              <p className="text-sm font-black text-rose-600 dark:text-rose-400">${fmtHR(c.totalUSD)}</p>
+                            )}
+                            {c.totalBs > 0 && (
+                              <p className="text-[10px] font-bold text-sky-600 dark:text-sky-400">Bs {fmtHR(c.totalBs)}</p>
+                            )}
+                          </div>
+                          <ChevronRight size={16} className="text-slate-300 dark:text-white/15 group-hover:text-indigo-400 transition-colors shrink-0"/>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </>
           )}
 
         </div>
       </div>
+
+      {/* CORTE DETAIL MODAL */}
+      {selectedCorte && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={()=>setSelectedCorte(null)}>
+          <div className="bg-white dark:bg-[#0d1424] w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-white/[0.08] overflow-hidden animate-in zoom-in-95 max-h-[90vh] flex flex-col" onClick={e=>e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-50 dark:border-white/[0.06] flex justify-between items-center bg-slate-50/50 dark:bg-white/[0.03] shrink-0">
+              <div>
+                <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Scissors size={16} className="text-violet-400"/> Detalle del Corte
+                </h2>
+                <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/40 mt-0.5 tracking-widest">
+                  {selectedCorte.executedAt?.toDate
+                    ? selectedCorte.executedAt.toDate().toLocaleDateString('es-VE',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})
+                    : '—'}
+                  {' · '}por {selectedCorte.executedByName}
+                </p>
+              </div>
+              <button onClick={()=>setSelectedCorte(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl text-slate-400"><X size={18}/></button>
+            </div>
+
+            {/* KPIs */}
+            <div className="grid grid-cols-3 divide-x divide-slate-50 dark:divide-white/[0.06] border-b border-slate-50 dark:border-white/[0.06] shrink-0">
+              {[
+                {l:'Vales descontados', v: String(selectedCorte.voucherCount), c:'text-slate-700 dark:text-slate-300'},
+                {l:'Total USD', v:`$${fmtHR(selectedCorte.totalUSD)}`, c:'text-rose-600 dark:text-rose-400'},
+                {l:'Total Bs', v:`Bs ${fmtHR(selectedCorte.totalBs)}`, c:'text-sky-600 dark:text-sky-400'},
+              ].map((k,i)=>(
+                <div key={i} className="px-4 py-3 text-center">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-0.5">{k.l}</p>
+                  <p className={`text-sm font-black ${k.c}`}>{k.v}</p>
+                </div>
+              ))}
+            </div>
+
+            {selectedCorte.deferredCount > 0 && (
+              <div className="px-6 py-2 border-b border-slate-50 dark:border-white/[0.06] bg-amber-50/50 dark:bg-amber-500/5">
+                <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                  ⏳ {selectedCorte.deferredCount} vale{selectedCorte.deferredCount>1?'s':''} diferido{selectedCorte.deferredCount>1?'s':''} al próximo período
+                </p>
+              </div>
+            )}
+
+            {/* Vouchers grouped by employee */}
+            <div className="overflow-y-auto flex-1 p-4 space-y-3">
+              {(() => {
+                const grouped = new Map<string,{name:string; vouchers:CorteVoucherDetail[]; totalUSD:number}>();
+                (selectedCorte.vouchers||[]).forEach(v => {
+                  const prev = grouped.get(v.employeeId) || {name:v.employeeName, vouchers:[], totalUSD:0};
+                  prev.vouchers.push(v);
+                  prev.totalUSD += v.amountUSD||0;
+                  grouped.set(v.employeeId, prev);
+                });
+                return Array.from(grouped.entries()).map(([empId,g]) => (
+                  <div key={empId} className="rounded-xl border border-slate-100 dark:border-white/[0.06] overflow-hidden">
+                    <div className="px-4 py-2.5 bg-slate-50/80 dark:bg-white/[0.03] flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center">
+                          <Users size={12} className="text-indigo-600 dark:text-indigo-400"/>
+                        </div>
+                        <div>
+                          <p className="text-xs font-black text-slate-900 dark:text-white">{g.name}</p>
+                          <p className="text-[9px] text-slate-400 dark:text-white/30">{g.vouchers.length} vale{g.vouchers.length>1?'s':''}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm font-black text-rose-600 dark:text-rose-400">${fmtHR(g.totalUSD)}</p>
+                    </div>
+                    <div className="divide-y divide-slate-50 dark:divide-white/[0.04]">
+                      {g.vouchers.map((v,i) => (
+                        <div key={i} className="px-4 py-2 flex items-center justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] text-slate-700 dark:text-white/70 truncate">{v.reason||'Sin motivo'}</p>
+                            {v.voucherDate && (
+                              <p className="text-[9px] text-slate-400 dark:text-white/25 mt-0.5">{v.voucherDate}</p>
+                            )}
+                          </div>
+                          <p className={`text-xs font-bold shrink-0 ${v.currency==='USD'?'text-rose-600 dark:text-rose-400':'text-sky-600 dark:text-sky-400'}`}>
+                            {v.currency==='USD'?'$':'Bs '}{fmtHR(v.amount)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PROFILE PANEL */}
       {fichaEmp&&(
