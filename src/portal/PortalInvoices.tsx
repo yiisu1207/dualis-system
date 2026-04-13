@@ -6,16 +6,18 @@ import { MovementType } from '../../types';
 import { FileText, Receipt, Filter, Search, PenTool, Check, X, Loader2 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 type StatusFilter = 'ALL' | 'PENDIENTE' | 'PAGADO';
 type AcctFilter = string; // 'ALL' o cualquier accountType dinámico
 
 export default function PortalInvoices() {
-  const { businessId, customerId, customerName } = usePortal();
+  const { businessId, customerId, customerName, currencySymbol } = usePortal();
   const { movements, loading, rates } = usePortalData(businessId, customerId);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [acctFilter, setAcctFilter] = useState<AcctFilter>('ALL');
   const [search, setSearch] = useState('');
+  const { refreshing } = usePullToRefresh(useCallback(async () => { await new Promise(r => setTimeout(r, 400)); }, []));
 
   // Tipos de cuenta presentes en los movimientos del cliente (dinámico)
   const availableAccountTypes = useMemo(() => {
@@ -141,6 +143,11 @@ export default function PortalInvoices() {
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-in">
+      {refreshing && (
+        <div className="flex justify-center py-2">
+          <div className="animate-spin h-5 w-5 border-2 border-indigo-500 border-t-transparent rounded-full" />
+        </div>
+      )}
       <div>
         <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Movimientos</h1>
         <p className="text-xs sm:text-sm text-white/40 font-bold mt-1">
@@ -204,12 +211,28 @@ export default function PortalInvoices() {
           </span>
         </div>
 
-        {filtered.length === 0 ? (
-          <div className="py-14 text-center">
-            <Filter size={22} className="text-white/10 mx-auto mb-3" />
-            <p className="text-xs font-bold text-white/20">Sin resultados</p>
-          </div>
-        ) : (
+        {filtered.length === 0 ? (() => {
+          const totalCount = movements.filter((m) => !(m as any).anulada).length;
+          const hasActiveFilters = statusFilter !== 'ALL' || acctFilter !== 'ALL' || search.trim() !== '';
+          return (
+            <div className="py-14 text-center">
+              <Filter size={22} className="text-white/10 mx-auto mb-3" />
+              {hasActiveFilters && totalCount > 0 ? (
+                <>
+                  <p className="text-xs font-bold text-white/30 mb-3">Los filtros ocultan todos los movimientos</p>
+                  <button
+                    onClick={() => { setStatusFilter('ALL'); setAcctFilter('ALL'); setSearch(''); }}
+                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    Limpiar filtros
+                  </button>
+                </>
+              ) : (
+                <p className="text-xs font-bold text-white/20">No tienes movimientos registrados</p>
+              )}
+            </div>
+          );
+        })() : (
           <div className="divide-y divide-white/[0.05]">
             {filtered.map((mov) => {
               const isInvoice = mov.movementType === MovementType.FACTURA;
@@ -280,7 +303,7 @@ export default function PortalInvoices() {
                         isInvoice ? 'text-rose-400' : 'text-emerald-400'
                       }`}
                     >
-                      {isInvoice ? '+' : '-'}{formatCurrency(amount, '$')}
+                      {isInvoice ? '+' : '-'}{formatCurrency(amount, currencySymbol)}
                     </span>
                   </div>
                 </div>

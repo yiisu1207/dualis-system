@@ -21,7 +21,7 @@ const DISPUTE_TYPES: { value: DisputeType; label: string; description: string }[
 ];
 
 export default function PortalDispute() {
-  const { businessId, customerId, customerName, businessName } = usePortal();
+  const { businessId, customerId, customerName, businessName, currencySymbol } = usePortal();
   const { movements, loading } = usePortalData(businessId, customerId);
   const [adminEmail, setAdminEmail] = useState('');
 
@@ -234,7 +234,7 @@ export default function PortalDispute() {
                           </div>
                         </div>
                         <span className="text-sm font-black font-mono text-rose-400 shrink-0">
-                          ${(m.amountInUSD || m.amount).toFixed(2)}
+                          {currencySymbol}{(m.amountInUSD || m.amount).toFixed(2)}
                         </span>
                       </div>
                     </button>

@@ -1,15 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { usePortal } from './PortalGuard';
 import { usePortalData } from './usePortalData';
 import { formatCurrency } from '../utils/formatters';
 import { MovementType } from '../../types';
 import { Download, Loader2 } from 'lucide-react';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 export default function PortalStatement() {
-  const { businessId, customerId, customerName, businessName } = usePortal();
+  const { businessId, customerId, customerName, businessName, currencySymbol } = usePortal();
   const { movements, loading, balances, rates } = usePortalData(businessId, customerId);
   const [accountFilter, setAccountFilter] = useState<string>('ALL');
   const [generating, setGenerating] = useState(false);
+  const { refreshing } = usePullToRefresh(useCallback(async () => { await new Promise(r => setTimeout(r, 400)); }, []));
 
   const statementData = useMemo(() => {
     let movs = movements.filter((m) => !(m as any).anulada);
@@ -56,12 +58,12 @@ export default function PortalStatement() {
       const startY = accountFilter !== 'ALL' ? 48 : 42;
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(`Saldo: $${(totalDebe - totalHaber).toFixed(2)}`, 14, startY);
+      pdf.text(`Saldo: ${currencySymbol}${(totalDebe - totalHaber).toFixed(2)}`, 14, startY);
 
       // Table
       autoTable(pdf, {
         startY: startY + 6,
-        head: [['Fecha', 'Concepto', 'Cuenta', 'Debe ($)', 'Haber ($)', 'Saldo ($)']],
+        head: [['Fecha', 'Concepto', 'Cuenta', `Debe (${currencySymbol})`, `Haber (${currencySymbol})`, `Saldo (${currencySymbol})`]],
         body: statementData.map(row => [
           row.date,
           row.concept,
@@ -112,6 +114,11 @@ export default function PortalStatement() {
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-in">
+      {refreshing && (
+        <div className="flex justify-center py-2">
+          <div className="animate-spin h-5 w-5 border-2 border-indigo-500 border-t-transparent rounded-full" />
+        </div>
+      )}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Estado de Cuenta</h1>
@@ -159,7 +166,7 @@ export default function PortalStatement() {
                   <button
                     key={item.acct}
                     onClick={() => setAccountFilter(item.acct)}
-                    className={`rounded-xl p-3 sm:p-4 text-center border transition-all active:scale-[0.97] ${
+                    className={`rounded-xl p-3 sm:p-4 text-center border transition-all active:scale-[0.97] cursor-pointer ${
                       active
                         ? isTotal
                           ? 'border-indigo-500/40 bg-indigo-500/10'
@@ -176,12 +183,13 @@ export default function PortalStatement() {
                     <p className={`text-base sm:text-lg font-black font-mono ${
                       item.value > 0.01 ? 'text-rose-400' : 'text-emerald-400'
                     }`}>
-                      {formatCurrency(Math.abs(item.value), '$')}
+                      {formatCurrency(Math.abs(item.value), currencySymbol)}
                     </p>
                   </button>
                 );
               })}
             </div>
+            <p className="text-[8px] text-white/20 text-center mt-2 font-bold">Toca una cuenta para filtrar el detalle</p>
           </div>
         );
       })()}
@@ -275,13 +283,13 @@ export default function PortalStatement() {
                     {row.debe > 0 && (
                       <div>
                         <p className="text-[8px] font-black uppercase text-white/20">Debe</p>
-                        <p className="text-sm font-black text-rose-400 font-mono">${row.debe.toFixed(2)}</p>
+                        <p className="text-sm font-black text-rose-400 font-mono">{currencySymbol}{row.debe.toFixed(2)}</p>
                       </div>
                     )}
                     {row.haber > 0 && (
                       <div>
                         <p className="text-[8px] font-black uppercase text-white/20">Haber</p>
-                        <p className="text-sm font-black text-emerald-400 font-mono">${row.haber.toFixed(2)}</p>
+                        <p className="text-sm font-black text-emerald-400 font-mono">{currencySymbol}{row.haber.toFixed(2)}</p>
                       </div>
                     )}
                   </div>
@@ -290,7 +298,7 @@ export default function PortalStatement() {
                     <p className={`text-sm font-black font-mono ${
                       row.saldo > 0.01 ? 'text-rose-400' : 'text-emerald-400'
                     }`}>
-                      ${row.saldo.toFixed(2)}
+                      {currencySymbol}{row.saldo.toFixed(2)}
                     </p>
                   </div>
                 </div>
@@ -304,11 +312,11 @@ export default function PortalStatement() {
                 <div className="flex gap-4">
                   <div>
                     <p className="text-[8px] font-black uppercase text-white/20">Debe</p>
-                    <p className="text-sm font-black text-rose-400 font-mono">${totalDebe.toFixed(2)}</p>
+                    <p className="text-sm font-black text-rose-400 font-mono">{currencySymbol}{totalDebe.toFixed(2)}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-white/20">Haber</p>
-                    <p className="text-sm font-black text-emerald-400 font-mono">${totalHaber.toFixed(2)}</p>
+                    <p className="text-sm font-black text-emerald-400 font-mono">{currencySymbol}{totalHaber.toFixed(2)}</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -316,7 +324,7 @@ export default function PortalStatement() {
                   <p className={`text-base font-black font-mono ${
                     (totalDebe - totalHaber) > 0.01 ? 'text-rose-400' : 'text-emerald-400'
                   }`}>
-                    ${(totalDebe - totalHaber).toFixed(2)}
+                    {currencySymbol}{(totalDebe - totalHaber).toFixed(2)}
                   </p>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { usePortal } from './PortalGuard';
 import { usePortalData } from './usePortalData';
 import { formatCurrency } from '../utils/formatters';
@@ -8,9 +8,10 @@ import {
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PortalPaymentTimeline from '../components/portal/PortalPaymentTimeline';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 export default function PortalDashboard() {
-  const { businessId, customerId, customerName } = usePortal();
+  const { businessId, customerId, customerName, currencySymbol } = usePortal();
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const {
@@ -24,6 +25,8 @@ export default function PortalDashboard() {
     rates,
     portalPayments,
   } = usePortalData(businessId, customerId);
+
+  const { refreshing } = usePullToRefresh(useCallback(async () => { await new Promise(r => setTimeout(r, 400)); }, []));
 
   if (loading) {
     return (
@@ -44,6 +47,11 @@ export default function PortalDashboard() {
 
   return (
     <div className="space-y-5 animate-in">
+      {refreshing && (
+        <div className="flex justify-center py-2">
+          <div className="animate-spin h-5 w-5 border-2 border-indigo-500 border-t-transparent rounded-full" />
+        </div>
+      )}
       {/* Welcome */}
       <div>
         <h1 className="text-xl sm:text-3xl font-black text-white tracking-tight">
@@ -111,12 +119,12 @@ export default function PortalDashboard() {
             <TrendingDown size={13} className="text-rose-400" />
           </div>
           <p className={`text-lg sm:text-2xl font-black ${totalDebt > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-            {formatCurrency(totalDebt, '$')}
+            {formatCurrency(totalDebt, currencySymbol)}
           </p>
           <div className="mt-1.5 flex flex-col sm:flex-row gap-1 sm:gap-3 text-[9px] font-bold text-white/30">
-            <span>BCV: {formatCurrency(Math.max(0, balances.bcv), '$')}</span>
-            <span>Grupo: {formatCurrency(Math.max(0, balances.grupo), '$')}</span>
-            <span>Divisa: {formatCurrency(Math.max(0, balances.divisa), '$')}</span>
+            <span>BCV: {formatCurrency(Math.max(0, balances.bcv), currencySymbol)}</span>
+            <span>Grupo: {formatCurrency(Math.max(0, balances.grupo), currencySymbol)}</span>
+            <span>Divisa: {formatCurrency(Math.max(0, balances.divisa), currencySymbol)}</span>
           </div>
         </div>
 
@@ -130,7 +138,7 @@ export default function PortalDashboard() {
               <CreditCard size={13} className="text-violet-400" />
             </div>
             <p className="text-lg sm:text-2xl font-black text-violet-400">
-              {formatCurrency(creditAvailable, '$')}
+              {formatCurrency(creditAvailable, currencySymbol)}
             </p>
             <div className="mt-1.5">
               <div className="w-full h-1.5 bg-white/[0.07] rounded-full overflow-hidden">
@@ -142,7 +150,7 @@ export default function PortalDashboard() {
                 />
               </div>
               <p className="text-[8px] font-bold text-white/30 mt-1">
-                {creditPct.toFixed(0)}% usado · Límite: ${creditLimit.toFixed(0)}
+                {creditPct.toFixed(0)}% usado · Límite: {currencySymbol}{creditLimit.toFixed(0)}
               </p>
             </div>
           </div>
@@ -227,7 +235,7 @@ export default function PortalDashboard() {
                 <p className={`text-base sm:text-lg font-black mt-0.5 ${
                   b.value > 0 ? `text-${b.color}-400` : 'text-white/10'
                 }`}>
-                  {formatCurrency(b.value, '$')}
+                  {formatCurrency(b.value, currencySymbol)}
                 </p>
               </div>
             ))}
@@ -265,7 +273,7 @@ export default function PortalDashboard() {
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-sm font-black text-white/80 font-mono">
-                    ${p.amount.toFixed(2)}
+                    {currencySymbol}{p.amount.toFixed(2)}
                   </p>
                   <p className={`text-[8px] font-black uppercase ${
                     p.status === 'approved' ? 'text-emerald-400'
@@ -306,7 +314,7 @@ export default function PortalDashboard() {
                 </div>
                 <div className="text-right ml-3 shrink-0">
                   <p className="text-sm font-black text-white/80 font-mono">
-                    {formatCurrency(item.amountUsd, '$')}
+                    {formatCurrency(item.amountUsd, currencySymbol)}
                   </p>
                   <p className={`text-[9px] font-black ${
                     item.daysUntilDue < 0

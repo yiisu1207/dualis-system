@@ -15,6 +15,7 @@ interface PortalContextType {
   businessName: string;
   businessLogo: string;
   brandColor: string;
+  currencySymbol: string;
 }
 
 const PortalContext = createContext<PortalContextType | null>(null);
@@ -38,6 +39,7 @@ export default function PortalGuard() {
   const [businessName, setBusinessName] = useState('');
   const [businessLogo, setBusinessLogo] = useState('');
   const [brandColor, setBrandColor] = useState('');
+  const [currencySymbol, setCurrencySymbol] = useState('$');
   // Fase B.3: OTP-only. Mantenemos compat con enlaces viejos ignorando tokenData.pin.
   const [otpCode, setOtpCode] = useState('');
   const [otpError, setOtpError] = useState('');
@@ -71,6 +73,7 @@ export default function PortalGuard() {
           setBusinessName(session.businessName || '');
           setBusinessLogo(session.businessLogo || '');
           setBrandColor(session.brandColor || '');
+          setCurrencySymbol(session.currencySymbol || '$');
           setTokenData({
             customerId: session.customerId,
             customerName: session.customerName,
@@ -119,6 +122,7 @@ export default function PortalGuard() {
             if (!bName && d.name) setBusinessName(d.name);
             if (!bLogo && d.logoUrl) setBusinessLogo(d.logoUrl);
             if (d.theme?.primaryColor) setBrandColor(d.theme.primaryColor);
+            if (d.currencySymbol) setCurrencySymbol(d.currencySymbol);
           }
         } catch {}
 
@@ -254,6 +258,7 @@ export default function PortalGuard() {
           businessName,
           businessLogo,
           brandColor,
+          currencySymbol,
           expiresAt: Date.now() + 24 * 60 * 60 * 1000,
         })
       );
@@ -631,6 +636,7 @@ export default function PortalGuard() {
         businessName,
         businessLogo,
         brandColor,
+        currencySymbol,
       }}
     >
       <PortalLayout>

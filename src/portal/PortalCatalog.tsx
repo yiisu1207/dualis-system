@@ -35,7 +35,7 @@ interface CartItem {
 const CUSTOM_COLORS = ['violet', 'emerald', 'amber'] as const;
 
 export default function PortalCatalog() {
-  const { businessId, customerId, customerName } = usePortal();
+  const { businessId, customerId, customerName, currencySymbol } = usePortal();
   const { rates, creditLimit, creditAvailable } = usePortalData(businessId, customerId);
 
   const [products, setProducts] = useState<CatalogProduct[]>([]);
@@ -302,7 +302,7 @@ export default function PortalCatalog() {
                   <div className="flex items-end justify-between gap-2">
                     <div>
                       <p className="text-base sm:text-lg font-black text-emerald-400 font-mono">
-                        ${p.precioDetal.toFixed(2)}
+                        {currencySymbol}{p.precioDetal.toFixed(2)}
                       </p>
                       <p className="text-[8px] text-white/20 font-bold">
                         Stock: {p.stock} {p.unidad || 'und'}
@@ -408,7 +408,7 @@ export default function PortalCatalog() {
                         </button>
                       </div>
                       <p className="text-sm font-black text-emerald-400 font-mono">
-                        ${(item.qty * item.price).toFixed(2)}
+                        {currencySymbol}{(item.qty * item.price).toFixed(2)}
                       </p>
                     </div>
                   </div>
@@ -476,7 +476,7 @@ export default function PortalCatalog() {
                 <div className="flex items-center justify-between pt-2 border-t border-white/[0.07]">
                   <div>
                     <p className="text-[9px] font-black uppercase text-white/30">Total</p>
-                    <p className="text-lg font-black text-white font-mono">${cartTotal.toFixed(2)}</p>
+                    <p className="text-lg font-black text-white font-mono">{currencySymbol}{cartTotal.toFixed(2)}</p>
                   </div>
                   <button
                     onClick={handleSubmitOrder}
@@ -494,7 +494,7 @@ export default function PortalCatalog() {
 
                 {creditLimit > 0 && (
                   <p className="text-[9px] text-white/25 text-center">
-                    Crédito disponible: ${creditAvailable.toFixed(2)} de ${creditLimit.toFixed(2)}
+                    Crédito disponible: {currencySymbol}{creditAvailable.toFixed(2)} de {currencySymbol}{creditLimit.toFixed(2)}
                   </p>
                 )}
               </div>

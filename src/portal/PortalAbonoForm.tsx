@@ -45,7 +45,7 @@ async function buildFingerprint(bankAccountId: string, reference: string, amount
 }
 
 export default function PortalAbonoForm() {
-  const { businessId, customerId, customerName, businessName } = usePortal();
+  const { businessId, customerId, customerName, businessName, currencySymbol } = usePortal();
   const { movements, portalPayments, loading, balances, rates } = usePortalData(businessId, customerId);
 
   // ── Bank accounts del negocio ──────────────────────────────────────────────
@@ -394,7 +394,7 @@ export default function PortalAbonoForm() {
 
       row('CLIENTE', customerName);
       row('FECHA', lastPayment.date);
-      row('MONTO', `$${lastPayment.amount.toFixed(2)}`);
+      row('MONTO', `${currencySymbol}${lastPayment.amount.toFixed(2)}`);
       row('CUENTA', lastPayment.account);
       row('MÉTODO', lastPayment.method);
       if (lastPayment.reference) row('REFERENCIA', lastPayment.reference);
@@ -435,7 +435,7 @@ export default function PortalAbonoForm() {
           <div className="bg-white/[0.03] border border-white/[0.07] rounded-xl p-4 mb-4 text-left space-y-1.5">
             <div className="flex justify-between text-xs">
               <span className="text-white/30 font-bold">Monto</span>
-              <span className="text-emerald-400 font-black font-mono">${lastPayment.amount.toFixed(2)}</span>
+              <span className="text-emerald-400 font-black font-mono">{currencySymbol}{lastPayment.amount.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-white/30 font-bold">Método</span>
@@ -518,7 +518,7 @@ export default function PortalAbonoForm() {
               {pendingPayments.length} pago{pendingPayments.length !== 1 ? 's' : ''} pendiente{pendingPayments.length !== 1 ? 's' : ''} de aprobación
             </p>
             <p className="text-[9px] text-amber-400/60 mt-0.5">
-              Total: {formatCurrency(pendingPayments.reduce((s, p) => s + p.amount, 0), '$')}
+              Total: {formatCurrency(pendingPayments.reduce((s, p) => s + p.amount, 0), currencySymbol)}
             </p>
           </div>
         </div>
@@ -691,7 +691,7 @@ export default function PortalAbonoForm() {
                   <p className={`text-base sm:text-lg font-black mt-1 font-mono ${
                     bal > 0 ? (isActive ? `text-${acct.color}-400` : 'text-white/60') : 'text-white/15'
                   }`}>
-                    ${bal > 0 ? bal.toFixed(2) : '0.00'}
+                    {currencySymbol}{bal > 0 ? bal.toFixed(2) : '0.00'}
                   </p>
                   {acct.rate > 0 && (
                     <p className="text-[8px] font-bold text-white/20 mt-0.5">
@@ -726,7 +726,7 @@ export default function PortalAbonoForm() {
             </h3>
             {selectedInvoices.size > 0 && (
               <span className="text-[9px] font-black text-indigo-400">
-                {selectedInvoices.size} sel. · {formatCurrency(selectedTotal, '$')}
+                {selectedInvoices.size} sel. · {formatCurrency(selectedTotal, currencySymbol)}
               </span>
             )}
           </div>
@@ -764,7 +764,7 @@ export default function PortalAbonoForm() {
                       </p>
                     </div>
                     <span className="text-sm font-black text-white/60 font-mono shrink-0">
-                      {formatCurrency(inv.amountInUSD || inv.amount, '$')}
+                      {formatCurrency(inv.amountInUSD || inv.amount, currencySymbol)}
                     </span>
                   </button>
                 );
@@ -803,7 +803,7 @@ export default function PortalAbonoForm() {
                 onClick={() => setAmount(selectedTotal.toFixed(2))}
                 className="mt-1.5 text-[9px] font-black text-indigo-400 hover:text-indigo-300 transition-colors"
               >
-                Usar total seleccionado: ${selectedTotal.toFixed(2)}
+                Usar total seleccionado: {currencySymbol}{selectedTotal.toFixed(2)}
               </button>
             )}
           </div>
@@ -925,7 +925,7 @@ export default function PortalAbonoForm() {
           <div className="flex items-center gap-2 px-4 py-3 bg-indigo-500/5 border border-indigo-500/15 rounded-xl">
             <Info size={12} className="text-indigo-400 shrink-0" />
             <p className="text-[10px] font-bold text-indigo-300/70">
-              ${parseFloat(amount).toFixed(2)} USD × {rateForAccount.toFixed(2)} = <span className="text-indigo-300 font-mono">Bs {(parseFloat(amount) * rateForAccount).toFixed(2)}</span>
+              {currencySymbol}{parseFloat(amount).toFixed(2)} USD × {rateForAccount.toFixed(2)} = <span className="text-indigo-300 font-mono">Bs {(parseFloat(amount) * rateForAccount).toFixed(2)}</span>
             </p>
           </div>
         )}

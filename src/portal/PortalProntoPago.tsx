@@ -6,7 +6,7 @@ import { Zap, Clock, TrendingDown } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 export default function PortalProntoPago() {
-  const { businessId, customerId } = usePortal();
+  const { businessId, customerId, currencySymbol } = usePortal();
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { invoicesWithDiscount, loading, creditPolicy } = usePortalData(businessId, customerId);
@@ -70,7 +70,7 @@ export default function PortalProntoPago() {
             <div>
               <p className="text-[9px] font-black uppercase text-white/30">Ahorro potencial</p>
               <p className="text-2xl font-black text-emerald-400 mt-1">
-                {formatCurrency(totalSavings, '$')}
+                {formatCurrency(totalSavings, currencySymbol)}
               </p>
             </div>
             <div>
@@ -78,7 +78,7 @@ export default function PortalProntoPago() {
               <p className="text-2xl font-black text-white/80 mt-1">
                 {formatCurrency(
                   eligible.reduce((s, i) => s + i.netAmount, 0),
-                  '$'
+                  currencySymbol
                 )}
               </p>
             </div>
@@ -121,13 +121,13 @@ export default function PortalProntoPago() {
                   </div>
                   <div className="text-right ml-4">
                     <p className="text-sm font-black text-white/60">
-                      {formatCurrency(item.amountUsd, '$')}
+                      {formatCurrency(item.amountUsd, currencySymbol)}
                     </p>
                     {item.eligibleTier ? (
                       <div className="flex items-center gap-1.5 mt-1 justify-end">
                         <Zap size={10} className="text-emerald-400" />
                         <span className="text-[10px] font-black text-emerald-400">
-                          -{item.eligibleTier.discountPercent}% = {formatCurrency(item.netAmount, '$')}
+                          -{item.eligibleTier.discountPercent}% = {formatCurrency(item.netAmount, currencySymbol)}
                         </span>
                       </div>
                     ) : (
