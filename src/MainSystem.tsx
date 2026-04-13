@@ -1122,7 +1122,14 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
           config={{ companyName: userProfile?.businessId } as any}
           rolePermissions={rolePermissions}
           canCompare={canAccess('comparar')}
-          badges={{ comparar: pendingCompareCount, tesoreria: overduePaymentsCount, aprobaciones: pendingApprovalInboxCount }}
+          badges={{
+            comparar: pendingCompareCount,
+            tesoreria: overduePaymentsCount,
+            aprobaciones: pendingApprovalInboxCount,
+            cobranza: countPendingReminders(calculateReminders(movements, customers)),
+            inventario: inventoryItems.filter(p => { const s = (p as any).stock ?? (p as any).quantity ?? 0; return s < ((p as any).minStock ?? 10); }).length,
+            despacho: movements.filter((m: any) => m.esNotaEntrega && m.estadoNDE === 'pendiente_despacho' && !m.anulada).length,
+          }}
           onLogout={() => auth.signOut()}
           onOpenProfile={() => setIsProfileOpen(true)}
         />

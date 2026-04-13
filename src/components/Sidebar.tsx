@@ -34,6 +34,7 @@ import {
   Award,
   ShieldCheck,
   MessageCircle,
+  Search,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -296,6 +297,24 @@ const Sidebar: React.FC<SidebarProps> = ({
     setSwipeX(0);
   }, [swipeX, setIsOpen]);
 
+  // ── Inline search ─────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // ── Recientes (last 4 visited pages) ──────────────────────────────────
+  const allItems = NAV_GROUPS.flatMap(g => g.items);
+  const [recientes, setRecientes] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('dualis_recientes') || '[]'); } catch { return []; }
+  });
+
+  useEffect(() => {
+    if (!activeTab || activeTab === 'resumen') return;
+    setRecientes(prev => {
+      const next = [activeTab, ...prev.filter(t => t !== activeTab)].slice(0, 4);
+      try { localStorage.setItem('dualis_recientes', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, [activeTab]);
+
   // ── Auto-close sidebar on resize past lg breakpoint ────────────────────
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -422,16 +441,66 @@ const Sidebar: React.FC<SidebarProps> = ({
             ${collapsed ? 'lg:flex lg:flex-col lg:items-center lg:px-2.5 px-2' : 'px-2'}
           `}
         >
+          {/* ── Inline search ── */}
+          {!collapsed && (
+            <div className="px-1 mb-2">
+              <div className="relative">
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar módulo..."
+                  className="w-full pl-7 pr-3 py-1.5 bg-white/[0.04] border border-white/[0.06] rounded-lg text-[11px] text-white placeholder:text-white/20 focus:ring-1 focus:ring-indigo-500/40 focus:border-indigo-500/30 outline-none transition-all"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── Recientes ── */}
+          {!collapsed && !searchQuery && recientes.length > 0 && (
+            <div className="mb-1">
+              <div className="px-2 mb-1">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1 h-1 rounded-full bg-amber-400/40" />
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-500/30">Recientes</p>
+                </div>
+              </div>
+              {recientes.map(tabId => {
+                const item = allItems.find(it => it.id === tabId);
+                if (!item || !isVisible(item)) return null;
+                const gIdx = NAV_GROUPS.findIndex(g => g.items.some(i => i.id === tabId));
+                const iColor = GROUP_ICON_COLOR[gIdx] ?? 'text-white/50';
+                return (
+                  <NavItemRow
+                    key={`recent-${item.id}`}
+                    item={item}
+                    href={toPath(item.path)}
+                    isActive={activeTab === item.id}
+                    iconColor={iColor}
+                    badge={badges[item.id] ?? 0}
+                    collapsed={false}
+                    indented={false}
+                    onNavigate={() => setIsOpen(false)}
+                  />
+                );
+              })}
+              <div className="mx-3 my-2 h-px bg-gradient-to-r from-transparent via-amber-500/10 to-transparent" />
+            </div>
+          )}
+
           {NAV_GROUPS.map((group, gi) => {
-            const visibleItems = group.items.filter(isVisible).map(it =>
-              labelOverrides[it.id] ? { ...it, label: labelOverrides[it.id] } : it,
-            );
+            const visibleItems = group.items
+              .filter(isVisible)
+              .filter(it => !searchQuery || it.label.toLowerCase().includes(searchQuery.toLowerCase()))
+              .map(it => labelOverrides[it.id] ? { ...it, label: labelOverrides[it.id] } : it);
             if (visibleItems.length === 0) return null;
 
-            const iconColor      = GROUP_ICON_COLOR[gi] ?? 'text-white/50';
-            const isGroupOpen    = !collapsedGroups.has(group.id);
+            const iconColor       = GROUP_ICON_COLOR[gi] ?? 'text-white/50';
+            const groupBadgeCount = visibleItems.reduce((sum, it) => sum + (badges[it.id] ?? 0), 0);
+            const isGroupOpen     = !collapsedGroups.has(group.id);
             // Dashboard group has only 1 item and no collapsible header
-            const isSimpleGroup  = group.items.length === 1;
+            const isSimpleGroup   = group.items.length === 1;
 
             return (
               <div key={group.id} className={gi > 0 ? 'mt-1' : ''}>
@@ -461,10 +530,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                     `}
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div className={`w-1.5 h-1.5 rounded-full ${GROUP_DOT_COLOR[gi] || 'bg-white/20'} transition-transform duration-200 ${isGroupOpen ? 'scale-125' : 'scale-100'}`} />
+                      <div className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${isGroupOpen ? 'scale-125' : 'scale-100'} ${groupBadgeCount > 0 ? 'bg-rose-400/70 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.4)]' : GROUP_DOT_COLOR[gi] || 'bg-white/20'}`} />
                       <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${isGroupOpen ? GROUP_HEADER_COLOR[gi]?.replace('/30', '/50') || 'text-white/40' : GROUP_HEADER_COLOR[gi] || 'text-white/20'} group-hover/gh:text-white/40 transition-colors`}>
                         {group.label}
                       </p>
+                      {groupBadgeCount > 0 && !isGroupOpen && (
+                        <span className="min-w-[16px] h-4 px-1 rounded-full bg-rose-500/15 text-rose-400 text-[8px] font-black flex items-center justify-center animate-pulse">
+                          {groupBadgeCount}
+                        </span>
+                      )}
                     </div>
                     <ChevronRight
                       size={10}
@@ -709,12 +783,15 @@ const NavItemRow: React.FC<NavItemRowProps> = ({
       }
       ${isActive
         ? 'bg-gradient-to-r from-indigo-600/[0.22] to-violet-600/[0.10] border border-indigo-500/[0.15] text-white'
-        : `${iconColor} hover:bg-white/[0.07] hover:text-white hover:pl-3`
+        : `${iconColor} hover:bg-white/[0.07] hover:text-white hover:pl-3 ${badge > 0 ? 'bg-rose-500/[0.04]' : ''}`
       }
     `}
   >
     {isActive && (
       <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded-r-full bg-gradient-to-b from-indigo-400 to-violet-400 shadow-[0_0_12px_rgba(99,102,241,0.6)]" />
+    )}
+    {!isActive && badge > 0 && (
+      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-3 rounded-r-full bg-rose-400/50 animate-pulse" />
     )}
     <span className="relative shrink-0">
       <item.Icon size={15} strokeWidth={isActive ? 2.2 : 1.7} className="relative z-10" />
