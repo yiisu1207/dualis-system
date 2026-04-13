@@ -609,6 +609,10 @@ export default function RecursosHumanos() {
     if (!isIndividual) return timeEntries;
     return timeEntries.filter(t => t.registeredBy === myUid || (isOwner && !t.registeredBy));
   }, [timeEntries, isIndividual, myUid, isOwner]);
+  const visibleAbonos = useMemo(() => {
+    if (!isIndividual) return abonos;
+    return abonos.filter(a => a.registeredBy === myUid || (isOwner && !a.registeredBy));
+  }, [abonos, isIndividual, myUid, isOwner]);
 
   // Tasa interna propia de RRHH; si no hay, cae al BCV global
   const currentRate = voucherRates[0]?.rate || (tasaBCV ?? 0);
@@ -670,8 +674,8 @@ export default function RecursosHumanos() {
       const ev   = currentPeriodVouchers.filter(v=>v.employeeId===emp.id);
       const vDedUSD = ev.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
       const vDedBs  = ev.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0);
-      // Subtract abonos from voucher deductions (L)
-      const empAbonosUSD = abonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
+      // Subtract abonos from voucher deductions (L) — use visibleAbonos for isolation
+      const empAbonosUSD = visibleAbonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
         .reduce((s,a)=>s+(a.currency==='USD'?a.amount:(a.amountUSD||0)),0);
       const netVDedUSD = Math.max(0, vDedUSD - empAbonosUSD);
       const ivssUSD = emp.ivssEnabled?(emp.salaryUSD||0)*(emp.ivssRate||4)/100:0;
@@ -699,7 +703,7 @@ export default function RecursosHumanos() {
         isOverdraft:emp.salaryUSD>0 && netVDedUSD>pSal,
       };
     });
-  },[employees,currentPeriodVouchers,abonos,activeLoans,pendingTimeEntries,freqFilter,currentRate]);
+  },[employees,currentPeriodVouchers,visibleAbonos,activeLoans,pendingTimeEntries,freqFilter,currentRate]);
 
   const nominaTotals = useMemo(()=>({
     grossUSD:nominaRows.reduce((s,n)=>s+n.grossUSD,0),
@@ -1652,7 +1656,7 @@ export default function RecursosHumanos() {
                   </button>
                 </form>
                 {/* Abonos table */}
-                {abonos.filter(a=>a.status==='PENDIENTE').length>0&&(
+                {visibleAbonos.filter(a=>a.status==='PENDIENTE').length>0&&(
                   <div className="mt-3 overflow-x-auto">
                     <table className="w-full text-left">
                       <thead><tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05]">
@@ -1660,7 +1664,7 @@ export default function RecursosHumanos() {
                         <th className="px-4 py-2 text-right">Monto</th><th className="px-4 py-2">Concepto</th>
                       </tr></thead>
                       <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                        {abonos.filter(a=>a.status==='PENDIENTE').map(a=>(
+                        {visibleAbonos.filter(a=>a.status==='PENDIENTE').map(a=>(
                           <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.03]">
                             <td className="px-4 py-2.5 font-mono text-[10px] text-slate-400 dark:text-white/30">{a.date}</td>
                             <td className="px-4 py-2.5 font-black text-slate-900 dark:text-white text-sm">{a.employeeName}</td>
