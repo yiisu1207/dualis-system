@@ -1497,8 +1497,8 @@ export default function RecursosHumanos() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                    {visibleVouchers.length===0&&<tr><td colSpan={8} className="px-5 py-16 text-center"><Ticket size={40} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin vales{isIndividual ? ' (modo individual — solo tus registros)' : ''}</p></td></tr>}
-                    {visibleVouchers.slice((valesPage-1)*VALES_PER_PAGE, valesPage*VALES_PER_PAGE).map(v=>(
+                    {pendingVouchers.length===0&&<tr><td colSpan={8} className="px-5 py-16 text-center"><Ticket size={40} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin vales pendientes{isIndividual ? ' (modo individual — solo tus registros)' : ''}</p></td></tr>}
+                    {pendingVouchers.slice((valesPage-1)*VALES_PER_PAGE, valesPage*VALES_PER_PAGE).map(v=>(
                       <React.Fragment key={v.id}>
                       <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${v.status==='CORREGIDO'?'opacity-50':''}`}>
                         <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{v.voucherDate || (v.createdAt?.toDate ? v.createdAt.toDate().toLocaleDateString('es-VE') : '—')}</td>
@@ -1573,13 +1573,13 @@ export default function RecursosHumanos() {
               </div>
 
               {/* Pagination */}
-              {visibleVouchers.length > VALES_PER_PAGE && (
+              {pendingVouchers.length > VALES_PER_PAGE && (
                 <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 dark:border-white/[0.06]">
                   <p className="text-[10px] font-bold text-slate-400 dark:text-white/30">
-                    {(valesPage-1)*VALES_PER_PAGE+1}–{Math.min(valesPage*VALES_PER_PAGE, visibleVouchers.length)} de {visibleVouchers.length}
+                    {(valesPage-1)*VALES_PER_PAGE+1}–{Math.min(valesPage*VALES_PER_PAGE, pendingVouchers.length)} de {pendingVouchers.length}
                   </p>
                   <div className="flex items-center gap-1">
-                    {Array.from({length: Math.ceil(visibleVouchers.length / VALES_PER_PAGE)}, (_,i) => i+1).map(p => (
+                    {Array.from({length: Math.ceil(pendingVouchers.length / VALES_PER_PAGE)}, (_,i) => i+1).map(p => (
                       <button key={p} onClick={() => setValesPage(p)}
                         className={`min-w-[28px] h-7 px-1.5 rounded-lg text-[10px] font-black transition-all ${
                           p === valesPage
