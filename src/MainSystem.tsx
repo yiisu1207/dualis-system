@@ -111,6 +111,7 @@ import { useDriverTour } from './components/DriverTour';
 // ── Topbar ─────────────────────────────────────────────────────────────────────
 const Topbar: React.FC<{
   topbarTitle: string;
+  breadcrumbGroup?: string;
   notifCount: number;
   showNotifications: boolean;
   onToggleNotifications: () => void;
@@ -123,7 +124,7 @@ const Topbar: React.FC<{
   usingStaleRate?: boolean;
   lastUpdated?: string;
   onRefreshRate?: () => void;
-}> = React.memo(({ topbarTitle, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, onOpenSearch, onToggleSidebar, bcvRate, customRates, usingStaleRate, lastUpdated, onRefreshRate }) => (
+}> = React.memo(({ topbarTitle, breadcrumbGroup, notifCount, showNotifications, onToggleNotifications, onOpenCalculator, onOpenHelp, onOpenSearch, onToggleSidebar, bcvRate, customRates, usingStaleRate, lastUpdated, onRefreshRate }) => (
   <header className="h-14 md:h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/[0.08] px-3 md:px-7 flex items-center justify-between sticky top-0 z-50 transition-colors">
     <div className="flex items-center gap-2 md:gap-3 min-w-0">
       {/* Hamburger menu — mobile only */}
@@ -137,8 +138,14 @@ const Topbar: React.FC<{
       <div className="min-w-0">
         <div className="font-syne font-bold text-[15px] md:text-[17px] text-slate-900 dark:text-white leading-tight capitalize truncate">{topbarTitle}</div>
         <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5">
-          <span>Dualis System</span>
+          <span>Dualis</span>
           <span className="text-slate-200 dark:text-white/10">/</span>
+          {breadcrumbGroup && (
+            <>
+              <span className="text-slate-400 dark:text-white/25">{breadcrumbGroup}</span>
+              <span className="text-slate-200 dark:text-white/10">/</span>
+            </>
+          )}
           <span className="text-slate-500 dark:text-slate-400 capitalize">{topbarTitle.toLowerCase()}</span>
         </div>
       </div>
@@ -1087,6 +1094,20 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
   const legacyRates = { bcv: rates.tasaBCV, grupo: rates.tasaGrupo, divisa: rates.tasaDivisa || rates.tasaGrupo - 1, lastUpdated: rates.lastUpdated };
 
+  // ── Breadcrumb group mapping (tab → parent group label) ───────────────────
+  const tabGroupMap: Record<string, string> = useMemo(() => ({
+    resumen: 'Dashboard',
+    inventario: 'Operaciones', cajas: 'Operaciones', despacho: 'Operaciones', cotizaciones: 'Operaciones',
+    recurrentes: 'Operaciones', transferencias: 'Operaciones', tasas: 'Operaciones', historial: 'Operaciones',
+    clientes: 'Finanzas', cobranza: 'Finanzas', proveedores: 'Finanzas', tesoreria: 'Finanzas',
+    flujocaja: 'Finanzas', aprobaciones: 'Finanzas', verificacion: 'Finanzas', reclamos: 'Finanzas',
+    portalchat: 'Finanzas', contabilidad: 'Finanzas', conciliacion: 'Finanzas',
+    rrhh: 'Equipo', comisiones: 'Equipo', sucursales: 'Equipo',
+    reportes: 'Inteligencia', estadisticas: 'Inteligencia', pareto: 'Inteligencia',
+    rentabilidad: 'Inteligencia', vision: 'Inteligencia', comparar: 'Inteligencia',
+    config: 'Sistema', help: 'Sistema',
+  }), []);
+
   const tabTitles: Record<string, string> = useMemo(() => ({
     resumen: 'Resumen', clientes: 'Clientes', contabilidad: 'Contabilidad',
     proveedores: 'Proveedores', rrhh: 'RRHH',
@@ -1165,6 +1186,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         <TrialBanner businessId={businessId} />
         <Topbar
           topbarTitle={tabTitles[activeTab] || activeTab}
+          breadcrumbGroup={tabGroupMap[activeTab]}
           notifCount={visibleNotifications.length}
           showNotifications={showNotifications}
           onToggleNotifications={() => setShowNotifications(p => !p)}
