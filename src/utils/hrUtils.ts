@@ -318,37 +318,43 @@ export function printPayrollRunPDF(
 
   const details: any[] = run.details || [];
   const freqLabel: Record<string,string> = { semanal: 'Semanal', quincenal: 'Quincenal', mensual: 'Mensual', mixta: 'Mixta' };
+  const rateBCV = run.rateBCV || 0;
+  const hasPayData = details.some((d: any) => d.payAmountReal != null);
+
+  // Compute totals by currency
+  const totalPayUSD = run.totalPayUSD ?? details.filter((d: any) => (d.paymentCurrency || 'USD') === 'USD').reduce((s: number, d: any) => s + (d.netUSD || 0), 0);
+  const totalPayBs = run.totalPayBs ?? details.filter((d: any) => d.paymentCurrency === 'BS').reduce((s: number, d: any) => s + ((d.payAmountReal || d.netUSD * rateBCV) || 0), 0);
+  const countUSD = details.filter((d: any) => (d.paymentCurrency || 'USD') === 'USD').length;
+  const countBs = details.filter((d: any) => d.paymentCurrency === 'BS').length;
 
   // Build detail rows
   const detailRows = details.map((d: any, i: number) => {
     const vouchersSum = d.voucherDedUSD || 0;
     const ivss = d.ivssUSD || 0;
     const paro = d.paroUSD || 0;
-    const loans = d.loanDedUSD || 0;
     const overtime = d.overtimeUSD || 0;
     const absences = d.absenceDeductionUSD || 0;
-    const totalDed = d.totalDedUSD || 0;
+    const isBs = d.paymentCurrency === 'BS';
+    const payReal = d.payAmountReal != null ? d.payAmountReal : (isBs && rateBCV > 0 ? d.netUSD * rateBCV : d.netUSD);
+    const payStr = isBs ? `Bs ${fmtHR(payReal)}` : `$${fmtHR(payReal)}`;
 
-    // Voucher detail sub-rows
     const voucherSubs = (d.settledVouchers || []).map((sv: any) =>
-      `<tr class="sub-row"><td colspan="2" style="padding-left:24px">↳ ${sv.reason || 'Vale'}</td>
-       <td class="tr">-${sv.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(sv.amount))}</td>
-       <td colspan="5"></td></tr>`
+      `<tr class="sub-row"><td colspan="3" style="padding-left:24px">↳ ${sv.reason || 'Vale'}: -${sv.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(sv.amount))}</td>
+       <td colspan="6"></td></tr>`
     ).join('');
 
     return `<tr class="${i % 2 === 0 ? 'even' : ''}">
-      <td class="emp-name">${d.name}</td>
+      <td class="emp-name">${d.name}${d.cedula ? `<br><span class="cedula">${d.cedula}</span>` : ''}</td>
       <td class="dept">${d.department || '—'}</td>
-      <td class="tr">${d.grossUSD > 0 ? '$' + fmtHR(d.grossUSD) : '—'}</td>
+      <td class="tr">$${fmtHR(d.grossUSD)}</td>
       <td class="tr neg">${vouchersSum > 0 ? '-$' + fmtHR(vouchersSum) : '—'}</td>
       <td class="tr neg">${(ivss + paro) > 0 ? '-$' + fmtHR(ivss + paro) : '—'}</td>
-      <td class="tr pos">${overtime > 0 ? '+$' + fmtHR(overtime) : '—'}</td>
-      <td class="tr neg">${absences > 0 ? '-$' + fmtHR(absences) : '—'}</td>
-      <td class="tr net">$${fmtHR(d.netUSD)}${d.netBs > 0 ? '<br><span class="bs">Bs ' + fmtHR(d.netBs) + '</span>' : ''}</td>
+      <td class="tr ${overtime > 0 ? 'pos' : 'neg'}">${overtime > 0 ? '+$' + fmtHR(overtime) : absences > 0 ? '-$' + fmtHR(absences) : '—'}</td>
+      <td class="tr net">$${fmtHR(d.netUSD)}</td>
+      <td class="tr pay ${isBs ? 'pay-bs' : 'pay-usd'}">${payStr}</td>
     </tr>${voucherSubs}`;
   }).join('');
 
-  // Contact info line
   const contactLine = [
     contactInfo?.rif && `RIF: ${contactInfo.rif}`,
     contactInfo?.phone && `Tel: ${contactInfo.phone}`,
@@ -360,7 +366,7 @@ export function printPayrollRunPDF(
 <title>Corte de Nómina – ${run.period}</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a1a;padding:28px 32px;max-width:760px;margin:0 auto}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a1a;padding:28px 32px;max-width:780px;margin:0 auto}
   .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;padding-bottom:12px;border-bottom:2.5px solid #1a1a1a}
   .biz{font-size:20px;font-weight:900;letter-spacing:-0.5px}
   .contact{font-size:8px;color:#888;margin-top:3px;letter-spacing:.02em}
@@ -369,32 +375,42 @@ export function printPayrollRunPDF(
   .period-badge{display:inline-block;background:#1a1a1a;color:#fff;padding:4px 14px;border-radius:20px;font-size:10px;font-weight:900;letter-spacing:.05em}
   .period-sub{font-size:9px;color:#888;margin-top:4px}
 
-  .kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1.5px solid #1a1a1a;border-radius:6px;overflow:hidden;margin-bottom:18px}
-  .kpi{padding:10px 12px;text-align:center;border-right:1px solid #ddd}
+  .kpi-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border:1.5px solid #1a1a1a;border-radius:6px;overflow:hidden;margin-bottom:6px}
+  .kpi{padding:10px 8px;text-align:center;border-right:1px solid #ddd}
   .kpi:last-child{border-right:none}
-  .kpi-label{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.12em;color:#888;margin-bottom:3px}
-  .kpi-val{font-size:16px;font-weight:900}
+  .kpi-label{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-bottom:3px}
+  .kpi-val{font-size:15px;font-weight:900}
   .kpi-val.pos{color:#16a34a}.kpi-val.neg{color:#dc2626}
 
+  .desembolso{display:flex;gap:16px;align-items:center;padding:8px 14px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:6px;margin-bottom:18px;flex-wrap:wrap}
+  .desembolso .label{font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#15803d}
+  .desembolso .val{font-size:13px;font-weight:900;color:#166534}
+  .desembolso .val-bs{font-size:13px;font-weight:900;color:#0369a1}
+  .desembolso .rate{font-size:9px;color:#888;margin-left:auto}
+
   table{width:100%;border-collapse:collapse;margin-bottom:14px}
-  th{font-size:7.5px;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#555;padding:6px 6px;border-bottom:2px solid #1a1a1a;text-align:left}
-  td{padding:5px 6px;border-bottom:1px solid #eee;font-size:10px}
+  th{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#555;padding:6px 5px;border-bottom:2px solid #1a1a1a;text-align:left}
+  td{padding:5px 5px;border-bottom:1px solid #eee;font-size:9.5px}
   .tr{text-align:right}.tc{text-align:center}
   .emp-name{font-weight:700;font-size:10px}
-  .dept{font-size:9px;color:#888}
+  .cedula{font-size:8px;color:#999;font-weight:400}
+  .dept{font-size:8px;color:#888}
   .pos{color:#16a34a;font-weight:600}.neg{color:#dc2626;font-weight:600}
-  .net{font-weight:900;color:#111;font-size:11px}
+  .net{font-weight:800;color:#111;font-size:10px}
+  .pay{font-weight:900;font-size:10.5px}
+  .pay-usd{color:#166534;background:#f0fdf4}
+  .pay-bs{color:#0369a1;background:#f0f9ff}
   .bs{font-size:8px;color:#0284c7;font-weight:600}
   .even{background:#fafafa}
-  .sub-row td{font-size:9px;color:#999;padding:2px 6px;border-bottom:none}
-  .total-row td{background:#f0f0f0;font-weight:900;border-top:2px solid #1a1a1a;font-size:11px}
+  .sub-row td{font-size:8px;color:#999;padding:2px 5px;border-bottom:none}
+  .total-row td{background:#f0f0f0;font-weight:900;border-top:2px solid #1a1a1a;font-size:10px}
 
   .footer-section{margin-top:24px;padding-top:12px;border-top:1.5px solid #ddd}
   .sigs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:36px}
   .sig-line{border-top:1px solid #111;padding-top:5px;font-size:9px;color:#666;text-align:center}
   .sig-sub{text-align:center;font-size:8px;color:#aaa;margin-top:2px}
   .powered{margin-top:20px;text-align:center;font-size:7px;color:#ccc;letter-spacing:.1em;text-transform:uppercase}
-  @media print{body{padding:16px 20px}}
+  @media print{body{padding:16px 18px}}
 </style></head><body>
 
 <div class="header">
@@ -406,7 +422,7 @@ export function printPayrollRunPDF(
   <div class="period-box">
     <div class="period-badge">${run.period}</div>
     <div class="period-sub">${freqLabel[run.frequency] || run.frequency} · ${run.employeeCount} empleados</div>
-    <div class="period-sub">Procesado: ${processedDate}</div>
+    <div class="period-sub">Procesado: ${processedDate}${run.processedByName ? ` por ${run.processedByName}` : ''}</div>
   </div>
 </div>
 
@@ -424,16 +440,27 @@ export function printPayrollRunPDF(
     <div class="kpi-val neg">-$${fmtHR(run.totalDedUSD)}</div>
   </div>
   <div class="kpi">
-    <div class="kpi-label">Neto a Pagar</div>
+    <div class="kpi-label">Neto Total</div>
     <div class="kpi-val pos">$${fmtHR(run.totalNetUSD)}</div>
   </div>
+  <div class="kpi">
+    <div class="kpi-label">Tasa BCV</div>
+    <div class="kpi-val">${rateBCV > 0 ? 'Bs ' + fmtHR(rateBCV) : '—'}</div>
+  </div>
+</div>
+
+<div class="desembolso">
+  <span class="label">Desembolso real →</span>
+  ${totalPayUSD > 0 ? `<span class="val">$${fmtHR(totalPayUSD)} USD</span><span style="font-size:8px;color:#888">(${countUSD} emp.)</span>` : ''}
+  ${totalPayBs > 0 ? `<span class="val-bs">Bs ${fmtHR(totalPayBs)}</span><span style="font-size:8px;color:#888">(${countBs} emp.)</span>` : ''}
+  ${rateBCV > 0 ? `<span class="rate">Tasa: Bs ${fmtHR(rateBCV)} / USD</span>` : ''}
 </div>
 
 <table>
   <thead><tr>
     <th>Empleado</th><th>Depto.</th><th class="tr">Bruto</th>
     <th class="tr">Vales</th><th class="tr">IVSS/Paro</th>
-    <th class="tr">H.Extra</th><th class="tr">Ausencias</th><th class="tr">Neto</th>
+    <th class="tr">+H.Ex / -Aus.</th><th class="tr">Neto USD</th><th class="tr">A Pagar</th>
   </tr></thead>
   <tbody>
     ${detailRows}
@@ -442,9 +469,9 @@ export function printPayrollRunPDF(
       <td class="tr">$${fmtHR(run.totalGrossUSD)}</td>
       <td class="tr neg">${details.reduce((s: number, d: any) => s + (d.voucherDedUSD || 0), 0) > 0 ? '-$' + fmtHR(details.reduce((s: number, d: any) => s + (d.voucherDedUSD || 0), 0)) : '—'}</td>
       <td class="tr neg">${details.reduce((s: number, d: any) => s + (d.ivssUSD || 0) + (d.paroUSD || 0), 0) > 0 ? '-$' + fmtHR(details.reduce((s: number, d: any) => s + (d.ivssUSD || 0) + (d.paroUSD || 0), 0)) : '—'}</td>
-      <td class="tr pos">${details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0), 0) > 0 ? '+$' + fmtHR(details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0), 0)) : '—'}</td>
-      <td class="tr neg">${details.reduce((s: number, d: any) => s + (d.absenceDeductionUSD || 0), 0) > 0 ? '-$' + fmtHR(details.reduce((s: number, d: any) => s + (d.absenceDeductionUSD || 0), 0)) : '—'}</td>
-      <td class="tr net">$${fmtHR(run.totalNetUSD)}${run.totalNetBs > 0 ? '<br><span class="bs">Bs ' + fmtHR(run.totalNetBs) + '</span>' : ''}</td>
+      <td class="tr">${details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0) - (d.absenceDeductionUSD || 0), 0) !== 0 ? (details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0) - (d.absenceDeductionUSD || 0), 0) > 0 ? '+' : '-') + '$' + fmtHR(Math.abs(details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0) - (d.absenceDeductionUSD || 0), 0))) : '—'}</td>
+      <td class="tr net">$${fmtHR(run.totalNetUSD)}</td>
+      <td class="tr pay">${totalPayUSD > 0 ? '$' + fmtHR(totalPayUSD) : ''}${totalPayUSD > 0 && totalPayBs > 0 ? '<br>' : ''}${totalPayBs > 0 ? '<span class="pay-bs">Bs ' + fmtHR(totalPayBs) + '</span>' : ''}</td>
     </tr>
   </tbody>
 </table>
@@ -452,12 +479,12 @@ export function printPayrollRunPDF(
 <div class="footer-section">
   <p style="font-size:8px;color:#999;margin-bottom:3px">Observaciones:</p>
   <div style="border:1px solid #ddd;border-radius:4px;min-height:40px;padding:6px;font-size:9px;color:#bbb">
-    Corte procesado automáticamente. Los vales incluidos fueron marcados como DESCONTADO.
+    Corte procesado automáticamente. Los vales incluidos fueron marcados como DESCONTADO.${rateBCV > 0 ? ` Tasa BCV aplicada: Bs ${fmtHR(rateBCV)} por dólar.` : ''}
   </div>
 </div>
 
 <div class="sigs">
-  <div><div class="sig-line">Elaborado por</div><div class="sig-sub">RRHH / Administración</div></div>
+  <div><div class="sig-line">Elaborado por</div><div class="sig-sub">${run.processedByName || 'RRHH / Administración'}</div></div>
   <div><div class="sig-line">Revisado por</div><div class="sig-sub">Gerencia</div></div>
   <div><div class="sig-line">Aprobado por</div><div class="sig-sub">Dirección</div></div>
 </div>

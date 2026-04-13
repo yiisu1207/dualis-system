@@ -87,17 +87,22 @@ interface Abono {
 }
 interface PayrollDetail {
   employeeId: string; name: string; department: string;
+  cedula?: string; paymentCurrency?: 'USD'|'BS';
   grossUSD: number; grossBs: number;
   voucherDedUSD: number; ivssUSD: number; paroUSD: number; loanDedUSD: number;
   overtimeUSD: number; absenceDeductionUSD: number;
   totalDedUSD: number; netUSD: number; netBs: number;
+  payAmountReal?: number; payAmountCurrency?: string;
   settledVouchers?: { reason: string; amount: number; currency: string; amountUSD?: number }[];
 }
 interface PayrollRun {
   id: string; period: string; frequency: string; processedAt: any;
   totalGrossUSD: number; totalGrossBs: number;
   totalDedUSD: number; totalNetUSD: number; totalNetBs: number;
+  totalPayUSD?: number; totalPayBs?: number;
+  rateBCV?: number;
   employeeCount: number; details: PayrollDetail[];
+  processedByName?: string;
 }
 type NominaRow = {
   emp: Employee; grossUSD: number; grossBs: number;
@@ -121,6 +126,9 @@ interface CorteRecord {
   totalUSD: number;
   totalBs: number;
   totalNetUSD?: number;
+  totalPayUSD?: number;
+  totalPayBs?: number;
+  rateBCV?: number;
   employeeCount?: number;
   voucherCount: number;
   deferredCount: number;
@@ -963,20 +971,33 @@ export default function RecursosHumanos() {
         setProcLoading(true);
         try {
           // 1. Create payroll_run record
-          const run: Omit<PayrollRun,'id'> = {
-            period, frequency:freq, processedAt:serverTimestamp(),
-            totalGrossUSD:freqTotals.grossUSD, totalGrossBs:freqTotals.grossBs,
-            totalDedUSD:freqTotals.dedUSD, totalNetUSD:freqTotals.netUSD, totalNetBs:freqTotals.netBs,
-            employeeCount:freqRows.length,
-            details:freqRows.map(n=>({
+          const rateSnap = currentRate || 0;
+          // Calculate per-employee pay in their real currency
+          const detailsWithPay = freqRows.map(n=>{
+            const isBs = n.emp.paymentCurrency === 'BS';
+            const payReal = isBs ? n.netUSD * rateSnap : n.netUSD;
+            return {
               employeeId:n.emp.id, name:n.emp.fullName, department:n.emp.department,
+              cedula: n.emp.cedula || '', paymentCurrency: n.emp.paymentCurrency || 'USD',
               grossUSD:n.grossUSD, grossBs:n.grossBs,
               voucherDedUSD:n.voucherDedUSD, ivssUSD:n.ivssUSD, paroUSD:n.paroUSD, loanDedUSD:n.loanDedUSD,
               overtimeUSD:n.overtimeUSD, absenceDeductionUSD:n.absenceDeductionUSD,
               totalDedUSD:n.totalDedUSD, netUSD:n.netUSD, netBs:n.netBs,
+              payAmountReal: payReal, payAmountCurrency: isBs ? 'BS' : 'USD',
               settledVouchers:freqVouchers.filter(v=>v.employeeId===n.emp.id)
                 .map(v=>({reason:v.reason,amount:v.amount,currency:v.currency,amountUSD:v.amountUSD})),
-            })),
+            };
+          });
+          const totalPayUSD = detailsWithPay.filter(d=>d.paymentCurrency==='USD').reduce((s,d)=>s+d.netUSD,0);
+          const totalPayBs  = detailsWithPay.filter(d=>d.paymentCurrency==='BS').reduce((s,d)=>s+(d.payAmountReal||0),0);
+          const run: Omit<PayrollRun,'id'> = {
+            period, frequency:freq, processedAt:serverTimestamp(),
+            totalGrossUSD:freqTotals.grossUSD, totalGrossBs:freqTotals.grossBs,
+            totalDedUSD:freqTotals.dedUSD, totalNetUSD:freqTotals.netUSD, totalNetBs:freqTotals.netBs,
+            totalPayUSD, totalPayBs, rateBCV: rateSnap,
+            employeeCount:freqRows.length,
+            details: detailsWithPay,
+            processedByName: userProfile?.fullName || userProfile?.email || 'Usuario',
           };
           await addDoc(collection(db,`businesses/${bid}/payroll_runs`),run);
 
@@ -1018,6 +1039,8 @@ export default function RecursosHumanos() {
           }
 
           // 7. Persist corte record for historial
+          const corteTotalPayUSD = detailsWithPay.filter(d=>d.paymentCurrency==='USD').reduce((s,d)=>s+d.netUSD,0);
+          const corteTotalPayBs  = detailsWithPay.filter(d=>d.paymentCurrency==='BS').reduce((s,d)=>s+(d.payAmountReal||0),0);
           await addDoc(collection(db,`businesses/${bid}/cortes`),{
             executedAt: serverTimestamp(),
             executedBy: userProfile?.uid || '',
@@ -1026,6 +1049,9 @@ export default function RecursosHumanos() {
             totalUSD: vTotalUSD,
             totalBs: vTotalBs,
             totalNetUSD: freqTotals.netUSD,
+            totalPayUSD: corteTotalPayUSD,
+            totalPayBs: corteTotalPayBs,
+            rateBCV: rateSnap,
             employeeCount: freqRows.length,
             voucherCount: freqVouchers.length,
             deferredCount: freqDeferred.length,
@@ -1916,22 +1942,48 @@ export default function RecursosHumanos() {
                     <table className="w-full text-left">
                       <thead><tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05]">
                         <th className="px-5 py-3">Período</th><th className="px-5 py-3 text-center">Empl.</th>
-                        <th className="px-5 py-3 text-right">Bruto USD</th><th className="px-5 py-3 text-right">Deduc.</th>
-                        <th className="px-5 py-3 text-right">Neto USD</th><th className="px-5 py-3 text-right">Neto Bs</th>
+                        <th className="px-5 py-3 text-right">Neto USD</th>
+                        <th className="px-5 py-3 text-right">Desembolso</th>
+                        <th className="px-5 py-3 text-right">Tasa</th>
                         <th className="px-5 py-3"></th>
                       </tr></thead>
                       <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                        {payrollHistory.slice(0,10).map(r=>(
+                        {payrollHistory.slice(0,10).map(r=>{
+                          const pUSD = r.totalPayUSD ?? r.totalNetUSD;
+                          const pBs  = r.totalPayBs ?? 0;
+                          const cUSD = r.details?.filter(d=>(d.paymentCurrency||'USD')==='USD').length ?? r.employeeCount;
+                          const cBs  = r.details?.filter(d=>d.paymentCurrency==='BS').length ?? 0;
+                          return (
                           <tr key={r.id} className="hover:bg-indigo-50/40 dark:hover:bg-indigo-500/[0.04] cursor-pointer transition-colors" onClick={()=>setSelectedRun(r)}>
-                            <td className="px-5 py-3"><p className="font-black text-slate-800 dark:text-slate-200 text-sm">{r.period}</p><p className="text-[10px] text-slate-400 dark:text-white/30">{FREQ_LABEL[r.frequency]||r.frequency} · {r.processedAt?.toDate?r.processedAt.toDate().toLocaleDateString('es-VE'):'—'}</p></td>
+                            <td className="px-5 py-3">
+                              <p className="font-black text-slate-800 dark:text-slate-200 text-sm">{r.period}</p>
+                              <p className="text-[10px] text-slate-400 dark:text-white/30">
+                                {FREQ_LABEL[r.frequency]||r.frequency} · {r.processedAt?.toDate?r.processedAt.toDate().toLocaleDateString('es-VE'):'—'}
+                                {r.processedByName ? ` · ${r.processedByName}` : ''}
+                              </p>
+                            </td>
                             <td className="px-5 py-3 text-center font-bold text-slate-600 dark:text-slate-400">{r.employeeCount}</td>
-                            <td className="px-5 py-3 text-right font-black text-slate-700 dark:text-slate-300">{r.totalGrossUSD>0?`$${fmtHR(r.totalGrossUSD)}`:'—'}</td>
-                            <td className="px-5 py-3 text-right font-black text-rose-500 dark:text-rose-400">{r.totalDedUSD>0?`-$${fmtHR(r.totalDedUSD)}`:'—'}</td>
-                            <td className="px-5 py-3 text-right font-black text-emerald-600 dark:text-emerald-400">{`$${fmtHR(r.totalNetUSD)}`}</td>
-                            <td className="px-5 py-3 text-right font-black text-sky-600 dark:text-sky-400">{r.totalNetBs>0?`Bs ${fmtHR(r.totalNetBs)}`:'—'}</td>
+                            <td className="px-5 py-3 text-right font-black text-emerald-600 dark:text-emerald-400">${fmtHR(r.totalNetUSD)}</td>
+                            <td className="px-5 py-3 text-right">
+                              <span className="font-black text-emerald-600 dark:text-emerald-400">${fmtHR(pUSD)}</span>
+                              {cUSD > 0 && <span className="text-[9px] text-slate-400 dark:text-white/25 ml-1">({cUSD})</span>}
+                              {pBs > 0 && (
+                                <>
+                                  <br/>
+                                  <span className="font-black text-sky-600 dark:text-sky-400">Bs {fmtHR(pBs)}</span>
+                                  {cBs > 0 && <span className="text-[9px] text-slate-400 dark:text-white/25 ml-1">({cBs})</span>}
+                                </>
+                              )}
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              {r.rateBCV && r.rateBCV > 0
+                                ? <span className="font-bold text-slate-600 dark:text-slate-400 text-[11px]">Bs {fmtHR(r.rateBCV)}</span>
+                                : <span className="text-slate-300 dark:text-white/15 text-[10px]">—</span>}
+                            </td>
                             <td className="px-5 py-3"><ChevronRight size={14} className="text-slate-300 dark:text-white/20"/></td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -2123,6 +2175,21 @@ export default function RecursosHumanos() {
                                   Neto ${fmtHR(c.totalNetUSD)}
                                 </span>
                               )}
+                              {(c.totalPayUSD != null && c.totalPayUSD > 0) && (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                  Pagar: ${fmtHR(c.totalPayUSD)}
+                                </span>
+                              )}
+                              {(c.totalPayBs != null && c.totalPayBs > 0) && (
+                                <span className="text-sky-600 dark:text-sky-400 font-bold">
+                                  + Bs {fmtHR(c.totalPayBs)}
+                                </span>
+                              )}
+                              {c.rateBCV != null && c.rateBCV > 0 && (
+                                <span className="text-slate-400 dark:text-white/30">
+                                  Tasa Bs {fmtHR(c.rateBCV)}
+                                </span>
+                              )}
                               {c.deferredCount > 0 && (
                                 <span className="text-amber-500 dark:text-amber-400">
                                   {c.deferredCount} diferidos
@@ -2288,28 +2355,58 @@ export default function RecursosHumanos() {
             </div>
 
             {/* Summary KPIs */}
-            <div className="grid grid-cols-3 divide-x divide-slate-50 dark:divide-white/[0.06] border-b border-slate-50 dark:border-white/[0.06] shrink-0">
+            <div className="grid grid-cols-4 divide-x divide-slate-50 dark:divide-white/[0.06] border-b border-slate-50 dark:border-white/[0.06] shrink-0">
               {[
                 {l:'Bruto Total',v:`$${fmtHR(selectedRun.totalGrossUSD)}`,c:'text-slate-700 dark:text-slate-300'},
                 {l:'Deducciones',v:`-$${fmtHR(selectedRun.totalDedUSD)}`,c:'text-rose-600 dark:text-rose-400'},
-                {l:'Neto Total USD',v:`$${fmtHR(selectedRun.totalNetUSD)}`,c:'text-emerald-600 dark:text-emerald-400'},
+                {l:'Neto USD',v:`$${fmtHR(selectedRun.totalNetUSD)}`,c:'text-emerald-600 dark:text-emerald-400'},
+                {l:'Empleados',v:String(selectedRun.employeeCount),c:'text-slate-700 dark:text-slate-300'},
               ].map(({l,v,c})=>(
-                <div key={l} className="px-5 py-3 text-center">
+                <div key={l} className="px-4 py-3 text-center">
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1">{l}</p>
                   <p className={`text-lg font-black ${c}`}>{v}</p>
                 </div>
               ))}
             </div>
 
+            {/* Desembolso por moneda + tasa */}
+            {(selectedRun.totalPayUSD != null || selectedRun.rateBCV) && (
+              <div className="px-6 py-3 border-b border-slate-50 dark:border-white/[0.06] bg-emerald-50/50 dark:bg-emerald-500/[0.05] flex flex-wrap items-center gap-x-6 gap-y-1 shrink-0">
+                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400">Desembolso real:</p>
+                {(selectedRun.totalPayUSD ?? 0) > 0 && (
+                  <span className="text-xs font-black text-emerald-700 dark:text-emerald-300">${fmtHR(selectedRun.totalPayUSD!)} USD</span>
+                )}
+                {(selectedRun.totalPayBs ?? 0) > 0 && (
+                  <span className="text-xs font-black text-sky-700 dark:text-sky-300">Bs {fmtHR(selectedRun.totalPayBs!)} </span>
+                )}
+                {selectedRun.rateBCV != null && selectedRun.rateBCV > 0 && (
+                  <span className="text-[10px] text-slate-500 dark:text-white/40 ml-auto">Tasa BCV: <strong className="text-slate-700 dark:text-slate-300">Bs {fmtHR(selectedRun.rateBCV)}</strong></span>
+                )}
+                {selectedRun.processedByName && (
+                  <span className="text-[10px] text-slate-400 dark:text-white/30">por {selectedRun.processedByName}</span>
+                )}
+              </div>
+            )}
+
             {/* Detail table */}
             <div className="overflow-y-auto flex-1">
               {selectedRun.details?.map((det,i)=>{
                 const hasVouchers = (det.settledVouchers||[]).length>0;
+                const isBs = det.paymentCurrency === 'BS';
+                const payLabel = det.payAmountReal != null
+                  ? (isBs ? `Bs ${fmtHR(det.payAmountReal)}` : `$${fmtHR(det.payAmountReal)}`)
+                  : null;
                 return (
                   <div key={det.employeeId||i} className="border-b border-slate-50 dark:border-white/[0.04] px-6 py-4">
-                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mb-1">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1">
                       <p className="font-black text-slate-900 dark:text-white text-sm">{det.name}</p>
+                      {det.cedula && <span className="text-[10px] text-slate-400 dark:text-white/30 font-bold">{det.cedula}</span>}
                       <span className="text-[9px] bg-slate-50 dark:bg-white/[0.06] border border-slate-100 dark:border-white/[0.08] text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded uppercase font-black">{det.department}</span>
+                      {det.paymentCurrency && (
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-black ${isBs ? 'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-100 dark:border-sky-500/25' : 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/25'}`}>
+                          Cobra en {isBs ? 'Bs' : 'USD'}
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-x-5 gap-y-0.5 text-[10px]">
                       {det.grossUSD>0&&<span className="text-slate-500 dark:text-white/40">Bruto: <strong className="text-slate-700 dark:text-slate-300">${fmtHR(det.grossUSD)}</strong></span>}
@@ -2317,8 +2414,17 @@ export default function RecursosHumanos() {
                       {det.ivssUSD>0&&<span className="text-orange-500 dark:text-orange-400">IVSS: -${fmtHR(det.ivssUSD)}</span>}
                       {det.paroUSD>0&&<span className="text-orange-500 dark:text-orange-400">Paro: -${fmtHR(det.paroUSD)}</span>}
                       {det.loanDedUSD>0&&<span className="text-amber-600 dark:text-amber-400">Préstamo: -${fmtHR(det.loanDedUSD)}</span>}
-                      <span className="font-black text-emerald-600 dark:text-emerald-400">Neto: ${fmtHR(det.netUSD)}</span>
-                      {det.netBs>0&&<span className="font-black text-sky-600 dark:text-sky-400">/ Bs {fmtHR(det.netBs)}</span>}
+                      {det.overtimeUSD>0&&<span className="text-green-500 dark:text-green-400">H.Extra: +${fmtHR(det.overtimeUSD)}</span>}
+                      {det.absenceDeductionUSD>0&&<span className="text-red-500 dark:text-red-400">Ausencias: -${fmtHR(det.absenceDeductionUSD)}</span>}
+                    </div>
+                    {/* A PAGAR highlight */}
+                    <div className="flex items-center gap-3 mt-1.5">
+                      <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400">Neto: ${fmtHR(det.netUSD)}</span>
+                      {payLabel && (
+                        <span className={`text-xs font-black px-2.5 py-0.5 rounded-lg ${isBs ? 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300' : 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'}`}>
+                          A pagar: {payLabel}
+                        </span>
+                      )}
                     </div>
                     {hasVouchers&&(
                       <div className="mt-2 pl-3 border-l-2 border-rose-200 dark:border-rose-500/25 space-y-0.5">
