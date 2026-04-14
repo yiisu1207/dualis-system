@@ -8,11 +8,13 @@ import {
   updateDoc,
   deleteDoc,
   limit,
+  setDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { useRates } from '../context/RatesContext';
 import { createExchangeRateEntry } from '../firebase/api';
+import { backfillMissingRatesUpTo } from '../utils/rateBackfill';
 import { useToast } from '../context/ToastContext';
 import { Globe, Loader2, RefreshCw, CheckCircle2, AlertTriangle, Wifi, Info, ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
 import type { CustomRate } from '../../types';
@@ -179,6 +181,8 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
   const resolvedBusinessId = (businessId || userProfile?.businessId || '').trim();
   const RATES_PER_PAGE = 10;
   const [ratePage, setRatePage] = useState(1);
+  const [fallbackPolicy, setFallbackPolicy] = useState<'prior' | 'posterior' | 'ask'>('prior');
+  const [savingPolicy, setSavingPolicy] = useState(false);
   const pagedEntries = useMemo(() => {
     const start = (ratePage - 1) * RATES_PER_PAGE;
     return entries.slice(start, start + RATES_PER_PAGE);
@@ -236,6 +240,21 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
         `Obtenida automáticamente desde BCV.ORG.VE — ${new Date(bcvPreview.fechaActualizacion).toLocaleString('es-VE')}`,
       );
 
+      // Backfill post-feriado: propaga la tasa a días no publicados entre el último registro y hoy
+      try {
+        await backfillMissingRatesUpTo(
+          resolvedBusinessId,
+          today,
+          bcvPreview.rate,
+          'manual',
+          currentUser?.uid
+            ? { uid: currentUser.uid, displayName: currentUser.displayName || 'Admin' }
+            : undefined,
+        );
+      } catch (bfErr) {
+        console.error('[RateHistoryWall] Backfill post-confirm falló:', bfErr);
+      }
+
       // 3. Pre-llenar formulario manual
       setManualBcv(bcvPreview.rate.toFixed(4));
       setManualDate(today);
@@ -285,6 +304,38 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
 
     return () => unsubscribe();
   }, [resolvedBusinessId]);
+
+  useEffect(() => {
+    if (!resolvedBusinessId) return;
+    const unsub = onSnapshot(doc(db, 'businessConfigs', resolvedBusinessId), (snap) => {
+      const data = snap.data() as any;
+      const policy = data?.ratePolicy?.missingDateFallback;
+      if (policy === 'prior' || policy === 'posterior' || policy === 'ask') {
+        setFallbackPolicy(policy);
+      }
+    });
+    return () => unsub();
+  }, [resolvedBusinessId]);
+
+  const savePolicy = async (value: 'prior' | 'posterior' | 'ask') => {
+    if (!resolvedBusinessId) return;
+    const prev = fallbackPolicy;
+    setFallbackPolicy(value);
+    setSavingPolicy(true);
+    try {
+      await setDoc(
+        doc(db, 'businessConfigs', resolvedBusinessId),
+        { ratePolicy: { missingDateFallback: value } },
+        { merge: true },
+      );
+    } catch (e) {
+      console.error('[RateHistoryWall] No se pudo guardar la política de fallback', e);
+      setFallbackPolicy(prev);
+      error('No se pudo guardar la política. Reintenta.');
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
 
   const handleReaction = async (entry: RateEntry, emoji: string) => {
     if (!resolvedBusinessId || !currentUser?.uid) return;
@@ -352,6 +403,21 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
         await updateCustomRates(updatedCR);
       }
 
+      // Backfill post-feriado: propaga esta tasa a días sin registro entre el último y manualDate
+      try {
+        await backfillMissingRatesUpTo(
+          resolvedBusinessId,
+          manualDate,
+          bcv,
+          'manual',
+          currentUser?.uid
+            ? { uid: currentUser.uid, displayName: currentUser.displayName || 'Admin' }
+            : undefined,
+        );
+      } catch (bfErr) {
+        console.error('[RateHistoryWall] Backfill post-publish falló:', bfErr);
+      }
+
       const customSummary = Object.entries(customRatesMap)
         .map(([id, v]) => `${id}: ${v.toFixed(2)}`)
         .join(' · ');
@@ -391,6 +457,20 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       }
       // Activar la tasa más reciente del lote
       await updateRates({ tasaBCV: sorted[0].bcv });
+      // Backfill post-feriado usando la fecha más reciente del lote
+      try {
+        await backfillMissingRatesUpTo(
+          resolvedBusinessId,
+          sorted[0].date,
+          sorted[0].bcv,
+          'manual',
+          currentUser?.uid
+            ? { uid: currentUser.uid, displayName: currentUser.displayName || 'Admin' }
+            : undefined,
+        );
+      } catch (bfErr) {
+        console.error('[RateHistoryWall] Backfill post-batch falló:', bfErr);
+      }
       setOcrDrafts([]);
     } catch (error) {
       console.error('No se pudo publicar el lote de tasas', error);
@@ -487,6 +567,20 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
       }
       // Activar la tasa más reciente del lote como tasa activa
       await updateRates({ tasaBCV: csvPreview[0].bcv });
+      // Backfill post-feriado usando la fecha más reciente del CSV
+      try {
+        await backfillMissingRatesUpTo(
+          resolvedBusinessId,
+          csvPreview[0].date,
+          csvPreview[0].bcv,
+          'manual',
+          currentUser?.uid
+            ? { uid: currentUser.uid, displayName: currentUser.displayName || 'Admin' }
+            : undefined,
+        );
+      } catch (bfErr) {
+        console.error('[RateHistoryWall] Backfill post-csv falló:', bfErr);
+      }
       success(`${imported} tasas importadas. Tasa activa: ${csvPreview[0].bcv.toFixed(4)} Bs/$`);
       setCsvPreview([]);
     } catch {
@@ -586,6 +680,57 @@ const RateHistoryWall: React.FC<RateHistoryWallProps> = ({ businessId, currentUs
                   <span className={`text-[9px] font-black uppercase tracking-widest ${col.text} opacity-70`}>{cr.name}</span>
                   <span className={`text-base font-black ${col.text}`}>{cr.value.toFixed(2)}</span>
                 </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ─── POLÍTICA DE FALLBACK PARA VALES SIN TASA PUBLICADA ───────────── */}
+      <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5">
+        <div className="flex flex-col gap-3">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-widest text-white/50">
+              Política para vales en fechas sin tasa publicada
+            </h3>
+            <p className="text-xs text-white/30 font-semibold mt-0.5">
+              Cuando se registra un vale con una fecha sin BCV exacta en el historial, el sistema decide qué tasa usar según esta política.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2">
+            {([
+              { value: 'prior', label: 'Usar la BCV del día hábil anterior más cercano', hint: 'Recomendado — replica el comportamiento BCV real' },
+              { value: 'posterior', label: 'Usar la BCV del día posterior más cercano', hint: 'Útil si el BCV se publica retroactivamente' },
+              { value: 'ask', label: 'Preguntar cada vez (modal con ambas opciones)', hint: 'El usuario elige por cada vale con fecha sin registro' },
+            ] as const).map((opt) => {
+              const active = fallbackPolicy === opt.value;
+              return (
+                <label
+                  key={opt.value}
+                  className={`flex items-start gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${
+                    active
+                      ? 'border-indigo-500/40 bg-indigo-500/[0.08]'
+                      : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
+                  } ${savingPolicy ? 'opacity-60 pointer-events-none' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="fallbackPolicy"
+                    value={opt.value}
+                    checked={active}
+                    disabled={savingPolicy}
+                    onChange={() => savePolicy(opt.value)}
+                    className="mt-0.5 accent-indigo-500"
+                  />
+                  <div className="flex-1">
+                    <div className={`text-sm font-bold ${active ? 'text-white' : 'text-white/80'}`}>
+                      {opt.label}
+                    </div>
+                    <div className="text-[11px] text-white/40 font-semibold mt-0.5">
+                      {opt.hint}
+                    </div>
+                  </div>
+                </label>
               );
             })}
           </div>
