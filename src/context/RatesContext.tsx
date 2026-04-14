@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from './AuthContext';
+import { backfillMissingRatesUpTo } from '../utils/rateBackfill';
 import type { CustomRate } from '../../types';
 
 interface Rates {
@@ -165,6 +166,18 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   { merge: true },
                 );
                 setUsingStaleRate(false);
+                try {
+                  await backfillMissingRatesUpTo(
+                    businessId,
+                    today,
+                    freshRate,
+                    'auto-fetch',
+                    { uid: 'system', displayName: 'Auto-fetch BCV' },
+                  );
+                } catch (bfErr) {
+                  // eslint-disable-next-line no-console
+                  console.error('[RatesContext] Backfill post-fetch falló:', bfErr);
+                }
               } catch (e) {
                 // eslint-disable-next-line no-console
                 console.error('[RatesContext] No se pudo guardar la tasa fresca:', e);
@@ -178,6 +191,18 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   { merge: true },
                 );
                 setUsingStaleRate(false);
+                try {
+                  await backfillMissingRatesUpTo(
+                    businessId,
+                    today,
+                    freshRate,
+                    'auto-fetch',
+                    { uid: 'system', displayName: 'Auto-fetch BCV' },
+                  );
+                } catch (bfErr) {
+                  // eslint-disable-next-line no-console
+                  console.error('[RatesContext] Backfill post-fetch (misma tasa) falló:', bfErr);
+                }
               } catch {}
             }
             // Si freshRate es null, usingStaleRate queda true
