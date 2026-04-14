@@ -17,6 +17,7 @@ import {
 import { printVoucherSheet, printPayslip, printPayrollRunPDF, printCortePDF, exportNominaCSV, accrueVacationDays, fmtHR } from '../utils/hrUtils';
 import { logAudit } from '../utils/auditLogger';
 import { useRates } from '../context/RatesContext';
+import { findRateForDate, formatRateSourceDate } from '../utils/rateLookup';
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const DEPARTMENTS = ['Administración','Ventas','Almacén','Caja','Operaciones','Gerencia','Servicios','Logística','RRHH','Otro'];
@@ -182,12 +183,15 @@ const Confirm = ({ msg, detail, onConfirm, onCancel }: any) => (
 );
 
 // ── EMPLOYEE PROFILE PANEL ───────────────────────────────────────────────────
-function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, currentRate, onClose, onAddVoucher, onAddLoan, businessName, businessLogo }:
+function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, currentRate, getBcvRateForDate, getRateForDate, bcvHistory, onClose, onAddVoucher, onAddLoan, businessName, businessLogo }:
   { emp:Employee; vouchers:Voucher[]; loans:Loan[]; payrollHistory:PayrollRun[];
-    businessId:string; currentRate:number; onClose:()=>void;
+    businessId:string; currentRate:number;
+    getBcvRateForDate:(d:string)=>number; getRateForDate:(d:string)=>number;
+    bcvHistory:Array<{date:string;bcv:number}>;
+    onClose:()=>void;
     onAddVoucher:(v:any)=>Promise<void>; onAddLoan:(l:any)=>Promise<void>; businessName:string; businessLogo?:string }) {
 
-  const [vForm,  setVForm]  = useState({ amount:'', currency:'USD' as 'USD'|'BS', reason:'Adelanto' });
+  const [vForm,  setVForm]  = useState({ amount:'', currency:'USD' as 'USD'|'BS', reason:'Adelanto', date: new Date().toISOString().slice(0,10) });
   const [lForm,  setLForm]  = useState({ totalAmount:'', currency:'USD' as 'USD'|'BS', totalInstallments:'2', reason:'Préstamo' });
   const [saving, setSaving] = useState(false);
   const [showLoan, setShowLoan] = useState(false);
@@ -204,21 +208,35 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
   const empHistory  = payrollHistory.filter(r=>r.details?.some(d=>d.employeeId===emp.id)).slice(0,6)
     .map(r=>({ run:r, det:r.details.find(d=>d.employeeId===emp.id)! }));
 
-  // Bs voucher: calc equiv USD
-  const equivUSD = vForm.currency==='BS' && currentRate>0 ? Number(vForm.amount||0)/currentRate : Number(vForm.amount||0);
+  // Bs voucher: calc equiv USD usando tasa histórica de la fecha del vale
+  const isBcvEmp = emp.paymentCurrency === 'BS';
+  const bcvLookup = vForm.currency === 'BS' && isBcvEmp
+    ? findRateForDate(bcvHistory, vForm.date, 'prior')
+    : null;
+  const rateForVoucher = vForm.currency === 'BS'
+    ? (isBcvEmp ? (bcvLookup?.rate || 0) : getRateForDate(vForm.date))
+    : 0;
+  const equivUSD = vForm.currency === 'USD'
+    ? Number(vForm.amount||0)
+    : (rateForVoucher > 0 ? Number(vForm.amount||0)/rateForVoucher : 0);
 
   const submitVoucher = async (e: React.FormEvent) => {
     e.preventDefault(); if (!vForm.amount) return;
+    if (vForm.currency === 'BS' && rateForVoucher === 0) {
+      alert(`No hay tasa disponible para ${vForm.date}. Publica una tasa en el Muro de Tasas primero o cambia la fecha.`);
+      return;
+    }
     setSaving(true);
     const amt = Number(vForm.amount);
     await onAddVoucher({
       employeeId: emp.id, employeeName: emp.fullName,
       amount: amt, currency: vForm.currency,
-      amountUSD: vForm.currency==='USD' ? amt : (currentRate>0 ? amt/currentRate : 0),
-      ...(vForm.currency==='BS' && currentRate > 0 ? { rateUsed: currentRate } : {}),
+      amountUSD: vForm.currency==='USD' ? amt : (rateForVoucher>0 ? amt/rateForVoucher : 0),
+      voucherDate: vForm.date,
+      ...(vForm.currency==='BS' && rateForVoucher > 0 ? { rateUsed: rateForVoucher } : {}),
       reason: vForm.reason, status: 'PENDIENTE',
     });
-    setVForm(f=>({...f,amount:'',reason:'Adelanto'}));
+    setVForm(f=>({...f, amount:'', reason:'Adelanto', date: new Date().toISOString().slice(0,10)}));
     setSaving(false);
   };
 
@@ -358,6 +376,11 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
           {/* Add voucher */}
           <form onSubmit={submitVoucher} className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-500/[0.07] border border-indigo-100 dark:border-indigo-500/20 space-y-2.5">
             <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Registrar Vale</p>
+            <div>
+              <label className="text-[9px] font-black uppercase tracking-widest text-indigo-600/70 dark:text-indigo-400/60 ml-1 block mb-1">Fecha del vale</label>
+              <input required type="date" max={new Date().toISOString().slice(0,10)} value={vForm.date}
+                onChange={e=>setVForm(f=>({...f,date:e.target.value}))} className={inp}/>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <select value={vForm.currency} onChange={e=>setVForm(f=>({...f,currency:e.target.value as any}))} className={inp}>
                 <option value="USD">USD ($)</option>
@@ -366,10 +389,25 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
               <input required type="number" step="0.01" min="0.01" placeholder="Monto" value={vForm.amount}
                 onChange={e=>setVForm(f=>({...f,amount:e.target.value}))} className={inp}/>
             </div>
-            {vForm.currency==='BS' && currentRate>0 && Number(vForm.amount)>0 && (
-              <p className="text-[10px] text-indigo-600/70 dark:text-indigo-400/60 font-bold">
-                Tasa: Bs {fmtHR(currentRate)} → Equiv. USD: ${fmtHR(equivUSD)}
-              </p>
+            {vForm.currency==='BS' && Number(vForm.amount)>0 && (
+              <div className="space-y-1">
+                {rateForVoucher > 0 ? (
+                  <p className="text-[10px] text-indigo-600/70 dark:text-indigo-400/60 font-bold">
+                    Tasa a aplicar: Bs {fmtHR(rateForVoucher)}
+                    {bcvLookup?.sourceDate && ` (BCV del ${formatRateSourceDate(bcvLookup.sourceDate)})`}
+                    {' '}→ Equivale a ${fmtHR(equivUSD)}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-rose-600 dark:text-rose-400 font-black">
+                    ⚠ No hay tasa disponible para {vForm.date}. Publica una tasa primero.
+                  </p>
+                )}
+                {bcvLookup?.isFallback && bcvLookup?.sourceDate && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 font-black">
+                    ⚠ Usando tasa del {formatRateSourceDate(bcvLookup.sourceDate)} (día hábil más cercano)
+                  </p>
+                )}
+              </div>
             )}
             <input value={vForm.reason} onChange={e=>setVForm(f=>({...f,reason:e.target.value}))} className={inp}/>
             <button disabled={saving} className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50">
@@ -2325,6 +2363,7 @@ export default function RecursosHumanos() {
           emp={fichaEmp} vouchers={visibleVouchers} loans={loans}
           payrollHistory={payrollHistory} businessId={bid}
           currentRate={currentRate} businessName={businessName} businessLogo={businessLogo}
+          getBcvRateForDate={getBcvRateForDate} getRateForDate={getRateForDate} bcvHistory={bcvHistory}
           onClose={()=>setFichaEmp(null)}
           onAddVoucher={handleAddVoucher}
           onAddLoan={handleAddLoan}
