@@ -196,6 +196,7 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
   const [lForm,  setLForm]  = useState({ totalAmount:'', currency:'USD' as 'USD'|'BS', totalInstallments:'2', reason:'Préstamo' });
   const [saving, setSaving] = useState(false);
   const [showLoan, setShowLoan] = useState(false);
+  const toast = useToast();
 
   const pending    = vouchers.filter(v => v.employeeId===emp.id && v.status==='PENDIENTE');
   const allVouchers = vouchers.filter(v => v.employeeId===emp.id);
@@ -237,6 +238,14 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
       ...(vForm.currency==='BS' && rateForVoucher > 0 ? { rateUsed: rateForVoucher } : {}),
       reason: vForm.reason, status: 'PENDIENTE',
     });
+    if (vForm.currency === 'BS' && rateForVoucher > 0) {
+      const srcDate = bcvLookup?.sourceDate || vForm.date;
+      const [y,m,d] = srcDate.split('-');
+      const ddmm = (d && m) ? `${d}/${m}/${y?.slice(2) || ''}` : srcDate;
+      toast.success(`Vale registrado con tasa del ${ddmm}: Bs ${rateForVoucher.toFixed(2)}`);
+    } else {
+      toast.success('Vale registrado');
+    }
     setVForm(f=>({...f, amount:'', reason:'Adelanto', date: new Date().toISOString().slice(0,10)}));
     setSaving(false);
   };
@@ -972,10 +981,11 @@ export default function RecursosHumanos() {
       const rateForDate = newCurrency==='BS'
         ? (isBcvEmp ? getBcvRateForDate(_corrDate) : getRateForDate(_corrDate))
         : 0;
+      const newAmountUSD = newCurrency==='USD'?newAmount:(rateForDate>0?newAmount/rateForDate:0);
       await addDoc(collection(db,`businesses/${bid}/vouchers`),{
         employeeId:v.employeeId, employeeName:v.employeeName,
         amount:newAmount, currency:newCurrency,
-        amountUSD:newCurrency==='USD'?newAmount:(rateForDate>0?newAmount/rateForDate:0),
+        amountUSD:newAmountUSD,
         ...(newCurrency==='BS' && rateForDate > 0 ? { rateUsed: rateForDate } : {}),
         reason:v.reason, status:'PENDIENTE',
         correctedFrom:v.id, originalAmount:v.amount, correctionNote:note,
@@ -983,6 +993,24 @@ export default function RecursosHumanos() {
         registeredBy: userProfile?.uid || '',
         registeredByName: userProfile?.fullName || userProfile?.email || 'Usuario',
         createdAt:serverTimestamp(),
+      });
+      await addDoc(collection(db,`businesses/${bid}/auditLogs`),{
+        action: 'voucher_rate_correction',
+        voucherId: v.id,
+        before: {
+          rate: v.rateUsed ?? null,
+          amountUSD: Number(v.amountUSD || 0),
+        },
+        after: {
+          rate: newCurrency === 'BS' && rateForDate > 0 ? rateForDate : null,
+          amountUSD: newAmountUSD,
+          sourceDate: _corrDate,
+        },
+        note,
+        userId: userProfile?.uid || '',
+        userName: userProfile?.fullName || userProfile?.email || 'Usuario',
+        source: 'single',
+        createdAt: serverTimestamp(),
       });
       toast.success(`Vale corregido: ${v.currency==='USD'?'$':'Bs '}${fmtHR(v.amount)} → ${newCurrency==='USD'?'$':'Bs '}${fmtHR(newAmount)}`);
       setCorrecting(null);

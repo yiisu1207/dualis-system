@@ -144,6 +144,25 @@ export const VoucherRateAuditPanel: React.FC<Props> = ({
           registeredByName: currentUser.displayName,
         });
 
+        await addDoc(collection(db, 'businesses', businessId, 'auditLogs'), {
+          action: 'voucher_rate_correction',
+          voucherId: v.id,
+          before: {
+            rate: r.currentRate ?? null,
+            amountUSD: r.currentAmountUSD,
+          },
+          after: {
+            rate: newRate,
+            amountUSD: newAmountUSD,
+            sourceDate: r.suggestedSourceDate ?? null,
+          },
+          note: bulkNote.trim(),
+          userId: currentUser.uid,
+          userName: currentUser.displayName,
+          source: 'bulk',
+          createdAt: serverTimestamp(),
+        });
+
         done++;
       } catch (err) {
         console.error('[VoucherRateAuditPanel] Error corrigiendo vale', r.voucherId, err);
