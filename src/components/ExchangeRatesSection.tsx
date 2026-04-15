@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { auth } from '../firebase/config';
 import type { CustomRate } from '../../types';
-import RateHistoryWall from './RateHistoryWall';
+import TasasPageRedesign from './rates/TasasPageRedesign';
 
 const ExchangeRatesSection: React.FC = () => {
   const { customRates, updateCustomRates } = useRates();
@@ -92,7 +92,7 @@ const ExchangeRatesSection: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       {/* ─── Unified Rate Wall (BCV + all custom rates) ─────────────────── */}
-      <RateHistoryWall
+      <TasasPageRedesign
         businessId={businessId}
         currentUser={currentUserProp}
         customRates={hasDynamicPricing ? localAccounts.map(a => ({ id: a.id, name: a.name, value: a.value, enabled: true })) : []}
