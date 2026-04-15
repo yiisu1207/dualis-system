@@ -1,8 +1,7 @@
-// Cliente de OCR de comprobantes — llama la Cloud Function `extractReceipt`
-// que hace proxy a Anthropic Vision. La API key vive en el servidor.
+// Cliente de OCR de comprobantes — llama el endpoint Vercel `/api/extract-receipt`
+// que hace proxy a Anthropic Vision. La API key ANTHROPIC_KEY vive en env vars de Vercel.
 
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { app } from '../firebase/config';
+import { auth } from '../firebase/config';
 import type { OperationType } from './bankReconciliation';
 
 export interface ExtractedReceipt {
@@ -54,10 +53,24 @@ export async function extractReceipt(file: File): Promise<ExtractedReceipt> {
   if (!file.type.startsWith('image/')) {
     throw new Error(`Tipo inválido: ${file.type}. Usa PNG, JPG o WEBP.`);
   }
+  const user = auth.currentUser;
+  if (!user) throw new Error('Debes estar autenticado');
+  const token = await user.getIdToken();
   const base64 = await fileToBase64(file);
-  const fn = httpsCallable(getFunctions(app), 'extractReceipt');
-  const res = await fn({ imageBase64: base64, mimeType: file.type });
-  return res.data as ExtractedReceipt;
+
+  const res = await fetch('/api/extract-receipt', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ imageBase64: base64, mimeType: file.type }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `HTTP ${res.status}`);
+  }
+  return (await res.json()) as ExtractedReceipt;
 }
 
 export interface BatchItem {
