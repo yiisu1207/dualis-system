@@ -112,7 +112,7 @@ type NominaRow = {
   ivssUSD: number; paroUSD: number; loanDedUSD: number;
   overtimeUSD: number; absenceDeductionUSD: number;
   totalDedUSD: number; netUSD: number; netBs: number;
-  vCount: number; isOverdraft: boolean;
+  vCount: number; isOverdraft: boolean; overdraftUSD: number;
 };
 interface CorteVoucherDetail {
   id: string; employeeId: string; employeeName: string;
@@ -733,6 +733,20 @@ export default function RecursosHumanos() {
     ];
   },[employees, qv.empId]);
 
+  // Dynamic currency options for abono form — mirror vale form
+  const abonoMonedaOpts = useMemo(()=>{
+    const emp = employees.find(e=>e.id===qa.empId);
+    if (!emp) return [{ value:'USD' as const, label:'Tasa Interna ($)' },{ value:'BS' as const, label:'Bs (Tasa Interna)' }];
+    if (emp.paymentCurrency==='BS') return [
+      { value:'USD' as const, label:'USD ($)' },
+      { value:'BS' as const, label:'Bs (BCV)' },
+    ];
+    return [
+      { value:'USD' as const, label:'Tasa Interna ($)' },
+      { value:'BS' as const, label:'Bs (Tasa Interna)' },
+    ];
+  },[employees, qa.empId]);
+
   const pendingTotalUSD = useMemo(()=>pendingVouchers.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0),[pendingVouchers]);
   const pendingTotalBs  = useMemo(()=>pendingVouchers.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0),[pendingVouchers]);
 
@@ -776,6 +790,7 @@ export default function RecursosHumanos() {
         netBs:Math.max(0,grossBs-vDedBs),
         vCount:ev.length,
         isOverdraft:emp.salaryUSD>0 && netVDedUSD>pSal,
+        overdraftUSD:Math.max(0,totalDed-grossUSD),
       };
     });
   },[employees,currentPeriodVouchers,visibleAbonos,activeLoans,pendingTimeEntries,freqFilter,currentRate]);
@@ -790,8 +805,10 @@ export default function RecursosHumanos() {
 
   const overdraftList = useMemo(()=>employees.filter(emp=>{
     const pv = currentPeriodVouchers.filter(v=>v.employeeId===emp.id).reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
-    return emp.salaryUSD>0 && pv>periodSal(emp,'USD');
-  }),[employees,currentPeriodVouchers]);
+    const abonosUSD = visibleAbonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE').reduce((s,a)=>s+(a.currency==='USD'?a.amount:(a.amountUSD||0)),0);
+    const netVales = Math.max(0, pv - abonosUSD);
+    return emp.salaryUSD>0 && netVales>periodSal(emp,'USD');
+  }),[employees,currentPeriodVouchers,visibleAbonos]);
 
   const loansTotal = useMemo(()=>activeLoans.reduce((s,l)=>{
     const remaining = (l.totalInstallments - l.paidInstallments) * l.installmentAmount;
@@ -1193,7 +1210,13 @@ export default function RecursosHumanos() {
     const emp = employees.find(x => x.id === qa.empId);
     const amt = Number(qa.amount);
     const isBcvEmp = emp?.paymentCurrency === 'BS';
-    const rate = qa.currency === 'BS' ? (isBcvEmp ? getBcvRateForDate(qa.date || new Date().toISOString().slice(0,10)) : currentRate) : 0;
+    const abonoDate = qa.date || new Date().toISOString().slice(0,10);
+    const rate = qa.currency === 'BS' ? (isBcvEmp ? getBcvRateForDate(abonoDate) : getRateForDate(abonoDate)) : 0;
+    if (qa.currency === 'BS' && rate <= 0) {
+      toast.error('No hay tasa disponible para esa fecha. Publica una tasa primero.');
+      setSavingAbono(false);
+      return;
+    }
     try {
       await addDoc(collection(db, `businesses/${bid}/abonos`), {
         employeeId: qa.empId, employeeName: emp?.fullName || '',
@@ -1738,10 +1761,18 @@ export default function RecursosHumanos() {
                         </div>
                         <div className="max-h-40 overflow-y-auto">
                           {employees.filter(e=>e.status==='Activo'&&(!abonoSearch||e.fullName.toLowerCase().includes(abonoSearch.toLowerCase()))).map(e=>(
-                            <button key={e.id} type="button" onClick={()=>{setQa(f=>({...f,empId:e.id}));setAbonoDropOpen(false);}}
+                            <button key={e.id} type="button" onClick={()=>{
+                              const autoCurrency = e.paymentCurrency === 'BS' ? 'BS' : 'USD';
+                              setQa(f=>({...f,empId:e.id, currency: autoCurrency}));
+                              setAbonoDropOpen(false);
+                            }}
                               className={`w-full px-3 py-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all flex items-center gap-2 ${qa.empId===e.id?'bg-emerald-50 dark:bg-emerald-500/[0.08]':''}`}>
-                              <span className="font-bold text-slate-800 dark:text-white flex-1">{e.fullName}</span>
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${e.paymentCurrency==='USD'?'bg-emerald-500':'bg-sky-500'}`}/>
+                              <span className={`font-bold flex-1 ${e.paymentCurrency==='USD'?'text-emerald-700 dark:text-emerald-400':'text-sky-700 dark:text-sky-400'}`}>{e.fullName}</span>
                               <span className="text-[9px] text-slate-400 dark:text-white/30 uppercase">{e.department}</span>
+                              <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${e.paymentCurrency==='USD'?'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20':'bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-500/20'}`}>
+                                {getCurrencyLabel(e.paymentCurrency)}
+                              </span>
                             </button>
                           ))}
                         </div>
@@ -1754,11 +1785,23 @@ export default function RecursosHumanos() {
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"/>
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Monto</label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">
+                      Monto{' '}
+                      {qa.currency==='BS'&&qa.date&&(()=>{
+                        const selEmp = employees.find(e=>e.id===qa.empId);
+                        const isBcv = selEmp?.paymentCurrency==='BS';
+                        const rate = isBcv ? getBcvRateForDate(qa.date) : getRateForDate(qa.date);
+                        const amt = Number(qa.amount);
+                        return <>
+                          <span className="text-[8px] text-emerald-400 normal-case">(Tasa: Bs {fmtHR(rate)})</span>
+                          {amt > 0 && rate > 0 && <span className="text-emerald-400 text-[9px] ml-1">≈ ${fmtHR(amt / rate)}</span>}
+                        </>;
+                      })()}
+                    </label>
                     <div className="flex gap-1.5">
                       <select value={qa.currency} onChange={e=>setQa(f=>({...f,currency:e.target.value as any}))}
                         className="px-2 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
-                        <option value="USD">USD</option><option value="BS">Bs</option>
+                        {abonoMonedaOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                       <input required type="number" step="0.01" min="0.01" value={qa.amount} onChange={e=>setQa(f=>({...f,amount:e.target.value}))}
                         placeholder="0.00" className="flex-1 px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"/>
@@ -2005,7 +2048,16 @@ export default function RecursosHumanos() {
                           <td className="px-4 py-3.5 text-right font-black text-rose-600 dark:text-rose-400">{n.absenceDeductionUSD>0?`-$${fmtHR(n.absenceDeductionUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-orange-600 dark:text-orange-400">{(n.ivssUSD+n.paroUSD)>0?`-$${fmtHR(n.ivssUSD+n.paroUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-amber-600 dark:text-amber-400">{n.loanDedUSD>0?`-$${fmtHR(n.loanDedUSD)}`:'—'}</td>
-                          <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400 text-base">{n.netUSD>0?`$${fmtHR(n.netUSD)}`:'—'}</td>
+                          <td className="px-4 py-3.5 text-right text-base">
+                            {n.isOverdraft ? (
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className="font-black text-rose-600 dark:text-rose-400">-${fmtHR(n.overdraftUSD)}</span>
+                                <span className="text-[9px] font-black uppercase tracking-widest text-rose-500 dark:text-rose-400/80">Sobregirado</span>
+                              </div>
+                            ) : (
+                              <span className="font-black text-emerald-600 dark:text-emerald-400">{n.netUSD>0?`$${fmtHR(n.netUSD)}`:'—'}</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3.5 text-right font-black text-sky-600 dark:text-sky-400">{n.netBs>0?`Bs ${fmtHR(n.netBs)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right">
                             <button onClick={()=>printPayslip(n.emp,n,new Date().toISOString().slice(0,7),n.emp.payFrequency,businessName,pendingVouchers.filter(v=>v.employeeId===n.emp.id),undefined,loans)}
