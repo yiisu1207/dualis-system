@@ -81,6 +81,7 @@ import {
   Trophy,
   ArrowRight,
   Download,
+  Command,
 } from 'lucide-react';
 import { updatePassword, updateProfile, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -92,7 +93,7 @@ import { uploadToCloudinary } from '../utils/cloudinary';
 import { DEFAULT_APPROVAL_CONFIG } from '../utils/approvalHelpers';
 import type { ApprovalConfig, ApprovalMovementKind } from '../../types';
 
-type SectionType = 'perfil' | 'identidad' | 'facturacion' | 'equipo' | 'aprobaciones' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'fidelidad' | 'devtest';
+type SectionType = 'perfil' | 'identidad' | 'facturacion' | 'equipo' | 'aprobaciones' | 'seguridad' | 'suscripcion' | 'apariencia' | 'funciones' | 'despacho' | 'comisiones' | 'fidelidad' | 'atajos' | 'devtest';
 
 interface ConfigData {
   companyName: string;
@@ -183,6 +184,19 @@ const Configuracion: React.FC = () => {
   const [copyToast, setCopyToast] = useState(false);
   const [uiPrefs, setUiPrefs] = useState<UiPrefs>(DEFAULT_UI_PREFS);
   const [savingPrefs, setSavingPrefs] = useState(false);
+
+  // Atajos de navegación personalizables (Alt+<key> → tab)
+  const DEFAULT_NAV_SHORTCUTS: Record<string, string> = {
+    resumen: '1', inventario: '2', cajas: '3', clientes: '4',
+    tesoreria: '5', despacho: '6', reportes: '7', rrhh: '8', config: '9',
+  };
+  const NAV_SHORTCUT_LABELS: Record<string, string> = {
+    resumen: 'Dashboard', inventario: 'Inventario', cajas: 'Ventas / Cajas',
+    clientes: 'CxC', tesoreria: 'Tesorería', despacho: 'Despacho',
+    reportes: 'Reportes', rrhh: 'RRHH', config: 'Configuración',
+  };
+  const [navShortcuts, setNavShortcuts] = useState<Record<string, string>>(DEFAULT_NAV_SHORTCUTS);
+  const [savingShortcuts, setSavingShortcuts] = useState(false);
 
   // Seed test data
   const [seedProgress, setSeedProgress] = useState<{ msg: string; pct: number } | null>(null);
@@ -395,6 +409,9 @@ const Configuracion: React.FC = () => {
         }
         if (featuresSnap?.roleCapabilities) {
           setRoleCaps(featuresSnap.roleCapabilities as RoleCapabilities);
+        }
+        if (featuresSnap?.navShortcuts && typeof featuresSnap.navShortcuts === 'object') {
+          setNavShortcuts({ ...DEFAULT_NAV_SHORTCUTS, ...featuresSnap.navShortcuts });
         }
         if (featuresSnap?.securityConfig && typeof featuresSnap.securityConfig.sessionTimeoutMinutes === 'number') {
           setConfigData(prev => ({
@@ -780,6 +797,41 @@ const Configuracion: React.FC = () => {
     }
   };
 
+  const handleSaveNavShortcuts = async () => {
+    if (!businessId) return;
+    // Validar: cada key debe ser un único carácter y no repetirse
+    const seen: Record<string, string> = {};
+    for (const tab of Object.keys(navShortcuts)) {
+      const k = (navShortcuts[tab] || '').trim().toLowerCase();
+      if (!k) continue;
+      if (k.length !== 1) {
+        toast.error(`"${NAV_SHORTCUT_LABELS[tab] || tab}" debe tener un solo carácter`);
+        return;
+      }
+      if (seen[k]) {
+        toast.error(`La tecla "${k.toUpperCase()}" está duplicada`);
+        return;
+      }
+      seen[k] = tab;
+    }
+    setSavingShortcuts(true);
+    try {
+      // Normalizar a minúscula, remover entradas vacías
+      const clean: Record<string, string> = {};
+      Object.keys(navShortcuts).forEach(t => {
+        const v = (navShortcuts[t] || '').trim().toLowerCase();
+        if (v) clean[t] = v;
+      });
+      await setDoc(doc(db, 'businessConfigs', businessId), { navShortcuts: clean }, { merge: true });
+      toast.success('Atajos guardados');
+    } catch (e) {
+      console.error(e);
+      toast.error('Error al guardar atajos');
+    } finally {
+      setSavingShortcuts(false);
+    }
+  };
+
   const handleSaveCommissions = async () => {
     if (!businessId) return;
     setSavingCommissions(true);
@@ -863,6 +915,7 @@ const Configuracion: React.FC = () => {
       label: 'Sistema',
       items: [
         { id: 'funciones',  label: 'Funciones',             icon: Sliders },
+        { id: 'atajos',     label: 'Atajos de teclado',     icon: Command },
         { id: 'seguridad',  label: 'Seguridad',             icon: ShieldCheck },
         { id: 'suscripcion',label: 'Suscripción',           icon: CreditCard },
         ...(isAdmin ? [{ id: 'devtest', label: 'Dev / Test', icon: Database }] : []),
@@ -3347,6 +3400,64 @@ const Configuracion: React.FC = () => {
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* ── SECTION: ATAJOS DE TECLADO ── */}
+            {activeSection === 'atajos' && (
+              <div className="space-y-6 animate-in fade-in">
+                <div className="bg-white dark:bg-[#0d1424] p-6 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 space-y-6">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                      <Command size={18} className="text-indigo-500" />
+                      Atajos de teclado
+                    </h3>
+                    <p className="text-xs text-slate-400 dark:text-white/30 mt-1">
+                      Personaliza la tecla que se usa junto con <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/10 text-[10px]">Alt</kbd> para saltar a cada módulo. Usa un solo carácter por módulo (letra o número).
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {Object.keys(NAV_SHORTCUT_LABELS).map(tab => (
+                      <div key={tab} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-100 dark:border-white/[0.07] bg-slate-50/40 dark:bg-white/[0.02]">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-slate-700 dark:text-white/80 truncate">{NAV_SHORTCUT_LABELS[tab]}</div>
+                          <div className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5">Por defecto: Alt+{DEFAULT_NAV_SHORTCUTS[tab]?.toUpperCase()}</div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-slate-400 dark:text-white/30">Alt+</span>
+                          <input
+                            type="text"
+                            maxLength={1}
+                            value={(navShortcuts[tab] || '').toUpperCase()}
+                            onChange={(e) => {
+                              const v = e.target.value.trim().toLowerCase();
+                              setNavShortcuts(prev => ({ ...prev, [tab]: v }));
+                            }}
+                            className="w-12 h-10 text-center rounded-lg bg-white dark:bg-[#0a0f1a] border border-slate-200 dark:border-white/10 text-sm font-black text-slate-800 dark:text-white uppercase focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-white/[0.07]">
+                    <button
+                      onClick={() => setNavShortcuts(DEFAULT_NAV_SHORTCUTS)}
+                      className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-white/[0.05] text-slate-700 dark:text-white/60 text-xs font-bold hover:bg-slate-200 dark:hover:bg-white/10"
+                    >
+                      Restaurar por defecto
+                    </button>
+                    <button
+                      onClick={handleSaveNavShortcuts}
+                      disabled={savingShortcuts}
+                      className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold disabled:opacity-40 flex items-center gap-2"
+                    >
+                      {savingShortcuts ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                      Guardar atajos
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
