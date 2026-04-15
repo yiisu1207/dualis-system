@@ -18,7 +18,9 @@ import {
   ChevronUp,
   Globe,
   Loader2,
+  Plus,
   RefreshCw,
+  Trash2,
   TrendingDown,
   TrendingUp,
   X,
@@ -84,6 +86,10 @@ const TasasPageRedesign: React.FC<Props> = ({ businessId, currentUser, customRat
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [mgmtOpen, setMgmtOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [mgmtSaving, setMgmtSaving] = useState(false);
 
   // Listen to rate history
   useEffect(() => {
@@ -153,7 +159,7 @@ const TasasPageRedesign: React.FC<Props> = ({ businessId, currentUser, customRat
     : 0;
 
   const spark = useMemo(() => {
-    const last = entries.filter(e => e.bcv > 0).slice(0, 7).reverse();
+    const last = entries.filter(e => e.bcv > 0).slice(0, 14).reverse();
     if (last.length < 2) return null;
     const vals = last.map(e => e.bcv);
     const min = Math.min(...vals), max = Math.max(...vals);
@@ -298,16 +304,21 @@ const TasasPageRedesign: React.FC<Props> = ({ businessId, currentUser, customRat
           </div>
 
           {spark && (
-            <svg viewBox={`0 0 ${spark.w} ${spark.h}`} width={spark.w} height={spark.h} className="shrink-0">
-              <polyline
-                points={spark.pts}
-                fill="none"
-                stroke={spark.up ? '#10b981' : '#ef4444'}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <div className="shrink-0 flex flex-col items-center gap-1">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">
+                Tendencia 14d
+              </span>
+              <svg viewBox={`0 0 ${spark.w} ${spark.h}`} width={spark.w} height={spark.h}>
+                <polyline
+                  points={spark.pts}
+                  fill="none"
+                  stroke={spark.up ? '#10b981' : '#ef4444'}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
           )}
 
           <button
@@ -446,15 +457,22 @@ const TasasPageRedesign: React.FC<Props> = ({ businessId, currentUser, customRat
 
       {/* ─── FALLBACK POLICY ──────────────────────────────────────── */}
       <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/5 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-white/[0.06]">
-          <h3 className="text-sm font-black text-slate-700 dark:text-white/80 uppercase tracking-widest">
-            Política de fallback
-          </h3>
-          <p className="text-[10px] font-bold text-slate-400 dark:text-white/20 mt-0.5">
-            Cuando un vale tiene fecha sin tasa publicada, ¿qué hacer?
-          </p>
-        </div>
-        <div className="p-5 space-y-2">
+        <button
+          onClick={() => setPolicyOpen(o => !o)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
+        >
+          <div className="text-left">
+            <h3 className="text-sm font-black text-slate-700 dark:text-white/80 uppercase tracking-widest">
+              Política de fallback
+            </h3>
+            <p className="text-[10px] font-bold text-slate-400 dark:text-white/20 mt-0.5">
+              Cuando un vale tiene fecha sin tasa publicada · Actual: {fallbackPolicy === 'prior' ? 'Día anterior' : fallbackPolicy === 'posterior' ? 'Día posterior' : 'Preguntar'}
+            </p>
+          </div>
+          {policyOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+        </button>
+        {policyOpen && (
+        <div className="p-5 space-y-2 border-t border-slate-100 dark:border-white/[0.06]">
           {([
             { v: 'prior' as const, t: 'Usar la BCV del día hábil anterior más cercano', sub: 'Recomendado (comportamiento BCV real)' },
             { v: 'posterior' as const, t: 'Usar la BCV del día posterior más cercano', sub: 'Si publican retroactivo' },
@@ -484,6 +502,7 @@ const TasasPageRedesign: React.FC<Props> = ({ businessId, currentUser, customRat
             );
           })}
         </div>
+        )}
       </div>
 
       {/* ─── HISTORY (collapsed) ──────────────────────────────────── */}
@@ -529,9 +548,9 @@ const TasasPageRedesign: React.FC<Props> = ({ businessId, currentUser, customRat
                         {e.bcv > 0 ? e.bcv.toFixed(4) : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        {e.customRates && Object.keys(e.customRates).length > 0 ? (
+                        {e.customRates && Object.keys(e.customRates).filter(k => k.toLowerCase() !== 'bcv').length > 0 ? (
                           <div className="flex flex-wrap gap-1">
-                            {Object.entries(e.customRates).map(([k, v]) => (
+                            {Object.entries(e.customRates).filter(([k]) => k.toLowerCase() !== 'bcv').map(([k, v]) => (
                               <span key={k} className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
                                 {k} · {Number(v).toFixed(2)}
                               </span>
@@ -592,6 +611,122 @@ const TasasPageRedesign: React.FC<Props> = ({ businessId, currentUser, customRat
                 </tbody>
               </table>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* ─── GESTIÓN DE CUENTAS (collapsed) ─────────────────────── */}
+      <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/5 overflow-hidden">
+        <button
+          onClick={() => setMgmtOpen(o => !o)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
+        >
+          <div className="text-left">
+            <h3 className="text-sm font-black text-slate-700 dark:text-white/80 uppercase tracking-widest">Gestión de Cuentas</h3>
+            <p className="text-[10px] font-bold text-slate-400 dark:text-white/20 mt-0.5">
+              {customRates.length} {customRates.length === 1 ? 'cuenta adicional' : 'cuentas adicionales'} · Agregar o eliminar tasas
+            </p>
+          </div>
+          {mgmtOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+        </button>
+        {mgmtOpen && (
+          <div className="p-5 space-y-3 border-t border-slate-100 dark:border-white/[0.06]">
+            {customRates.map(account => (
+              <div key={account.id} className="flex items-center gap-3 group">
+                <div className="flex-1 flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-xl">
+                  <span className="text-xs font-black text-slate-500 dark:text-white/30 uppercase tracking-wider min-w-[80px]">
+                    {account.name}
+                  </span>
+                  <span className="text-[9px] font-bold text-slate-400 dark:text-white/20 uppercase tracking-widest">{account.id}</span>
+                  {account.value > 0 && (
+                    <span className="ml-auto text-[10px] font-bold text-slate-400 dark:text-white/30 whitespace-nowrap tabular-nums">
+                      Bs.{account.value.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={async () => {
+                    const updated = customRates.filter(a => a.id !== account.id);
+                    setMgmtSaving(true);
+                    try {
+                      await updateCustomRates(updated);
+                      toast.success('Cuenta eliminada');
+                    } catch {
+                      toast.error('Error al eliminar');
+                    } finally {
+                      setMgmtSaving(false);
+                    }
+                  }}
+                  disabled={mgmtSaving}
+                  className="h-10 w-10 rounded-xl border border-transparent hover:border-rose-500/20 hover:bg-rose-500/10 flex items-center justify-center text-slate-300 dark:text-white/10 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-20"
+                  title="Eliminar cuenta"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            {customRates.length === 0 && (
+              <p className="text-center text-xs font-bold text-slate-400 dark:text-white/15 py-4">
+                No hay cuentas adicionales configuradas
+              </p>
+            )}
+            <div className="flex items-center gap-3 pt-2 border-t border-slate-100 dark:border-white/[0.04]">
+              <input
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={async e => {
+                  if (e.key !== 'Enter') return;
+                  const name = newName.trim();
+                  if (!name) return;
+                  const id = name.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+                  if (customRates.some(a => a.id === id)) {
+                    toast.error('Ya existe una cuenta con ese nombre');
+                    return;
+                  }
+                  const updated: CustomRate[] = [...customRates, { id, name, value: 0, enabled: true }];
+                  setMgmtSaving(true);
+                  try {
+                    await updateCustomRates(updated);
+                    setNewName('');
+                    toast.success(`Cuenta ${name} agregada`);
+                  } catch {
+                    toast.error('Error al guardar');
+                  } finally {
+                    setMgmtSaving(false);
+                  }
+                }}
+                placeholder="Nombre de nueva cuenta (ej: PARALELA)..."
+                className="flex-1 px-4 py-3 bg-slate-50 dark:bg-white/[0.03] border border-dashed border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-800 dark:text-white placeholder:text-slate-300 dark:placeholder:text-white/15 focus:ring-2 focus:ring-violet-400/20 outline-none transition-all"
+              />
+              <button
+                onClick={async () => {
+                  const name = newName.trim();
+                  if (!name) return;
+                  const id = name.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+                  if (customRates.some(a => a.id === id)) {
+                    toast.error('Ya existe una cuenta con ese nombre');
+                    return;
+                  }
+                  const updated: CustomRate[] = [...customRates, { id, name, value: 0, enabled: true }];
+                  setMgmtSaving(true);
+                  try {
+                    await updateCustomRates(updated);
+                    setNewName('');
+                    toast.success(`Cuenta ${name} agregada`);
+                  } catch {
+                    toast.error('Error al guardar');
+                  } finally {
+                    setMgmtSaving(false);
+                  }
+                }}
+                disabled={!newName.trim() || mgmtSaving}
+                className="h-11 px-4 rounded-xl text-xs font-black text-white flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 disabled:opacity-20 shadow-md"
+                style={{ background: 'linear-gradient(135deg,#7c3aed,#6d28d9)' }}
+              >
+                {mgmtSaving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={14} />}
+                Agregar
+              </button>
+            </div>
           </div>
         )}
       </div>

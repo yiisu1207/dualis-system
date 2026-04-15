@@ -924,7 +924,7 @@ const NavItemRow: React.FC<NavItemRowProps> = ({
       {item.label}
     </span>
     {!collapsed && shortcutHint && (
-      <span className="shrink-0 text-[8px] font-mono font-bold text-white/10 group-hover:text-white/20 transition-colors ml-auto mr-0.5">
+      <span className={`shrink-0 text-[9px] font-mono font-bold ml-auto mr-0.5 px-1.5 py-0.5 rounded border transition-colors ${isActive ? 'bg-white/15 border-white/25 text-white' : 'bg-white/[0.06] border-white/10 text-white/55 group-hover:text-white/80 group-hover:border-white/20'}`}>
         {shortcutHint.replace('Alt+', '⌥')}
       </span>
     )}
