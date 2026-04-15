@@ -21,10 +21,10 @@ interface ReconciliationReportProps {
 type TabKey = 'confirmados' | 'revisar' | 'no_encontrados' | 'solo_banco';
 
 const TAB_DEFS: Array<{ key: TabKey; label: string; icon: React.ReactNode; color: string }> = [
-  { key: 'confirmados',    label: 'Confirmados',     icon: <CheckCircle2 size={14} />, color: 'text-emerald-600' },
-  { key: 'revisar',        label: 'Revisar',         icon: <AlertTriangle size={14} />, color: 'text-amber-600' },
-  { key: 'no_encontrados', label: 'No encontrados',  icon: <XCircle size={14} />, color: 'text-rose-600' },
-  { key: 'solo_banco',     label: 'Solo en banco',   icon: <Landmark size={14} />, color: 'text-slate-600' },
+  { key: 'confirmados',    label: 'Confirmados',     icon: <CheckCircle2 size={14} />, color: 'text-emerald-600 dark:text-emerald-300' },
+  { key: 'revisar',        label: 'Revisar',         icon: <AlertTriangle size={14} />, color: 'text-amber-600 dark:text-amber-300' },
+  { key: 'no_encontrados', label: 'No encontrados',  icon: <XCircle size={14} />, color: 'text-rose-600 dark:text-rose-300' },
+  { key: 'solo_banco',     label: 'Solo en banco',   icon: <Landmark size={14} />, color: 'text-slate-600 dark:text-slate-300' },
 ];
 
 function downloadCsv(filename: string, rows: Array<Record<string, any>>) {
@@ -134,8 +134,8 @@ export default function ReconciliationReport({ abonos, pool, onEditAbono, onDele
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200">
-      <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-between flex-wrap gap-3">
+    <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+      <div className="border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between flex-wrap gap-3">
         <div className="flex gap-1">
           {TAB_DEFS.map(t => {
             const active = t.key === tab;
@@ -145,13 +145,13 @@ export default function ReconciliationReport({ abonos, pool, onEditAbono, onDele
                 onClick={() => setTab(t.key)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   active
-                    ? 'bg-indigo-100 text-indigo-800'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
                 }`}
               >
-                <span className={active ? 'text-indigo-700' : t.color}>{t.icon}</span>
+                <span className={active ? 'text-indigo-700 dark:text-indigo-300' : t.color}>{t.icon}</span>
                 {t.label}
-                <span className={`text-xs ${active ? 'text-indigo-700' : 'text-slate-400'}`}>({counts[t.key]})</span>
+                <span className={`text-xs ${active ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-400 dark:text-slate-500'}`}>({counts[t.key]})</span>
               </button>
             );
           })}
@@ -162,12 +162,12 @@ export default function ReconciliationReport({ abonos, pool, onEditAbono, onDele
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filtrar..."
-            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm w-44 focus:outline-none focus:border-indigo-400"
+            className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-sm w-44 focus:outline-none focus:border-indigo-400 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
           <button
             onClick={exportCompleteReport}
             disabled={!abonos.length}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 disabled:opacity-40"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 dark:bg-slate-700 text-white rounded-lg text-xs font-medium hover:bg-slate-800 dark:hover:bg-slate-600 disabled:opacity-40"
           >
             <Download size={12} /> Reporte completo
           </button>
@@ -221,21 +221,21 @@ function TableAbonos({ list, pool, onExport, onEdit, onDelete }: {
   onDelete?: (id: string) => void;
 }) {
   if (!list.length) {
-    return <div className="text-center text-slate-400 py-8 text-sm">Sin abonos.</div>;
+    return <div className="text-center text-slate-400 dark:text-slate-500 py-8 text-sm">Sin abonos.</div>;
   }
   return (
     <div>
       <div className="flex justify-end mb-2">
         <button
           onClick={onExport}
-          className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900"
+          className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
         >
           <Download size={12} /> Exportar CSV
         </button>
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+          <tr className="text-left text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
             <th className="py-2">Fecha</th>
             <th className="py-2">Monto</th>
             <th className="py-2">Cliente</th>
@@ -249,27 +249,27 @@ function TableAbonos({ list, pool, onExport, onEdit, onDelete }: {
           {list.map(a => {
             const row = a.matchRowId ? pool.find(r => r.rowId === a.matchRowId) : null;
             return (
-              <tr key={a.id} className="border-b border-slate-100 hover:bg-slate-50">
+              <tr key={a.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                 <td className="py-2">{a.date}</td>
                 <td className="py-2 font-mono">${a.amount.toFixed(2)}</td>
-                <td className="py-2">{a.clientName || <span className="text-slate-400">—</span>}</td>
-                <td className="py-2 font-mono text-xs text-slate-600">{a.reference || '—'}</td>
-                <td className="py-2 text-xs text-slate-500">{a.operationType || '—'}</td>
+                <td className="py-2">{a.clientName || <span className="text-slate-400 dark:text-slate-500">—</span>}</td>
+                <td className="py-2 font-mono text-xs text-slate-600 dark:text-slate-300">{a.reference || '—'}</td>
+                <td className="py-2 text-xs text-slate-500 dark:text-slate-400">{a.operationType || '—'}</td>
                 <td className="py-2 text-xs">
                   {row ? (
-                    <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                    <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded">
                       <Landmark size={10} /> {row.accountLabel || a.matchAccountAlias}
                     </span>
-                  ) : <span className="text-slate-400">—</span>}
+                  ) : <span className="text-slate-400 dark:text-slate-500">—</span>}
                 </td>
                 <td className="py-2 text-right">
                   {onEdit && (
-                    <button onClick={() => onEdit(a.id)} className="text-xs text-slate-400 hover:text-indigo-700 mr-2" title="Editar">
+                    <button onClick={() => onEdit(a.id)} className="text-xs text-slate-400 dark:text-slate-500 hover:text-indigo-700 dark:hover:text-indigo-300 mr-2" title="Editar">
                       <Eye size={14} />
                     </button>
                   )}
                   {onDelete && (
-                    <button onClick={() => onDelete(a.id)} className="text-xs text-slate-400 hover:text-rose-600" title="Borrar">
+                    <button onClick={() => onDelete(a.id)} className="text-xs text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-300" title="Borrar">
                       ×
                     </button>
                   )}
@@ -285,18 +285,18 @@ function TableAbonos({ list, pool, onExport, onEdit, onDelete }: {
 
 function TableBankRows({ rows, onExport }: { rows: BankRow[]; onExport: () => void }) {
   if (!rows.length) {
-    return <div className="text-center text-slate-400 py-8 text-sm">Sin filas sin conciliar.</div>;
+    return <div className="text-center text-slate-400 dark:text-slate-500 py-8 text-sm">Sin filas sin conciliar.</div>;
   }
   return (
     <div>
       <div className="flex justify-end mb-2">
-        <button onClick={onExport} className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900">
+        <button onClick={onExport} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
           <Download size={12} /> Exportar CSV
         </button>
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+          <tr className="text-left text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
             <th className="py-2">Cuenta</th>
             <th className="py-2">Fecha</th>
             <th className="py-2">Monto</th>
@@ -306,16 +306,16 @@ function TableBankRows({ rows, onExport }: { rows: BankRow[]; onExport: () => vo
         </thead>
         <tbody>
           {rows.map(r => (
-            <tr key={r.rowId} className="border-b border-slate-100 hover:bg-slate-50">
+            <tr key={r.rowId} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50">
               <td className="py-2 text-xs">
-                <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-2 py-0.5 rounded">
                   <Landmark size={10} /> {r.accountLabel || r.accountAlias}
                 </span>
               </td>
               <td className="py-2">{r.date}</td>
               <td className="py-2 font-mono">${r.amount.toFixed(2)}</td>
-              <td className="py-2 font-mono text-xs text-slate-600">{r.reference || '—'}</td>
-              <td className="py-2 text-xs text-slate-600 truncate max-w-md" title={r.description || ''}>{r.description || ''}</td>
+              <td className="py-2 font-mono text-xs text-slate-600 dark:text-slate-300">{r.reference || '—'}</td>
+              <td className="py-2 text-xs text-slate-600 dark:text-slate-300 truncate max-w-md" title={r.description || ''}>{r.description || ''}</td>
             </tr>
           ))}
         </tbody>

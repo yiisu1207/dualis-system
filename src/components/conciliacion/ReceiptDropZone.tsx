@@ -60,24 +60,24 @@ export default function ReceiptDropZone({ disabled, progress, onDropSingle, onDr
       onDrop={onDrop}
       className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors ${
         disabled
-          ? 'bg-slate-50 border-slate-200 opacity-60'
+          ? 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 opacity-60'
           : dragActive
-            ? 'bg-indigo-50 border-indigo-400'
-            : 'bg-white border-slate-300 hover:border-indigo-300'
+            ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-400 dark:border-indigo-500'
+            : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-500'
       }`}
     >
       {progress && progress.total > 0 ? (
-        <div className="flex items-center justify-center gap-2 text-sm text-indigo-700">
+        <div className="flex items-center justify-center gap-2 text-sm text-indigo-700 dark:text-indigo-300">
           <Loader2 size={16} className="animate-spin" />
           Procesando {progress.done}/{progress.total}...
         </div>
       ) : (
         <>
-          <ImageIcon size={24} className="mx-auto text-slate-400 mb-2" />
-          <div className="text-sm font-medium text-slate-700">
+          <ImageIcon size={24} className="mx-auto text-slate-400 dark:text-slate-500 mb-2" />
+          <div className="text-sm font-medium text-slate-700 dark:text-slate-200">
             Arrastra capturas de comprobantes aquí
           </div>
-          <div className="text-xs text-slate-500 mt-0.5">
+          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             1 imagen → llena el form · varias → cola de revisión · máx 5MB c/u
           </div>
           <label className="mt-2 inline-block">
@@ -89,14 +89,14 @@ export default function ReceiptDropZone({ disabled, progress, onDropSingle, onDr
               onChange={onPickFiles}
               disabled={disabled}
             />
-            <span className="text-xs text-indigo-600 cursor-pointer hover:underline">
+            <span className="text-xs text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline">
               o haz clic para seleccionar
             </span>
           </label>
         </>
       )}
       {error && (
-        <div className="mt-2 text-xs text-rose-600">{error}</div>
+        <div className="mt-2 text-xs text-rose-600 dark:text-rose-300">{error}</div>
       )}
     </div>
   );

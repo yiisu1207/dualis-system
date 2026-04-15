@@ -140,21 +140,21 @@ export default function BatchReviewModal({ items, pool, existingAbonos, onClose,
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl">
-        <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl">
+        <div className="border-b border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-800">Revisar comprobantes extraídos</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Revisar comprobantes extraídos</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {stats.total} imágenes · {stats.highConf} con match alta confianza · {stats.withErrors > 0 && `${stats.withErrors} con error · `}
               {stats.keeping} se confirmarán
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+          <button onClick={onClose} className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
             <X size={20} />
           </button>
         </div>
 
-        <div className="px-6 py-3 border-b border-slate-200 flex items-center gap-3 bg-slate-50">
+        <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 bg-slate-50 dark:bg-slate-900">
           <button
             onClick={acceptAllHighConfidence}
             disabled={loading || stats.highConf === 0}
@@ -165,7 +165,7 @@ export default function BatchReviewModal({ items, pool, existingAbonos, onClose,
           <button
             onClick={() => setTickets(prev => prev.map(t => ({ ...t, keep: false })))}
             disabled={loading}
-            className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-200"
+            className="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-600"
           >
             <Trash2 size={12} className="inline mr-1" /> Descartar todos
           </button>
@@ -173,7 +173,7 @@ export default function BatchReviewModal({ items, pool, existingAbonos, onClose,
 
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
-            <div className="text-center text-slate-500 py-12">Preparando tarjetas...</div>
+            <div className="text-center text-slate-500 dark:text-slate-400 py-12">Preparando tarjetas...</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {tickets.map((t) => {
@@ -182,37 +182,37 @@ export default function BatchReviewModal({ items, pool, existingAbonos, onClose,
                   <div
                     key={t.imageHash}
                     className={`border-2 rounded-xl p-3 ${
-                      t.error ? 'border-rose-200 bg-rose-50' :
-                      !t.keep ? 'border-slate-200 bg-slate-50 opacity-60' :
-                      'border-slate-200 bg-white'
+                      t.error ? 'border-rose-200 dark:border-rose-700/50 bg-rose-50 dark:bg-rose-900/30' :
+                      !t.keep ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 opacity-60' :
+                      'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'
                     }`}
                   >
                     <div className="flex gap-3">
                       <img
                         src={t.thumbnail}
                         alt=""
-                        className="w-24 h-24 object-cover rounded-lg flex-shrink-0 bg-slate-100"
+                        className="w-24 h-24 object-cover rounded-lg flex-shrink-0 bg-slate-100 dark:bg-slate-700"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-500 truncate" title={t.file.name}>
+                          <span className="text-xs text-slate-500 dark:text-slate-400 truncate" title={t.file.name}>
                             {t.file.name}
                           </span>
                           <button
                             onClick={() => updateTicket(t.imageHash, { keep: !t.keep })}
-                            className="text-xs text-slate-400 hover:text-slate-700 ml-2 flex-shrink-0"
+                            className="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 ml-2 flex-shrink-0"
                             title={t.keep ? 'Descartar' : 'Incluir'}
                           >
                             {t.keep ? <Trash2 size={14} /> : <Check size={14} />}
                           </button>
                         </div>
                         {t.error && (
-                          <div className="mt-1 text-xs text-rose-700 flex items-start gap-1">
+                          <div className="mt-1 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-1">
                             <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" /> {t.error}
                           </div>
                         )}
                         {t.duplicateOfId && (
-                          <div className="mt-1 text-xs text-amber-800 bg-amber-100 rounded px-2 py-1">
+                          <div className="mt-1 text-xs text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 rounded px-2 py-1">
                             ⚠ Posible duplicado de abono existente
                           </div>
                         )}
@@ -228,46 +228,46 @@ export default function BatchReviewModal({ items, pool, existingAbonos, onClose,
                             value={t.abono.amount || ''}
                             onChange={(e) => updateAbono(t.imageHash, { amount: parseFloat(e.target.value) || 0 })}
                             placeholder="Monto"
-                            className="px-2 py-1 border border-slate-300 rounded text-xs"
+                            className="px-2 py-1 border border-slate-300 dark:border-slate-600 rounded text-xs dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                           />
                           <input
                             type="date"
                             value={t.abono.date}
                             onChange={(e) => updateAbono(t.imageHash, { date: e.target.value })}
-                            className="px-2 py-1 border border-slate-300 rounded text-xs"
+                            className="px-2 py-1 border border-slate-300 dark:border-slate-600 rounded text-xs dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                           />
                           <input
                             type="text"
                             value={t.abono.reference || ''}
                             onChange={(e) => updateAbono(t.imageHash, { reference: e.target.value || undefined })}
                             placeholder="Ref"
-                            className="px-2 py-1 border border-slate-300 rounded text-xs font-mono"
+                            className="px-2 py-1 border border-slate-300 dark:border-slate-600 rounded text-xs font-mono dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                           />
                           <input
                             type="text"
                             value={t.abono.cedula || ''}
                             onChange={(e) => updateAbono(t.imageHash, { cedula: e.target.value || undefined })}
                             placeholder="Cédula"
-                            className="px-2 py-1 border border-slate-300 rounded text-xs"
+                            className="px-2 py-1 border border-slate-300 dark:border-slate-600 rounded text-xs dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                           />
                           <input
                             type="text"
                             value={t.abono.phone || ''}
                             onChange={(e) => updateAbono(t.imageHash, { phone: e.target.value || undefined })}
                             placeholder="Teléfono"
-                            className="px-2 py-1 border border-slate-300 rounded text-xs"
+                            className="px-2 py-1 border border-slate-300 dark:border-slate-600 rounded text-xs dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                           />
                           <input
                             type="text"
                             value={t.abono.clientName || ''}
                             onChange={(e) => updateAbono(t.imageHash, { clientName: e.target.value || undefined })}
                             placeholder="Emisor"
-                            className="px-2 py-1 border border-slate-300 rounded text-xs"
+                            className="px-2 py-1 border border-slate-300 dark:border-slate-600 rounded text-xs dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                           />
                         </div>
 
                         {topMatch ? (
-                          <label className="flex items-start gap-2 text-xs bg-emerald-50 border border-emerald-200 rounded-lg p-2 cursor-pointer">
+                          <label className="flex items-start gap-2 text-xs bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700/50 rounded-lg p-2 cursor-pointer">
                             <input
                               type="checkbox"
                               checked={t.pickedRowId === topMatch.row.rowId}
@@ -277,16 +277,16 @@ export default function BatchReviewModal({ items, pool, existingAbonos, onClose,
                               className="mt-0.5"
                             />
                             <div className="flex-1">
-                              <span className="font-medium text-emerald-800">
+                              <span className="font-medium text-emerald-800 dark:text-emerald-300">
                                 Match {topMatch.confidence}: {topMatch.row.accountLabel} · ${topMatch.row.amount.toFixed(2)} · {topMatch.row.date}
                               </span>
-                              <div className="text-[10px] text-emerald-700 mt-0.5">
+                              <div className="text-[10px] text-emerald-700 dark:text-emerald-300 mt-0.5">
                                 {topMatch.reasons.slice(0, 3).join(' · ')}
                               </div>
                             </div>
                           </label>
                         ) : (
-                          <div className="text-xs text-slate-500 italic">Sin match en el pool</div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400 italic">Sin match en el pool</div>
                         )}
                       </div>
                     )}
@@ -297,10 +297,10 @@ export default function BatchReviewModal({ items, pool, existingAbonos, onClose,
           )}
         </div>
 
-        <div className="border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-3">
+        <div className="border-t border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900"
+            className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
           >
             Cancelar
           </button>

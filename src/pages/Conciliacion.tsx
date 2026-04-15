@@ -366,20 +366,20 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
   const poolTotalCredit = useMemo(() => pool.reduce((s, r) => s + Math.max(0, r.amount), 0), [pool]);
 
   if (!businessId) {
-    return <div className="p-6 text-slate-500">Cargando...</div>;
+    return <div className="p-6 text-slate-500 dark:text-slate-400">Cargando...</div>;
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
-              <FileCheck size={20} className="text-indigo-700" />
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+              <FileCheck size={20} className="text-indigo-700 dark:text-indigo-300" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-slate-900">Conciliación Bancaria</h1>
-              <p className="text-xs text-slate-500">
+              <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Conciliación Bancaria</h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Pool: {pool.length} filas · {accounts.length} cuenta{accounts.length !== 1 ? 's' : ''} · $
                 {poolTotalCredit.toFixed(2)} crédito · {abonos.length} abono{abonos.length !== 1 ? 's' : ''} en sesión
               </p>
@@ -389,7 +389,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
             type="month"
             value={monthKey}
             onChange={(e) => setMonthKey(e.target.value || currentMonthKey())}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:border-indigo-400"
+            className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-400"
           />
         </div>
 
@@ -400,14 +400,14 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
         />
 
         {loadingAccounts ? (
-          <div className="flex items-center justify-center py-12 text-slate-500">
+          <div className="flex items-center justify-center py-12 text-slate-500 dark:text-slate-400">
             <Loader2 size={18} className="animate-spin mr-2" /> Cargando cuentas del mes...
           </div>
         ) : accounts.length === 0 ? (
-          <div className="bg-white rounded-xl border-2 border-dashed border-slate-200 p-12 text-center">
-            <FileCheck size={32} className="mx-auto text-slate-400 mb-3" />
-            <div className="text-sm font-medium text-slate-700">Sube el primer estado de cuenta del mes</div>
-            <div className="text-xs text-slate-500 mt-1">
+          <div className="bg-white dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 text-center">
+            <FileCheck size={32} className="mx-auto text-slate-400 dark:text-slate-500 mb-3" />
+            <div className="text-sm font-medium text-slate-700 dark:text-slate-200">Sube el primer estado de cuenta del mes</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               Agrega una cuenta bancaria para empezar a conciliar abonos
             </div>
           </div>
@@ -431,10 +431,10 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
               />
             </div>
             <div className="lg:col-span-3">
-              <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-slate-800">Coincidencias en el pool</h3>
-                  <span className="text-xs text-slate-500">
+                  <h3 className="font-semibold text-slate-800 dark:text-slate-100">Coincidencias en el pool</h3>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
                     {liveMatches.length} match{liveMatches.length !== 1 ? 'es' : ''}
                   </span>
                 </div>
