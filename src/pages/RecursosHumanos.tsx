@@ -18,6 +18,7 @@ import { printVoucherSheet, printPayslip, printPayrollRunPDF, printCortePDF, exp
 import { logAudit } from '../utils/auditLogger';
 import { useRates } from '../context/RatesContext';
 import { findRateForDate, formatRateSourceDate } from '../utils/rateLookup';
+import { VoucherRateAuditPanel } from '../components/rrhh/VoucherRateAuditPanel';
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const DEPARTMENTS = ['Administración','Ventas','Almacén','Caja','Operaciones','Gerencia','Servicios','Logística','RRHH','Otro'];
@@ -545,6 +546,10 @@ export default function RecursosHumanos() {
   // Voucher correction
   const [correcting, setCorrecting] = useState<{v:Voucher; newAmt:string; newDate:string; newCurrency:'USD'|'BS'; note:string}|null>(null);
 
+  // Voucher audit panel
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [activePolicy, setActivePolicy] = useState<'prior'|'posterior'|'ask'>('prior');
+
   // Time entries quick form
   const [te, setTe] = useState({ empId:'', date: new Date().toISOString().slice(0,10), type:'overtime' as TimeEntry['type'], hours:'', days:'', reason:'' });
 
@@ -638,6 +643,16 @@ export default function RecursosHumanos() {
       s=>setCortes(s.docs.map(d=>({id:d.id,...d.data()} as CorteRecord))),
       ()=>{});
     return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();u9();};
+  }, [bid]);
+
+  // Rate fallback policy subscription
+  useEffect(() => {
+    if (!bid) return;
+    const unsub = onSnapshot(doc(db, 'businessConfigs', bid), (s) => {
+      const pol = s.data()?.ratePolicy?.missingDateFallback;
+      setActivePolicy(pol === 'posterior' || pol === 'ask' ? pol : 'prior');
+    }, () => {});
+    return () => unsub();
   }, [bid]);
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -1448,6 +1463,12 @@ export default function RecursosHumanos() {
                   <Ticket size={18} className="text-indigo-500"/>
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Control de Vales</h3>
                   {currentRate>0&&<span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase rounded-full border border-indigo-100 dark:border-indigo-500/25">Tasa: Bs {fmtHR(currentRate)}</span>}
+                  <button
+                    onClick={()=>setAuditOpen(true)}
+                    className="ml-auto px-3 py-1.5 text-[10px] font-black uppercase bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-400/30 rounded-lg hover:bg-amber-500/25 transition"
+                  >
+                    Auditar tasas
+                  </button>
                 </div>
                 {/* Hint banner */}
                 <div className="flex items-start gap-3 p-3 mb-3 bg-amber-50 dark:bg-amber-500/[0.08] border border-amber-200 dark:border-amber-500/25 rounded-xl">
@@ -1873,6 +1894,18 @@ export default function RecursosHumanos() {
                   </tbody>
                 </table>
               </div>
+              <VoucherRateAuditPanel
+                open={auditOpen}
+                onClose={()=>setAuditOpen(false)}
+                vouchers={vouchers as any}
+                employees={employees.map(e=>({id:e.id, fullName:e.fullName, paymentCurrency:e.paymentCurrency}))}
+                bcvHistory={bcvHistory}
+                voucherRateHistory={voucherRates.map(r=>({date: r.effectiveDate ?? (r.createdAt?.toDate?.()?.toISOString?.().slice(0,10) ?? ''), bcv: r.rate}))}
+                policy={activePolicy}
+                businessId={bid}
+                currentUser={{uid: myUid, displayName: userProfile?.displayName || ''}}
+                onRequestCorrection={(v, amt, date)=>{ setCorrecting({v: v as any, newAmt: String(amt), newDate: date, newCurrency: v.currency, note: ''}); setAuditOpen(false); }}
+              />
             </>
           )}
 
