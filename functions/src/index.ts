@@ -16,6 +16,9 @@ import * as admin from 'firebase-admin';
 admin.initializeApp();
 const db = admin.firestore();
 
+// ─── Conciliación Bancaria — OCR de comprobantes vía Anthropic Vision ──────────
+export { extractReceipt } from './extractReceipt';
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Loads vendorOverrides for a business (webhook URL, etc.) */

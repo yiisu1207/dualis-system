@@ -231,6 +231,14 @@ service cloud.firestore {
         allow delete: if isAdmin(bid);
       }
 
+      // Conciliación bancaria — solo owner/admin
+      match /bankStatements/{month} {
+        allow read, write, delete: if isAdmin(bid);
+        match /accounts/{alias} {
+          allow read, write, delete: if isAdmin(bid);
+        }
+      }
+
       // Catch-all: cualquier subcollection NO listada arriba
       // Miembros pueden leer y crear/actualizar; solo admin puede borrar
       match /{allSubcollections=**} {

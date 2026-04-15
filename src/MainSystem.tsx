@@ -65,7 +65,7 @@ const SucursalesManager = lazy(() => import('./pages/SucursalesManager'));
 import TrialBanner from './components/TrialBanner';
 import NotificationCenter from './components/NotificationCenter';
 import ReportesSection from './components/ReportesSection';
-const ReconciliationSection = lazy(() => import('./components/ReconciliationSection'));
+const Conciliacion = lazy(() => import('./pages/Conciliacion'));
 import LibroVentasSection from './components/LibroVentasSection';
 import PaymentRequestsPanel from './components/PaymentRequestsPanel';
 const DisputesPanel = lazy(() => import('./components/DisputesPanel'));
@@ -1396,7 +1396,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             {activeTab === 'conciliacion' && (
               !canView('conciliacion') ? <NoAccess /> :
               canAccess('conciliacion')
-                ? <ReconciliationSection movements={movements} businessId={businessId} ownerId={userProfile?.uid || ''} rates={legacyRates as any} />
+                ? <Conciliacion businessId={businessId} currentUserId={userProfile?.uid || ''} userRole={userProfile?.role || ''} />
                 : <LockedModule moduleName="Conciliación Bancaria" requiredPlan="negocio" isAddon />
             )}
             {activeTab === 'vision' && (
