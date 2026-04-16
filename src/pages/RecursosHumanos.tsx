@@ -2094,7 +2094,7 @@ export default function RecursosHumanos() {
                           </td>
                           <td className="px-4 py-3.5 text-right font-black text-sky-600 dark:text-sky-400">{n.netBs>0?`Bs ${fmtHR(n.netBs)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right">
-                            <button onClick={()=>printPayslip(n.emp,n,new Date().toISOString().slice(0,7),n.emp.payFrequency,businessName,pendingVouchers.filter(v=>v.employeeId===n.emp.id),undefined,loans)}
+                            <button onClick={()=>printPayslip(n.emp,n,new Date().toISOString().slice(0,7),n.emp.payFrequency,businessName,pendingVouchers.filter(v=>v.employeeId===n.emp.id),undefined,loans,pendingTimeEntries.filter(t=>t.employeeId===n.emp.id),visibleAbonos.filter(a=>a.employeeId===n.emp.id&&a.status==='PENDIENTE'))}
                               className="p-2 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all" title="Imprimir recibo">
                               <Printer size={13}/>
                             </button>

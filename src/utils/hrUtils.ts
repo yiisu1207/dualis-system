@@ -157,6 +157,8 @@ export function printPayslip(
   periodVouchers: any[] = [],
   processDate?: string,
   activeLoans: any[] = [],
+  timeEntries: any[] = [],
+  abonosList: any[] = [],
 ) {
   const w = window.open('', '_blank', 'width=794,height=900');
   if (!w) return;
@@ -172,25 +174,34 @@ export function printPayslip(
   const pBonusUSD = (emp.bonusUSD   || 0) / freqDiv;
   const pSalBs    = (emp.salaryBs   || 0) / freqDiv;
   const pBonusBs  = (emp.bonusBs    || 0) / freqDiv;
-  const pGrossUSD = pSalUSD + pBonusUSD;
+  const pOvertimeUSD = row.overtimeUSD || 0;
+  const pGrossUSD = pSalUSD + pBonusUSD + pOvertimeUSD;
   const pGrossBs  = pSalBs  + pBonusBs;
 
   // IVSS/Paro already come period-proportional from nominaRows
   const pIVSS   = row.ivssUSD    || 0;
   const pParo   = row.paroUSD    || 0;
+  const pAbsences = row.absenceDeductionUSD || 0;
   // Vouchers and loan installments are already period-based
   const pVales  = row.voucherDedUSD || 0;
   const pLoans  = row.loanDedUSD    || 0;
-  const pTotalDed = pVales + pIVSS + pParo + pLoans;
+  const pTotalDed = pVales + pIVSS + pParo + pLoans + pAbsences;
   const pNetUSD = Math.max(0, pGrossUSD - pTotalDed);
   const pNetBs  = Math.max(0, pGrossBs - (row.voucherDedBs || 0));
+  const pOverdraft = row.overdraftUSD || 0;
 
-  const voucherRows = periodVouchers.length > 0
-    ? periodVouchers.map((v: any) =>
-        `<tr><td style="padding-left:24px;color:#888">↳ ${v.reason||'Vale'} <span style="font-size:9px;color:#bbb">(${v.voucherDate||v.createdAt?.toDate?.().toLocaleDateString('es-VE')||''})</span></td>
-         <td class="tr negative">-${v.currency==='USD'?'$':'Bs '}${fmtHR(Number(v.amount))}</td></tr>`
-      ).join('')
-    : '';
+  // Separate vouchers by type for display
+  const carryOverVouchers = periodVouchers.filter((v: any) => v.isCarryOver);
+  const deferredVouchers = periodVouchers.filter((v: any) => v.deferToNextPeriod);
+  const regularVouchers = periodVouchers.filter((v: any) => !v.isCarryOver && !v.deferToNextPeriod);
+
+  const voucherSubRows = (list: any[], tag?: string) => list.map((v: any) => {
+    const tagHtml = tag ? ` <span style="font-size:8px;color:#fff;background:${tag==='Arrastre'?'#e11d48':'#7c3aed'};padding:1px 5px;border-radius:3px;font-weight:700">${tag}</span>` : '';
+    return `<tr><td style="padding-left:24px;color:#888">↳ ${v.reason||'Vale'}${tagHtml} <span style="font-size:9px;color:#bbb">(${v.voucherDate||v.createdAt?.toDate?.().toLocaleDateString('es-VE')||''})</span></td>
+     <td class="tr negative">-${v.currency==='USD'?'$':'Bs '}${fmtHR(Number(v.amount))}</td></tr>`;
+  }).join('');
+
+  const voucherRows = voucherSubRows(regularVouchers) + voucherSubRows(carryOverVouchers, 'Arrastre') + voucherSubRows(deferredVouchers, 'Próx. corte');
 
   const empLoans = (activeLoans || []).filter((l: any) => l.employeeId === emp.id && l.status === 'ACTIVO');
   const loanRows = empLoans.length > 0
@@ -199,6 +210,27 @@ export function printPayslip(
          <td class="tr negative">-${l.currency==='USD'?'$':'Bs '}${fmtHR(Number(l.installmentAmount))}</td></tr>`
       ).join('')
     : '';
+
+  // Time entries detail
+  const overtimeEntries = (timeEntries || []).filter((t: any) => t.type === 'overtime');
+  const absenceEntries = (timeEntries || []).filter((t: any) => t.type !== 'overtime');
+  const overtimeRows = overtimeEntries.map((t: any) =>
+    `<tr><td style="padding-left:24px;color:#888">↳ ${t.reason||'Horas extra'} <span style="font-size:9px;color:#bbb">(${t.date||''}${t.hours?' · '+t.hours+'h':''})</span></td>
+     <td class="tr positive">+$${fmtHR(Math.abs(t.amountUSD||0))}</td></tr>`
+  ).join('');
+  const absenceRows = absenceEntries.map((t: any) =>
+    `<tr><td style="padding-left:24px;color:#888">↳ ${t.reason||'Ausencia'} <span style="font-size:9px;color:#bbb">(${t.date||''}${t.days?' · '+t.days+' día'+(t.days>1?'s':''):''})</span></td>
+     <td class="tr negative">-$${fmtHR(Math.abs(t.amountUSD||0))}</td></tr>`
+  ).join('');
+
+  // Abonos detail
+  const abonoRows = (abonosList || []).length > 0
+    ? (abonosList || []).map((a: any) =>
+        `<tr><td style="padding-left:24px;color:#888">↳ ${a.concept||'Abono'} <span style="font-size:9px;color:#bbb">(${a.date||''})</span></td>
+         <td class="tr positive">+${a.currency==='USD'?'$':'Bs '}${fmtHR(Number(a.amount))}</td></tr>`
+      ).join('')
+    : '';
+  const abonosTotalUSD = (abonosList || []).reduce((s: number, a: any) => s + (a.currency === 'USD' ? a.amount : (a.amountUSD || 0)), 0);
 
   const emissionDate = new Date().toLocaleDateString('es-VE', { year:'numeric', month:'long', day:'numeric' });
 
@@ -221,8 +253,10 @@ export function printPayslip(
   td{padding:7px 10px;border-bottom:1px solid #ebebeb;font-size:11px}
   .tl{text-align:left}.tr{text-align:right}
   .positive{color:#16a34a;font-weight:700}.negative{color:#dc2626;font-weight:700}
+  .warning{color:#d97706;font-weight:700}
   .subtotal td{background:#f7f7f7;font-weight:700}
   .net-row td{background:#111;color:#fff;font-weight:900;font-size:15px;padding:11px 10px}
+  .overdraft-row td{background:#dc2626;color:#fff;font-weight:900;font-size:13px;padding:9px 10px}
   .sigs{display:flex;gap:60px;margin-top:40px}
   .sig{text-align:center}
   .sig-line{border-top:1px solid #111;padding-top:6px;font-size:10px;color:#666;width:200px}
@@ -259,6 +293,7 @@ export function printPayslip(
 <table>
   ${pSalUSD>0?`<tr><td class="tl">Salario Base USD</td><td class="tr positive">$${fmtHR(pSalUSD)}</td></tr>`:''}
   ${pBonusUSD>0?`<tr><td class="tl">Bono en ${emp.bonusUSDCurrency==='BS'?'Bs (BCV)':'USD'}</td><td class="tr positive">+$${fmtHR(pBonusUSD)}</td></tr>`:''}
+  ${pOvertimeUSD>0?`<tr><td class="tl">Horas Extra (${overtimeEntries.length})</td><td class="tr positive">+$${fmtHR(pOvertimeUSD)}</td></tr>${overtimeRows}`:''}
   ${pSalBs>0?`<tr><td class="tl">Salario Base Bs (BCV)</td><td class="tr positive">Bs ${fmtHR(pSalBs)}</td></tr>`:''}
   ${pBonusBs>0?`<tr><td class="tl">Bono Bs (BCV)</td><td class="tr positive">+Bs ${fmtHR(pBonusBs)}</td></tr>`:''}
   ${pGrossUSD>0?`<tr class="subtotal"><td class="tl">Total Bruto Período (USD)</td><td class="tr">$${fmtHR(pGrossUSD)}</td></tr>`:''}
@@ -267,7 +302,9 @@ export function printPayslip(
 
 <div class="section-title">Deducciones</div>
 <table>
-  ${pVales>0?`<tr><td class="tl">Vales / Adelantos (${periodVouchers.length})</td><td class="tr negative">-$${fmtHR(pVales)}</td></tr>${voucherRows}`:''}
+  ${pVales>0?`<tr><td class="tl">Vales / Adelantos (${periodVouchers.filter((v:any)=>!v.deferToNextPeriod).length})</td><td class="tr negative">-$${fmtHR(pVales)}</td></tr>${voucherRows}`:''}
+  ${abonosTotalUSD>0?`<tr><td class="tl">Abonos a cuenta (${abonosList.length})</td><td class="tr positive">+$${fmtHR(abonosTotalUSD)}</td></tr>${abonoRows}`:''}
+  ${pAbsences>0?`<tr><td class="tl">Ausencias / Faltas (${absenceEntries.length})</td><td class="tr negative">-$${fmtHR(pAbsences)}</td></tr>${absenceRows}`:''}
   ${pIVSS>0?`<tr><td class="tl">IVSS (${emp.ivssRate||4}%)</td><td class="tr negative">-$${fmtHR(pIVSS)}</td></tr>`:''}
   ${pParo>0?`<tr><td class="tl">Paro Forzoso (${emp.paroRate||2}%)</td><td class="tr negative">-$${fmtHR(pParo)}</td></tr>`:''}
   ${pLoans>0?`<tr><td class="tl">Préstamos a Cuotas (${empLoans.length})</td><td class="tr negative">-$${fmtHR(pLoans)}</td></tr>${loanRows}`:''}
@@ -276,10 +313,15 @@ export function printPayslip(
 </table>
 
 <table style="margin-top:8px">
+  ${pOverdraft > 0 ? `
+  <tr class="overdraft-row">
+    <td class="tl">SOBREGIRADO — se arrastrará al próximo corte</td>
+    <td class="tr">-$${fmtHR(pOverdraft)}</td>
+  </tr>` : `
   <tr class="net-row">
     <td class="tl">NETO A RECIBIR</td>
     <td class="tr">$${fmtHR(pNetUSD)}${pNetBs>0?' &nbsp;/&nbsp; Bs '+fmtHR(pNetBs):''}</td>
-  </tr>
+  </tr>`}
 </table>
 
 <div class="sigs">
