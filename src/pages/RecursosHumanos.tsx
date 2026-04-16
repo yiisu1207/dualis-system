@@ -615,6 +615,7 @@ export default function RecursosHumanos() {
   // Historial de cortes
   const [cortes, setCortes] = useState<CorteRecord[]>([]);
   const [selectedCorte, setSelectedCorte] = useState<CorteRecord|null>(null);
+  const [histSearch, setHistSearch] = useState('');
 
   // Business name + logo for prints (fetched from Firestore)
   const [businessName, setBusinessName] = useState('Mi Negocio');
@@ -754,6 +755,8 @@ export default function RecursosHumanos() {
   const pendingTotalBs  = useMemo(()=>pendingVouchers.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0),[pendingVouchers]);
 
   const pendingTimeEntries = useMemo(() => visibleTimeEntries.filter(t => t.status === 'PENDIENTE'), [visibleTimeEntries]);
+  // All pending entries (unfiltered) — used for nómina calculations so individual mode doesn't affect payroll
+  const allPendingTimeEntries = useMemo(() => timeEntries.filter(t => t.status === 'PENDIENTE'), [timeEntries]);
 
   const nominaRows = useMemo(():NominaRow[] => {
     const filtered = employees.filter(e=>e.status==='Activo' && (freqFilter==='all'||e.payFrequency===freqFilter));
@@ -761,8 +764,8 @@ export default function RecursosHumanos() {
       const ev   = currentPeriodVouchers.filter(v=>v.employeeId===emp.id);
       const vDedUSD = ev.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
       const vDedBs  = ev.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0);
-      // Subtract abonos from voucher deductions (L) — use visibleAbonos for isolation
-      const empAbonosUSD = visibleAbonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
+      // Subtract abonos from voucher deductions — use all abonos so nómina is accurate
+      const empAbonosUSD = abonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
         .reduce((s,a)=>s+(a.currency==='USD'?a.amount:(a.amountUSD||0)),0);
       const netVDedUSD = Math.max(0, vDedUSD - empAbonosUSD);
       const div = FREQ_DIV[emp.payFrequency] || 1;
@@ -775,7 +778,7 @@ export default function RecursosHumanos() {
       const loanDed = activeLoans.filter(l=>l.employeeId===emp.id)
         .reduce((s,l)=>s+(l.currency==='USD'?l.installmentAmount:(currentRate>0?l.installmentAmount/currentRate:0)),0);
 
-      const empTimeEntries = pendingTimeEntries.filter(t => t.employeeId === emp.id);
+      const empTimeEntries = allPendingTimeEntries.filter(t => t.employeeId === emp.id);
       const overtimeUSD = empTimeEntries.filter(t => t.type === 'overtime').reduce((s, t) => s + (t.amountUSD || 0), 0);
       const absenceDeductionUSD = Math.abs(empTimeEntries.filter(t => t.type !== 'overtime').reduce((s, t) => s + (t.amountUSD || 0), 0));
 
@@ -796,7 +799,7 @@ export default function RecursosHumanos() {
         overdraftUSD:Math.max(0,totalDed-grossUSD),
       };
     });
-  },[employees,currentPeriodVouchers,visibleAbonos,activeLoans,pendingTimeEntries,freqFilter,currentRate]);
+  },[employees,currentPeriodVouchers,abonos,activeLoans,allPendingTimeEntries,freqFilter,currentRate]);
 
   const nominaTotals = useMemo(()=>({
     grossUSD:nominaRows.reduce((s,n)=>s+n.grossUSD,0),
@@ -808,10 +811,10 @@ export default function RecursosHumanos() {
 
   const overdraftList = useMemo(()=>employees.filter(emp=>{
     const pv = currentPeriodVouchers.filter(v=>v.employeeId===emp.id).reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
-    const abonosUSD = visibleAbonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE').reduce((s,a)=>s+(a.currency==='USD'?a.amount:(a.amountUSD||0)),0);
+    const abonosUSD = abonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE').reduce((s,a)=>s+(a.currency==='USD'?a.amount:(a.amountUSD||0)),0);
     const netVales = Math.max(0, pv - abonosUSD);
     return emp.salaryUSD>0 && netVales>periodSal(emp,'USD');
-  }),[employees,currentPeriodVouchers,visibleAbonos]);
+  }),[employees,currentPeriodVouchers,abonos]);
 
   const loansTotal = useMemo(()=>activeLoans.reduce((s,l)=>{
     const remaining = (l.totalInstallments - l.paidInstallments) * l.installmentAmount;
@@ -1048,7 +1051,8 @@ export default function RecursosHumanos() {
     // Vouchers: only this frequency's employees, exclude deferred
     const freqVouchers = currentPeriodVouchers.filter(v=>freqEmployeeIds.has(v.employeeId));
     const freqDeferred = pendingVouchers.filter(v=>v.deferToNextPeriod && freqEmployeeIds.has(v.employeeId));
-    const freqTimeEntries = pendingTimeEntries.filter(t=>freqEmployeeIds.has(t.employeeId));
+    // Use unfiltered timeEntries (not visibleTimeEntries) so corte settles ALL entries regardless of individual mode
+    const freqTimeEntries = timeEntries.filter(t=>t.status==='PENDIENTE'&&freqEmployeeIds.has(t.employeeId));
     const freqLoans = activeLoans.filter(l=>freqEmployeeIds.has(l.employeeId));
     const freqAbonos = abonos.filter(a=>a.status==='PENDIENTE'&&freqEmployeeIds.has(a.employeeId));
 
@@ -1154,11 +1158,14 @@ export default function RecursosHumanos() {
           // 7. Create carry-over vouchers for overdrafted employees
           const freqLabel = FREQ_LABEL[freq] || freq;
           let carryOverCount = 0;
+          // IDs of vouchers just settled in step 2 — exclude from anti-duplicate check
+          const justSettledIds = new Set(freqVouchers.map(v => v.id));
           for (const n of freqRows) {
             if (!n.isOverdraft || n.overdraftUSD <= 0.01) continue;
-            // Anti-duplicate: check if there's already a pending carry-over for this employee from this period
+            // Anti-duplicate: check if there's already a pending carry-over NOT settled in this corte
             const existingCarryOver = pendingVouchers.find(v =>
               v.employeeId === n.emp.id && v.isCarryOver && v.carryOverFromPeriod === period && v.status === 'PENDIENTE'
+              && !justSettledIds.has(v.id)
             );
             if (existingCarryOver) continue;
             await addDoc(collection(db, `businesses/${bid}/vouchers`), {
@@ -2319,6 +2326,10 @@ export default function RecursosHumanos() {
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Historial de Períodos</h3>
                 </div>
                 <p className="text-[10px] text-slate-400 dark:text-white/40">Cada período cerrado queda registrado aquí. Haz clic en uno para ver los detalles.</p>
+                <div className="mt-2">
+                  <input value={histSearch} onChange={e=>setHistSearch(e.target.value)} placeholder="Buscar por período, empleado, frecuencia..."
+                    className="w-full max-w-md px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs dark:text-white outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-slate-300 dark:placeholder:text-white/20"/>
+                </div>
               </div>
 
               {cortes.length === 0 ? (
@@ -2329,7 +2340,15 @@ export default function RecursosHumanos() {
                 </div>
               ) : (
                 <div className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                  {cortes.map(c => {
+                  {cortes.filter(c => {
+                    if (!histSearch.trim()) return true;
+                    const q = histSearch.toLowerCase();
+                    const period = (c.period || '').toLowerCase();
+                    const freq = (FREQ_LABEL[c.frequency] || c.frequency || '').toLowerCase();
+                    const empNames = (c.vouchers || []).map(v => (v.employeeName || '').toLowerCase()).join(' ');
+                    const byName = c.executedByName?.toLowerCase() || '';
+                    return period.includes(q) || freq.includes(q) || empNames.includes(q) || byName.includes(q);
+                  }).map(c => {
                     const dateStr = c.executedAt?.toDate
                       ? c.executedAt.toDate().toLocaleString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                       : '—';
@@ -2546,27 +2565,29 @@ export default function RecursosHumanos() {
       {selectedRun&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={()=>setSelectedRun(null)}>
           <div className="bg-white dark:bg-[#0d1424] w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 dark:border-white/[0.08] overflow-hidden animate-in zoom-in-95 max-h-[90vh] flex flex-col" onClick={e=>e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-slate-50 dark:border-white/[0.06] flex justify-between items-center bg-slate-50/50 dark:bg-white/[0.03] shrink-0">
-              <div>
-                <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                  <History size={16} className="text-indigo-400"/> Nómina {selectedRun.period}
-                </h2>
-                <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/40 mt-0.5 tracking-widest">
-                  {FREQ_LABEL[selectedRun.frequency]||selectedRun.frequency} · {selectedRun.processedAt?.toDate?selectedRun.processedAt.toDate().toLocaleString('es-VE'):'—'} · {selectedRun.employeeCount} empleados
-                </p>
+            <div className="px-6 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.03] shrink-0">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <History size={16} className="text-indigo-400"/> Nómina {selectedRun.period}
+                  </h2>
+                  <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/40 mt-0.5 tracking-widest">
+                    {FREQ_LABEL[selectedRun.frequency]||selectedRun.frequency} · {selectedRun.processedAt?.toDate?selectedRun.processedAt.toDate().toLocaleString('es-VE'):'—'} · {selectedRun.employeeCount} empleados
+                  </p>
+                </div>
+                <button onClick={()=>setSelectedRun(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl text-slate-400 shrink-0"><X size={18}/></button>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 mt-3">
                 <button onClick={()=>printPayrollRunPDF(selectedRun, businessName, undefined, 'summary')}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-100 dark:hover:bg-indigo-500/25 transition-all border border-indigo-100 dark:border-indigo-500/25"
                   title="PDF Resumido">
-                  <Download size={12}/> Resumido
+                  <Download size={12}/> PDF Resumido
                 </button>
                 <button onClick={()=>printPayrollRunPDF(selectedRun, businessName, undefined, 'detailed')}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-100 dark:hover:bg-emerald-500/25 transition-all border border-emerald-100 dark:border-emerald-500/25"
                   title="PDF Detallado con todos los vales">
-                  <Download size={12}/> Detallado
+                  <Download size={12}/> PDF Detallado
                 </button>
-                <button onClick={()=>setSelectedRun(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl text-slate-400"><X size={18}/></button>
               </div>
             </div>
 
