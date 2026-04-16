@@ -60,7 +60,7 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0102',
     bankName: 'Banco de Venezuela',
-    headerKeywords: ['fecha', 'descripcion', 'monto'],
+    headerKeywords: ['fecha', 'concepto', 'monto'],
     columnMap: {
       date:        ['fecha', 'fecha operacion'],
       credit:      ['credito', 'abono', 'haber'],

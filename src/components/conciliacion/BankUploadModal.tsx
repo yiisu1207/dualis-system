@@ -163,7 +163,7 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,.xlsx,.xls"
+              accept=".csv,.xlsx,.xls,.pdf"
               onChange={(e) => handleFile(e.target.files?.[0] || null)}
               className="hidden"
             />
@@ -172,7 +172,7 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
               onClick={() => fileRef.current?.click()}
               className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 dark:hover:bg-indigo-600"
             >
-              Seleccionar archivo CSV / Excel
+              Seleccionar archivo CSV / Excel / PDF
             </button>
             {file && (
               <div className="mt-3 text-sm text-slate-600 dark:text-slate-300">

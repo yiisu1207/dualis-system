@@ -1,7 +1,8 @@
-// Parser de estados de cuenta CSV / Excel con detección de header,
+// Parser de estados de cuenta CSV / Excel / PDF con detección de header,
 // normalización de fecha y monto, y detección de tipo de operación.
 
 import ExcelJS from 'exceljs';
+import * as pdfjsLib from 'pdfjs-dist';
 import {
   BANK_PROFILES,
   GENERIC_PROFILE,
@@ -9,6 +10,9 @@ import {
   type DateFormat,
 } from '../data/bankStatementFormats';
 import type { BankRow, OperationType } from './bankReconciliation';
+
+// Worker de pdf.js — usa el CDN para evitar problemas de bundling
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 export interface ParseResult {
   rows: BankRow[];
@@ -131,6 +135,142 @@ async function parseExcel(buffer: ArrayBuffer): Promise<string[][]> {
     out.push(cells);
   });
   return out;
+}
+
+// ——— Parser PDF via pdfjs-dist ———
+
+// Regex para detectar fechas DD/MM/YYYY al inicio de una línea de texto
+const DATE_LINE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}\b/;
+
+// Regex para montos venezolanos: -1.100.000,00 o 48.754,00
+const VE_AMOUNT_RE = /^-?[\d.]+,\d{2}$/;
+
+/**
+ * Extrae texto de un PDF y reconstruye filas tabulares.
+ *
+ * Los PDFs bancarios venezolanos (BDV, Banesco, Mercantil, etc.) tienen texto
+ * seleccionable con columnas posicionales. El reto principal son las líneas
+ * partidas: en BDV el "Concepto" y la "Operación" se parten en 2 líneas.
+ *
+ * Estrategia: extraer items de texto con coordenadas X/Y por página,
+ * agrupar por Y (misma fila visual), ordenar por X, y luego detectar
+ * columnas por posición X. Las filas que empiezan con fecha son filas nuevas;
+ * las que no, son continuaciones (se concatenan al concepto de la fila anterior).
+ */
+async function parsePDF(buffer: ArrayBuffer): Promise<string[][]> {
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const allRows: string[][] = [];
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+
+    // Agrupar items por coordenada Y (con tolerancia de 2px para misma línea)
+    const lineMap = new Map<number, { x: number; text: string }[]>();
+    for (const item of content.items) {
+      if (!('str' in item) || !item.str.trim()) continue;
+      const y = Math.round((item as any).transform[5] * 10) / 10; // Y con 1 decimal
+      const x = Math.round((item as any).transform[4] * 10) / 10;
+      // Buscar un Y existente dentro de ±2px
+      let matchedY = y;
+      for (const ky of lineMap.keys()) {
+        if (Math.abs(ky - y) <= 2) { matchedY = ky; break; }
+      }
+      if (!lineMap.has(matchedY)) lineMap.set(matchedY, []);
+      lineMap.get(matchedY)!.push({ x, text: item.str });
+    }
+
+    // Ordenar líneas por Y descendente (pdf.js Y crece hacia arriba)
+    const sortedYs = [...lineMap.keys()].sort((a, b) => b - a);
+
+    for (const y of sortedYs) {
+      const items = lineMap.get(y)!.sort((a, b) => a.x - b.x);
+      const lineText = items.map(i => i.text).join(' ').trim();
+      if (!lineText) continue;
+
+      // Filtrar líneas de pie de página / encabezado de página
+      if (/^Pagina:\s*\d/i.test(lineText)) continue;
+      if (/Banco de Venezuela.*RIF/i.test(lineText)) continue;
+      if (/BDVenl[ií]nea/i.test(lineText)) continue;
+      if (/^Hist[oó]rico de movimientos$/i.test(lineText)) continue;
+
+      // Detectar si es una fila de header
+      const lNorm = norm(lineText);
+      const isHeader = ['fecha', 'concepto', 'monto', 'saldo', 'referencia', 'operacion']
+        .filter(k => lNorm.includes(k)).length >= 3;
+
+      if (isHeader) {
+        // Reconstruir header como columnas separadas por posición X
+        // Usar las posiciones X de los items para inferir columnas
+        const headerCells = items.map(i => i.text.trim()).filter(Boolean);
+        allRows.push(headerCells);
+        continue;
+      }
+
+      // Detectar si es una fila de datos (empieza con fecha)
+      if (DATE_LINE_RE.test(lineText)) {
+        // Fila nueva con fecha — parsear columnas por posición X
+        const cells = splitPdfRowByClusters(items);
+        allRows.push(cells);
+      } else {
+        // Línea continuación — concatenar al concepto de la fila anterior
+        // (ej. nombre del cliente en la segunda línea, "Débito"/"Crédito" suelto)
+        if (allRows.length > 0) {
+          const prev = allRows[allRows.length - 1];
+          // Si es solo "Crédito" o "Débito" (parte de la columna Operación)
+          const trimmed = lineText.trim();
+          if (/^(cr[eé]dito|d[eé]bito|inicial)$/i.test(trimmed)) {
+            // Buscar la celda de operación (normalmente la 4ta columna) y concatenar
+            if (prev.length >= 4) {
+              prev[3] = (prev[3] + ' ' + trimmed).trim();
+            }
+          } else {
+            // Es continuación del concepto (columna 2, ej. nombre del cliente)
+            if (prev.length >= 2) {
+              prev[1] = (prev[1] + ' ' + trimmed).trim();
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return allRows;
+}
+
+/**
+ * Divide una fila de PDF en celdas usando clustering por gaps en X.
+ * Los items con gap > umbral se consideran columnas separadas.
+ */
+function splitPdfRowByClusters(items: { x: number; text: string }[]): string[] {
+  if (!items.length) return [];
+  const sorted = [...items].sort((a, b) => a.x - b.x);
+
+  // Calcular gaps entre items consecutivos
+  const gaps: number[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    gaps.push(sorted[i].x - sorted[i - 1].x - (sorted[i - 1].text.length * 4)); // approx char width
+  }
+
+  // Umbral: un gap significativo indica separación de columna
+  // Para PDFs bancarios VE, las columnas están bien separadas (~30-50px)
+  const threshold = 15;
+
+  const cells: string[] = [];
+  let current = sorted[0].text;
+
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = sorted[i].x - sorted[i - 1].x;
+    if (gap > threshold) {
+      cells.push(current.trim());
+      current = sorted[i].text;
+    } else {
+      current += ' ' + sorted[i].text;
+    }
+  }
+  cells.push(current.trim());
+
+  return cells;
 }
 
 // ——— Detección de header ———
@@ -271,7 +411,10 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
 
   try {
     const name = file.name.toLowerCase();
-    if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+    if (name.endsWith('.pdf')) {
+      const buf = await readFileAsBuffer(file);
+      rawRows = await parsePDF(buf);
+    } else if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
       const buf = await readFileAsBuffer(file);
       rawRows = await parseExcel(buf);
     } else {
