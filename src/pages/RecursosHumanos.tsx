@@ -89,6 +89,17 @@ interface Abono {
   concept: string; date: string; status: 'PENDIENTE'|'APLICADO';
   registeredBy?: string; registeredByName?: string; createdAt: any;
 }
+interface Bonus {
+  id: string;
+  employeeId: string;
+  name: string;
+  amount: number;
+  currency: 'USD' | 'BS';
+  frequency: 'semanal' | 'quincenal' | 'mensual';
+  status: 'active' | 'inactive';
+  createdAt: any;
+  createdBy: string;
+}
 interface PayrollDetail {
   employeeId: string; name: string; department: string;
   cedula?: string; paymentCurrency?: 'USD'|'BS';
@@ -115,6 +126,10 @@ type NominaRow = {
   overtimeUSD: number; absenceDeductionUSD: number;
   totalDedUSD: number; netUSD: number; netBs: number;
   vCount: number; isOverdraft: boolean; overdraftUSD: number;
+  // Bonus fields
+  bonusTotalUSD: number; netSalaryUSD: number; netBonusUSD: number;
+  dedBonusUSD: number; // carry-over deducted from bonuses
+  bonusDetails: { name: string; amount: number; currency: 'USD'|'BS'; frequency: string }[];
 };
 interface CorteVoucherDetail {
   id: string; employeeId: string; employeeName: string;
@@ -152,8 +167,22 @@ const getCurrencyLabel = (c: 'USD'|'BS') => c === 'USD' ? 'Tasa Interna' : 'BCV'
 
 function periodSal(emp: Employee, cur: 'USD'|'BS') {
   const base  = cur==='USD' ? (emp.salaryUSD||0) : (emp.salaryBs||0);
-  const bonus = cur==='USD' ? (emp.bonusUSD||0)  : (emp.bonusBs||0);
-  return (base + bonus) / (FREQ_DIV[emp.payFrequency]||1);
+  return base / (FREQ_DIV[emp.payFrequency]||1);
+}
+
+/** Determine if a bonus should be paid in this period close */
+function isBonusPayableThisPeriod(bonus: Bonus|{frequency:string}, corteFreq: string): boolean {
+  if (bonus.frequency === corteFreq) return true;
+  // Monthly bonus pays on last corte of the month
+  if (bonus.frequency === 'mensual') {
+    const now = new Date();
+    const day = now.getDate();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    if (corteFreq === 'quincenal') return day > 15; // 2da quincena
+    if (corteFreq === 'semanal') return day + 7 > daysInMonth; // ultima semana
+    return true; // mensual === mensual
+  }
+  return false;
 }
 
 // ── SMALL COMPONENTS ─────────────────────────────────────────────────────────
@@ -186,11 +215,12 @@ const Confirm = ({ msg, detail, onConfirm, onCancel }: any) => (
 );
 
 // ── EMPLOYEE PROFILE PANEL ───────────────────────────────────────────────────
-function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, currentRate, getBcvRateForDate, getRateForDate, bcvHistory, onClose, onAddVoucher, onAddLoan, businessName, businessLogo }:
+function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, currentRate, getBcvRateForDate, getRateForDate, bcvHistory, bonuses, onClose, onAddVoucher, onAddLoan, businessName, businessLogo }:
   { emp:Employee; vouchers:Voucher[]; loans:Loan[]; payrollHistory:PayrollRun[];
     businessId:string; currentRate:number;
     getBcvRateForDate:(d:string)=>number; getRateForDate:(d:string)=>number;
     bcvHistory:Array<{date:string;bcv:number}>;
+    bonuses:Bonus[];
     onClose:()=>void;
     onAddVoucher:(v:any)=>Promise<void>; onAddLoan:(l:any)=>Promise<void>; businessName:string; businessLogo?:string }) {
 
@@ -347,12 +377,39 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.06] space-y-2">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Estructura Salarial</p>
             {emp.salaryUSD>0 && <div className="flex justify-between"><span className="text-xs text-slate-500 dark:text-white/40">Salario USD</span><span className="font-black text-emerald-600 dark:text-emerald-400 text-sm">${fmtHR(emp.salaryUSD)}<span className="text-[9px] text-slate-400 ml-1">mensual</span></span></div>}
-            {emp.bonusUSD>0  && <div className="flex justify-between"><span className="text-xs text-slate-500 dark:text-white/40">Bono en {emp.bonusUSDCurrency==='BS'?'Bs (BCV)':'USD'}</span><span className="font-black text-violet-600 dark:text-violet-400 text-sm">+${fmtHR(emp.bonusUSD)}</span></div>}
             {emp.salaryBs>0  && <div className="flex justify-between"><span className="text-xs text-slate-500 dark:text-white/40">Salario Bs (BCV)</span><span className="font-black text-sky-600 dark:text-sky-400 text-sm">Bs {fmtHR(emp.salaryBs)}<span className="text-[9px] text-slate-400 ml-1">mensual</span></span></div>}
-            {emp.bonusBs>0   && <div className="flex justify-between"><span className="text-xs text-slate-500 dark:text-white/40">Bono Bs (BCV)</span><span className="font-black text-amber-600 dark:text-amber-400 text-sm">+Bs {fmtHR(emp.bonusBs)}</span></div>}
             {emp.ivssEnabled && <div className="flex justify-between"><span className="text-xs text-slate-500 dark:text-white/40">IVSS ({emp.ivssRate}%)</span><span className="font-black text-rose-500 text-xs">-${fmtHR((emp.salaryUSD||0)*(emp.ivssRate||4)/100)}</span></div>}
             {emp.paroEnabled && <div className="flex justify-between"><span className="text-xs text-slate-500 dark:text-white/40">Paro Forzoso ({emp.paroRate}%)</span><span className="font-black text-rose-500 text-xs">-${fmtHR((emp.salaryUSD||0)*(emp.paroRate||2)/100)}</span></div>}
           </div>
+
+          {/* Bonuses */}
+          {(bonuses.length>0 || (emp.bonusUSD||0)>0 || (emp.bonusBs||0)>0) && (
+            <div className="p-4 rounded-xl bg-violet-50 dark:bg-violet-500/[0.05] border border-violet-100 dark:border-violet-500/15 space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-violet-500 dark:text-violet-400 flex items-center gap-1.5"><Gift size={12}/> Bonos</p>
+              {bonuses.filter(b=>b.status==='active').map(b=>(
+                <div key={b.id} className="flex justify-between items-center">
+                  <span className="text-xs text-slate-600 dark:text-white/50">{b.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-violet-600 dark:text-violet-400 text-sm">{b.currency==='USD'?'$':''}{fmtHR(b.amount)} {b.currency}</span>
+                    <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full ${FREQ_COLOR[b.frequency]?.bg||''} ${FREQ_COLOR[b.frequency]?.text||''}`}>{FREQ_LABEL[b.frequency]}</span>
+                  </div>
+                </div>
+              ))}
+              {/* Legacy bonus fields (not yet migrated) */}
+              {bonuses.length===0 && emp.bonusUSD>0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1"><AlertTriangle size={10}/> Bono legacy</span>
+                  <span className="font-black text-violet-600 dark:text-violet-400 text-sm">{emp.bonusUSDCurrency==='BS'?'Bs ':'$'}{fmtHR(emp.bonusUSD)}</span>
+                </div>
+              )}
+              {bonuses.length===0 && emp.bonusBs>0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1"><AlertTriangle size={10}/> Bono Bs legacy</span>
+                  <span className="font-black text-amber-600 dark:text-amber-400 text-sm">Bs {fmtHR(emp.bonusBs)}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Vacaciones */}
           <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-500/[0.07] border border-sky-100 dark:border-sky-500/20 flex items-center gap-4">
@@ -528,6 +585,7 @@ export default function RecursosHumanos() {
   const [loans,          setLoans]          = useState<Loan[]>([]);
   const [timeEntries,    setTimeEntries]    = useState<TimeEntry[]>([]);
   const [payrollHistory, setPayrollHistory] = useState<PayrollRun[]>([]);
+  const [bonuses,        setBonuses]        = useState<Bonus[]>([]);
   const [loading,        setLoading]        = useState(true);
 
   // Employee modal
@@ -535,6 +593,11 @@ export default function RecursosHumanos() {
   const [saving,    setSaving]    = useState(false);
   const [editId,    setEditId]    = useState<string|null>(null);
   const [empForm,   setEmpForm]   = useState<Omit<Employee,'id'>>(EMPTY_EMP);
+
+  // Bonus CRUD in edit modal
+  const [bonusForm, setBonusForm] = useState({ name:'', amount:'', currency:'USD' as 'USD'|'BS', frequency:'quincenal' as Bonus['frequency'] });
+  const [editingBonusId, setEditingBonusId] = useState<string|null>(null);
+  const [savingBonus, setSavingBonus] = useState(false);
 
   // Profile panel
   const [fichaEmp, setFichaEmp] = useState<Employee|null>(null);
@@ -655,7 +718,10 @@ export default function RecursosHumanos() {
     const u9 = onSnapshot(query(collection(db,`businesses/${bid}/cortes`),orderBy('executedAt','desc')),
       s=>setCortes(s.docs.map(d=>({id:d.id,...d.data()} as CorteRecord))),
       ()=>{});
-    return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();u9();};
+    const u10 = onSnapshot(query(collection(db,`businesses/${bid}/bonuses`),orderBy('createdAt','desc')),
+      s=>setBonuses(s.docs.map(d=>({id:d.id,...d.data()} as Bonus))),
+      ()=>{});
+    return ()=>{u1();u2();u3();u4();u5();u6();u7();u8();u9();u10();};
   }, [bid]);
 
   // Rate fallback policy subscription
@@ -761,18 +827,20 @@ export default function RecursosHumanos() {
   const nominaRows = useMemo(():NominaRow[] => {
     const filtered = employees.filter(e=>e.status==='Activo' && (freqFilter==='all'||e.payFrequency===freqFilter));
     return filtered.map(emp=>{
+      // Vouchers: separate carry-overs from regular vouchers
       const ev   = currentPeriodVouchers.filter(v=>v.employeeId===emp.id);
-      const vDedUSD = ev.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
+      const regularVouchers = ev.filter(v => !v.isCarryOver);
+      const carryOverVouchers = ev.filter(v => v.isCarryOver);
+      const regularVDedUSD = regularVouchers.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
+      const carryOverUSD = carryOverVouchers.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
       const vDedBs  = ev.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0);
-      // Subtract abonos from voucher deductions — use all abonos so nómina is accurate
+      // Subtract abonos from regular voucher deductions (not carry-overs)
       const empAbonosUSD = abonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
-        .reduce((s,a)=>s+(a.currency==='USD'?a.amount:(a.amountUSD||0)),0);
-      const netVDedUSD = Math.max(0, vDedUSD - empAbonosUSD);
+        .reduce((s,a)=>s+(a.currency==='USD'? Number(a.amount)||0 : Number(a.amountUSD)||0),0);
+      const netVDedUSD = Math.max(0, regularVDedUSD - empAbonosUSD);
       const div = FREQ_DIV[emp.payFrequency] || 1;
       const periodSalUSD = (emp.salaryUSD||0) / div;
-      const periodBonUSD = (emp.bonusUSD||0) / div;
       const periodSalBs  = (emp.salaryBs||0) / div;
-      const periodBonBs  = (emp.bonusBs||0) / div;
       const ivssUSD = emp.ivssEnabled ? periodSalUSD*(emp.ivssRate||4)/100 : 0;
       const paroUSD = emp.paroEnabled ? periodSalUSD*(emp.paroRate||2)/100 : 0;
       const loanDed = activeLoans.filter(l=>l.employeeId===emp.id)
@@ -782,24 +850,65 @@ export default function RecursosHumanos() {
       const overtimeUSD = empTimeEntries.filter(t => t.type === 'overtime').reduce((s, t) => s + (t.amountUSD || 0), 0);
       const absenceDeductionUSD = Math.abs(empTimeEntries.filter(t => t.type !== 'overtime').reduce((s, t) => s + (t.amountUSD || 0), 0));
 
-      const grossUSD   = periodSalUSD + periodBonUSD + overtimeUSD;
-      const grossBs    = periodSalBs + periodBonBs;
-      const totalDed   = netVDedUSD+ivssUSD+paroUSD+loanDed+absenceDeductionUSD;
-      const pSal       = periodSalUSD + periodBonUSD;
+      // Salary deductions (regular vouchers, IVSS, paro, loans, absences — NOT carry-overs)
+      const salaryDedUSD = netVDedUSD + ivssUSD + paroUSD + loanDed + absenceDeductionUSD;
+      const salaryGrossUSD = periodSalUSD + overtimeUSD;
+      const netSalaryUSD = Math.max(0, salaryGrossUSD - salaryDedUSD);
+      const overdraftUSD = Math.max(0, salaryDedUSD - salaryGrossUSD);
+
+      // Bonuses: from collection + legacy fields
+      const empBonuses = bonuses.filter(b => b.employeeId === emp.id && b.status === 'active');
+      const hasModernBonuses = empBonuses.length > 0;
+      const bonusDetails: NominaRow['bonusDetails'] = [];
+
+      // Modern bonuses
+      for (const b of empBonuses) {
+        if (!isBonusPayableThisPeriod(b, emp.payFrequency)) continue;
+        const bDiv = FREQ_DIV[b.frequency] || 1;
+        const amtUSD = b.currency === 'USD' ? b.amount / bDiv : (currentRate > 0 ? b.amount / currentRate / bDiv : 0);
+        bonusDetails.push({ name: b.name, amount: amtUSD, currency: b.currency, frequency: b.frequency });
+      }
+
+      // Legacy bonus (only if no modern bonuses)
+      if (!hasModernBonuses) {
+        if ((emp.bonusUSD||0) > 0) {
+          const legacyAmt = (emp.bonusUSD||0) / div;
+          bonusDetails.push({ name: 'Bono (legacy)', amount: legacyAmt, currency: emp.bonusUSDCurrency || 'USD', frequency: emp.payFrequency });
+        }
+        if ((emp.bonusBs||0) > 0) {
+          const legacyBs = (emp.bonusBs||0) / div;
+          const legacyUSD = currentRate > 0 ? legacyBs / currentRate : 0;
+          bonusDetails.push({ name: 'Bono Bs (legacy)', amount: legacyUSD, currency: 'BS', frequency: emp.payFrequency });
+        }
+      }
+
+      const bonusTotalUSD = bonusDetails.reduce((s, b) => s + b.amount, 0);
+
+      // Carry-overs deduct from bonuses only
+      const dedBonusUSD = Math.min(carryOverUSD, bonusTotalUSD);
+      const netBonusUSD = bonusTotalUSD - dedBonusUSD;
+
+      // Combined totals
+      const grossUSD = salaryGrossUSD + bonusTotalUSD;
+      const grossBs = periodSalBs;
+      const totalDedUSD = salaryDedUSD + dedBonusUSD;
+      const netUSD = netSalaryUSD + netBonusUSD;
+
       return {
         emp, grossUSD, grossBs,
-        voucherDedUSD:netVDedUSD, voucherDedBs:vDedBs,
-        ivssUSD, paroUSD, loanDedUSD:loanDed,
+        voucherDedUSD: netVDedUSD, voucherDedBs: vDedBs,
+        ivssUSD, paroUSD, loanDedUSD: loanDed,
         overtimeUSD, absenceDeductionUSD,
-        totalDedUSD:totalDed,
-        netUSD:Math.max(0,grossUSD-totalDed),
-        netBs:Math.max(0,grossBs-vDedBs),
-        vCount:ev.length,
-        isOverdraft:emp.salaryUSD>0 && netVDedUSD>pSal,
-        overdraftUSD:Math.max(0,totalDed-grossUSD),
+        totalDedUSD,
+        netUSD,
+        netBs: Math.max(0, grossBs - vDedBs),
+        vCount: ev.length,
+        isOverdraft: emp.salaryUSD > 0 && salaryDedUSD > salaryGrossUSD,
+        overdraftUSD,
+        bonusTotalUSD, netSalaryUSD, netBonusUSD, dedBonusUSD, bonusDetails,
       };
     });
-  },[employees,currentPeriodVouchers,abonos,activeLoans,allPendingTimeEntries,freqFilter,currentRate]);
+  },[employees,currentPeriodVouchers,abonos,activeLoans,allPendingTimeEntries,freqFilter,currentRate,bonuses]);
 
   const nominaTotals = useMemo(()=>({
     grossUSD:nominaRows.reduce((s,n)=>s+n.grossUSD,0),
@@ -810,9 +919,12 @@ export default function RecursosHumanos() {
   }),[nominaRows]);
 
   const overdraftList = useMemo(()=>employees.filter(emp=>{
-    const pv = currentPeriodVouchers.filter(v=>v.employeeId===emp.id).reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
-    const abonosUSD = abonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE').reduce((s,a)=>s+(a.currency==='USD'?a.amount:(a.amountUSD||0)),0);
-    const netVales = Math.max(0, pv - abonosUSD);
+    // Only regular vouchers (not carry-overs) cause salary overdraft
+    const regularV = currentPeriodVouchers.filter(v=>v.employeeId===emp.id&&!v.isCarryOver)
+      .reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
+    const abonosUSD = abonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
+      .reduce((s,a)=>s+(a.currency==='USD'? Number(a.amount)||0 : Number(a.amountUSD)||0),0);
+    const netVales = Math.max(0, regularV - abonosUSD);
     return emp.salaryUSD>0 && netVales>periodSal(emp,'USD');
   }),[employees,currentPeriodVouchers,abonos]);
 
@@ -1069,9 +1181,12 @@ export default function RecursosHumanos() {
     const now = new Date();
     const period = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
+    const totalBonos = freqRows.reduce((s,n)=>s+n.bonusTotalUSD,0);
+    const totalCarryDed = freqRows.reduce((s,n)=>s+n.dedBonusUSD,0);
+    const bonusMsg = totalBonos>0 ? ` · Bonos $${fmtHR(totalBonos)}${totalCarryDed>0?` (-$${fmtHR(totalCarryDed)} arrastre)`:''}` : '';
     setConfirm({
       msg:`¿Cerrar Período ${FREQ_LABEL[freq]}?`,
-      detail:`${freqRows.length} empleados · ${freqVouchers.length} vales · Neto $${fmtHR(freqTotals.netUSD)} USD${freqDeferred.length?` · ${freqDeferred.length} diferidos pasan al próximo`:''}`,
+      detail:`${freqRows.length} empleados · ${freqVouchers.length} vales${bonusMsg} · Neto $${fmtHR(freqTotals.netUSD)} USD${freqDeferred.length?` · ${freqDeferred.length} diferidos pasan al próximo`:''}`,
       onConfirm:async()=>{
         setProcLoading(true);
         try {
@@ -1089,6 +1204,8 @@ export default function RecursosHumanos() {
               overtimeUSD:n.overtimeUSD, absenceDeductionUSD:n.absenceDeductionUSD,
               totalDedUSD:n.totalDedUSD, netUSD:n.netUSD, netBs:n.netBs,
               payAmountReal: payReal, payAmountCurrency: isBs ? 'BS' : 'USD',
+              bonusTotalUSD: n.bonusTotalUSD, dedBonusUSD: n.dedBonusUSD, netBonusUSD: n.netBonusUSD,
+              settledBonuses: n.bonusDetails.map(b=>({name:b.name,amount:b.amount,currency:b.currency,frequency:b.frequency})),
               settledVouchers:freqVouchers.filter(v=>v.employeeId===n.emp.id)
                 .map(v=>({reason:v.reason,amount:v.amount,currency:v.currency,amountUSD:v.amountUSD,isCarryOver:v.isCarryOver||false,carryOverFromPeriod:v.carryOverFromPeriod||''})),
               deferredVouchers:freqDeferred.filter(v=>v.employeeId===n.emp.id)
@@ -1156,25 +1273,36 @@ export default function RecursosHumanos() {
           }
 
           // 7. Create carry-over vouchers for overdrafted employees
+          // Overdraft = salary deductions exceed salary. The overdraft amount carries over.
+          // Additionally, if carry-over vouchers exceeded available bonuses, the remainder re-carries.
           const freqLabel = FREQ_LABEL[freq] || freq;
           let carryOverCount = 0;
-          // IDs of vouchers just settled in step 2 — exclude from anti-duplicate check
           const justSettledIds = new Set(freqVouchers.map(v => v.id));
           for (const n of freqRows) {
-            if (!n.isOverdraft || n.overdraftUSD <= 0.01) continue;
-            // Anti-duplicate: check if there's already a pending carry-over NOT settled in this corte
+            // Carry-over from salary overdraft
+            const salaryCarryOver = n.overdraftUSD;
+            // Carry-over remainder from bonuses: old carry-overs that exceeded available bonuses
+            const oldCarryOvers = freqVouchers.filter(v => v.employeeId === n.emp.id && v.isCarryOver);
+            const oldCarryTotal = oldCarryOvers.reduce((s, v) => s + (v.currency === 'USD' ? v.amount : (v.amountUSD || 0)), 0);
+            const remainFromBonos = Math.max(0, oldCarryTotal - n.bonusTotalUSD);
+            const totalNewCarry = Math.round((salaryCarryOver + remainFromBonos) * 100) / 100;
+            if (totalNewCarry <= 0.01) continue;
+            // Anti-duplicate check
             const existingCarryOver = pendingVouchers.find(v =>
               v.employeeId === n.emp.id && v.isCarryOver && v.carryOverFromPeriod === period && v.status === 'PENDIENTE'
               && !justSettledIds.has(v.id)
             );
             if (existingCarryOver) continue;
+            const parts: string[] = [];
+            if (salaryCarryOver > 0.01) parts.push(`sobregiro salario $${fmtHR(salaryCarryOver)}`);
+            if (remainFromBonos > 0.01) parts.push(`remanente bonos $${fmtHR(remainFromBonos)}`);
             await addDoc(collection(db, `businesses/${bid}/vouchers`), {
               employeeId: n.emp.id,
               employeeName: n.emp.fullName,
-              amount: Math.round(n.overdraftUSD * 100) / 100,
+              amount: totalNewCarry,
               currency: 'USD',
-              amountUSD: Math.round(n.overdraftUSD * 100) / 100,
-              reason: `Arrastre saldo deudor — ${freqLabel} ${period} (-$${fmtHR(n.overdraftUSD)})`,
+              amountUSD: totalNewCarry,
+              reason: `Arrastre — ${freqLabel} ${period} (${parts.join(' + ')})`,
               status: 'PENDIENTE',
               isCarryOver: true,
               carryOverFromPeriod: period,
@@ -1296,8 +1424,8 @@ export default function RecursosHumanos() {
     },
   });
 
-  const openNew  = () => {setEditId(null);setEmpForm(EMPTY_EMP);setEmpModal(true);};
-  const openEdit = (e:Employee) => {setEditId(e.id);setEmpForm(e);setEmpModal(true);};
+  const openNew  = () => {setEditId(null);setEmpForm(EMPTY_EMP);setBonusForm({name:'',amount:'',currency:'USD',frequency:'quincenal'});setEditingBonusId(null);setEmpModal(true);};
+  const openEdit = (e:Employee) => {setEditId(e.id);setEmpForm(e);setBonusForm({name:'',amount:'',currency:'USD',frequency:'quincenal'});setEditingBonusId(null);setEmpModal(true);};
 
 
   const tabCls = (t:SubTab) => `px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
@@ -2072,7 +2200,7 @@ export default function RecursosHumanos() {
                     <thead>
                       <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
                         <th className="px-5 py-3.5">Empleado</th><th className="px-4 py-3.5 text-center">Frec.</th>
-                        <th className="px-4 py-3.5 text-right">Bruto USD</th><th className="px-4 py-3.5 text-right">Vales</th>
+                        <th className="px-4 py-3.5 text-right">Salario</th><th className="px-4 py-3.5 text-right">Bonos</th><th className="px-4 py-3.5 text-right">Vales</th>
                         <th className="px-4 py-3.5 text-right">H.Extra</th><th className="px-4 py-3.5 text-right">Ausencias</th>
                         <th className="px-4 py-3.5 text-right">IVSS/Paro</th><th className="px-4 py-3.5 text-right">Préstamos</th>
                         <th className="px-4 py-3.5 text-right">Neto USD</th><th className="px-4 py-3.5 text-right">Neto Bs</th>
@@ -2095,7 +2223,15 @@ export default function RecursosHumanos() {
                               </span>
                             );})()}
                           </td>
-                          <td className="px-4 py-3.5 text-right font-black text-slate-700 dark:text-slate-300">{n.grossUSD>0?`$${fmtHR(n.grossUSD)}`:'—'}</td>
+                          <td className="px-4 py-3.5 text-right font-black text-slate-700 dark:text-slate-300">{n.netSalaryUSD>0||n.grossUSD>0?`$${fmtHR(n.grossUSD-n.bonusTotalUSD)}`:'—'}</td>
+                          <td className="px-4 py-3.5 text-right">
+                            {n.bonusTotalUSD>0?(
+                              <div className="flex flex-col items-end">
+                                <span className="font-black text-violet-600 dark:text-violet-400">+${fmtHR(n.bonusTotalUSD)}</span>
+                                {n.dedBonusUSD>0&&<span className="text-[8px] text-rose-500 font-bold">-${fmtHR(n.dedBonusUSD)} arrastre</span>}
+                              </div>
+                            ):'—'}
+                          </td>
                           <td className="px-4 py-3.5 text-right font-black text-rose-600 dark:text-rose-400">{n.voucherDedUSD>0?`-$${fmtHR(n.voucherDedUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400">{n.overtimeUSD>0?`+$${fmtHR(n.overtimeUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-rose-600 dark:text-rose-400">{n.absenceDeductionUSD>0?`-$${fmtHR(n.absenceDeductionUSD)}`:'—'}</td>
@@ -2124,7 +2260,8 @@ export default function RecursosHumanos() {
                       {/* Totals */}
                       <tr className="bg-slate-50 dark:bg-white/[0.03] border-t-2 border-slate-100 dark:border-white/[0.07]">
                         <td colSpan={2} className="px-5 py-3.5 font-black text-slate-500 dark:text-white/40 text-[11px] uppercase tracking-widest">TOTALES ({nominaRows.length})</td>
-                        <td className="px-4 py-3.5 text-right font-black text-slate-800 dark:text-slate-200">{nominaTotals.grossUSD>0?`$${fmtHR(nominaTotals.grossUSD)}`:'—'}</td>
+                        <td className="px-4 py-3.5 text-right font-black text-slate-800 dark:text-slate-200">{nominaTotals.grossUSD>0?`$${fmtHR(nominaTotals.grossUSD-(nominaRows.reduce((s,n)=>s+n.bonusTotalUSD,0)))}`:'—'}</td>
+                        <td className="px-4 py-3.5 text-right font-black text-violet-600 dark:text-violet-400">{(()=>{const tb=nominaRows.reduce((s,n)=>s+n.bonusTotalUSD,0); return tb>0?`+$${fmtHR(tb)}`:'—';})()}</td>
                         <td className="px-4 py-3.5 text-right font-black text-rose-600 dark:text-rose-400">{nominaTotals.dedUSD>0?`-$${fmtHR(nominaTotals.dedUSD)}`:'—'}</td>
                         <td colSpan={4}></td>
                         <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400 text-lg">{`$${fmtHR(nominaTotals.netUSD)}`}</td>
@@ -2555,6 +2692,7 @@ export default function RecursosHumanos() {
           payrollHistory={payrollHistory} businessId={bid}
           currentRate={currentRate} businessName={businessName} businessLogo={businessLogo}
           getBcvRateForDate={getBcvRateForDate} getRateForDate={getRateForDate} bcvHistory={bcvHistory}
+          bonuses={bonuses.filter(b=>b.employeeId===fichaEmp.id)}
           onClose={()=>setFichaEmp(null)}
           onAddVoucher={handleAddVoucher}
           onAddLoan={handleAddLoan}
@@ -2723,46 +2861,173 @@ export default function RecursosHumanos() {
               </div>
 
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-3">Salario y Bonos (base mensual)</p>
-                {empForm.paymentCurrency==='USD' ? (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Salario (Tasa Interna)</label><input type="number" min="0" step="0.01" value={empForm.salaryUSD} onChange={e=>setEmpForm(f=>({...f,salaryUSD:Number(e.target.value)}))} className={inp}/></div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Bono</label>
-                      <input type="number" min="0" step="0.01" value={empForm.bonusUSD} onChange={e=>setEmpForm(f=>({...f,bonusUSD:Number(e.target.value)}))} className={inp}/>
-                      <div className="flex gap-1 mt-1">
-                        {(['USD','BS'] as const).map(c=>(
-                          <button key={c} type="button" onClick={()=>setEmpForm(f=>({...f,bonusUSDCurrency:c}))}
-                            className={`flex-1 py-1 rounded-lg text-[9px] font-black uppercase transition-all border ${empForm.bonusUSDCurrency===c?'bg-indigo-600 text-white border-indigo-600':'border-slate-200 dark:border-white/[0.08] text-slate-400 dark:text-white/30 hover:border-indigo-400'}`}>
-                            {c==='USD'?'Tasa Interna':'BCV (Bs)'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-3">Salario (base mensual)</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">{empForm.paymentCurrency==='USD'?'Salario (Tasa Interna)':'Sueldo base (USD equivalente)'}</label>
+                    <input type="number" min="0" step="0.01" value={empForm.salaryUSD} onChange={e=>setEmpForm(f=>({...f,salaryUSD:Number(e.target.value)}))} className={inp}/>
+                    {empForm.paymentCurrency==='BS'&&tasaBCV>0&&empForm.salaryUSD>0&&(
+                      <p className="text-[10px] text-sky-600 dark:text-sky-400 font-bold ml-1">≈ Bs {fmtHR(empForm.salaryUSD*tasaBCV)} al BCV actual</p>
+                    )}
                   </div>
-                ) : (
-                  /* E: Simplified BCV form — one USD field + Bs preview */
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Sueldo base (USD equivalente)</label>
-                      <input type="number" min="0" step="0.01" value={empForm.salaryUSD} onChange={e=>setEmpForm(f=>({...f,salaryUSD:Number(e.target.value)}))} className={inp}/>
-                      {tasaBCV>0&&empForm.salaryUSD>0&&(
-                        <p className="text-[10px] text-sky-600 dark:text-sky-400 font-bold ml-1">≈ Bs {fmtHR(empForm.salaryUSD*tasaBCV)} al BCV actual</p>
-                      )}
+                </div>
+                <div className="mt-3 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/[0.07] border border-indigo-100 dark:border-indigo-500/20">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-1">Salario por {FREQ_LABEL[empForm.payFrequency]}</p>
+                  {empForm.salaryUSD>0&&<p className="text-sm font-black text-indigo-700 dark:text-indigo-300">${fmtHR(empForm.salaryUSD/(FREQ_DIV[empForm.payFrequency]||1))} USD</p>}
+                  {empForm.paymentCurrency==='BS'&&tasaBCV>0&&empForm.salaryUSD>0&&<p className="text-sm font-black text-sky-700 dark:text-sky-300">≈ Bs {fmtHR(empForm.salaryUSD*tasaBCV/(FREQ_DIV[empForm.payFrequency]||1))} al BCV actual</p>}
+                </div>
+              </div>
+
+              {/* BONOS — CRUD section */}
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-3">Bonos</p>
+                {/* Legacy bonus migration warning */}
+                {editId && ((empForm.bonusUSD||0)>0 || (empForm.bonusBs||0)>0) && !bonuses.some(b=>b.employeeId===editId) && (
+                  <div className="mb-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/[0.07] border border-amber-200 dark:border-amber-500/20 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-amber-500 shrink-0"/>
+                      <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                        Bono antiguo: {empForm.bonusUSD>0?`$${fmtHR(empForm.bonusUSD)} ${empForm.bonusUSDCurrency}`:''}{empForm.bonusUSD>0&&empForm.bonusBs>0?' + ':''}{empForm.bonusBs>0?`Bs ${fmtHR(empForm.bonusBs)}`:''}
+                      </p>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1">Bono Bs (BCV)</label>
-                      <input type="number" min="0" step="0.01" value={empForm.bonusBs} onChange={e=>setEmpForm(f=>({...f,bonusBs:Number(e.target.value)}))} className={inp}/>
-                    </div>
+                    <button type="button" onClick={async()=>{
+                      if(!bid||!editId) return;
+                      setSavingBonus(true);
+                      try {
+                        if(empForm.bonusUSD>0) {
+                          await addDoc(collection(db,`businesses/${bid}/bonuses`),{
+                            employeeId:editId, name:'Bono (migrado)',
+                            amount:empForm.bonusUSD, currency:empForm.bonusUSDCurrency,
+                            frequency:empForm.payFrequency, status:'active',
+                            createdAt:serverTimestamp(), createdBy:userProfile?.uid||'',
+                          });
+                        }
+                        if(empForm.bonusBs>0) {
+                          await addDoc(collection(db,`businesses/${bid}/bonuses`),{
+                            employeeId:editId, name:'Bono Bs (migrado)',
+                            amount:empForm.bonusBs, currency:'BS',
+                            frequency:empForm.payFrequency, status:'active',
+                            createdAt:serverTimestamp(), createdBy:userProfile?.uid||'',
+                          });
+                        }
+                        await updateDoc(doc(db,`businesses/${bid}/employees`,editId),{bonusUSD:0,bonusBs:0});
+                        setEmpForm(f=>({...f,bonusUSD:0,bonusBs:0}));
+                        toast.success('Bonos migrados al nuevo sistema');
+                      } catch { toast.error('Error al migrar bonos'); }
+                      finally { setSavingBonus(false); }
+                    }} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[9px] font-black uppercase tracking-wider shrink-0">
+                      Migrar
+                    </button>
                   </div>
                 )}
-                {/* Pay preview */}
-                <div className="mt-3 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/[0.07] border border-indigo-100 dark:border-indigo-500/20">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-1">Pago por {FREQ_LABEL[empForm.payFrequency]}</p>
-                  {empForm.salaryUSD>0&&<p className="text-sm font-black text-indigo-700 dark:text-indigo-300">${fmtHR((empForm.salaryUSD+(empForm.paymentCurrency==='USD'?empForm.bonusUSD:0))/(FREQ_DIV[empForm.payFrequency]||1))} USD</p>}
-                  {empForm.paymentCurrency==='BS'&&tasaBCV>0&&empForm.salaryUSD>0&&<p className="text-sm font-black text-sky-700 dark:text-sky-300">≈ Bs {fmtHR(empForm.salaryUSD*tasaBCV/(FREQ_DIV[empForm.payFrequency]||1))} al BCV actual</p>}
-                  {empForm.salaryBs>0&&empForm.paymentCurrency==='USD'&&<p className="text-sm font-black text-sky-700 dark:text-sky-300">Bs {fmtHR((empForm.salaryBs+empForm.bonusBs)/(FREQ_DIV[empForm.payFrequency]||1))}</p>}
-                </div>
+                {/* Existing bonuses list */}
+                {editId && bonuses.filter(b=>b.employeeId===editId).length>0 && (
+                  <div className="space-y-2 mb-3">
+                    {bonuses.filter(b=>b.employeeId===editId).map(b=>(
+                      <div key={b.id} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.06]">
+                        {editingBonusId===b.id ? (
+                          <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <input value={bonusForm.name} onChange={e=>setBonusForm(f=>({...f,name:e.target.value}))} placeholder="Nombre" className={inp}/>
+                            <input type="number" min="0" step="0.01" value={bonusForm.amount} onChange={e=>setBonusForm(f=>({...f,amount:e.target.value}))} placeholder="Monto" className={inp}/>
+                            <select value={bonusForm.currency} onChange={e=>setBonusForm(f=>({...f,currency:e.target.value as 'USD'|'BS'}))} className={inp}>
+                              <option value="USD">USD</option><option value="BS">BS</option>
+                            </select>
+                            <select value={bonusForm.frequency} onChange={e=>setBonusForm(f=>({...f,frequency:e.target.value as Bonus['frequency']}))} className={inp}>
+                              <option value="semanal">Semanal</option><option value="quincenal">Quincenal</option><option value="mensual">Mensual</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="flex-1 flex items-center gap-3">
+                            <div>
+                              <p className="text-xs font-black text-slate-800 dark:text-white">{b.name}</p>
+                              <p className="text-[10px] text-slate-400 dark:text-white/30">
+                                {b.currency==='USD'?'$':''}{fmtHR(b.amount)} {b.currency} · {FREQ_LABEL[b.frequency]}
+                                {b.status==='inactive'&&<span className="ml-1 text-red-400">(inactivo)</span>}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1 ml-2">
+                          {editingBonusId===b.id ? (
+                            <>
+                              <button type="button" disabled={savingBonus} onClick={async()=>{
+                                if(!bonusForm.name||!bonusForm.amount) return;
+                                setSavingBonus(true);
+                                try {
+                                  await updateDoc(doc(db,`businesses/${bid}/bonuses`,b.id),{
+                                    name:bonusForm.name, amount:Number(bonusForm.amount),
+                                    currency:bonusForm.currency, frequency:bonusForm.frequency,
+                                  });
+                                  setEditingBonusId(null);
+                                  toast.success('Bono actualizado');
+                                } catch { toast.error('Error al actualizar bono'); }
+                                finally { setSavingBonus(false); }
+                              }} className="p-1.5 hover:bg-emerald-100 dark:hover:bg-emerald-500/10 rounded-lg text-emerald-600 dark:text-emerald-400">
+                                {savingBonus?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>}
+                              </button>
+                              <button type="button" onClick={()=>setEditingBonusId(null)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-lg text-slate-400"><X size={14}/></button>
+                            </>
+                          ) : (
+                            <>
+                              <button type="button" onClick={()=>{
+                                setEditingBonusId(b.id);
+                                setBonusForm({name:b.name,amount:String(b.amount),currency:b.currency,frequency:b.frequency});
+                              }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-lg text-slate-400 hover:text-indigo-500"><Pencil size={14}/></button>
+                              <button type="button" onClick={async()=>{
+                                if(!confirm('¿Eliminar este bono?')) return;
+                                try { await deleteDoc(doc(db,`businesses/${bid}/bonuses`,b.id)); toast.success('Bono eliminado'); }
+                                catch { toast.error('Error al eliminar'); }
+                              }} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-500"><Trash2 size={14}/></button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Add new bonus form */}
+                {editId && (
+                  <div className="flex flex-wrap items-end gap-2 p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-500/[0.04] border border-emerald-100 dark:border-emerald-500/10">
+                    <div className="space-y-1 flex-1 min-w-[120px]">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Nombre</label>
+                      <input value={bonusForm.name} onChange={e=>setBonusForm(f=>({...f,name:e.target.value}))} placeholder="Ej: Bono de Transporte" className={inp}/>
+                    </div>
+                    <div className="space-y-1 w-24">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Monto</label>
+                      <input type="number" min="0" step="0.01" value={bonusForm.amount} onChange={e=>setBonusForm(f=>({...f,amount:e.target.value}))} className={inp}/>
+                    </div>
+                    <div className="space-y-1 w-20">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Moneda</label>
+                      <select value={bonusForm.currency} onChange={e=>setBonusForm(f=>({...f,currency:e.target.value as 'USD'|'BS'}))} className={inp}>
+                        <option value="USD">USD</option><option value="BS">BS</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1 w-28">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Frecuencia</label>
+                      <select value={bonusForm.frequency} onChange={e=>setBonusForm(f=>({...f,frequency:e.target.value as Bonus['frequency']}))} className={inp}>
+                        <option value="semanal">Semanal</option><option value="quincenal">Quincenal</option><option value="mensual">Mensual</option>
+                      </select>
+                    </div>
+                    <button type="button" disabled={savingBonus||!bonusForm.name||!bonusForm.amount} onClick={async()=>{
+                      if(!bid||!editId||!bonusForm.name||!bonusForm.amount) return;
+                      setSavingBonus(true);
+                      try {
+                        await addDoc(collection(db,`businesses/${bid}/bonuses`),{
+                          employeeId:editId, name:bonusForm.name,
+                          amount:Number(bonusForm.amount), currency:bonusForm.currency,
+                          frequency:bonusForm.frequency, status:'active',
+                          createdAt:serverTimestamp(), createdBy:userProfile?.uid||'',
+                        });
+                        setBonusForm({name:'',amount:'',currency:'USD',frequency:'quincenal'});
+                        toast.success('Bono agregado');
+                      } catch { toast.error('Error al agregar bono'); }
+                      finally { setSavingBonus(false); }
+                    }} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[9px] font-black uppercase tracking-wider disabled:opacity-40 flex items-center gap-1.5">
+                      {savingBonus?<Loader2 size={12} className="animate-spin"/>:<Plus size={12}/>} Agregar
+                    </button>
+                  </div>
+                )}
+                {!editId && <p className="text-[10px] text-slate-400 dark:text-white/30 italic">Guarda el empleado primero para agregar bonos</p>}
               </div>
 
               <div>

@@ -231,6 +231,14 @@ service cloud.firestore {
         allow delete: if isAdmin(bid);
       }
 
+      // Bonos de empleados: cualquier miembro puede leer/crear/actualizar
+      match /bonuses/{docId} {
+        allow read: if isMember(bid);
+        allow create: if isMember(bid);
+        allow update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
       // Conciliación bancaria — solo owner/admin
       match /bankStatements/{month} {
         allow read, write, delete: if isAdmin(bid);
