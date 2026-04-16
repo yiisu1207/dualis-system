@@ -157,9 +157,10 @@ const VE_AMOUNT_RE = /^-?[\d.]+,\d{2}$/;
  * columnas por posición X. Las filas que empiezan con fecha son filas nuevas;
  * las que no, son continuaciones (se concatenan al concepto de la fila anterior).
  */
-async function parsePDF(buffer: ArrayBuffer): Promise<string[][]> {
+async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawText: string }> {
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const allRows: string[][] = [];
+  const rawTextParts: string[] = [];
 
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
@@ -188,11 +189,16 @@ async function parsePDF(buffer: ArrayBuffer): Promise<string[][]> {
       const lineText = items.map(i => i.text).join(' ').trim();
       if (!lineText) continue;
 
+      // Acumular texto raw para detección de banco
+      rawTextParts.push(lineText);
+
       // Filtrar líneas de pie de página / encabezado de página
       if (/^Pagina:\s*\d/i.test(lineText)) continue;
       if (/Banco de Venezuela.*RIF/i.test(lineText)) continue;
       if (/BDVenl[ií]nea/i.test(lineText)) continue;
       if (/^Hist[oó]rico de movimientos$/i.test(lineText)) continue;
+      if (/Banco Universal.*RIF/i.test(lineText)) continue;
+      if (/DETALLE DE MOVIMIENTOS/i.test(lineText)) continue;
 
       // Detectar si es una fila de header
       const lNorm = norm(lineText);
@@ -235,7 +241,7 @@ async function parsePDF(buffer: ArrayBuffer): Promise<string[][]> {
     }
   }
 
-  return allRows;
+  return { rows: allRows, rawText: rawTextParts.join(' ') };
 }
 
 /**
@@ -271,6 +277,18 @@ function splitPdfRowByClusters(items: { x: number; text: string }[]): string[] {
   cells.push(current.trim());
 
   return cells;
+}
+
+// ——— Detección de banco desde texto PDF ———
+
+function detectProfileFromPdfText(rawText: string): BankStatementProfile | undefined {
+  const t = norm(rawText);
+  for (const p of BANK_PROFILES) {
+    if (!p.pdfDetectionKeywords?.length) continue;
+    const hits = p.pdfDetectionKeywords.filter(k => t.includes(norm(k))).length;
+    if (hits >= 1) return p;
+  }
+  return undefined;
 }
 
 // ——— Detección de header ———
@@ -408,12 +426,15 @@ function detectProfile(headerRow: string[]): BankStatementProfile | undefined {
 export async function parseBankStatement(file: File, opts: ParseOpts): Promise<ParseResult> {
   const warnings: string[] = [];
   let rawRows: string[][] = [];
+  let pdfProfile: BankStatementProfile | undefined;
 
   try {
     const name = file.name.toLowerCase();
     if (name.endsWith('.pdf')) {
       const buf = await readFileAsBuffer(file);
-      rawRows = await parsePDF(buf);
+      const result = await parsePDF(buf);
+      rawRows = result.rows;
+      pdfProfile = detectProfileFromPdfText(result.rawText);
     } else if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
       const buf = await readFileAsBuffer(file);
       rawRows = await parseExcel(buf);
@@ -445,7 +466,7 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
   const headerRow = rawRows[headerIdx];
   const dataRows = rawRows.slice(headerIdx + 1).filter(r => r.some(c => c && c.trim()));
 
-  const profile = opts.profile || detectProfile(headerRow) || GENERIC_PROFILE;
+  const profile = opts.profile || pdfProfile || detectProfile(headerRow) || GENERIC_PROFILE;
 
   // Resolución de columnas
   const cm = opts.manualColumnMap || {};

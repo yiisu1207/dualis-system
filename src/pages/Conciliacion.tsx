@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, Timestamp } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
-import { FileCheck, Loader2 } from 'lucide-react';
+import { CheckCircle2, FileCheck, Loader2, AlertTriangle, XCircle, Landmark } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import {
   findMatches,
@@ -71,6 +71,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
   const [loadingAccounts, setLoadingAccounts] = useState(true);
 
   const [abonos, setAbonos] = useState<SessionAbono[]>([]);
+  const [loadingAbonos, setLoadingAbonos] = useState(true);
   const [draft, setDraft] = useState<DraftAbono>(emptyDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedMatchRowId, setSelectedMatchRowId] = useState<string | null>(null);
@@ -82,6 +83,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
 
   const processedHashesRef = useRef<Map<string, string>>(new Map());
 
+  // Listener de cuentas bancarias
   useEffect(() => {
     if (!businessId) return;
     setLoadingAccounts(true);
@@ -104,8 +106,32 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     return () => unsub();
   }, [businessId, monthKey, toast]);
 
+  // Listener de abonos persistidos en Firestore
   useEffect(() => {
-    setAbonos([]);
+    if (!businessId) return;
+    setLoadingAbonos(true);
+    const ref = collection(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos');
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        const list: SessionAbono[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as SessionAbono;
+          list.push({ ...data, id: d.id });
+        });
+        list.sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.amount - b.amount);
+        setAbonos(list);
+        setLoadingAbonos(false);
+      },
+      (err) => {
+        console.error('[Conciliacion] abonos onSnapshot error', err);
+        setLoadingAbonos(false);
+      }
+    );
+    return () => unsub();
+  }, [businessId, monthKey]);
+
+  useEffect(() => {
     setDraft(emptyDraft());
     setEditingId(null);
     setSelectedMatchRowId(null);
@@ -224,55 +250,49 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     const acc = accounts.find((a) => a.accountAlias === alias);
     if (!acc) return;
     if (!confirm(`¿Borrar la cuenta "${acc.accountLabel}" y sus ${acc.rowCount} filas del ${monthKey}?`)) return;
+    // Eliminar archivo de Storage si existe
+    if (acc.fileUrl && acc.sourceFilename) {
+      try {
+        const filePath = `bankStatements/${businessId}/${monthKey}/${alias}/${acc.sourceFilename}`;
+        await deleteObject(storageRef(storage, filePath));
+      } catch { /* archivo ya no existe — OK */ }
+    }
     const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'accounts', alias);
     await deleteDoc(ref);
     toast.success(`Cuenta "${acc.accountLabel}" eliminada`);
   };
 
-  const addOrUpdateAbono = (base: DraftAbono, matchRowId: string | null) => {
+  const addOrUpdateAbono = async (base: DraftAbono, matchRowId: string | null) => {
     const matches = findMatches(base, pool);
     const status: AbonoStatus = classifyAbono(base, matches, matchRowId || undefined);
     const matchAccountAlias = matchRowId ? pool.find((r) => r.rowId === matchRowId)?.accountAlias : undefined;
-    if (editingId) {
-      setAbonos((prev) =>
-        prev.map((a) =>
-          a.id === editingId
-            ? {
-                ...a,
-                ...base,
-                id: editingId,
-                status,
-                matchRowId,
-                matchAccountAlias,
-              }
-            : a
-        )
-      );
-    } else {
-      const id = base.id || makeId();
-      setAbonos((prev) => [
-        ...prev,
-        {
-          ...base,
-          id,
-          status,
-          matchRowId,
-          matchAccountAlias,
-        },
-      ]);
-    }
+    const id = editingId || base.id || makeId();
+    const abonoDoc: SessionAbono = {
+      ...base,
+      id,
+      status,
+      matchRowId,
+      matchAccountAlias,
+    };
+    // Persistir en Firestore
+    const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', id);
+    await setDoc(ref, abonoDoc);
   };
 
-  const handleSubmitAbono = () => {
+  const handleSubmitAbono = async () => {
     if (!(draft.amount > 0) || !draft.date) return;
     if (duplicateAbonoId && !confirm('Hay un posible duplicado con estos datos. ¿Continuar igualmente?')) {
       return;
     }
-    addOrUpdateAbono(draft, selectedMatchRowId);
-    toast.success(editingId ? 'Abono actualizado' : 'Abono agregado');
-    setDraft(emptyDraft());
-    setEditingId(null);
-    setSelectedMatchRowId(null);
+    try {
+      await addOrUpdateAbono(draft, selectedMatchRowId);
+      toast.success(editingId ? 'Abono actualizado' : 'Abono agregado');
+      setDraft(emptyDraft());
+      setEditingId(null);
+      setSelectedMatchRowId(null);
+    } catch (err: any) {
+      toast.error('Error guardando abono: ' + (err?.message || String(err)));
+    }
   };
 
   const handleClearEdit = () => {
@@ -299,10 +319,15 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     setSelectedMatchRowId(a.matchRowId);
   };
 
-  const handleDeleteAbono = (id: string) => {
+  const handleDeleteAbono = async (id: string) => {
     if (!confirm('¿Borrar este abono?')) return;
-    setAbonos((prev) => prev.filter((a) => a.id !== id));
-    if (editingId === id) handleClearEdit();
+    try {
+      const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', id);
+      await deleteDoc(ref);
+      if (editingId === id) handleClearEdit();
+    } catch (err: any) {
+      toast.error('Error borrando abono: ' + (err?.message || String(err)));
+    }
   };
 
   const mapExtractedToDraft = (r: ExtractedToDraftInput): DraftAbono => ({
@@ -360,25 +385,43 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     }
   };
 
-  const handleBatchConfirm = (confirmed: Array<{ abono: DraftAbono; matchRowId: string | null }>) => {
-    const newAbonos: SessionAbono[] = confirmed.map(({ abono, matchRowId }) => {
-      const matches = findMatches(abono, pool);
-      const status = classifyAbono(abono, matches, matchRowId || undefined);
-      const matchAccountAlias = matchRowId ? pool.find((r) => r.rowId === matchRowId)?.accountAlias : undefined;
-      return {
-        ...abono,
-        id: abono.id || makeId(),
-        status,
-        matchRowId,
-        matchAccountAlias,
-      };
-    });
-    setAbonos((prev) => [...prev, ...newAbonos]);
-    setBatchItems(null);
-    toast.success(`${newAbonos.length} abono${newAbonos.length !== 1 ? 's' : ''} agregado${newAbonos.length !== 1 ? 's' : ''}`);
+  const handleBatchConfirm = async (confirmed: Array<{ abono: DraftAbono; matchRowId: string | null }>) => {
+    try {
+      for (const { abono, matchRowId } of confirmed) {
+        const matches = findMatches(abono, pool);
+        const status = classifyAbono(abono, matches, matchRowId || undefined);
+        const matchAccountAlias = matchRowId ? pool.find((r) => r.rowId === matchRowId)?.accountAlias : undefined;
+        const id = abono.id || makeId();
+        const abonoDoc: SessionAbono = {
+          ...abono,
+          id,
+          status,
+          matchRowId,
+          matchAccountAlias,
+        };
+        const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', id);
+        await setDoc(ref, abonoDoc);
+      }
+      setBatchItems(null);
+      toast.success(`${confirmed.length} abono${confirmed.length !== 1 ? 's' : ''} agregado${confirmed.length !== 1 ? 's' : ''}`);
+    } catch (err: any) {
+      toast.error('Error guardando abonos: ' + (err?.message || String(err)));
+    }
   };
 
   const poolTotalCredit = useMemo(() => pool.reduce((s, r) => s + Math.max(0, r.amount), 0), [pool]);
+
+  // Métricas del dashboard
+  const stats = useMemo(() => {
+    const confirmados = abonos.filter(a => a.status === 'confirmado');
+    const porRevisar = abonos.filter(a => a.status === 'revisar');
+    const noEncontrados = abonos.filter(a => a.status === 'no_encontrado');
+    const totalConfirmado = confirmados.reduce((s, a) => s + a.amount, 0);
+    const totalAbonos = abonos.reduce((s, a) => s + a.amount, 0);
+    const pct = poolTotalCredit > 0 ? Math.min(100, (totalConfirmado / poolTotalCredit) * 100) : 0;
+    const sinConciliar = poolTotalCredit - totalConfirmado;
+    return { confirmados: confirmados.length, porRevisar: porRevisar.length, noEncontrados: noEncontrados.length, totalConfirmado, totalAbonos, pct, sinConciliar };
+  }, [abonos, poolTotalCredit]);
 
   if (!businessId) {
     return <div className="p-6 text-slate-500 dark:text-slate-400">Cargando...</div>;
@@ -395,8 +438,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
             <div>
               <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Conciliación Bancaria</h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Pool: {pool.length} filas · {accounts.length} cuenta{accounts.length !== 1 ? 's' : ''} · $
-                {poolTotalCredit.toFixed(2)} crédito · {abonos.length} abono{abonos.length !== 1 ? 's' : ''} en sesión
+                Pool: {pool.length} filas · {accounts.length} cuenta{accounts.length !== 1 ? 's' : ''} · {abonos.length} abono{abonos.length !== 1 ? 's' : ''}
               </p>
             </div>
           </div>
@@ -408,15 +450,54 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
           />
         </div>
 
+        {/* Dashboard resumen */}
+        {accounts.length > 0 && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
+                <CheckCircle2 size={13} className="text-emerald-500" /> Confirmados
+              </div>
+              <div className="text-lg font-semibold text-slate-900 dark:text-white">{stats.confirmados}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">${stats.totalConfirmado.toLocaleString('es', { minimumFractionDigits: 2 })}</div>
+            </div>
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
+                <AlertTriangle size={13} className="text-amber-500" /> Por revisar
+              </div>
+              <div className="text-lg font-semibold text-slate-900 dark:text-white">{stats.porRevisar}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{stats.noEncontrados} no encontrados</div>
+            </div>
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
+                <Landmark size={13} className="text-indigo-500" /> Crédito banco
+              </div>
+              <div className="text-lg font-semibold text-slate-900 dark:text-white">${poolTotalCredit.toLocaleString('es', { minimumFractionDigits: 2 })}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">${stats.sinConciliar.toLocaleString('es', { minimumFractionDigits: 2 })} sin conciliar</div>
+            </div>
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
+                <FileCheck size={13} className="text-indigo-500" /> % Conciliación
+              </div>
+              <div className="text-lg font-semibold text-slate-900 dark:text-white">{stats.pct.toFixed(1)}%</div>
+              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 mt-1">
+                <div
+                  className={`h-1.5 rounded-full ${stats.pct >= 90 ? 'bg-emerald-500' : stats.pct >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                  style={{ width: `${Math.min(100, stats.pct)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         <AccountChips
           accounts={accountChips}
           onAdd={() => setShowUploadModal(true)}
           onDelete={canEdit ? handleDeleteAccount : undefined}
         />
 
-        {loadingAccounts ? (
+        {(loadingAccounts || loadingAbonos) ? (
           <div className="flex items-center justify-center py-12 text-slate-500 dark:text-slate-400">
-            <Loader2 size={18} className="animate-spin mr-2" /> Cargando cuentas del mes...
+            <Loader2 size={18} className="animate-spin mr-2" /> Cargando datos del mes...
           </div>
         ) : accounts.length === 0 ? (
           <div className="bg-white dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 text-center">

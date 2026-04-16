@@ -245,6 +245,11 @@ service cloud.firestore {
         match /accounts/{alias} {
           allow read, write, delete: if isAdmin(bid);
         }
+        match /abonos/{abonoId} {
+          allow read: if isMember(bid);
+          allow create, update: if isMember(bid);
+          allow delete: if isAdmin(bid);
+        }
       }
 
       // Catch-all: cualquier subcollection NO listada arriba

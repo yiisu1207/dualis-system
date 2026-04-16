@@ -1,4 +1,4 @@
-// Perfiles de parseo de estados de cuenta CSV/Excel de los principales bancos VE.
+// Perfiles de parseo de estados de cuenta CSV/Excel/PDF de los principales bancos VE.
 // Usado por src/utils/bankStatementParser.ts.
 
 export type DateFormat = 'DD/MM/YYYY' | 'YYYY-MM-DD' | 'MM/DD/YYYY' | 'DD-MM-YYYY';
@@ -8,6 +8,7 @@ export interface BankStatementProfile {
   bankCode: string;             // '0134'
   bankName: string;             // 'Banesco'
   headerKeywords: string[];     // para detección de la fila de encabezados
+  pdfDetectionKeywords?: string[]; // palabras clave para detectar el banco desde texto PDF
   columnMap: {
     date: string[];
     amount?: string[];          // si el banco usa una sola columna firmada
@@ -22,21 +23,22 @@ export interface BankStatementProfile {
 }
 
 // Las listas de alias de columna son intencionadamente amplias porque los bancos VE
-// cambian el encabezado entre exports CSV / XLS / web / app. Se matchean case-insensitive
-// con `.includes()` tras normalizar.
+// cambian el encabezado entre exports CSV / XLS / web / app / PDF.
+// Se matchean case-insensitive con `.includes()` tras normalizar.
 export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0134',
     bankName: 'Banesco',
-    headerKeywords: ['fecha', 'descripcion', 'referencia'],
+    headerKeywords: ['fecha', 'descripcion', 'referencia', 'cargos', 'abonos'],
+    pdfDetectionKeywords: ['banesco banco universal', 'banesconline', 'detalle de movimientos'],
     columnMap: {
-      date:        ['fecha', 'fecha de operacion', 'fecha operacion'],
-      credit:      ['credito', 'abono', 'monto abonado'],
-      debit:       ['debito', 'cargo', 'monto cargado'],
+      date:        ['fecha', 'fecha de operacion', 'fecha operacion', 'dia'],
+      credit:      ['credito', 'abono', 'abonos', 'monto abonado'],
+      debit:       ['debito', 'cargo', 'cargos', 'monto cargado'],
       amount:      ['monto', 'importe'],
-      reference:   ['referencia', 'ref', 'nro referencia', 'numero de referencia'],
+      reference:   ['referencia', 'ref', 'ref.', 'nro referencia', 'numero de referencia'],
       description: ['descripcion', 'concepto', 'detalle'],
-      balance:     ['saldo', 'saldo disponible'],
+      balance:     ['saldo', 'saldo disponible', 'saldos'],
     },
     dateFormat: 'DD/MM/YYYY',
     decimalSep: ',',
@@ -44,13 +46,14 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0105',
     bankName: 'Mercantil',
-    headerKeywords: ['fecha', 'concepto', 'monto'],
+    headerKeywords: ['fecha', 'concepto', 'monto', 'cargos', 'abonos', 'referencia'],
+    pdfDetectionKeywords: ['mercantil banco universal', 'mercantil en linea', 'banco mercantil'],
     columnMap: {
       date:        ['fecha', 'fecha transaccion'],
-      credit:      ['credito', 'abono'],
-      debit:       ['debito', 'cargo'],
+      credit:      ['credito', 'abono', 'abonos'],
+      debit:       ['debito', 'cargo', 'cargos'],
       amount:      ['monto', 'importe', 'valor'],
-      reference:   ['referencia', 'ref', 'num referencia'],
+      reference:   ['referencia', 'ref', 'num referencia', 'n° referencia', 'nro referencia', 'n referencia'],
       description: ['concepto', 'descripcion', 'detalle', 'observacion'],
       balance:     ['saldo'],
     },
@@ -60,7 +63,8 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0102',
     bankName: 'Banco de Venezuela',
-    headerKeywords: ['fecha', 'concepto', 'monto'],
+    headerKeywords: ['fecha', 'concepto', 'monto', 'referencia', 'operacion', 'saldo'],
+    pdfDetectionKeywords: ['banco de venezuela', 'bdvenlinea', 'bdv'],
     columnMap: {
       date:        ['fecha', 'fecha operacion'],
       credit:      ['credito', 'abono', 'haber'],
@@ -76,11 +80,12 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0108',
     bankName: 'Provincial (BBVA)',
-    headerKeywords: ['fecha', 'concepto', 'importe'],
+    headerKeywords: ['fecha', 'concepto', 'importe', 'debitos', 'creditos'],
+    pdfDetectionKeywords: ['bbva provincial', 'provincial s.a.', 'provinet', 'banco provincial'],
     columnMap: {
       date:        ['fecha', 'fecha valor', 'fecha operacion'],
-      credit:      ['haber', 'credito', 'abono'],
-      debit:       ['debe', 'debito', 'cargo'],
+      credit:      ['haber', 'credito', 'creditos', 'abono'],
+      debit:       ['debe', 'debito', 'debitos', 'cargo'],
       amount:      ['importe', 'monto'],
       reference:   ['referencia', 'ref'],
       description: ['concepto', 'descripcion', 'detalle'],
@@ -92,13 +97,14 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0191',
     bankName: 'BNC',
-    headerKeywords: ['fecha', 'descripcion', 'monto'],
+    headerKeywords: ['fecha', 'descripcion', 'monto', 'debitos', 'creditos'],
+    pdfDetectionKeywords: ['banco nacional de credito', 'bnc', 'bncnet'],
     columnMap: {
       date:        ['fecha'],
-      credit:      ['credito', 'abono'],
-      debit:       ['debito', 'cargo'],
+      credit:      ['credito', 'creditos', 'abono'],
+      debit:       ['debito', 'debitos', 'cargo'],
       amount:      ['monto', 'importe'],
-      reference:   ['referencia', 'ref', 'numero'],
+      reference:   ['referencia', 'ref', 'numero', 'n° documento', 'nro documento', 'numero documento', 'no. documento'],
       description: ['descripcion', 'concepto'],
       balance:     ['saldo'],
     },
@@ -113,13 +119,13 @@ export const GENERIC_PROFILE: BankStatementProfile = {
   bankName: 'Genérico',
   headerKeywords: ['fecha', 'monto', 'descripcion', 'referencia', 'concepto', 'credito', 'debito'],
   columnMap: {
-    date:        ['fecha', 'date'],
-    credit:      ['credito', 'abono', 'credit', 'haber'],
-    debit:       ['debito', 'cargo', 'debit', 'debe'],
+    date:        ['fecha', 'date', 'dia'],
+    credit:      ['credito', 'creditos', 'abono', 'abonos', 'credit', 'haber'],
+    debit:       ['debito', 'debitos', 'cargo', 'cargos', 'debit', 'debe'],
     amount:      ['monto', 'importe', 'amount', 'valor'],
-    reference:   ['referencia', 'ref', 'reference', 'numero', 'comprobante'],
+    reference:   ['referencia', 'ref', 'ref.', 'reference', 'numero', 'comprobante', 'n° documento', 'nro documento'],
     description: ['descripcion', 'concepto', 'description', 'detalle', 'observacion'],
-    balance:     ['saldo', 'balance'],
+    balance:     ['saldo', 'saldos', 'balance'],
   },
   dateFormat: 'DD/MM/YYYY',
   decimalSep: ',',
