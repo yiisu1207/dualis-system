@@ -55,6 +55,8 @@ interface Voucher {
   createdAt: any; settledAt?: any;
   voucherDate?: string;
   deferToNextPeriod?: boolean;
+  isCarryOver?: boolean;
+  carryOverFromPeriod?: string;
   registeredBy?: string; registeredByName?: string;
   correctedFrom?: string; originalAmount?: number; correctionNote?: string; correctedAt?: any;
 }
@@ -1136,7 +1138,35 @@ export default function RecursosHumanos() {
             await aBatch.commit();
           }
 
-          // 7. Persist corte record for historial
+          // 7. Create carry-over vouchers for overdrafted employees
+          const freqLabel = FREQ_LABEL[freq] || freq;
+          let carryOverCount = 0;
+          for (const n of freqRows) {
+            if (!n.isOverdraft || n.overdraftUSD <= 0.01) continue;
+            // Anti-duplicate: check if there's already a pending carry-over for this employee from this period
+            const existingCarryOver = pendingVouchers.find(v =>
+              v.employeeId === n.emp.id && v.isCarryOver && v.carryOverFromPeriod === period && v.status === 'PENDIENTE'
+            );
+            if (existingCarryOver) continue;
+            await addDoc(collection(db, `businesses/${bid}/vouchers`), {
+              employeeId: n.emp.id,
+              employeeName: n.emp.fullName,
+              amount: Math.round(n.overdraftUSD * 100) / 100,
+              currency: 'USD',
+              amountUSD: Math.round(n.overdraftUSD * 100) / 100,
+              reason: `Arrastre saldo deudor — ${freqLabel} ${period} (-$${fmtHR(n.overdraftUSD)})`,
+              status: 'PENDIENTE',
+              isCarryOver: true,
+              carryOverFromPeriod: period,
+              voucherDate: new Date().toISOString().slice(0, 10),
+              registeredBy: userProfile?.uid || '',
+              registeredByName: 'Sistema (arrastre automático)',
+              createdAt: serverTimestamp(),
+            });
+            carryOverCount++;
+          }
+
+          // 8. Persist corte record for historial
           const corteTotalPayUSD = detailsWithPay.filter(d=>d.paymentCurrency==='USD').reduce((s,d)=>s+d.netUSD,0);
           const corteTotalPayBs  = detailsWithPay.filter(d=>d.paymentCurrency==='BS').reduce((s,d)=>s+(d.payAmountReal||0),0);
           await addDoc(collection(db,`businesses/${bid}/cortes`),{
@@ -1153,6 +1183,7 @@ export default function RecursosHumanos() {
             employeeCount: freqRows.length,
             voucherCount: freqVouchers.length,
             deferredCount: freqDeferred.length,
+            carryOverCount,
             vouchers: freqVouchers.map(v=>({
               id:v.id, employeeId:v.employeeId, employeeName:v.employeeName,
               amount:v.amount, currency:v.currency, amountUSD:v.amountUSD||0,
@@ -1160,7 +1191,8 @@ export default function RecursosHumanos() {
             })),
           });
 
-          toast.success(`Período ${FREQ_LABEL[freq]} cerrado — ${freqRows.length} empleados · revisa el Historial${freqDeferred.length?` · ${freqDeferred.length} vales pasan al próximo período`:''}`);
+          const carryMsg = carryOverCount > 0 ? ` · ${carryOverCount} arrastre${carryOverCount>1?'s':''} de saldo deudor` : '';
+          toast.success(`Período ${freqLabel} cerrado — ${freqRows.length} empleados · revisa el Historial${freqDeferred.length?` · ${freqDeferred.length} vales pasan al próximo período`:''}${carryMsg}`);
         } catch { toast.error('Error al cerrar el período'); }
         finally { setProcLoading(false); }
       },
@@ -1648,6 +1680,7 @@ export default function RecursosHumanos() {
                             {v.employeeName}
                             {v.correctedFrom&&<span className="text-[8px] bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-black uppercase">Corrección</span>}
                             {v.deferToNextPeriod&&<span className="text-[8px] bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 text-violet-700 dark:text-violet-400 px-1.5 py-0.5 rounded font-black uppercase">Próx. corte</span>}
+                            {v.isCarryOver&&<span className="text-[8px] bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-700 dark:text-rose-400 px-1.5 py-0.5 rounded font-black uppercase">Arrastre</span>}
                           </p>
                           {v.registeredByName && <p className="text-[9px] text-slate-400 dark:text-white/25 mt-0.5">por {v.registeredByName}</p>}
                         </td>
@@ -2053,6 +2086,7 @@ export default function RecursosHumanos() {
                               <div className="flex flex-col items-end gap-0.5">
                                 <span className="font-black text-rose-600 dark:text-rose-400">-${fmtHR(n.overdraftUSD)}</span>
                                 <span className="text-[9px] font-black uppercase tracking-widest text-rose-500 dark:text-rose-400/80">Sobregirado</span>
+                                <span className="text-[8px] text-rose-400 dark:text-rose-500">Se arrastrará al próximo corte</span>
                               </div>
                             ) : (
                               <span className="font-black text-emerald-600 dark:text-emerald-400">{n.netUSD>0?`$${fmtHR(n.netUSD)}`:'—'}</span>
@@ -2346,6 +2380,11 @@ export default function RecursosHumanos() {
                                   {c.deferredCount} diferidos
                                 </span>
                               )}
+                              {(c as any).carryOverCount > 0 && (
+                                <span className="text-rose-500 dark:text-rose-400">
+                                  {(c as any).carryOverCount} arrastre{(c as any).carryOverCount>1?'s':''}
+                                </span>
+                              )}
                               <span className="text-[9px] text-slate-400 dark:text-white/25">
                                 por {c.executedByName}
                               </span>
@@ -2419,6 +2458,13 @@ export default function RecursosHumanos() {
               <div className="px-6 py-2 border-b border-slate-50 dark:border-white/[0.06] bg-amber-50/50 dark:bg-amber-500/5">
                 <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
                   ⏳ {selectedCorte.deferredCount} vale{selectedCorte.deferredCount>1?'s':''} diferido{selectedCorte.deferredCount>1?'s':''} al próximo período
+                </p>
+              </div>
+            )}
+            {(selectedCorte as any).carryOverCount > 0 && (
+              <div className="px-6 py-2 border-b border-slate-50 dark:border-white/[0.06] bg-rose-50/50 dark:bg-rose-500/5">
+                <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                  ⚠ {(selectedCorte as any).carryOverCount} empleado{(selectedCorte as any).carryOverCount>1?'s':''} con saldo deudor arrastrado al próximo período
                 </p>
               </div>
             )}
