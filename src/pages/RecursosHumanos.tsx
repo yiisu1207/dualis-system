@@ -1574,7 +1574,7 @@ export default function RecursosHumanos() {
                   </p>
                 </div>
                 {/* Quick form */}
-                <form onSubmit={handleQuickVoucher} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
+                <form onSubmit={handleQuickVoucher} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
                   {/* G: Custom colored employee dropdown */}
                   <div ref={empDropRef} className="relative">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
@@ -1787,7 +1787,7 @@ export default function RecursosHumanos() {
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Abonos a Cuenta</h3>
                   <span className="text-[9px] text-slate-400 dark:text-white/30 font-normal">Pagos del empleado que reducen su saldo de vales</span>
                 </div>
-                <form onSubmit={handleAddAbono} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
+                <form onSubmit={handleAddAbono} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
                   {/* Abono employee dropdown */}
                   <div ref={abonoDropRef} className="relative">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
@@ -1898,7 +1898,7 @@ export default function RecursosHumanos() {
                     <strong>Recuerda:</strong> Verifica el tipo y la fecha antes de registrar. Las ausencias y días faltantes restan del pago del período.
                   </p>
                 </div>
-                <form onSubmit={handleAddTimeEntry} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
+                <form onSubmit={handleAddTimeEntry} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
                   {/* G: Custom colored employee dropdown */}
                   <div ref={teDropRef} className="relative">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Empleado</label>
