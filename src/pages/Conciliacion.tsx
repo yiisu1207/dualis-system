@@ -217,7 +217,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
   const addOrUpdateAbono = (base: DraftAbono, matchRowId: string | null) => {
     const matches = findMatches(base, pool);
     const status: AbonoStatus = classifyAbono(base, matches, matchRowId || undefined);
-    const matchAccountAlias = matchRowId ? pool.find((r) => r.rowId === matchRowId)?.accountLabel : undefined;
+    const matchAccountAlias = matchRowId ? pool.find((r) => r.rowId === matchRowId)?.accountAlias : undefined;
     if (editingId) {
       setAbonos((prev) =>
         prev.map((a) =>
@@ -349,7 +349,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     const newAbonos: SessionAbono[] = confirmed.map(({ abono, matchRowId }) => {
       const matches = findMatches(abono, pool);
       const status = classifyAbono(abono, matches, matchRowId || undefined);
-      const matchAccountAlias = matchRowId ? pool.find((r) => r.rowId === matchRowId)?.accountLabel : undefined;
+      const matchAccountAlias = matchRowId ? pool.find((r) => r.rowId === matchRowId)?.accountAlias : undefined;
       return {
         ...abono,
         id: abono.id || makeId(),

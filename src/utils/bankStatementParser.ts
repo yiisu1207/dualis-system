@@ -188,7 +188,11 @@ function normalizeDate(raw: string, fmt: DateFormat): string | null {
     // swap si el usuario aplicó el formato equivocado
     const tmp = day; day = month; month = tmp;
   }
-  return `${y}-${month}-${day}`;
+  // Validar que la fecha sea real (ej. no 31 de febrero)
+  const result = `${y}-${month}-${day}`;
+  const check = new Date(result + 'T00:00:00Z');
+  if (isNaN(check.getTime()) || check.toISOString().slice(0, 10) !== result) return null;
+  return result;
 }
 
 function normalizeAmount(raw: string, decimalSep: string): number | null {

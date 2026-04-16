@@ -210,7 +210,8 @@ function ProfilePanel({ emp, vouchers, loans, payrollHistory, businessId, curren
   const vacLeft    = Math.max(0, accrued - (emp.vacationDaysUsed||0));
   const activeLoans = loans.filter(l=>l.employeeId===emp.id && l.status==='ACTIVO');
   const empHistory  = payrollHistory.filter(r=>r.details?.some(d=>d.employeeId===emp.id)).slice(0,6)
-    .map(r=>({ run:r, det:r.details.find(d=>d.employeeId===emp.id)! }));
+    .map(r=>({ run:r, det:r.details.find(d=>d.employeeId===emp.id) as any }))
+    .filter(r=>r.det);
 
   // Bs voucher: calc equiv USD usando tasa histórica de la fecha del vale
   const isBcvEmp = emp.paymentCurrency === 'BS';
@@ -687,7 +688,7 @@ export default function RecursosHumanos() {
   }, [abonos, isIndividual, myUid, isOwner]);
 
   // Tasa interna propia de RRHH; si no hay, cae al BCV global
-  const currentRate = voucherRates[0]?.rate || (tasaBCV ?? 0);
+  const currentRate = voucherRates[0]?.rate ?? (tasaBCV ?? 0);
 
   // Find the applicable rate for a specific date (latest effectiveDate on or before that date)
   const getRateForDate = useCallback((dateStr: string): number => {
@@ -1131,12 +1132,16 @@ export default function RecursosHumanos() {
           }
 
           // 5. Advance loan installments (only this frequency)
-          for(const loan of freqLoans){
-            const paid=loan.paidInstallments+1;
-            await updateDoc(doc(db,`businesses/${bid}/loans`,loan.id),{
-              paidInstallments:paid,
-              status:paid>=loan.totalInstallments?'PAGADO':'ACTIVO',
-            });
+          if(freqLoans.length){
+            const lBatch=writeBatch(db);
+            for(const loan of freqLoans){
+              const paid=loan.paidInstallments+1;
+              lBatch.update(doc(db,`businesses/${bid}/loans`,loan.id),{
+                paidInstallments:paid,
+                status:paid>=loan.totalInstallments?'PAGADO':'ACTIVO',
+              });
+            }
+            await lBatch.commit();
           }
 
           // 6. Settle abonos (only this frequency)
@@ -2326,7 +2331,7 @@ export default function RecursosHumanos() {
                 <div className="divide-y divide-slate-50 dark:divide-white/[0.04]">
                   {cortes.map(c => {
                     const dateStr = c.executedAt?.toDate
-                      ? c.executedAt.toDate().toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                      ? c.executedAt.toDate().toLocaleString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                       : '—';
                     const empMap = new Map<string, { name: string; count: number; totalUSD: number }>();
                     (c.vouchers || []).forEach(v => {
@@ -2431,7 +2436,7 @@ export default function RecursosHumanos() {
                 </h2>
                 <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/40 mt-0.5 tracking-widest">
                   {selectedCorte.executedAt?.toDate
-                    ? selectedCorte.executedAt.toDate().toLocaleDateString('es-VE',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})
+                    ? selectedCorte.executedAt.toDate().toLocaleString('es-VE',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})
                     : '—'}
                   {' · '}por {selectedCorte.executedByName}
                   {selectedCorte.frequency && ` · ${FREQ_LABEL[selectedCorte.frequency]}`}

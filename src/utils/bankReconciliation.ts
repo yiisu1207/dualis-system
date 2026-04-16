@@ -121,7 +121,7 @@ export function findMatches(
 
     // Filtro duro monto — tolerancia exacta ±0.01, o pct si la cuenta lo define.
     const pct = row.amountTolerancePct && row.amountTolerancePct > 0 ? row.amountTolerancePct : 0;
-    const tolerance = Math.max(0.01, pct * Math.abs(abono.amount));
+    const tolerance = Math.max(0.01, pct * Math.abs(row.amount));
     const amountDiff = Math.abs(row.amount - abono.amount);
     if (amountDiff > tolerance) continue;
 

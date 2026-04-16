@@ -158,7 +158,7 @@ export function useSubscription(businessId: string) {
 
     // Add-on overrides (legacy)
     if (moduleId === 'vision'        && (subscription.addOns.visionLab    || subscription.addOns.auditoria_ia)) return true;
-    if (moduleId === 'conciliacion'  && (subscription.addOns.conciliacion || subscription.addOns.conciliacion)) return true;
+    if (moduleId === 'conciliacion'  && subscription.addOns.conciliacion) return true;
     if (moduleId === 'rrhh'          && subscription.addOns.rrhhPro)         return true;
     // New add-ons
     if (moduleId === 'portal_clientes' && subscription.addOns.portal)        return true;

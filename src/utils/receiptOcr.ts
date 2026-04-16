@@ -55,17 +55,23 @@ export async function extractReceipt(file: File): Promise<ExtractedReceipt> {
   }
   const user = auth.currentUser;
   if (!user) throw new Error('Debes estar autenticado');
-  const token = await user.getIdToken();
+  let token = await user.getIdToken();
   const base64 = await fileToBase64(file);
 
-  const res = await fetch('/api/extract-receipt', {
+  const doFetch = (t: string) => fetch('/api/extract-receipt', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${t}`,
     },
     body: JSON.stringify({ imageBase64: base64, mimeType: file.type }),
   });
+
+  let res = await doFetch(token);
+  if (res.status === 401) {
+    token = await user.getIdToken(true);
+    res = await doFetch(token);
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error || `HTTP ${res.status}`);

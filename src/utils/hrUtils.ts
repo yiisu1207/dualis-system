@@ -230,7 +230,7 @@ export function printPayslip(
          <td class="tr positive">+${a.currency==='USD'?'$':'Bs '}${fmtHR(Number(a.amount))}</td></tr>`
       ).join('')
     : '';
-  const abonosTotalUSD = (abonosList || []).reduce((s: number, a: any) => s + (a.currency === 'USD' ? a.amount : (a.amountUSD || 0)), 0);
+  const abonosTotalUSD = (abonosList || []).reduce((s: number, a: any) => s + (a.currency === 'USD' ? Number(a.amount) || 0 : Number(a.amountUSD) || 0), 0);
 
   const emissionDate = new Date().toLocaleDateString('es-VE', { year:'numeric', month:'long', day:'numeric' });
 
@@ -405,12 +405,12 @@ export function printPayrollRunPDF(
       ).join('');
 
       const loanLines = (d.settledLoans || []).map((l: any) =>
-        `<tr class="detail-sub"><td colspan="2" style="padding-left:20px">↳ ${l.description || 'Préstamo'} (cuota ${l.paidInstallments+1}/${l.totalInstallments})</td>
-          <td class="tr neg">-${l.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(l.installmentAmount))}</td></tr>`
+        `<tr class="detail-sub"><td colspan="2" style="padding-left:20px">↳ ${l.description || 'Préstamo'} (cuota ${(l.paidInstallments ?? 0)+1}/${l.totalInstallments ?? '?'})</td>
+          <td class="tr neg">-${l.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(l.installmentAmount) || 0)}</td></tr>`
       ).join('');
 
-      const isOverdraft = d.netUSD <= 0 && d.totalDedUSD > d.grossUSD;
-      const overdraftAmt = d.totalDedUSD - d.grossUSD;
+      const isOverdraft = d.totalDedUSD > d.grossUSD;
+      const overdraftAmt = Math.max(0, d.totalDedUSD - d.grossUSD);
 
       return `<tr class="emp-header ${i > 0 ? 'emp-separator' : ''}">
         <td class="emp-name" colspan="2">${d.name}${d.cedula ? ` <span class="cedula">${d.cedula}</span>` : ''}${d.department ? ` · <span class="dept">${d.department}</span>` : ''}</td>
@@ -618,7 +618,7 @@ export function printCortePDF(corte: any, businessName = 'Mi Negocio') {
 
   const freqLabel: Record<string,string> = { semanal: 'Semanal', quincenal: 'Quincenal', mensual: 'Mensual' };
   const dateStr = corte.executedAt?.toDate
-    ? corte.executedAt.toDate().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? corte.executedAt.toDate().toLocaleString('es-VE', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' });
 
   // Group vouchers by employee
@@ -626,8 +626,8 @@ export function printCortePDF(corte: any, businessName = 'Mi Negocio') {
   (corte.vouchers || []).forEach((v: any) => {
     const prev = grouped.get(v.employeeId) || { name: v.employeeName, vouchers: [], totalUSD: 0, totalBs: 0 };
     prev.vouchers.push(v);
-    prev.totalUSD += v.amountUSD || (v.currency === 'USD' ? v.amount : 0);
-    if (v.currency === 'BS') prev.totalBs += v.amount;
+    prev.totalUSD += Number(v.amountUSD) || (v.currency === 'USD' ? Number(v.amount) || 0 : 0);
+    if (v.currency === 'BS') prev.totalBs += Number(v.amount) || 0;
     grouped.set(v.employeeId, prev);
   });
 
