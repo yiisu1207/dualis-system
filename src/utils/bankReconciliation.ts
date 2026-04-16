@@ -59,25 +59,22 @@ const daysBetween = (a: string, b: string): number => {
 
 const last = (s: string, n: number): string => s.length >= n ? s.slice(-n) : s;
 
-/** Fuzzy ref match — devuelve {points, reason} de la mejor regla, o null. */
+/** Fuzzy ref match — compara últimos 8/7 dígitos exactos. Muestra los dígitos matcheados en reason. */
 function fuzzyRefScore(abonoRef?: string, rowRef?: string): { points: number; reason: string } | null {
   const a = onlyDigits(abonoRef);
   const r = onlyDigits(rowRef);
   if (!a || !r) return null;
-  if (a === r) return { points: 25, reason: 'ref exacta' };
-  if (a.length >= 6 && r.length >= 6 && last(a, 6) === last(r, 6)) {
-    return { points: 20, reason: 'ref últimos 6 coinciden' };
+  // Ref completa idéntica
+  if (a === r) return { points: 30, reason: `ref exacta (${a})` };
+  // Últimos 8 dígitos
+  if (a.length >= 8 && r.length >= 8 && last(a, 8) === last(r, 8)) {
+    const matched = last(a, 8);
+    return { points: 25, reason: `ref últimos 8: ${matched}` };
   }
-  if (a.length >= 4 && r.length >= 4 && last(a, 4) === last(r, 4)) {
-    return { points: 15, reason: 'ref últimos 4 coinciden' };
-  }
-  // Difiere último dígito (mismo largo)
-  if (a.length === r.length && a.length >= 4 && a.slice(0, -1) === r.slice(0, -1)) {
-    return { points: 12, reason: 'ref difiere último dígito' };
-  }
-  // Uno es sufijo del otro (banco agregó o quitó un dígito)
-  if (a.length >= 4 && r.length >= 4 && (r.endsWith(a) || a.endsWith(r))) {
-    return { points: 12, reason: 'ref uno es sufijo del otro' };
+  // Últimos 7 dígitos
+  if (a.length >= 7 && r.length >= 7 && last(a, 7) === last(r, 7)) {
+    const matched = last(a, 7);
+    return { points: 22, reason: `ref últimos 7: ${matched}` };
   }
   return null;
 }
@@ -229,10 +226,10 @@ export function findDuplicateAbono(
     if (!ex.id) continue;
     if (Math.abs(ex.amount - candidate.amount) > 0.01) continue;
     if (ex.date !== candidate.date) continue;
-    // Si ambos tienen ref, exigir fuzzy match fuerte (≥15 = últimos 4).
+    // Si ambos tienen ref, exigir fuzzy match fuerte (≥22 = últimos 7 dígitos).
     if (candidate.reference && ex.reference) {
       const ref = fuzzyRefScore(candidate.reference, ex.reference);
-      if (ref && ref.points >= 15) return ex.id;
+      if (ref && ref.points >= 22) return ex.id;
       continue;
     }
     // Si ninguno tiene ref, mismo monto+fecha basta.
