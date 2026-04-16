@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 export const firebaseConfig = {
   apiKey: 'AIzaSyDhogwFlgTEePSm0Mgda10lSDt-ljzauT4',
@@ -26,3 +27,6 @@ export const db = typeof window !== 'undefined'
       cache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     } as any)
   : getFirestore(app);
+
+// Firebase Storage (estados de cuenta, comprobantes, etc.)
+export const storage = getStorage(app);

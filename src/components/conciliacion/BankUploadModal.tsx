@@ -15,6 +15,7 @@ interface BankUploadModalProps {
     amountTolerancePct?: number;
     sourceFilename: string;
     rows: BankRow[];
+    file?: File;
   }) => Promise<void>;
 }
 
@@ -78,6 +79,7 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
         amountTolerancePct: parseFloat(tolerancePct) / 100 || 0,
         sourceFilename: file.name,
         rows: result.rows,
+        file,
       });
       onClose();
     } catch (e: any) {

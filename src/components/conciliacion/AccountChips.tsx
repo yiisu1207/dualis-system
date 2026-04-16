@@ -1,5 +1,5 @@
 import React from 'react';
-import { Landmark, Plus, Trash2 } from 'lucide-react';
+import { Download, Landmark, Plus, Trash2 } from 'lucide-react';
 
 export interface AccountChipData {
   accountAlias: string;
@@ -7,6 +7,7 @@ export interface AccountChipData {
   bankName?: string;
   rowCount: number;
   totalCredit: number;
+  fileUrl?: string;
 }
 
 interface AccountChipsProps {
@@ -41,6 +42,17 @@ export default function AccountChips({ accounts, activeAlias, onSelect, onAdd, o
               <span className="font-medium">{acc.accountLabel}</span>
               <span className="text-xs opacity-70">· {acc.rowCount}</span>
             </button>
+            {acc.fileUrl && (
+              <a
+                href={acc.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400"
+                title="Ver/descargar archivo original"
+              >
+                <Download size={13} />
+              </a>
+            )}
             {onDelete && (
               <button
                 type="button"

@@ -13,5 +13,11 @@ service firebase.storage {
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }
+    // Estados de cuenta bancarios (PDF, CSV, Excel) — hasta 10MB
+    match /bankStatements/{bid}/{filePath=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 10 * 1024 * 1024;
+    }
   }
 }

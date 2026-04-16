@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, Timestamp } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase/config';
 import { FileCheck, Loader2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import {
@@ -36,6 +37,7 @@ interface BankStatementAccountDoc {
   bankName?: string;
   amountTolerancePct?: number;
   sourceFilename: string;
+  fileUrl?: string;
   uploadedAt: any;
   uploadedBy: string;
   rows: BankRow[];
@@ -142,6 +144,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
         bankName: a.bankName,
         rowCount: a.rowCount,
         totalCredit: a.totalCredit,
+        fileUrl: a.fileUrl,
       })),
     [accounts]
   );
@@ -178,6 +181,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     amountTolerancePct?: number;
     sourceFilename: string;
     rows: BankRow[];
+    file?: File;
   }) => {
     if (!canEdit) {
       toast.error('Solo owner/admin pueden subir estados de cuenta');
@@ -185,6 +189,16 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     }
     const totalCredit = data.rows.filter((r) => r.amount > 0).reduce((s, r) => s + r.amount, 0);
     const totalDebit = data.rows.filter((r) => r.amount < 0).reduce((s, r) => s + r.amount, 0);
+
+    // Subir archivo original a Firebase Storage
+    let fileUrl: string | undefined;
+    if (data.file) {
+      const filePath = `bankStatements/${businessId}/${monthKey}/${data.accountAlias}/${data.sourceFilename}`;
+      const fileRef = storageRef(storage, filePath);
+      await uploadBytes(fileRef, data.file);
+      fileUrl = await getDownloadURL(fileRef);
+    }
+
     const payload: BankStatementAccountDoc = {
       accountAlias: data.accountAlias,
       accountLabel: data.accountLabel,
@@ -192,6 +206,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
       bankName: data.bankName,
       amountTolerancePct: data.amountTolerancePct || 0,
       sourceFilename: data.sourceFilename,
+      fileUrl,
       uploadedAt: Timestamp.now(),
       uploadedBy: currentUserId,
       rows: data.rows.map((r) => ({ ...r, matched: false, matchedAbonoId: undefined })),
@@ -199,8 +214,8 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
       totalCredit,
       totalDebit,
     };
-    const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'accounts', data.accountAlias);
-    await setDoc(ref, payload);
+    const docRef = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'accounts', data.accountAlias);
+    await setDoc(docRef, payload);
     toast.success(`Cuenta "${data.accountLabel}" guardada (${data.rows.length} filas)`);
   };
 
