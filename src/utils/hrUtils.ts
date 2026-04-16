@@ -193,9 +193,10 @@ export function printPayslip(
   const pParo   = row.paroUSD    || 0;
   const pAbsences = row.absenceDeductionUSD || 0;
   // Vouchers and loan installments are already period-based
-  const pVales  = row.voucherDedUSD || 0;
+  const pVales  = row.voucherDedUSD || 0; // gross vales (before abonos)
+  const pAbonos = row.abonosUSD || 0;     // abonos offset voucher deductions
   const pLoans  = row.loanDedUSD    || 0;
-  const pTotalSalaryDed = pVales + pIVSS + pParo + pLoans + pAbsences;
+  const pTotalSalaryDed = pVales - pAbonos + pIVSS + pParo + pLoans + pAbsences;
   const pTotalDed = pTotalSalaryDed + pDedBonusUSD;
   const pNetSalaryUSD = row.netSalaryUSD ?? Math.max(0, pSalaryGrossUSD - pTotalSalaryDed);
   const pNetUSD = Math.max(0, pNetSalaryUSD + pNetBonusUSD);
@@ -456,6 +457,7 @@ export function printPayrollRunPDF(
       ${vouchersSum > 0 ? `<tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:600">Vales / Adelantos (${(d.settledVouchers||[]).length})</td><td class="tr neg">-$${fmtHR(vouchersSum)}</td></tr>` : ''}
       ${voucherLines}
       ${deferredLines}
+      ${(d.abonosUSD||0) > 0 ? `<tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:600;color:#16a34a">Abonos a cuenta (${(d.settledAbonos||[]).length})</td><td class="tr pos">+$${fmtHR(d.abonosUSD)}</td></tr>` : ''}
       ${abonoLines}
       ${absences > 0 ? `<tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:600">Ausencias / Faltas</td><td class="tr neg">-$${fmtHR(absences)}</td></tr>` : ''}
       ${(ivss + paro) > 0 ? `<tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:600">IVSS + Paro Forzoso</td><td class="tr neg">-$${fmtHR(ivss + paro)}</td></tr>` : ''}
@@ -467,7 +469,7 @@ export function printPayrollRunPDF(
     // ── Summary mode: compact row per employee ──
     const voucherSubs = (d.settledVouchers || []).map((sv: any) =>
       `<tr class="sub-row"><td colspan="3" style="padding-left:24px">↳ ${sv.reason || 'Vale'}: -${sv.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(sv.amount))}</td>
-       <td colspan="7"></td></tr>`
+       <td colspan="8"></td></tr>`
     ).join('');
 
     const dBonusTotal = d.bonusTotalUSD || 0;
@@ -478,6 +480,7 @@ export function printPayrollRunPDF(
       <td class="tr">$${fmtHR(dSalaryOnly)}</td>
       <td class="tr ${dBonusTotal > 0 ? 'pos' : ''}">${dBonusTotal > 0 ? '+$' + fmtHR(dBonusTotal) : '—'}</td>
       <td class="tr neg">${vouchersSum > 0 ? '-$' + fmtHR(vouchersSum) : '—'}</td>
+      <td class="tr pos">${(d.abonosUSD || 0) > 0 ? '+$' + fmtHR(d.abonosUSD) : '—'}</td>
       <td class="tr neg">${(ivss + paro) > 0 ? '-$' + fmtHR(ivss + paro) : '—'}</td>
       <td class="tr ${overtime > 0 ? 'pos' : 'neg'}">${overtime > 0 ? '+$' + fmtHR(overtime) : absences > 0 ? '-$' + fmtHR(absences) : '—'}</td>
       <td class="tr net">$${fmtHR(d.netUSD)}</td>
@@ -607,7 +610,7 @@ ${mode === 'detailed' ? `<table>
 </table>` : `<table>
   <thead><tr>
     <th>Empleado</th><th>Depto.</th><th class="tr">Salario</th><th class="tr">Bonos</th>
-    <th class="tr">Vales</th><th class="tr">IVSS/Paro</th>
+    <th class="tr">Vales</th><th class="tr">Abonos</th><th class="tr">IVSS/Paro</th>
     <th class="tr">+H.Ex / -Aus.</th><th class="tr">Neto USD</th><th class="tr">A Pagar</th>
   </tr></thead>
   <tbody>
@@ -617,6 +620,7 @@ ${mode === 'detailed' ? `<table>
       <td class="tr">$${fmtHR(run.totalGrossUSD - details.reduce((s: number, d: any) => s + (d.bonusTotalUSD || 0), 0))}</td>
       <td class="tr pos">${details.reduce((s: number, d: any) => s + (d.bonusTotalUSD || 0), 0) > 0 ? '+$' + fmtHR(details.reduce((s: number, d: any) => s + (d.bonusTotalUSD || 0), 0)) : '—'}</td>
       <td class="tr neg">${details.reduce((s: number, d: any) => s + (d.voucherDedUSD || 0), 0) > 0 ? '-$' + fmtHR(details.reduce((s: number, d: any) => s + (d.voucherDedUSD || 0), 0)) : '—'}</td>
+      <td class="tr pos">${details.reduce((s: number, d: any) => s + (d.abonosUSD || 0), 0) > 0 ? '+$' + fmtHR(details.reduce((s: number, d: any) => s + (d.abonosUSD || 0), 0)) : '—'}</td>
       <td class="tr neg">${details.reduce((s: number, d: any) => s + (d.ivssUSD || 0) + (d.paroUSD || 0), 0) > 0 ? '-$' + fmtHR(details.reduce((s: number, d: any) => s + (d.ivssUSD || 0) + (d.paroUSD || 0), 0)) : '—'}</td>
       <td class="tr">${details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0) - (d.absenceDeductionUSD || 0), 0) !== 0 ? (details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0) - (d.absenceDeductionUSD || 0), 0) > 0 ? '+' : '-') + '$' + fmtHR(Math.abs(details.reduce((s: number, d: any) => s + (d.overtimeUSD || 0) - (d.absenceDeductionUSD || 0), 0))) : '—'}</td>
       <td class="tr net">$${fmtHR(run.totalNetUSD)}</td>
@@ -783,7 +787,7 @@ export function exportNominaCSV(rows: any[], period: string) {
     'Empleado','Departamento','Frecuencia','Moneda Pago',
     'Salario USD','Bono USD','Bruto USD',
     'Salario Bs','Bono Bs','Bruto Bs',
-    'Vales USD','IVSS USD','Paro USD','Préstamos USD','Total Deduc. USD',
+    'Vales USD','Abonos USD','IVSS USD','Paro USD','Préstamos USD','Total Deduc. USD',
     'NETO USD','NETO Bs',
   ];
   const data = rows.map((n: any) => [
@@ -792,7 +796,7 @@ export function exportNominaCSV(rows: any[], period: string) {
     n.emp.paymentCurrency,
     fmtHR(n.emp.salaryUSD||0), fmtHR(n.emp.bonusUSD||0), fmtHR(n.grossUSD),
     fmtHR(n.emp.salaryBs||0), fmtHR(n.emp.bonusBs||0), fmtHR(n.grossBs),
-    fmtHR(n.voucherDedUSD), fmtHR(n.ivssUSD), fmtHR(n.paroUSD), fmtHR(n.loanDedUSD), fmtHR(n.totalDedUSD),
+    fmtHR(n.voucherDedUSD), fmtHR(n.abonosUSD||0), fmtHR(n.ivssUSD), fmtHR(n.paroUSD), fmtHR(n.loanDedUSD), fmtHR(n.totalDedUSD),
     fmtHR(n.netUSD), fmtHR(n.netBs),
   ]);
   const csv = [header, ...data].map(row => row.map((v: any) => `"${v}"`).join(',')).join('\n');

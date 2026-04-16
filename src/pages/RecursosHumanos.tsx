@@ -104,7 +104,7 @@ interface PayrollDetail {
   employeeId: string; name: string; department: string;
   cedula?: string; paymentCurrency?: 'USD'|'BS';
   grossUSD: number; grossBs: number;
-  voucherDedUSD: number; ivssUSD: number; paroUSD: number; loanDedUSD: number;
+  voucherDedUSD: number; abonosUSD?: number; ivssUSD: number; paroUSD: number; loanDedUSD: number;
   overtimeUSD: number; absenceDeductionUSD: number;
   totalDedUSD: number; netUSD: number; netBs: number;
   payAmountReal?: number; payAmountCurrency?: string;
@@ -122,6 +122,7 @@ interface PayrollRun {
 type NominaRow = {
   emp: Employee; grossUSD: number; grossBs: number;
   voucherDedUSD: number; voucherDedBs: number;
+  abonosUSD: number; // abonos that offset voucher deductions
   ivssUSD: number; paroUSD: number; loanDedUSD: number;
   overtimeUSD: number; absenceDeductionUSD: number;
   totalDedUSD: number; netUSD: number; netBs: number;
@@ -896,7 +897,8 @@ export default function RecursosHumanos() {
 
       return {
         emp, grossUSD, grossBs,
-        voucherDedUSD: netVDedUSD, voucherDedBs: vDedBs,
+        voucherDedUSD: regularVDedUSD, voucherDedBs: vDedBs,
+        abonosUSD: empAbonosUSD,
         ivssUSD, paroUSD, loanDedUSD: loanDed,
         overtimeUSD, absenceDeductionUSD,
         totalDedUSD,
@@ -1200,7 +1202,7 @@ export default function RecursosHumanos() {
               employeeId:n.emp.id, name:n.emp.fullName, department:n.emp.department,
               cedula: n.emp.cedula || '', paymentCurrency: n.emp.paymentCurrency || 'USD',
               grossUSD:n.grossUSD, grossBs:n.grossBs,
-              voucherDedUSD:n.voucherDedUSD, ivssUSD:n.ivssUSD, paroUSD:n.paroUSD, loanDedUSD:n.loanDedUSD,
+              voucherDedUSD:n.voucherDedUSD, abonosUSD:n.abonosUSD, ivssUSD:n.ivssUSD, paroUSD:n.paroUSD, loanDedUSD:n.loanDedUSD,
               overtimeUSD:n.overtimeUSD, absenceDeductionUSD:n.absenceDeductionUSD,
               totalDedUSD:n.totalDedUSD, netUSD:n.netUSD, netBs:n.netBs,
               payAmountReal: payReal, payAmountCurrency: isBs ? 'BS' : 'USD',
@@ -2201,6 +2203,7 @@ export default function RecursosHumanos() {
                       <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
                         <th className="px-5 py-3.5">Empleado</th><th className="px-4 py-3.5 text-center">Frec.</th>
                         <th className="px-4 py-3.5 text-right">Salario</th><th className="px-4 py-3.5 text-right">Bonos</th><th className="px-4 py-3.5 text-right">Vales</th>
+                        <th className="px-4 py-3.5 text-right">Abonos</th>
                         <th className="px-4 py-3.5 text-right">H.Extra</th><th className="px-4 py-3.5 text-right">Ausencias</th>
                         <th className="px-4 py-3.5 text-right">IVSS/Paro</th><th className="px-4 py-3.5 text-right">Préstamos</th>
                         <th className="px-4 py-3.5 text-right">Neto USD</th><th className="px-4 py-3.5 text-right">Neto Bs</th>
@@ -2233,6 +2236,7 @@ export default function RecursosHumanos() {
                             ):'—'}
                           </td>
                           <td className="px-4 py-3.5 text-right font-black text-rose-600 dark:text-rose-400">{n.voucherDedUSD>0?`-$${fmtHR(n.voucherDedUSD)}`:'—'}</td>
+                          <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400">{n.abonosUSD>0?`+$${fmtHR(n.abonosUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400">{n.overtimeUSD>0?`+$${fmtHR(n.overtimeUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-rose-600 dark:text-rose-400">{n.absenceDeductionUSD>0?`-$${fmtHR(n.absenceDeductionUSD)}`:'—'}</td>
                           <td className="px-4 py-3.5 text-right font-black text-orange-600 dark:text-orange-400">{(n.ivssUSD+n.paroUSD)>0?`-$${fmtHR(n.ivssUSD+n.paroUSD)}`:'—'}</td>
@@ -2262,7 +2266,8 @@ export default function RecursosHumanos() {
                         <td colSpan={2} className="px-5 py-3.5 font-black text-slate-500 dark:text-white/40 text-[11px] uppercase tracking-widest">TOTALES ({nominaRows.length})</td>
                         <td className="px-4 py-3.5 text-right font-black text-slate-800 dark:text-slate-200">{nominaTotals.grossUSD>0?`$${fmtHR(nominaTotals.grossUSD-(nominaRows.reduce((s,n)=>s+n.bonusTotalUSD,0)))}`:'—'}</td>
                         <td className="px-4 py-3.5 text-right font-black text-violet-600 dark:text-violet-400">{(()=>{const tb=nominaRows.reduce((s,n)=>s+n.bonusTotalUSD,0); return tb>0?`+$${fmtHR(tb)}`:'—';})()}</td>
-                        <td className="px-4 py-3.5 text-right font-black text-rose-600 dark:text-rose-400">{nominaTotals.dedUSD>0?`-$${fmtHR(nominaTotals.dedUSD)}`:'—'}</td>
+                        <td className="px-4 py-3.5 text-right font-black text-rose-600 dark:text-rose-400">{(()=>{const tv=nominaRows.reduce((s,n)=>s+n.voucherDedUSD,0); return tv>0?`-$${fmtHR(tv)}`:'—';})()}</td>
+                        <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400">{(()=>{const ta=nominaRows.reduce((s,n)=>s+n.abonosUSD,0); return ta>0?`+$${fmtHR(ta)}`:'—';})()}</td>
                         <td colSpan={4}></td>
                         <td className="px-4 py-3.5 text-right font-black text-emerald-600 dark:text-emerald-400 text-lg">{`$${fmtHR(nominaTotals.netUSD)}`}</td>
                         <td className="px-4 py-3.5 text-right font-black text-sky-600 dark:text-sky-400">{nominaTotals.netBs>0?`Bs ${fmtHR(nominaTotals.netBs)}`:'—'}</td>
@@ -2786,6 +2791,7 @@ export default function RecursosHumanos() {
                     <div className="flex flex-wrap gap-x-5 gap-y-0.5 text-[10px]">
                       {det.grossUSD>0&&<span className="text-slate-500 dark:text-white/40">Bruto: <strong className="text-slate-700 dark:text-slate-300">${fmtHR(det.grossUSD)}</strong></span>}
                       {det.voucherDedUSD>0&&<span className="text-rose-500 dark:text-rose-400">Vales: -${fmtHR(det.voucherDedUSD)}</span>}
+                      {(det as any).abonosUSD>0&&<span className="text-emerald-500 dark:text-emerald-400">Abonos: +${fmtHR((det as any).abonosUSD)}</span>}
                       {det.ivssUSD>0&&<span className="text-orange-500 dark:text-orange-400">IVSS: -${fmtHR(det.ivssUSD)}</span>}
                       {det.paroUSD>0&&<span className="text-orange-500 dark:text-orange-400">Paro: -${fmtHR(det.paroUSD)}</span>}
                       {det.loanDedUSD>0&&<span className="text-amber-600 dark:text-amber-400">Préstamo: -${fmtHR(det.loanDedUSD)}</span>}
