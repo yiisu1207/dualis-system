@@ -1085,7 +1085,15 @@ export default function RecursosHumanos() {
               totalDedUSD:n.totalDedUSD, netUSD:n.netUSD, netBs:n.netBs,
               payAmountReal: payReal, payAmountCurrency: isBs ? 'BS' : 'USD',
               settledVouchers:freqVouchers.filter(v=>v.employeeId===n.emp.id)
+                .map(v=>({reason:v.reason,amount:v.amount,currency:v.currency,amountUSD:v.amountUSD,isCarryOver:v.isCarryOver||false,carryOverFromPeriod:v.carryOverFromPeriod||''})),
+              deferredVouchers:freqDeferred.filter(v=>v.employeeId===n.emp.id)
                 .map(v=>({reason:v.reason,amount:v.amount,currency:v.currency,amountUSD:v.amountUSD})),
+              settledTimeEntries:freqTimeEntries.filter(t=>t.employeeId===n.emp.id)
+                .map(t=>({type:t.type,date:t.date,hours:t.hours,amountUSD:t.amountUSD||0,note:t.note||''})),
+              settledAbonos:freqAbonos.filter(a=>a.employeeId===n.emp.id)
+                .map(a=>({reason:a.reason||'Abono',amount:a.amount,currency:a.currency,amountUSD:a.amountUSD||0})),
+              settledLoans:freqLoans.filter(l=>l.employeeId===n.emp.id)
+                .map(l=>({description:l.description||'Préstamo',installmentAmount:l.installmentAmount,currency:l.currency,paidInstallments:l.paidInstallments,totalInstallments:l.totalInstallments})),
             };
           });
           const totalPayUSD = detailsWithPay.filter(d=>d.paymentCurrency==='USD').reduce((s,d)=>s+d.netUSD,0);
@@ -2543,10 +2551,15 @@ export default function RecursosHumanos() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={()=>printPayrollRunPDF(selectedRun, businessName)}
+                <button onClick={()=>printPayrollRunPDF(selectedRun, businessName, undefined, 'summary')}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-100 dark:hover:bg-indigo-500/25 transition-all border border-indigo-100 dark:border-indigo-500/25"
-                  title="Exportar PDF">
-                  <Download size={12}/> PDF
+                  title="PDF Resumido">
+                  <Download size={12}/> Resumido
+                </button>
+                <button onClick={()=>printPayrollRunPDF(selectedRun, businessName, undefined, 'detailed')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-100 dark:hover:bg-emerald-500/25 transition-all border border-emerald-100 dark:border-emerald-500/25"
+                  title="PDF Detallado con todos los vales">
+                  <Download size={12}/> Detallado
                 </button>
                 <button onClick={()=>setSelectedRun(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-xl text-slate-400"><X size={18}/></button>
               </div>

@@ -350,6 +350,7 @@ export function printPayrollRunPDF(
   run: any,
   businessName = 'Mi Negocio',
   contactInfo?: { phone?: string; email?: string; rif?: string; address?: string },
+  mode: 'summary' | 'detailed' = 'summary',
 ) {
   const w = window.open('', '_blank', 'width=794,height=1123');
   if (!w) return;
@@ -380,6 +381,57 @@ export function printPayrollRunPDF(
     const payReal = d.payAmountReal != null ? d.payAmountReal : (isBs && rateBCV > 0 ? d.netUSD * rateBCV : d.netUSD);
     const payStr = isBs ? `Bs ${fmtHR(payReal)}` : `$${fmtHR(payReal)}`;
 
+    if (mode === 'detailed') {
+      // ── Detailed mode: full breakdown per employee ──
+      const voucherLines = (d.settledVouchers || []).map((sv: any) => {
+        const badge = sv.isCarryOver ? ' <span class="badge badge-carry">Arrastre</span>' : '';
+        return `<tr class="detail-sub"><td colspan="2" style="padding-left:20px">↳ ${sv.reason || 'Vale'}${badge}</td>
+          <td class="tr neg">-${sv.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(sv.amount))}</td></tr>`;
+      }).join('');
+
+      const deferredLines = (d.deferredVouchers || []).map((sv: any) =>
+        `<tr class="detail-sub"><td colspan="2" style="padding-left:20px">↳ ${sv.reason || 'Vale'} <span class="badge badge-defer">Próx. corte</span></td>
+          <td class="tr" style="color:#999">($${fmtHR(Number(sv.amountUSD || sv.amount))})</td></tr>`
+      ).join('');
+
+      const timeLines = (d.settledTimeEntries || []).map((t: any) =>
+        `<tr class="detail-sub"><td colspan="2" style="padding-left:20px">↳ ${t.type === 'overtime' ? 'H. Extra' : 'Ausencia'}: ${t.date} — ${t.hours}h${t.note ? ' ('+t.note+')' : ''}</td>
+          <td class="tr ${t.type === 'overtime' ? 'pos' : 'neg'}">${t.type === 'overtime' ? '+' : '-'}$${fmtHR(Math.abs(t.amountUSD))}</td></tr>`
+      ).join('');
+
+      const abonoLines = (d.settledAbonos || []).map((a: any) =>
+        `<tr class="detail-sub"><td colspan="2" style="padding-left:20px">↳ ${a.reason || 'Abono a cuenta'}</td>
+          <td class="tr pos">+$${fmtHR(Number(a.amountUSD || a.amount))}</td></tr>`
+      ).join('');
+
+      const loanLines = (d.settledLoans || []).map((l: any) =>
+        `<tr class="detail-sub"><td colspan="2" style="padding-left:20px">↳ ${l.description || 'Préstamo'} (cuota ${l.paidInstallments+1}/${l.totalInstallments})</td>
+          <td class="tr neg">-${l.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(l.installmentAmount))}</td></tr>`
+      ).join('');
+
+      const isOverdraft = d.netUSD <= 0 && d.totalDedUSD > d.grossUSD;
+      const overdraftAmt = d.totalDedUSD - d.grossUSD;
+
+      return `<tr class="emp-header ${i > 0 ? 'emp-separator' : ''}">
+        <td class="emp-name" colspan="2">${d.name}${d.cedula ? ` <span class="cedula">${d.cedula}</span>` : ''}${d.department ? ` · <span class="dept">${d.department}</span>` : ''}</td>
+        <td class="tr" style="font-size:8px;color:#888">A pagar: <span class="pay ${isBs ? 'pay-bs' : 'pay-usd'}">${payStr}</span></td>
+      </tr>
+      <tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:600">Salario período</td><td class="tr">$${fmtHR(d.grossUSD - overtime)}</td></tr>
+      ${overtime > 0 ? `<tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:600">Horas extras</td><td class="tr pos">+$${fmtHR(overtime)}</td></tr>` : ''}
+      ${timeLines}
+      <tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:700">Total Bruto</td><td class="tr" style="font-weight:700">$${fmtHR(d.grossUSD)}</td></tr>
+      ${vouchersSum > 0 ? `<tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:600">Vales / Adelantos (${(d.settledVouchers||[]).length})</td><td class="tr neg">-$${fmtHR(vouchersSum)}</td></tr>` : ''}
+      ${voucherLines}
+      ${deferredLines}
+      ${abonoLines}
+      ${absences > 0 ? `<tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:600">Ausencias / Faltas</td><td class="tr neg">-$${fmtHR(absences)}</td></tr>` : ''}
+      ${(ivss + paro) > 0 ? `<tr class="detail-sub"><td colspan="2" style="padding-left:20px;font-weight:600">IVSS + Paro Forzoso</td><td class="tr neg">-$${fmtHR(ivss + paro)}</td></tr>` : ''}
+      ${loanLines}
+      ${isOverdraft ? `<tr class="detail-sub" style="background:#fef2f2"><td colspan="2" style="padding-left:20px;font-weight:900;color:#dc2626">SOBREGIRADO — arrastre</td><td class="tr" style="font-weight:900;color:#dc2626">-$${fmtHR(overdraftAmt)}</td></tr>`
+      : `<tr class="detail-sub" style="background:#f0fdf4"><td colspan="2" style="padding-left:20px;font-weight:900;color:#166534">NETO A RECIBIR</td><td class="tr" style="font-weight:900;color:#166534">$${fmtHR(d.netUSD)}</td></tr>`}`;
+    }
+
+    // ── Summary mode: compact row per employee ──
     const voucherSubs = (d.settledVouchers || []).map((sv: any) =>
       `<tr class="sub-row"><td colspan="3" style="padding-left:24px">↳ ${sv.reason || 'Vale'}: -${sv.currency === 'USD' ? '$' : 'Bs '}${fmtHR(Number(sv.amount))}</td>
        <td colspan="6"></td></tr>`
@@ -447,6 +499,13 @@ export function printPayrollRunPDF(
   .sub-row td{font-size:8px;color:#999;padding:2px 5px;border-bottom:none}
   .total-row td{background:#f0f0f0;font-weight:900;border-top:2px solid #1a1a1a;font-size:10px}
 
+  .emp-header td{background:#f8fafc;border-top:2px solid #333;border-bottom:1px solid #ddd;padding:8px 5px;font-size:11px}
+  .emp-separator td{margin-top:6px}
+  .detail-sub td{font-size:8.5px;padding:2px 5px;border-bottom:none;color:#444}
+  .badge{display:inline-block;font-size:7px;font-weight:900;padding:1px 5px;border-radius:3px;letter-spacing:.04em;vertical-align:middle;margin-left:4px}
+  .badge-carry{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+  .badge-defer{background:#fefce8;color:#a16207;border:1px solid #fde68a}
+
   .footer-section{margin-top:24px;padding-top:12px;border-top:1.5px solid #ddd}
   .sigs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:36px}
   .sig-line{border-top:1px solid #111;padding-top:5px;font-size:9px;color:#666;text-align:center}
@@ -458,7 +517,7 @@ export function printPayrollRunPDF(
 <div class="header">
   <div>
     <div class="biz">${businessName}</div>
-    <div class="doc-type">Resumen de Corte de Nómina</div>
+    <div class="doc-type">${mode === 'detailed' ? 'Corte de Nómina — Detalle por Empleado' : 'Resumen de Corte de Nómina'}</div>
     ${contactLine ? `<div class="contact">${contactLine}</div>` : ''}
   </div>
   <div class="period-box">
@@ -498,7 +557,18 @@ export function printPayrollRunPDF(
   ${rateBCV > 0 ? `<span class="rate">Tasa: Bs ${fmtHR(rateBCV)} / USD</span>` : ''}
 </div>
 
-<table>
+${mode === 'detailed' ? `<table>
+  <thead><tr>
+    <th colspan="2">Empleado / Concepto</th><th class="tr">Monto</th>
+  </tr></thead>
+  <tbody>
+    ${detailRows}
+    <tr class="total-row">
+      <td colspan="2">TOTALES (${run.employeeCount} empleados)</td>
+      <td class="tr">Bruto $${fmtHR(run.totalGrossUSD)} · Ded -$${fmtHR(run.totalDedUSD)} · Neto $${fmtHR(run.totalNetUSD)}</td>
+    </tr>
+  </tbody>
+</table>` : `<table>
   <thead><tr>
     <th>Empleado</th><th>Depto.</th><th class="tr">Bruto</th>
     <th class="tr">Vales</th><th class="tr">IVSS/Paro</th>
@@ -516,7 +586,7 @@ export function printPayrollRunPDF(
       <td class="tr pay">${totalPayUSD > 0 ? '$' + fmtHR(totalPayUSD) : ''}${totalPayUSD > 0 && totalPayBs > 0 ? '<br>' : ''}${totalPayBs > 0 ? '<span class="pay-bs">Bs ' + fmtHR(totalPayBs) + '</span>' : ''}</td>
     </tr>
   </tbody>
-</table>
+</table>`}
 
 <div class="footer-section">
   <p style="font-size:8px;color:#999;margin-bottom:3px">Observaciones:</p>
