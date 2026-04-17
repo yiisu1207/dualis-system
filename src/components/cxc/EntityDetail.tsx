@@ -41,6 +41,10 @@ interface EntityDetailProps {
   onBack?: () => void;
   canEdit: boolean;
   pendingMovements?: PendingMovement[];
+  onApprovePending?: (pendingId: string, note?: string) => Promise<void>;
+  onRejectPending?: (pendingId: string, reason: string) => Promise<void>;
+  onCancelPending?: (pendingId: string) => Promise<void>;
+  currentUserId?: string;
   /** Portal access — needed to create/show portal link */
   businessId?: string;
   userId?: string;
@@ -51,6 +55,117 @@ interface EntityDetailProps {
 }
 
 type Tab = 'resumen' | 'datos' | 'movimientos' | 'pendientes' | 'config';
+
+/* ── Inline approval card for "pendientes" tab ─────────────────────────── */
+const PendingInlineCard: React.FC<{
+  p: PendingMovement;
+  currentUserId?: string;
+  onApprove?: (id: string, note?: string) => Promise<void>;
+  onReject?: (id: string, reason: string) => Promise<void>;
+  onCancel?: (id: string) => Promise<void>;
+}> = ({ p, currentUserId, onApprove, onReject, onCancel }) => {
+  const [busy, setBusy] = useState(false);
+  const [acted, setActed] = useState(false);
+  const [showReject, setShowReject] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const draft = p.movementDraft || {} as any;
+  const type = String(draft.movementType || '');
+  const amount = Number(draft.amountInUSD || draft.amount || 0);
+  const alreadySigned = p.approvals?.some(a => a.userId === currentUserId);
+  const isCreator = p.createdBy === currentUserId;
+  const isApproved = p.status === 'approved';
+  const isRejected = p.status === 'rejected';
+  const isCancelled = p.status === 'cancelled';
+  const isDone = isApproved || isRejected || isCancelled;
+  const canAct = !isDone && !isCreator && !alreadySigned && !acted && !!onApprove;
+
+  const handleApprove = async () => {
+    if (!onApprove || acted) return;
+    setBusy(true); setActed(true);
+    try { await onApprove(p.id); } catch { setActed(false); } finally { setBusy(false); }
+  };
+  const handleReject = async () => {
+    if (!onReject || !rejectReason.trim()) return;
+    setBusy(true); setActed(true);
+    try { await onReject(p.id, rejectReason.trim()); } catch { setActed(false); } finally { setBusy(false); setShowReject(false); }
+  };
+  const handleCancel = async () => {
+    if (!onCancel || !window.confirm('¿Cancelar esta solicitud?')) return;
+    setBusy(true); setActed(true);
+    try { await onCancel(p.id); } catch { setActed(false); } finally { setBusy(false); }
+  };
+
+  const statusBadge = isDone ? (
+    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+      isApproved ? 'bg-emerald-500/20 text-emerald-400' : isRejected ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-500/20 text-slate-400'
+    }`}>{isApproved ? 'Aprobado' : isRejected ? 'Rechazado' : 'Cancelado'}</span>
+  ) : null;
+
+  return (
+    <div className={`rounded-xl border p-4 ${isDone ? 'border-white/[0.06] bg-white/[0.01] opacity-60' : 'border-amber-500/30 bg-amber-500/[0.04]'}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-500">{type}</span>
+            <span className="text-sm font-black text-slate-900 dark:text-white font-mono">${amount.toFixed(2)}</span>
+            {statusBadge}
+          </div>
+          {draft.concept && <p className="text-[11px] font-bold text-slate-500 dark:text-white/40 mt-1 truncate">{draft.concept}</p>}
+          <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 mt-1">
+            Creado por {p.createdByName || 'usuario'} · {new Date(p.createdAt).toLocaleDateString()}
+          </p>
+          {/* Firmas */}
+          {(p.approvals?.length || 0) > 0 && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              {p.approvals.map((a, i) => (
+                <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 text-[9px] font-bold">
+                  <ShieldCheck size={10} /> {a.userName || 'Usuario'}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[9px] font-black uppercase tracking-widest text-amber-500/60">Progreso</p>
+          <p className="text-sm font-black text-amber-500 font-mono mt-0.5">{p.approvals?.length || 0}/{p.quorumRequired}</p>
+          {/* Progress bar */}
+          <div className="w-16 h-1.5 rounded-full bg-white/[0.06] mt-1.5 overflow-hidden">
+            <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all" style={{ width: `${Math.min(100, ((p.approvals?.length || 0) / (p.quorumRequired || 2)) * 100)}%` }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      {canAct && !showReject && (
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/[0.06]">
+          <button disabled={busy} onClick={handleApprove} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-black text-white hover:bg-emerald-500 disabled:opacity-50 transition-all">
+            <ShieldCheck size={13} /> Aprobar
+          </button>
+          <button disabled={busy} onClick={() => setShowReject(true)} className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 px-3 py-1.5 text-[11px] font-black text-rose-400 hover:bg-rose-500/10 disabled:opacity-50 transition-all">
+            Rechazar
+          </button>
+        </div>
+      )}
+      {canAct && showReject && (
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/[0.06]">
+          <input value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Razón del rechazo" className="flex-1 rounded-lg border border-rose-500/30 bg-black/20 px-2.5 py-1.5 text-[11px] text-white placeholder:text-white/30 focus:outline-none focus:border-rose-500" autoFocus />
+          <button disabled={busy || !rejectReason.trim()} onClick={handleReject} className="rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-black text-white disabled:opacity-50">Confirmar</button>
+          <button onClick={() => setShowReject(false)} className="text-[11px] text-white/40 hover:text-white/70">Cancelar</button>
+        </div>
+      )}
+      {/* Creator can cancel */}
+      {isCreator && !isDone && (
+        <div className="mt-3 pt-3 border-t border-white/[0.06]">
+          <button disabled={busy} onClick={handleCancel} className="text-[10px] font-bold text-slate-500 hover:text-rose-400 transition-colors">Cancelar solicitud</button>
+        </div>
+      )}
+      {alreadySigned && !isDone && !isCreator && (
+        <p className="text-[10px] font-bold text-emerald-500/60 mt-2">Ya firmaste esta solicitud</p>
+      )}
+    </div>
+  );
+};
 
 const SCORE_STYLES: Record<string, { bg: string; text: string }> = {
   EXCELENTE: { bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
@@ -77,6 +192,10 @@ export function EntityDetail({
   onBack,
   canEdit,
   pendingMovements = [],
+  onApprovePending,
+  onRejectPending,
+  onCancelPending,
+  currentUserId,
   businessId,
   userId,
   slug,
@@ -1097,47 +1216,8 @@ export function EntityDetail({
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {entityPendings.map(p => {
-                  const draft = p.movementDraft || {};
-                  const type = String(draft.movementType || '');
-                  const amount = Number(draft.amountInUSD || draft.amount || 0);
-                  const progress = `${p.approvals?.length || 0}/${p.quorumRequired}`;
-                  return (
-                    <div
-                      key={p.id}
-                      className="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-500">
-                              {type}
-                            </span>
-                            <span className="text-sm font-black text-slate-900 dark:text-white font-mono">
-                              ${amount.toFixed(2)}
-                            </span>
-                          </div>
-                          {draft.concept && (
-                            <p className="text-[11px] font-bold text-slate-500 dark:text-white/40 mt-1 truncate">
-                              {draft.concept}
-                            </p>
-                          )}
-                          <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 mt-1">
-                            Creado por {p.createdByName || 'usuario'} · {new Date(p.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-amber-500/60">Progreso</p>
-                          <p className="text-sm font-black text-amber-500 font-mono mt-0.5">{progress}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <p className="text-[10px] font-bold text-slate-400 dark:text-white/25 text-center pt-2">
-                  Aprueba o rechaza estos movimientos desde el panel de Aprobaciones.
-                </p>
+              <div className="space-y-3">
+                {entityPendings.map(p => <PendingInlineCard key={p.id} p={p} currentUserId={currentUserId} onApprove={onApprovePending} onReject={onRejectPending} onCancel={onCancelPending} />)}
               </div>
             )}
           </div>

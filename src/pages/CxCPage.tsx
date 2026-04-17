@@ -23,6 +23,9 @@ interface CxCPageProps {
   approvalConfig?: ApprovalConfig;
   validatorCount?: number;
   pendingMovements?: PendingMovement[];
+  onApprovePending?: (pendingId: string, note?: string) => Promise<void>;
+  onRejectPending?: (pendingId: string, reason: string) => Promise<void>;
+  onCancelPending?: (pendingId: string) => Promise<void>;
   /** Fase C.5 — eliminarDatos capability. Si false, el delete queda oculto. */
   canDelete?: boolean;
   /** Fase C.5 — crearClientes capability. Si false, los botones de alta se ocultan. */
@@ -51,6 +54,9 @@ export default function CxCPage({
   approvalConfig,
   validatorCount = 0,
   pendingMovements = [],
+  onApprovePending,
+  onRejectPending,
+  onCancelPending,
   canDelete,
   canCreateCustomer,
   suppliers = [],
@@ -283,6 +289,10 @@ export default function CxCPage({
             onBack={() => setSelectedClient(null)}
             canEdit={canEdit}
             pendingMovements={pendingMovements}
+            onApprovePending={onApprovePending}
+            onRejectPending={onRejectPending}
+            onCancelPending={onCancelPending}
+            currentUserId={currentUserId}
             businessId={businessId}
             userId={currentUserId}
             slug={slug}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import {
   Customer,
@@ -366,6 +366,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [approvalConfig, setApprovalConfig] = useState<ApprovalConfig>(DEFAULT_APPROVAL_CONFIG);
   const [pendingMovementsList, setPendingMovementsList] = useState<PendingMovement[]>([]);
   const [businessUsersList, setBusinessUsersList] = useState<ValidatorUser[]>([]);
+  const approvalLocks = useRef(new Set<string>());
   const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('dualis_dismissed_notifs');
@@ -904,6 +905,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   // ── Fase D.0 — handlers de aprobación ───────────────────────────────────
   const approvePendingMovement = async (pendingId: string, note?: string) => {
     if (!businessId || !uid) return;
+    if (approvalLocks.current.has(pendingId)) return;
+    approvalLocks.current.add(pendingId);
+    try { await _doApprovePending(pendingId, note); } finally { approvalLocks.current.delete(pendingId); }
+  };
+  const _doApprovePending = async (pendingId: string, note?: string) => {
     const pendingDocRef = doc(db, `businesses/${businessId}/pendingMovements`, pendingId);
 
     // Leer datos FRESCOS de Firestore para evitar race conditions
@@ -1166,8 +1172,16 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       items.push({ id: 'nde-pendientes', title: `${ndePendientes.length} comprobante${ndePendientes.length > 1 ? 's' : ''} pendiente${ndePendientes.length > 1 ? 's' : ''} de despacho`, subtitle: 'Panel de Despacho', type: 'warning' });
     }
 
+    // Movimientos pendientes de aprobación (solo los que el usuario actual puede firmar)
+    const myPendingApprovals = pendingMovementsList.filter(p =>
+      p.status === 'pending' && p.createdBy !== uid && !p.approvals?.some(a => a.userId === uid)
+    );
+    if (myPendingApprovals.length > 0) {
+      items.push({ id: 'pending-approvals', title: `${myPendingApprovals.length} movimiento${myPendingApprovals.length > 1 ? 's' : ''} esperando tu aprobación`, subtitle: 'Revisa en la ficha del cliente', type: 'warning' });
+    }
+
     return items;
-  }, [inventoryItems, movements, pendingJoinCount, pendingCompareCount, pendingProductsCount, subData, isAdmin]);
+  }, [inventoryItems, movements, pendingJoinCount, pendingCompareCount, pendingProductsCount, subData, isAdmin, pendingMovementsList, uid]);
 
   const visibleNotifications = useMemo(
     () => notifications.filter(n => !dismissedNotifIds.has(n.id)),
@@ -1471,6 +1485,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                   approvalConfig={approvalConfig}
                   validatorCount={countValidators(businessUsersList, roleCapabilities).count}
                   pendingMovements={pendingMovementsList}
+                  onApprovePending={approvePendingMovement}
+                  onRejectPending={rejectPendingMovement}
+                  onCancelPending={cancelPendingMovement}
                   canDelete={canCapability('eliminarDatos' as any)}
                   canCreateCustomer={canCapability('crearClientes' as any)}
                   businessName={(userProfile as any)?.businessName || ''}

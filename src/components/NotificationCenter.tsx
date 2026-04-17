@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { X, Bell, AlertTriangle, Info, Package, TrendingUp, ChevronRight, Users, FileText, CheckCheck, GitCompare } from 'lucide-react';
+import { X, Bell, AlertTriangle, Info, Package, TrendingUp, ChevronRight, Users, FileText, CheckCheck, GitCompare, ShieldCheck } from 'lucide-react';
 import { Movement } from '../../types';
 
 interface Notification {
@@ -28,6 +28,7 @@ const NAV_MAP: Record<string, string> = {
   'pending-products': 'inventario',
   'nde-pendientes': 'despacho',
   'cobranza-reminders': 'cobranza',
+  'pending-approvals': 'clientes',
 };
 
 const NotificationCenter: React.FC<NotificationCenterProps> = ({
@@ -126,6 +127,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   if (notif.id === 'overdue-cxc') return <Users size={15} className="text-rose-600" />;
                   if (notif.id === 'pending-cxp') return <FileText size={15} className="text-blue-600" />;
                   if (notif.id === 'pending-compare') return <GitCompare size={15} className="text-indigo-500" />;
+                  if (notif.id === 'pending-approvals') return <ShieldCheck size={15} className="text-orange-500" />;
                   return isWarning
                     ? <AlertTriangle size={15} className="text-amber-600" />
                     : <Info size={15} className="text-blue-600" />;
