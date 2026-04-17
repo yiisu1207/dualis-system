@@ -109,7 +109,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'proveedores',  label: 'Gastos / CxP',     Icon: Receipt,         path: 'cxp'          },
       { id: 'tesoreria',    label: 'Tesorería',        Icon: Landmark,        path: 'tesoreria'    },
       { id: 'flujocaja',    label: 'Flujo de Caja',    Icon: TrendingUp,      path: 'flujocaja'    },
-      { id: 'aprobaciones', label: 'Aprobaciones',     Icon: ShieldCheck,     path: 'aprobaciones' },
       { id: 'verificacion', label: 'Verificación',     Icon: ShieldCheck,     path: 'verificacion' },
       { id: 'reclamos',     label: 'Reclamos',         Icon: ClipboardCheck,  path: 'reclamos'     },
       { id: 'portalchat',   label: 'Chat Portal',      Icon: MessageCircle,   path: 'portalchat'   },

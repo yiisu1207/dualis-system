@@ -35,7 +35,6 @@ const AccountingSection = lazy(() => import('./components/AccountingSection'));
 import SupplierSection from './components/SupplierSection';
 import RecursosHumanos from './pages/RecursosHumanos';
 const ComisionesReporte = lazy(() => import('./pages/ComisionesReporte'));
-const AprobacionesPanel = lazy(() => import('./pages/AprobacionesPanel'));
 const VerificacionPanel = lazy(() => import('./pages/VerificacionPanel'));
 const Tesoreria = lazy(() => import('./pages/Tesoreria'));
 import Inventario from './pages/Inventario';
@@ -452,7 +451,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     tesoreria:     `${adminBase}/tesoreria`,
     cobranza:      `${adminBase}/cobranza`,
     portalchat:    `${adminBase}/portalchat`,
-    aprobaciones:  `${adminBase}/aprobaciones`,
     verificacion:  `${adminBase}/verificacion`,
     config:        `${adminBase}/configuracion`,
     help:          `${adminBase}/help`,
@@ -1230,7 +1228,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     inventario: 'Operaciones', cajas: 'Operaciones', despacho: 'Operaciones', cotizaciones: 'Operaciones',
     recurrentes: 'Operaciones', transferencias: 'Operaciones', tasas: 'Operaciones', historial: 'Operaciones',
     clientes: 'Finanzas', cobranza: 'Finanzas', proveedores: 'Finanzas', tesoreria: 'Finanzas',
-    flujocaja: 'Finanzas', aprobaciones: 'Finanzas', verificacion: 'Finanzas', reclamos: 'Finanzas',
+    flujocaja: 'Finanzas', verificacion: 'Finanzas', reclamos: 'Finanzas',
     portalchat: 'Finanzas', contabilidad: 'Finanzas', conciliacion: 'Finanzas',
     rrhh: 'Equipo', comisiones: 'Equipo', sucursales: 'Equipo',
     reportes: 'Inteligencia', estadisticas: 'Inteligencia', pareto: 'Inteligencia',
@@ -1246,22 +1244,10 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
     cajas: 'Cajas', despacho: 'Panel Despacho', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Reporte de Ventas',
     tesoreria: 'Tesorería', comisiones: 'Reporte de Comisiones',
-    aprobaciones: 'Aprobaciones',
     verificacion: 'Verificación',
     reclamos: 'Reclamos',
     config: 'Configuración', help: 'Ayuda',
   }), []);
-
-  // Fase D.0 — Count de pendientes que esperan firma del current user (excluye propios y ya firmados)
-  const pendingApprovalInboxCount = useMemo(() => {
-    const uid = firebaseUser?.uid || '';
-    if (!uid || !canCapability('aprobarMovimientos' as any)) return 0;
-    return pendingMovementsList.filter(p =>
-      p.status === 'pending' &&
-      p.createdBy !== uid &&
-      !p.approvals.some(a => a.userId === uid)
-    ).length;
-  }, [pendingMovementsList, firebaseUser?.uid, canCapability]);
 
   // ── Sidebar Mini KPIs ────────────────────────────────────────────────────
   const sidebarKpis = useMemo(() => {
@@ -1303,7 +1289,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             badges={{
               comparar: pendingCompareCount,
               tesoreria: overduePaymentsCount,
-              aprobaciones: pendingApprovalInboxCount,
               cobranza: countPendingReminders(calculateReminders(movements, customers)),
               inventario: inventoryItems.filter(p => { const s = (p as any).stock ?? (p as any).quantity ?? 0; return s < ((p as any).minStock ?? 10); }).length,
               despacho: movements.filter((m: any) => m.esNotaEntrega && m.estadoNDE === 'pendiente_despacho' && !m.anulada).length,
@@ -1418,16 +1403,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                     customers={customers as any}
                   />
                 : <LockedModule moduleName="Tesorería" requiredPlan="basico" />
-            )}
-            {activeTab === 'aprobaciones' && (
-              <AprobacionesPanel
-                pendings={pendingMovementsList}
-                currentUserId={firebaseUser?.uid || ''}
-                hasCapability={canCapability('aprobarMovimientos' as any)}
-                onApprove={approvePendingMovement}
-                onReject={rejectPendingMovement}
-                onCancel={cancelPendingMovement}
-              />
             )}
             {activeTab === 'verificacion' && (
               canCapability('aprobarPagos' as any)
