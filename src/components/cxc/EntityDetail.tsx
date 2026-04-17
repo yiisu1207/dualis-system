@@ -155,15 +155,56 @@ const PendingFullCard: React.FC<{
 
       {expanded && (
         <div className="mt-3 space-y-3">
-          {/* Draft summary */}
+          {/* Draft summary — todos los detalles del movimiento pendiente */}
           <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 dark:border-white/[0.06] bg-black/20 dark:bg-white/[0.02] p-3 text-[11px] text-slate-300 dark:text-white/50 md:grid-cols-4">
             <div><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Tipo</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.movementType || '—')}</div></div>
             <div><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Cuenta</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.accountType || '—')}</div></div>
-            <div><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Monto USD</div><div className="font-black text-emerald-400">{fmtMoney(d.amountInUSD)}</div></div>
+            <div><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Moneda</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.currency || '—')}</div></div>
             <div><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Fecha</div><div className="font-bold text-slate-200 dark:text-white/70">{d.date || '—'}</div></div>
+
+            <div>
+              <div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Monto original</div>
+              <div className="font-black text-slate-100 dark:text-white/80 tabular-nums">
+                {typeof d.amount === 'number'
+                  ? `${d.currency === 'BS' ? 'Bs ' : '$'}${d.amount.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : '—'}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Tasa usada</div>
+              <div className="font-black text-indigo-300 tabular-nums">
+                {typeof d.rateUsed === 'number' && d.rateUsed > 0
+                  ? `Bs ${d.rateUsed.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+                  : '—'}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Equivalente USD</div>
+              <div className="font-black text-emerald-400 tabular-nums">{fmtMoney(d.amountInUSD)}</div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Equivalente Bs</div>
+              <div className="font-black text-amber-300 tabular-nums">
+                {typeof d.amountInUSD === 'number' && typeof d.rateUsed === 'number' && d.rateUsed > 0
+                  ? `Bs ${(d.amountInUSD * d.rateUsed).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : '—'}
+              </div>
+            </div>
+
             <div className="col-span-2 md:col-span-4"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Concepto</div><div className="font-bold text-slate-200 dark:text-white/70 truncate">{d.concept || '—'}</div></div>
-            {d.reference && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Referencia</div><div className="font-mono text-slate-300 dark:text-white/50">{d.reference}</div></div>}
+            {d.nroControl && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Nro Control</div><div className="font-mono text-slate-300 dark:text-white/50">{d.nroControl}</div></div>}
+            {(d.reference || d.referencia) && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Referencia</div><div className="font-mono text-slate-300 dark:text-white/50">{d.reference || d.referencia}</div></div>}
             {d.metodoPago && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Método</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.metodoPago)}</div></div>}
+            {d.expenseCategory && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Categoría gasto</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.expenseCategory)}</div></div>}
+            {typeof d.paymentDays === 'number' && d.paymentDays > 0 && (
+              <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Días crédito</div><div className="font-bold text-slate-200 dark:text-white/70">{d.paymentDays}d{d.dueDate ? ` · vence ${d.dueDate}` : ''}</div></div>
+            )}
+            {typeof d.earlyPayDiscountPct === 'number' && d.earlyPayDiscountPct > 0 && (
+              <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Dscto. pronto pago</div><div className="font-bold text-emerald-300">{d.earlyPayDiscountPct}%{d.earlyPayDiscountExpiry ? ` hasta ${d.earlyPayDiscountExpiry}` : ''}</div></div>
+            )}
+            {d.entityId && (
+              <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Entidad</div><div className="font-mono text-slate-300 dark:text-white/50">{String(d.entityId)}</div></div>
+            )}
           </div>
 
           {/* Signatures */}

@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, FileText, CreditCard, Settings2, ShieldCheck } from 'lucide-react';
+import { X, FileText, CreditCard, Settings2, ShieldCheck, ArrowRightLeft, Wallet } from 'lucide-react';
+import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 import type { Movement, Customer, Supplier, CustomRate, ExchangeRates, ApprovalConfig } from '../../../types';
 import { resolveAccountLabel, resolveAccountColor, resolveRateForAccount } from './cxcHelpers';
+import { getMovementUsdAmount } from '../../utils/formatters';
 import { mapMovementToApprovalKind } from '../../utils/approvalHelpers';
 
 export type PanelPosition = 'right' | 'left' | 'center' | 'bottom' | 'top';
@@ -63,6 +66,8 @@ interface MovementFormPanelProps {
   editingMovement?: Movement;
   approvalConfig?: ApprovalConfig;
   validatorCount?: number;
+  /** Movimientos visibles — usados para mostrar saldo pendiente del cliente/proveedor seleccionado */
+  movements?: Movement[];
 }
 
 const PAYMENT_METHODS = ['Transferencia', 'Pago Movil', 'Efectivo USD', 'Efectivo Bs', 'Zelle', 'Binance', 'Punto de Venta'];
@@ -85,6 +90,7 @@ export function MovementFormPanel({
   editingMovement,
   approvalConfig,
   validatorCount = 0,
+  movements = [],
 }: MovementFormPanelProps) {
   const isEditing = !!editingMovement;
 
@@ -129,13 +135,74 @@ export function MovementFormPanel({
     return accs;
   }, [customRates]);
 
-  // Auto-set rate when account changes
+  // Histórico: si la fecha es pasada, busca la tasa vigente ese día desde
+  // `businesses/{bid}/exchange_rates_history/{YYYY-MM-DD}`. Si no existe doc
+  // para esa fecha exacta, busca la más reciente con `date <= seleccionada`.
+  // Si la fecha es hoy/futuro o no hay historial, usa la tasa actual.
+  const [rateLookupLoading, setRateLookupLoading] = useState(false);
+  const [rateSource, setRateSource] = useState<'live' | 'historical' | 'fallback'>('live');
+
   useEffect(() => {
-    if (!isEditing) {
+    if (isEditing) return;
+    let cancelled = false;
+    const today = new Date().toISOString().split('T')[0];
+
+    const applyLive = () => {
       const rate = resolveRateForAccount(accountType, bcvRate, customRates);
-      setRateUsed(rate > 0 ? rate.toString() : '');
-    }
-  }, [accountType, bcvRate, customRates, isEditing]);
+      if (!cancelled) {
+        setRateUsed(rate > 0 ? rate.toString() : '');
+        setRateSource('live');
+      }
+    };
+
+    if (!businessId || !date || date >= today) { applyLive(); return; }
+
+    setRateLookupLoading(true);
+    (async () => {
+      try {
+        const exact = await getDoc(doc(db, 'businesses', businessId, 'exchange_rates_history', date));
+        let data: any = exact.exists() ? exact.data() : null;
+        let foundExact = !!data;
+
+        if (!data) {
+          const q = query(
+            collection(db, 'businesses', businessId, 'exchange_rates_history'),
+            where('date', '<=', date),
+            orderBy('date', 'desc'),
+            limit(1)
+          );
+          const snap = await getDocs(q);
+          if (!snap.empty) data = snap.docs[0].data();
+        }
+
+        if (cancelled) return;
+
+        if (data) {
+          let r = 0;
+          if (accountType === 'BCV') {
+            r = Number(data.bcv) || 0;
+          } else if (data.customRates && typeof data.customRates === 'object') {
+            r = Number(data.customRates[accountType]) || 0;
+          }
+          if (r > 0) {
+            setRateUsed(r.toString());
+            setRateSource(foundExact ? 'historical' : 'fallback');
+          } else {
+            applyLive();
+          }
+        } else {
+          applyLive();
+        }
+      } catch (err) {
+        console.warn('[MovementFormPanel] rate lookup failed:', err);
+        applyLive();
+      } finally {
+        if (!cancelled) setRateLookupLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [accountType, bcvRate, customRates, isEditing, businessId, date]);
 
   // Filter entities for search
   const filteredEntities = useMemo(() => {
@@ -152,6 +219,28 @@ export function MovementFormPanel({
     () => entities.find(e => e.id === entityId),
     [entities, entityId]
   );
+
+  // Saldo pendiente del cliente/proveedor seleccionado, calculado en USD
+  // (incluye solo movimientos no anulados de esta entidad).
+  const entityBalanceUSD = useMemo(() => {
+    if (!entityId || !movements?.length) return 0;
+    let bal = 0;
+    for (const m of movements) {
+      if (m.entityId !== entityId) continue;
+      if ((m as any).anulada) continue;
+      const usd = getMovementUsdAmount(m, rates);
+      if (m.movementType === 'FACTURA') bal += usd;
+      else if (m.movementType === 'ABONO') bal -= usd;
+    }
+    return bal;
+  }, [entityId, movements, rates]);
+
+  const parsedAmountPreview = parseFloat(amount) || 0;
+  const parsedRatePreview = parseFloat(rateUsed) || 0;
+  const previewUSD = currency === 'BS' && parsedRatePreview > 0 ? parsedAmountPreview / parsedRatePreview : 0;
+  const previewBS = currency === 'USD' && parsedRatePreview > 0 ? parsedAmountPreview * parsedRatePreview : 0;
+  const fmtUSD = (n: number) => `$${n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtBS = (n: number) => `Bs ${n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const entityDisplayName = useCallback((e: Customer | Supplier) => {
     const name = ('fullName' in e ? (e as any).fullName : '') || ('nombre' in e ? (e as any).nombre : '') || e.id;
@@ -375,6 +464,40 @@ export function MovementFormPanel({
             )}
           </div>
 
+          {/* Saldo pendiente de la entidad seleccionada */}
+          {selectedEntity && (
+            <div className={`rounded-xl px-4 py-3 border flex items-center gap-3 ${
+              entityBalanceUSD > 0.01
+                ? 'bg-rose-500/[0.06] border-rose-500/20'
+                : entityBalanceUSD < -0.01
+                  ? 'bg-emerald-500/[0.06] border-emerald-500/20'
+                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.06]'
+            }`}>
+              <Wallet size={15} className={
+                entityBalanceUSD > 0.01 ? 'text-rose-400' : entityBalanceUSD < -0.01 ? 'text-emerald-400' : 'text-slate-400'
+              }/>
+              <div className="flex-1 min-w-0">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">
+                  {entityBalanceUSD > 0.01
+                    ? (mode === 'cxc' ? 'Saldo deudor (te debe)' : 'Saldo deudor (le debes)')
+                    : entityBalanceUSD < -0.01
+                      ? (mode === 'cxc' ? 'Saldo a favor del cliente' : 'Saldo a favor del proveedor')
+                      : 'Saldo en cero'}
+                </p>
+                <p className={`text-base font-black tabular-nums ${
+                  entityBalanceUSD > 0.01 ? 'text-rose-400' : entityBalanceUSD < -0.01 ? 'text-emerald-400' : 'text-slate-700 dark:text-white/70'
+                }`}>
+                  {fmtUSD(Math.abs(entityBalanceUSD))}
+                  {parsedRatePreview > 0 && Math.abs(entityBalanceUSD) > 0.01 && (
+                    <span className="ml-2 text-[10px] font-bold text-slate-400 dark:text-white/30">
+                      ≈ {fmtBS(Math.abs(entityBalanceUSD) * parsedRatePreview)}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Account pills */}
           <div>
             <label className={label}>Cuenta</label>
@@ -429,6 +552,20 @@ export function MovementFormPanel({
                 placeholder="0.00"
                 className={inp}
               />
+              {parsedAmountPreview > 0 && (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-white/40">
+                  <ArrowRightLeft size={11} className="text-indigo-400" />
+                  {currency === 'BS' && parsedRatePreview > 0 && (
+                    <span>≈ <span className="text-emerald-400 font-black tabular-nums">{fmtUSD(previewUSD)}</span></span>
+                  )}
+                  {currency === 'USD' && parsedRatePreview > 0 && (
+                    <span>≈ <span className="text-indigo-400 font-black tabular-nums">{fmtBS(previewBS)}</span></span>
+                  )}
+                  {currency === 'BS' && parsedRatePreview <= 0 && (
+                    <span className="text-rose-400">Define una tasa para ver el equivalente USD</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -446,6 +583,23 @@ export function MovementFormPanel({
                 placeholder="0.00"
                 className={inp}
               />
+              <p className={`mt-1 text-[9px] font-black uppercase tracking-wider ${
+                rateLookupLoading
+                  ? 'text-slate-400 dark:text-white/30'
+                  : rateSource === 'historical'
+                    ? 'text-emerald-400'
+                    : rateSource === 'fallback'
+                      ? 'text-amber-400'
+                      : 'text-slate-400 dark:text-white/30'
+              }`}>
+                {rateLookupLoading
+                  ? 'Buscando tasa…'
+                  : rateSource === 'historical'
+                    ? `Tasa histórica del ${date}`
+                    : rateSource === 'fallback'
+                      ? 'Tasa más cercana anterior'
+                      : 'Tasa actual'}
+              </p>
             </div>
             <div>
               <label className={label}>Fecha</label>

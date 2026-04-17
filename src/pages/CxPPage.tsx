@@ -248,6 +248,7 @@ export default function CxPPage({
           businessId={businessId}
           approvalConfig={approvalConfig}
           validatorCount={validatorCount}
+          movements={visibleMovements}
           onSave={handleSaveMovement}
           onClose={() => { setFormOpen(false); setEditingMovement(null); }}
           editingMovement={editingMovement || undefined}
