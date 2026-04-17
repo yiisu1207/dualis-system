@@ -318,9 +318,24 @@ export default function ExportPanel({
             </div>
           </div>
 
-          <p className="text-center text-[9px] font-bold text-slate-300 dark:text-white/15 uppercase tracking-widest pt-2">
-            Powered by Dualis
-          </p>
+          {/* Dualis brand signature */}
+          <div className="pt-3 pb-1">
+            <div className="h-px bg-gradient-to-r from-transparent via-indigo-500/20 to-transparent mb-3" />
+            <div className="flex items-center justify-center gap-2.5">
+              <div className="relative">
+                <div className="absolute w-5 h-5 rounded-lg bg-violet-500/30 translate-x-1 translate-y-1" />
+                <div className="relative w-5 h-5 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center">
+                  <span className="text-[10px] font-black text-white">D</span>
+                </div>
+              </div>
+              <div className="leading-tight">
+                <p className="text-[10px] font-black text-slate-700 dark:text-white/80 tracking-wide">
+                  POWERED BY <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">DUALIS</span>
+                </p>
+                <p className="text-[8px] font-bold text-slate-400 dark:text-white/30 uppercase tracking-widest">Sistema ERP · dualis.online</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Toast */}
