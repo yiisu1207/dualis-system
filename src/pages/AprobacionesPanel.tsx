@@ -142,12 +142,15 @@ const PendingCard: React.FC<{
 
   const alreadySigned = p.approvals.some(a => a.userId === currentUserId);
   const isCreator = p.createdBy === currentUserId;
-  const canAct = mode === 'inbox' && !isCreator && !alreadySigned && p.status === 'pending';
+  const [acted, setActed] = useState(false);
+  const canAct = mode === 'inbox' && !isCreator && !alreadySigned && !acted && p.status === 'pending';
 
   const handleApprove = async () => {
     if (!onApprove) return;
     setBusy(true);
+    setActed(true);
     try { await onApprove(p.id, approveNote.trim() || undefined); }
+    catch { setActed(false); }
     finally { setBusy(false); setApproveNote(''); }
   };
   const handleReject = async () => {

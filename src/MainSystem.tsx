@@ -904,11 +904,27 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   // ── Fase D.0 — handlers de aprobación ───────────────────────────────────
   const approvePendingMovement = async (pendingId: string, note?: string) => {
     if (!businessId || !uid) return;
-    const pending = pendingMovementsList.find(p => p.id === pendingId);
-    if (!pending) {
+    const pendingDocRef = doc(db, `businesses/${businessId}/pendingMovements`, pendingId);
+
+    // Leer datos FRESCOS de Firestore para evitar race conditions
+    const freshSnap = await getDoc(pendingDocRef);
+    if (!freshSnap.exists()) {
       toast.error('Movimiento pendiente no encontrado');
       return;
     }
+    const pending = { id: freshSnap.id, ...freshSnap.data() } as PendingMovement;
+
+    // Ya fue aprobado/rechazado/cancelado
+    if (pending.status !== 'pending') {
+      toast.info('Esta solicitud ya fue procesada');
+      return;
+    }
+    // Ya firmó este usuario
+    if (pending.approvals.some(a => a.userId === uid)) {
+      toast.info('Ya firmaste esta solicitud');
+      return;
+    }
+    // Verificar capability
     const check = canApprovePending(
       pending,
       { uid, role: user?.role },
@@ -918,12 +934,12 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       toast.error(`No se puede aprobar: ${check.reason}`);
       return;
     }
+
     const nowIso = new Date().toISOString();
     const newApprovals = [
       ...(pending.approvals || []),
       { userId: uid, userName: user?.name || '', at: nowIso, note },
     ];
-    const pendingDocRef = doc(db, `businesses/${businessId}/pendingMovements`, pendingId);
 
     if (newApprovals.length >= (pending.quorumRequired || 2)) {
       // Quórum alcanzado → commit + marca pending como aprobado
@@ -938,7 +954,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         committedAt: nowIso,
       });
       logAudit(businessId, uid, 'APROBAR', 'MOV_PENDIENTE', `quórum alcanzado → ${committedId}`);
-      toast.success('Movimiento aprobado y commiteado al ledger');
+      toast.success('Movimiento aprobado y registrado en el libro');
     } else {
       await updateDoc(pendingDocRef, { approvals: newApprovals });
       logAudit(
