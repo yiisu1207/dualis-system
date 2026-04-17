@@ -1226,27 +1226,29 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   return (
     <div className="h-screen w-full flex bg-slate-50 dark:bg-[#0a0f1e] overflow-hidden font-inter transition-colors">
       {user && (
-        <Sidebar
-          activeTab={activeTab}
-          isOpen={isSidebarOpen}
-          setIsOpen={setIsSidebarOpen}
-          user={user}
-          config={{ companyName: userProfile?.businessId } as any}
-          rolePermissions={rolePermissions}
-          canCompare={canAccess('comparar')}
-          kpis={sidebarKpis}
-          shortcutHints={shortcutHints}
-          badges={{
-            comparar: pendingCompareCount,
-            tesoreria: overduePaymentsCount,
-            aprobaciones: pendingApprovalInboxCount,
-            cobranza: countPendingReminders(calculateReminders(movements, customers)),
-            inventario: inventoryItems.filter(p => { const s = (p as any).stock ?? (p as any).quantity ?? 0; return s < ((p as any).minStock ?? 10); }).length,
-            despacho: movements.filter((m: any) => m.esNotaEntrega && m.estadoNDE === 'pendiente_despacho' && !m.anulada).length,
-          }}
-          onLogout={() => auth.signOut()}
-          onOpenProfile={() => setIsProfileOpen(true)}
-        />
+        <div className="w-0 shrink-0 overflow-visible lg:w-auto">
+          <Sidebar
+            activeTab={activeTab}
+            isOpen={isSidebarOpen}
+            setIsOpen={setIsSidebarOpen}
+            user={user}
+            config={{ companyName: userProfile?.businessId } as any}
+            rolePermissions={rolePermissions}
+            canCompare={canAccess('comparar')}
+            kpis={sidebarKpis}
+            shortcutHints={shortcutHints}
+            badges={{
+              comparar: pendingCompareCount,
+              tesoreria: overduePaymentsCount,
+              aprobaciones: pendingApprovalInboxCount,
+              cobranza: countPendingReminders(calculateReminders(movements, customers)),
+              inventario: inventoryItems.filter(p => { const s = (p as any).stock ?? (p as any).quantity ?? 0; return s < ((p as any).minStock ?? 10); }).length,
+              despacho: movements.filter((m: any) => m.esNotaEntrega && m.estadoNDE === 'pendiente_despacho' && !m.anulada).length,
+            }}
+            onLogout={() => auth.signOut()}
+            onOpenProfile={() => setIsProfileOpen(true)}
+          />
+        </div>
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
