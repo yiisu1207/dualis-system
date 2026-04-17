@@ -963,11 +963,17 @@ export function EntityDetail({
       <div className="flex-1 overflow-y-auto">
         {/* ═══ TAB: RESUMEN ═══ */}
         {tab === 'resumen' && (
-          <div className="p-5 space-y-6">
-            {/* Account Cards */}
+          <div className="p-5 space-y-5">
+            {/* ── Section: Cuentas activas ───────────────────────────── */}
             {accountBalances.length > 0 ? (
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Cuentas activas</p>
+              <section>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-4 rounded-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-white/70">
+                    Cuentas activas
+                  </h3>
+                  <span className="text-[9px] font-black text-slate-400 dark:text-white/30">· {accountBalances.length}</span>
+                </div>
                 <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
                   {accountBalances.map(acc => (
                     <AccountCard
@@ -982,163 +988,400 @@ export function EntityDetail({
                     />
                   ))}
                 </div>
-              </div>
+              </section>
             ) : (
-              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-8 text-center">
-                <p className="text-sm font-bold text-slate-300 dark:text-white/15">Sin movimientos registrados</p>
+              <div className="rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-white/[0.02] dark:to-white/[0.01] border border-dashed border-slate-200 dark:border-white/[0.06] p-10 text-center">
+                <Activity size={28} className="mx-auto text-slate-300 dark:text-white/15 mb-2" />
+                <p className="text-sm font-black text-slate-400 dark:text-white/30">Sin movimientos registrados</p>
+                <p className="text-xs text-slate-300 dark:text-white/20 mt-1">Los movimientos aparecerán aquí cuando registres la primera factura o abono</p>
               </div>
             )}
 
-            {/* ── Portal Access Section (CxC only) ── */}
-            {isCxC && businessId && (
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Portal del cliente</p>
-                {portalLoading ? (
-                  <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-white/30">
-                    <Loader2 size={14} className="animate-spin" /> Verificando acceso...
-                  </div>
-                ) : portalLink ? (
-                  /* ── Client already has portal access ── */
-                  <div className="rounded-xl bg-sky-50 dark:bg-sky-500/[0.05] border border-sky-200 dark:border-sky-500/20 p-4 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Globe size={14} className="text-sky-500" />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400">
-                        Portal activo
-                      </span>
+            {/* ═══ Dashboard de 2 columnas (xl) ══════════════════════════ */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+              {/* ── COLUMNA IZQUIERDA — Analítica ────────────────────── */}
+              <div className="xl:col-span-2 space-y-5">
+                {/* Antigüedad de deuda */}
+                {isCxC && aging && (aging.current + aging.d31_60 + aging.d61_90 + aging.d90plus) > 0 && (
+                  <section className="rounded-2xl bg-white dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Hourglass size={12} className="text-amber-500" />
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-white/70">
+                          Antigüedad de deuda
+                        </h3>
+                      </div>
+                      {headerStats.overdueCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                          {headerStats.overdueCount} vencida{headerStats.overdueCount > 1 ? 's' : ''}
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs font-mono text-slate-600 dark:text-slate-300 truncate">{portalLink}</p>
-                    {portalPin && (
-                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                        PIN: <span className="text-sky-600 dark:text-sky-400 tracking-widest font-mono">{portalPin}</span>
-                      </p>
-                    )}
-                    {/* ── OTP pendiente — para compartir cuando el email no funciona ── */}
-                    {pendingOTP && (
-                      <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-500/[0.06] border border-amber-200 dark:border-amber-500/20 rounded-xl px-4 py-3">
-                        <Key size={14} className="text-amber-500 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400 mb-0.5">Código OTP pendiente</p>
-                          <p className="text-lg font-black font-mono tracking-[0.4em] text-amber-700 dark:text-amber-300">{pendingOTP}</p>
-                          <p className="text-[9px] text-amber-500/60 dark:text-amber-400/40 mt-0.5">El cliente necesita este código para entrar al portal</p>
+                    {(() => {
+                      const total = aging.current + aging.d31_60 + aging.d61_90 + aging.d90plus;
+                      const buckets = [
+                        { label: '0-30d', value: aging.current, bg: 'bg-emerald-500/[0.08]', border: 'border-emerald-500/20', muted: 'text-emerald-400/70', strong: 'text-emerald-500', bar: 'bg-emerald-500' },
+                        { label: '31-60d', value: aging.d31_60, bg: 'bg-amber-500/[0.08]', border: 'border-amber-500/20', muted: 'text-amber-400/70', strong: 'text-amber-500', bar: 'bg-amber-500' },
+                        { label: '61-90d', value: aging.d61_90, bg: 'bg-orange-500/[0.08]', border: 'border-orange-500/20', muted: 'text-orange-400/70', strong: 'text-orange-500', bar: 'bg-orange-500' },
+                        { label: '90+d', value: aging.d90plus, bg: 'bg-rose-500/[0.08]', border: 'border-rose-500/20', muted: 'text-rose-400/70', strong: 'text-rose-500', bar: 'bg-rose-500' },
+                      ];
+                      return (
+                        <>
+                          <div className="grid grid-cols-4 gap-2 mb-3">
+                            {buckets.map(b => {
+                              const pct = total > 0 ? (b.value / total) * 100 : 0;
+                              return (
+                                <div key={b.label} className={`rounded-xl ${b.bg} border ${b.border} px-3 py-2.5 text-center`}>
+                                  <p className={`text-[9px] font-black uppercase ${b.muted}`}>{b.label}</p>
+                                  <p className={`text-sm font-black ${b.strong} mt-0.5`}>${b.value.toFixed(2)}</p>
+                                  <p className={`text-[9px] font-bold ${b.muted} mt-0.5`}>{pct.toFixed(0)}%</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* Stacked progress bar */}
+                          <div className="flex w-full h-1.5 rounded-full overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
+                            {buckets.map(b => {
+                              const pct = total > 0 ? (b.value / total) * 100 : 0;
+                              if (pct === 0) return null;
+                              return <div key={b.label} className={b.bar} style={{ width: `${pct}%` }} title={`${b.label}: $${b.value.toFixed(2)}`} />;
+                            })}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </section>
+                )}
+
+                {/* Tendencia 6 meses */}
+                {trendData.some(m => m.facturas > 0 || m.abonos > 0) && (
+                  <section className="rounded-2xl bg-white dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp size={12} className="text-violet-500" />
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-white/70">
+                          Tendencia 6 meses
+                        </h3>
+                      </div>
+                      <div className="flex items-center gap-3 text-[9px] font-black">
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-sm bg-rose-400/80" />
+                          <span className="text-slate-500 dark:text-white/40 uppercase tracking-wider">{isCxC ? 'Ventas' : 'Facturas'}</span>
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-sm bg-emerald-400/80" />
+                          <span className="text-slate-500 dark:text-white/40 uppercase tracking-wider">Abonos</span>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-44">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={trendData} barGap={2} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                          <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
+                          <Tooltip
+                            cursor={{ fill: 'rgba(148,163,184,0.08)' }}
+                            contentStyle={{ background: 'rgba(15,23,42,0.96)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11, fontWeight: 700, color: '#ffffff', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}
+                            labelStyle={{ color: '#ffffff', fontWeight: 800, marginBottom: 4 }}
+                            itemStyle={{ color: '#ffffff', padding: 0 }}
+                            formatter={(value: number, name: string) => [`$${value.toFixed(2)}`, name === 'facturas' ? (isCxC ? 'Ventas' : 'Facturas') : 'Abonos']}
+                          />
+                          <Bar dataKey="facturas" radius={[4, 4, 0, 0]} maxBarSize={22}>
+                            {trendData.map((_, i) => <Cell key={i} fill="rgba(244,63,94,0.7)" />)}
+                          </Bar>
+                          <Bar dataKey="abonos" radius={[4, 4, 0, 0]} maxBarSize={22}>
+                            {trendData.map((_, i) => <Cell key={i} fill="rgba(16,185,129,0.7)" />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </section>
+                )}
+
+                {/* Últimos movimientos */}
+                {recentMovements.length > 0 && (
+                  <section className="rounded-2xl bg-white dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Activity size={12} className="text-indigo-500" />
+                      <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-white/70">
+                        Últimos movimientos
+                      </h3>
+                      <span className="ml-auto text-[9px] font-black text-slate-400 dark:text-white/30">Top {recentMovements.length}</span>
+                    </div>
+                    <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
+                      {recentMovements.map(m => {
+                        const isFactura = m.movementType === 'FACTURA';
+                        const usd = getMovementUsdAmount(m, rates);
+                        return (
+                          <div key={m.id} className="flex items-center gap-3 py-2 first:pt-0 last:pb-0 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors rounded-lg -mx-1 px-1">
+                            <span className={`w-6 h-6 rounded-lg shrink-0 flex items-center justify-center ${isFactura ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
+                              {isFactura ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <p className="text-xs font-bold text-slate-700 dark:text-white/70 truncate">
+                                  {isFactura ? (isCxC ? 'Venta' : 'Factura') : 'Abono'} · {resolveAccountLabel(m.accountType as string, customRates)}
+                                </p>
+                                <VerificationBadge movement={m} size="xs" />
+                              </div>
+                              <p className="text-[9px] text-slate-400 dark:text-white/25 truncate">{m.concept || '—'}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className={`text-xs font-black ${isFactura ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                {isFactura ? '+' : '-'}${usd.toFixed(2)}
+                              </p>
+                              <p className="text-[9px] text-slate-400 dark:text-white/25">{m.date?.split('T')[0]}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+              </div>
+
+              {/* ── COLUMNA DERECHA — Crédito, portal, notas ─────────── */}
+              <div className="space-y-5">
+                {/* Crédito (gauge) */}
+                {isCxC && customer?.creditLimit && customer.creditLimit > 0 && (() => {
+                  const usage = Math.max(0, totalBalance);
+                  const ratio = Math.min(1, usage / customer.creditLimit);
+                  const available = Math.max(0, customer.creditLimit - usage);
+                  const tone = ratio > 0.9 ? { bar: 'bg-rose-500', text: 'text-rose-500', ring: 'stroke-rose-500', badge: 'bg-rose-500/10 text-rose-400 border-rose-500/20', label: 'Crítico' }
+                             : ratio > 0.7 ? { bar: 'bg-amber-500', text: 'text-amber-500', ring: 'stroke-amber-500', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20', label: 'Alto' }
+                             : { bar: 'bg-emerald-500', text: 'text-emerald-500', ring: 'stroke-emerald-500', badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', label: 'Saludable' };
+                  const C = 2 * Math.PI * 36;
+                  return (
+                    <section className="rounded-2xl bg-gradient-to-br from-indigo-500/[0.04] to-violet-500/[0.04] border border-indigo-500/15 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Shield size={12} className="text-indigo-400" />
+                          <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-400">
+                            Línea de crédito
+                          </h3>
                         </div>
+                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-black border ${tone.badge}`}>{tone.label}</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {/* Gauge ring */}
+                        <div className="relative w-[86px] h-[86px] shrink-0">
+                          <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
+                            <circle cx="40" cy="40" r="36" className="stroke-slate-200 dark:stroke-white/[0.06]" strokeWidth="7" fill="none" />
+                            <circle
+                              cx="40" cy="40" r="36"
+                              className={tone.ring}
+                              strokeWidth="7"
+                              fill="none"
+                              strokeLinecap="round"
+                              strokeDasharray={C}
+                              strokeDashoffset={C * (1 - ratio)}
+                              style={{ transition: 'stroke-dashoffset 0.6s' }}
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className={`text-sm font-black ${tone.text}`}>{Math.round(ratio * 100)}%</span>
+                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">usado</span>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1.5">
+                          <div>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Límite</p>
+                            <p className="text-sm font-black text-slate-900 dark:text-white">${customer.creditLimit.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Disponible</p>
+                            <p className={`text-sm font-black ${tone.text}`}>${available.toFixed(2)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  );
+                })()}
+
+                {/* Portal del cliente */}
+                {isCxC && businessId && (
+                  <section className="rounded-2xl bg-white dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Globe size={12} className="text-sky-500" />
+                      <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-white/70">
+                        Portal del cliente
+                      </h3>
+                      {portalLink && (
+                        <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activo
+                        </span>
+                      )}
+                    </div>
+                    {portalLoading ? (
+                      <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-white/30 py-4">
+                        <Loader2 size={14} className="animate-spin" /> Verificando acceso...
+                      </div>
+                    ) : portalLink ? (
+                      <div className="space-y-3">
+                        <div className="rounded-xl bg-sky-50 dark:bg-sky-500/[0.05] border border-sky-200 dark:border-sky-500/20 px-3 py-2">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-0.5">Enlace</p>
+                          <p className="text-[10px] font-mono text-slate-600 dark:text-slate-300 truncate">{portalLink}</p>
+                          {portalPin && (
+                            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1">
+                              PIN <span className="text-sky-600 dark:text-sky-400 tracking-widest font-mono ml-1">{portalPin}</span>
+                            </p>
+                          )}
+                        </div>
+                        {pendingOTP && (
+                          <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-500/[0.06] border border-amber-200 dark:border-amber-500/20 rounded-xl px-3 py-2">
+                            <Key size={14} className="text-amber-500 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">OTP</p>
+                              <p className="text-sm font-black font-mono tracking-[0.25em] text-amber-700 dark:text-amber-300">{pendingOTP}</p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(pendingOTP);
+                                setOtpCopied(true);
+                                setTimeout(() => setOtpCopied(false), 2000);
+                              }}
+                              className="p-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-all shrink-0"
+                            >
+                              {otpCopied ? <Check size={11} /> : <Copy size={11} />}
+                            </button>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={copyPortalLink}
+                            className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-sky-500 text-white text-[9px] font-black uppercase tracking-widest hover:bg-sky-600 transition-all"
+                          >
+                            {portalCopied ? <><Check size={11} /> Copiado</> : <><Copy size={11} /> Copiar</>}
+                          </button>
+                          <a
+                            href={portalLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-slate-500/10 text-slate-600 dark:text-white/50 text-[9px] font-black uppercase tracking-widest hover:bg-slate-500/20 transition-all"
+                          >
+                            <ExternalLink size={11} /> Abrir
+                          </a>
+                          {(entity as Customer).telefono && (
+                            <button
+                              onClick={() => shareViaWhatsApp(
+                                (entity as Customer).telefono!,
+                                messageTemplates.portalAccess(
+                                  businessName || 'tu negocio',
+                                  entityName,
+                                  portalLink!,
+                                  portalPin || undefined,
+                                ),
+                              )}
+                              className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all"
+                            >
+                              <MessageSquare size={11} /> WhatsApp
+                            </button>
+                          )}
+                          {(entity as Customer).email && (
+                            <button
+                              onClick={() => shareViaEmail(
+                                (entity as Customer).email!,
+                                `Acceso a tu portal — ${businessName || 'tu negocio'}`,
+                                messageTemplates.portalAccess(
+                                  businessName || 'tu negocio',
+                                  entityName,
+                                  portalLink!,
+                                  portalPin || undefined,
+                                ),
+                              )}
+                              className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-violet-500 text-white text-[9px] font-black uppercase tracking-widest hover:bg-violet-600 transition-all"
+                            >
+                              <Mail size={11} /> Email
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center space-y-3 py-2">
+                        <Globe size={22} className="mx-auto text-slate-300 dark:text-white/15" />
+                        <p className="text-[11px] font-bold text-slate-400 dark:text-white/30 leading-relaxed">
+                          Crea un portal para que el cliente consulte facturas y haga abonos.
+                        </p>
                         <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(pendingOTP);
-                            setOtpCopied(true);
-                            setTimeout(() => setOtpCopied(false), 2000);
-                          }}
-                          className="flex items-center gap-1 px-3 py-2 rounded-lg bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 transition-all shrink-0"
+                          onClick={handleCreatePortalAccess}
+                          disabled={portalGenerating}
+                          className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:from-sky-400 hover:to-indigo-400 transition-all shadow-lg shadow-sky-500/25 disabled:opacity-40"
                         >
-                          {otpCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+                          {portalGenerating ? <><Loader2 size={11} className="animate-spin" /> Generando...</> : <><Globe size={11} /> Crear Portal</>}
                         </button>
                       </div>
                     )}
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={copyPortalLink}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 transition-all"
-                      >
-                        {portalCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
-                      </button>
-                      {(entity as Customer).telefono && (
-                        <button
-                          onClick={() => shareViaWhatsApp(
-                            (entity as Customer).telefono!,
-                            messageTemplates.portalAccess(
-                              businessName || 'tu negocio',
-                              entityName,
-                              portalLink!,
-                              portalPin || undefined,
-                            ),
-                          )}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all"
-                        >
-                          <MessageSquare size={12} /> WhatsApp
-                        </button>
-                      )}
-                      {(entity as Customer).email && (
-                        <button
-                          onClick={() => shareViaEmail(
-                            (entity as Customer).email!,
-                            `Acceso a tu portal — ${businessName || 'tu negocio'}`,
-                            messageTemplates.portalAccess(
-                              businessName || 'tu negocio',
-                              entityName,
-                              portalLink!,
-                              portalPin || undefined,
-                            ),
-                          )}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-violet-600 transition-all"
-                        >
-                          <Mail size={12} /> Email
-                        </button>
-                      )}
-                      <a
-                        href={portalLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-500/10 text-slate-600 dark:text-white/50 text-[10px] font-black uppercase tracking-widest hover:bg-slate-500/20 transition-all"
-                      >
-                        <ExternalLink size={12} /> Abrir
-                      </a>
+                  </section>
+                )}
+
+                {/* Notas internas */}
+                {isCxC && customer?.internalNotes && (
+                  <section className="rounded-2xl bg-amber-50 dark:bg-amber-500/[0.04] border border-amber-200 dark:border-amber-500/20 p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle size={12} className="text-amber-500" />
+                      <h3 className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
+                        Notas internas
+                      </h3>
                     </div>
-                  </div>
-                ) : (
-                  /* ── No portal yet — offer to create ── */
-                  <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-dashed border-slate-200 dark:border-white/[0.08] p-4 text-center space-y-3">
-                    <Globe size={20} className="mx-auto text-slate-300 dark:text-white/15" />
-                    <p className="text-xs font-bold text-slate-400 dark:text-white/30">
-                      Este cliente no tiene portal. Crea uno para que pueda ver sus facturas, hacer abonos y más.
-                    </p>
-                    <button
-                      onClick={handleCreatePortalAccess}
-                      disabled={portalGenerating}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:from-sky-400 hover:to-indigo-400 transition-all shadow-lg shadow-sky-500/25 disabled:opacity-40"
-                    >
-                      {portalGenerating ? <><Loader2 size={12} className="animate-spin" /> Generando...</> : <><Globe size={12} /> Crear Portal</>}
-                    </button>
-                  </div>
+                    <p className="text-xs text-slate-700 dark:text-white/70 whitespace-pre-wrap leading-relaxed">{customer.internalNotes}</p>
+                  </section>
                 )}
               </div>
-            )}
+            </div>
 
-            {/* Internal Notes (if any) */}
-            {isCxC && customer?.internalNotes && (
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Notas internas</p>
-                <div className="rounded-xl bg-amber-50 dark:bg-amber-500/[0.04] border border-amber-200 dark:border-amber-500/15 p-4">
-                  <p className="text-xs text-slate-600 dark:text-white/60 whitespace-pre-wrap">{customer.internalNotes}</p>
+            {/* ═══ Acciones de compensación ══════════════════════════════ */}
+            {((canEdit && onCompensate && accountBalances.length >= 2) || (canEdit && onCrossCompensate && linkedCounterpartName)) && (
+              <section className="rounded-2xl bg-gradient-to-br from-slate-50 to-white dark:from-white/[0.03] dark:to-white/[0.01] border border-slate-100 dark:border-white/[0.06] p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <ArrowLeftRight size={12} className="text-indigo-500" />
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-white/70">
+                    Compensaciones
+                  </h3>
                 </div>
-              </div>
-            )}
 
-            {/* Compensation between accounts */}
-            {canEdit && onCompensate && accountBalances.length >= 2 && (
-              <div>
-                {!compOpen ? (
-                  <button
-                    onClick={() => {
-                      setCompFrom(accountBalances[0]?.accountType || '');
-                      setCompTo(accountBalances[1]?.accountType || '');
-                      setCompAmount('');
-                      setCompOpen(true);
-                    }}
-                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-400 hover:text-indigo-300 transition-colors"
-                  >
-                    <ArrowLeftRight size={12} /> Compensar entre cuentas
-                  </button>
-                ) : (
+                {/* Botones de acción */}
+                {!compOpen && !crossCompOpen && (
+                  <div className="flex flex-wrap gap-2">
+                    {canEdit && onCompensate && accountBalances.length >= 2 && (
+                      <button
+                        onClick={() => {
+                          setCompFrom(accountBalances[0]?.accountType || '');
+                          setCompTo(accountBalances[1]?.accountType || '');
+                          setCompAmount('');
+                          setCompOpen(true);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500/20 border border-indigo-500/20 transition-all"
+                      >
+                        <ArrowLeftRight size={12} /> Compensar entre cuentas
+                      </button>
+                    )}
+                    {canEdit && onCrossCompensate && linkedCounterpartName && (
+                      <button
+                        onClick={() => {
+                          setCrossCompAmount('');
+                          setCrossCompDirection(isCxC ? 'cxc-to-cxp' : 'cxp-to-cxc');
+                          setCrossCompOpen(true);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-black uppercase tracking-widest hover:bg-amber-500/20 border border-amber-500/20 transition-all"
+                      >
+                        <Repeat size={12} /> Compensar con {isCxC ? 'CxP' : 'CxC'} · {linkedCounterpartName}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Form: Compensación entre cuentas */}
+                {compOpen && (
                   <div className="rounded-xl bg-indigo-500/[0.04] border border-indigo-500/20 p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Compensación entre cuentas</p>
-                      <button onClick={() => setCompOpen(false)} className="text-white/30 hover:text-white/60"><ChevronLeft size={14} /></button>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400">Compensación entre cuentas</p>
+                      <button onClick={() => setCompOpen(false)} className="text-slate-400 dark:text-white/30 hover:text-slate-600 dark:hover:text-white/60"><ChevronLeft size={14} /></button>
                     </div>
-                    <p className="text-[10px] text-slate-400 dark:text-white/30">
+                    <p className="text-[10px] text-slate-500 dark:text-white/30">
                       Transfiere saldo a favor de una cuenta para cubrir deuda en otra.
                     </p>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Desde (saldo a favor)</label>
+                        <label className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30 block mb-1">Desde (saldo a favor)</label>
                         <select
                           value={compFrom}
                           onChange={(e) => setCompFrom(e.target.value)}
@@ -1152,7 +1395,7 @@ export function EntityDetail({
                         </select>
                       </div>
                       <div>
-                        <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Hacia (deuda)</label>
+                        <label className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30 block mb-1">Hacia (deuda)</label>
                         <select
                           value={compTo}
                           onChange={(e) => setCompTo(e.target.value)}
@@ -1167,7 +1410,7 @@ export function EntityDetail({
                       </div>
                     </div>
                     <div>
-                      <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Monto USD</label>
+                      <label className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30 block mb-1">Monto USD</label>
                       <input
                         type="number"
                         min="0.01"
@@ -1181,7 +1424,7 @@ export function EntityDetail({
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => setCompOpen(false)}
-                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-white/60"
+                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white/60"
                       >
                         Cancelar
                       </button>
@@ -1206,38 +1449,23 @@ export function EntityDetail({
                     </div>
                   </div>
                 )}
-              </div>
-            )}
 
-            {/* D.6 — Cross-compensation CxC↔CxP */}
-            {canEdit && onCrossCompensate && linkedCounterpartName && (
-              <div>
-                {!crossCompOpen ? (
-                  <button
-                    onClick={() => {
-                      setCrossCompAmount('');
-                      setCrossCompDirection(isCxC ? 'cxc-to-cxp' : 'cxp-to-cxc');
-                      setCrossCompOpen(true);
-                    }}
-                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-400 hover:text-amber-300 transition-colors"
-                  >
-                    <Repeat size={12} /> Compensar con {isCxC ? 'CxP' : 'CxC'} ({linkedCounterpartName})
-                  </button>
-                ) : (
+                {/* Form: Cross-compensación */}
+                {crossCompOpen && (
                   <div className="rounded-xl bg-amber-500/[0.04] border border-amber-500/20 p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-400">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
                         Compensación cruzada {isCxC ? 'CxC → CxP' : 'CxP → CxC'}
                       </p>
-                      <button onClick={() => setCrossCompOpen(false)} className="text-white/30 hover:text-white/60"><ChevronLeft size={14} /></button>
+                      <button onClick={() => setCrossCompOpen(false)} className="text-slate-400 dark:text-white/30 hover:text-slate-600 dark:hover:text-white/60"><ChevronLeft size={14} /></button>
                     </div>
-                    <p className="text-[10px] text-slate-400 dark:text-white/30">
+                    <p className="text-[10px] text-slate-500 dark:text-white/30">
                       {isCxC
                         ? `Usa saldo a favor del cliente para pagar deuda con el proveedor "${linkedCounterpartName}", o viceversa.`
                         : `Usa crédito del proveedor para cubrir deuda del cliente "${linkedCounterpartName}", o viceversa.`}
                     </p>
                     <div>
-                      <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Dirección</label>
+                      <label className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30 block mb-1">Dirección</label>
                       <select
                         value={crossCompDirection}
                         onChange={(e) => setCrossCompDirection(e.target.value as 'cxc-to-cxp' | 'cxp-to-cxc')}
@@ -1248,7 +1476,7 @@ export function EntityDetail({
                       </select>
                     </div>
                     <div>
-                      <label className="text-[9px] font-black uppercase text-white/30 block mb-1">Monto USD</label>
+                      <label className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30 block mb-1">Monto USD</label>
                       <input
                         type="number"
                         min="0.01"
@@ -1262,7 +1490,7 @@ export function EntityDetail({
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => setCrossCompOpen(false)}
-                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white/40 hover:text-white/60"
+                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white/60"
                       >
                         Cancelar
                       </button>
@@ -1287,118 +1515,7 @@ export function EntityDetail({
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* Aging (CxC only) */}
-            {isCxC && aging && (aging.current + aging.d31_60 + aging.d61_90 + aging.d90plus) > 0 && (
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Antiguedad de deuda</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    { label: '0-30d', value: aging.current, color: 'emerald' },
-                    { label: '31-60d', value: aging.d31_60, color: 'amber' },
-                    { label: '61-90d', value: aging.d61_90, color: 'orange' },
-                    { label: '90+d', value: aging.d90plus, color: 'rose' },
-                  ].map(b => (
-                    <div key={b.label} className={`rounded-xl bg-${b.color}-500/[0.06] border border-${b.color}-500/20 px-3 py-2.5 text-center`}>
-                      <p className={`text-[9px] font-black uppercase text-${b.color}-400/60`}>{b.label}</p>
-                      <p className={`text-sm font-black text-${b.color}-500 mt-0.5`}>${b.value.toFixed(2)}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Trend Chart */}
-            {trendData.some(m => m.facturas > 0 || m.abonos > 0) && (
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Tendencia 6 meses</p>
-                <div className="h-40 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-3">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={trendData} barGap={2}>
-                      <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
-                      <Tooltip
-                        // Tooltip legible en dark y light. Antes solo tenía
-                        // contentStyle con bg oscuro → en light mode el texto
-                        // default de recharts (casi blanco) quedaba ilegible.
-                        // Fix 2026-04-09: bg semi-opaco slate-900 universal +
-                        // color blanco forzado en item/label.
-                        cursor={{ fill: 'rgba(148,163,184,0.08)' }}
-                        contentStyle={{ background: 'rgba(15,23,42,0.96)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11, fontWeight: 700, color: '#ffffff', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}
-                        labelStyle={{ color: '#ffffff', fontWeight: 800, marginBottom: 4 }}
-                        itemStyle={{ color: '#ffffff', padding: 0 }}
-                        formatter={(value: number, name: string) => [`$${value.toFixed(2)}`, name === 'facturas' ? (isCxC ? 'Ventas' : 'Facturas') : 'Abonos']}
-                      />
-                      <Bar dataKey="facturas" radius={[4, 4, 0, 0]} maxBarSize={20}>
-                        {trendData.map((_, i) => <Cell key={i} fill="rgba(244,63,94,0.6)" />)}
-                      </Bar>
-                      <Bar dataKey="abonos" radius={[4, 4, 0, 0]} maxBarSize={20}>
-                        {trendData.map((_, i) => <Cell key={i} fill="rgba(16,185,129,0.6)" />)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
-
-            {/* Recent movements */}
-            {recentMovements.length > 0 && (
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Ultimos movimientos</p>
-                <div className="space-y-1.5">
-                  {recentMovements.map(m => {
-                    const isFactura = m.movementType === 'FACTURA';
-                    const usd = getMovementUsdAmount(m, rates);
-                    return (
-                      <div key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFactura ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <p className="text-xs font-bold text-slate-700 dark:text-white/60 truncate">
-                              {isFactura ? (isCxC ? 'Venta' : 'Factura') : 'Abono'} · {resolveAccountLabel(m.accountType as string, customRates)}
-                            </p>
-                            <VerificationBadge movement={m} size="xs" />
-                          </div>
-                          <p className="text-[9px] text-slate-400 dark:text-white/25">{m.concept || '-'}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className={`text-xs font-black ${isFactura ? 'text-rose-500' : 'text-emerald-500'}`}>
-                            {isFactura ? '+' : '-'}${usd.toFixed(2)}
-                          </p>
-                          <p className="text-[9px] text-slate-400 dark:text-white/25">{m.date?.split('T')[0]}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Credit info (CxC) */}
-            {isCxC && customer?.creditLimit && customer.creditLimit > 0 && (
-              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-4 space-y-2">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Credito</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500 dark:text-white/40">Limite</span>
-                  <span className="text-sm font-black text-slate-900 dark:text-white">${customer.creditLimit.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500 dark:text-white/40">Usado</span>
-                  <span className="text-sm font-black text-slate-900 dark:text-white">${Math.max(0, totalBalance).toFixed(2)}</span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-white/[0.06] overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      totalBalance / customer.creditLimit > 0.9 ? 'bg-rose-500' : totalBalance / customer.creditLimit > 0.7 ? 'bg-amber-500' : 'bg-emerald-500'
-                    }`}
-                    style={{ width: `${Math.min(100, Math.max(0, (totalBalance / customer.creditLimit) * 100))}%` }}
-                  />
-                </div>
-                <p className="text-[9px] font-bold text-slate-400 dark:text-white/25 text-right">
-                  {Math.max(0, customer.creditLimit - totalBalance).toFixed(2)} USD disponible
-                </p>
-              </div>
+              </section>
             )}
           </div>
         )}
