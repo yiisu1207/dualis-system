@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { usePortal } from './PortalGuard';
 import { usePortalData } from './usePortalData';
 import { formatCurrency } from '../utils/formatters';
@@ -32,17 +32,9 @@ import {
   PHONE_VE_REGEX,
   REFERENCE_6_REGEX,
 } from '../data/bancosVE';
+import { buildReferenceFingerprint as buildFingerprint } from '../utils/referenceFingerprint';
 
 const CUSTOM_COLORS = ['violet', 'emerald', 'amber'] as const;
-
-// SHA-256 fingerprint via SubtleCrypto
-async function buildFingerprint(bankAccountId: string, reference: string, amount: number): Promise<string> {
-  const raw = `${bankAccountId}|${reference.trim()}|${amount.toFixed(2)}`;
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-  return Array.from(new Uint8Array(buf))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
 
 export default function PortalAbonoForm() {
   const { businessId, customerId, customerName, businessName, currencySymbol } = usePortal();
@@ -65,6 +57,29 @@ export default function PortalAbonoForm() {
     );
     return unsub;
   }, [businessId]);
+
+  // invoiceLinked — cargar modo efectivo (cliente > negocio > accumulated)
+  const [effectiveCreditMode, setEffectiveCreditMode] = useState<'accumulated' | 'invoiceLinked'>('accumulated');
+  useEffect(() => {
+    if (!businessId || !customerId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [cfgSnap, custSnap] = await Promise.all([
+          getDoc(doc(db, 'businessConfigs', businessId)),
+          getDoc(doc(db, 'customers', customerId)),
+        ]);
+        if (cancelled) return;
+        const bizMode = cfgSnap.exists() ? (cfgSnap.data() as any)?.creditMode : undefined;
+        const custMode = custSnap.exists() ? (custSnap.data() as any)?.creditMode : undefined;
+        const resolved = (custMode === 'accumulated' || custMode === 'invoiceLinked')
+          ? custMode
+          : (bizMode === 'accumulated' || bizMode === 'invoiceLinked') ? bizMode : 'accumulated';
+        setEffectiveCreditMode(resolved);
+      } catch { /* noop */ }
+    })();
+    return () => { cancelled = true; };
+  }, [businessId, customerId]);
 
   // Cargar email del admin para notificación
   useEffect(() => {
@@ -160,16 +175,31 @@ export default function PortalAbonoForm() {
   const unpaidInvoices = useMemo(
     () =>
       movements
-        .filter(
-          (m) =>
-            m.movementType === MovementType.FACTURA &&
-            !(m as any).pagado &&
-            !(m as any).anulada &&
-            m.accountType === accountType
-        )
+        .filter((m) => {
+          if (m.movementType !== MovementType.FACTURA) return false;
+          if ((m as any).anulada) return false;
+          if (m.accountType !== accountType) return false;
+          // invoiceLinked: usar invoiceStatus; legacy: usar pagado
+          if (effectiveCreditMode === 'invoiceLinked') {
+            if ((m as any).invoiceStatus === 'PAID') return false;
+            if ((m as any).invoiceStatus) return true; // OPEN / PARTIAL
+            return !(m as any).pagado; // fallback legacy
+          }
+          return !(m as any).pagado;
+        })
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
-    [movements, accountType]
+    [movements, accountType, effectiveCreditMode]
   );
+
+  // Restante por factura (amountInUSD - allocatedTotal)
+  const invoiceRemaining = useCallback((m: any): number => {
+    const total = m.amountInUSD ?? m.amount ?? 0;
+    if (effectiveCreditMode === 'invoiceLinked') {
+      const alloc = Number(m.allocatedTotal || 0);
+      return Math.max(0, total - alloc);
+    }
+    return total;
+  }, [effectiveCreditMode]);
 
   const pendingPayments = useMemo(
     () => portalPayments.filter((p) => p.status === 'pending'),
@@ -180,10 +210,10 @@ export default function PortalAbonoForm() {
     let total = 0;
     selectedInvoices.forEach((id) => {
       const inv = unpaidInvoices.find((m) => m.id === id);
-      if (inv) total += inv.amountInUSD || inv.amount;
+      if (inv) total += invoiceRemaining(inv);
     });
     return total;
-  }, [selectedInvoices, unpaidInvoices]);
+  }, [selectedInvoices, unpaidInvoices, invoiceRemaining]);
 
   const toggleInvoice = (id: string) => {
     setSelectedInvoices((prev) => {
@@ -312,6 +342,28 @@ export default function PortalAbonoForm() {
         ? 'PayPal'
         : 'Transferencia';
 
+      // invoiceLinked — snapshot de imputaciones (restante por factura, capeado al total pagado)
+      let allocations: Array<{ invoiceId: string; invoiceRef?: string; amount: number }> | undefined;
+      if (effectiveCreditMode === 'invoiceLinked' && selectedInvoices.size > 0) {
+        let remainingAbono = amt;
+        allocations = [];
+        for (const id of selectedInvoices) {
+          if (remainingAbono <= 0.009) break;
+          const inv = unpaidInvoices.find(m => m.id === id);
+          if (!inv) continue;
+          const needed = invoiceRemaining(inv);
+          if (needed <= 0.009) continue;
+          const slice = Math.min(needed, remainingAbono);
+          allocations.push({
+            invoiceId: id,
+            invoiceRef: (inv as any).nroControl || (inv as any).concept || undefined,
+            amount: Number(slice.toFixed(2)),
+          });
+          remainingAbono -= slice;
+        }
+        if (allocations.length === 0) allocations = undefined;
+      }
+
       const payment: Omit<PortalPayment, 'id'> = {
         businessId,
         customerId,
@@ -330,6 +382,7 @@ export default function PortalAbonoForm() {
         payerPhone: cleanPhone || undefined,
         paymentDate,
         fingerprint,
+        ...(allocations ? { allocations } : {}),
       };
       await addDoc(collection(db, 'businesses', businessId, 'portalPayments'), payment);
 

@@ -9,6 +9,8 @@ export interface BankRow {
   accountLabel?: string;
   bankCode?: string;
   bankName?: string;
+  bankAccountId?: string;       // FK a BusinessBankAccount.id (necesario para fingerprint)
+  monthKey?: string;            // YYYY-MM del EdeC al que pertenece
   date: string;            // YYYY-MM-DD
   amount: number;          // positivo = crédito
   reference?: string;
@@ -20,6 +22,9 @@ export interface BankRow {
   amountTolerancePct?: number; // hereda del BankStatementAccount al denormalizar
   matched?: boolean;
   matchedAbonoId?: string;
+  /** True si la fila ya tiene entrada en `usedReferences` — el matcher la excluye. */
+  isUsed?: boolean;
+  usedBy?: { abonoId: string; claimedAt: string };
 }
 
 export interface DraftAbono {
@@ -120,6 +125,8 @@ export function findMatches(
   const results: RankedMatch[] = [];
   for (const row of pool) {
     if (!row || !Number.isFinite(row.amount) || !row.date) continue;
+    // Exclusión dura: filas ya conciliadas globalmente (usedReferences) no participan.
+    if (row.isUsed) continue;
 
     // Filtro duro monto — tolerancia exacta ±0.01, o pct si la cuenta lo define.
     const pct = row.amountTolerancePct && row.amountTolerancePct > 0 ? row.amountTolerancePct : 0;

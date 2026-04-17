@@ -35,6 +35,22 @@ export interface ExchangeRates {
 
 export type CreditScore = 'EXCELENTE' | 'BUENO' | 'REGULAR' | 'RIESGO';
 
+/**
+ * Modo de control de crédito a nivel cliente/negocio.
+ * - accumulated: un solo saldo neto por cuenta (Σ facturas − Σ abonos). Comportamiento legacy.
+ * - invoiceLinked: cada factura trackea su propio estado OPEN/PARTIAL/PAID y los abonos
+ *   se imputan explícitamente a facturas concretas vía `allocations`.
+ */
+export type CreditMode = 'accumulated' | 'invoiceLinked';
+
+export interface InvoiceAllocation {
+  invoiceId: string;          // id del Movement tipo FACTURA imputado
+  invoiceRef?: string;        // snapshot del nroControl/concepto (para leer sin join)
+  amount: number;             // USD imputado a esta factura desde el ABONO
+  allocatedAt: string;        // ISO
+  abonoMovementId: string;    // id del Movement tipo ABONO que generó la imputación
+}
+
 export interface Customer {
   id: string;
   nombre?: string;
@@ -75,6 +91,9 @@ export interface Customer {
   tags?: string[];
   birthday?: string; // YYYY-MM-DD
   lastBirthdayGreetingYear?: number;
+  // Modo de control de crédito (override del default del negocio).
+  // undefined = usa `businessConfigs/{bid}.creditMode` (default 'accumulated').
+  creditMode?: CreditMode;
 }
 
 export interface Supplier {
@@ -227,6 +246,23 @@ export interface Movement {
   devueltoParcial?: boolean;
   devueltoTotal?: boolean;
   saldoAFavor?: number;     // USD credit for future purchases
+  // ── Modo invoiceLinked ────────────────────────────────────────────────────
+  // Solo se llenan cuando el cliente (o el negocio) está en modo 'invoiceLinked'.
+  // En modo 'accumulated' estos campos se ignoran y el sistema se comporta como hoy.
+  //
+  // FACTURA:
+  //   invoiceStatus:  OPEN (sin abonos) | PARTIAL (allocatedTotal>0 && <amountInUSD) | PAID
+  //   allocations:    abonos imputados a esta factura
+  //   allocatedTotal: sum(allocations[].amount) denormalizado
+  //
+  // ABONO:
+  //   allocations:    facturas a las que este abono imputa
+  //   allocatedTotal: sum(allocations[].amount) denormalizado
+  //   overpaymentUSD: amountInUSD − allocatedTotal (si >0 queda como crédito a favor)
+  invoiceStatus?: 'OPEN' | 'PARTIAL' | 'PAID';
+  allocations?: InvoiceAllocation[];
+  allocatedTotal?: number;
+  overpaymentUSD?: number;
 }
 
 // ── Fase D.0 — Quórum multi-firma para movimientos sensibles ───────────────
@@ -469,6 +505,9 @@ export interface AppConfig {
     zoherEnabled?: boolean; // Extensión de tasas personalizadas con precios dinámicos
   };
   creditPolicy?: CreditPolicy;
+  // Modo default de control de crédito para el negocio.
+  // Los clientes sin `creditMode` heredan este. Si también es undefined → 'accumulated'.
+  creditMode?: CreditMode;
   paymentPeriods?: PaymentPeriod[];  // configurable credit terms for POS Mayor
   operation?: {
     isolationMode: 'individual' | 'shared';  // individual = libros aislados, shared = libro compartido
@@ -657,6 +696,8 @@ export interface PortalPayment {
   cancelledBy?: 'customer' | 'admin';
   vendedorId?: string;
   vendedorNombre?: string;
+  // invoiceLinked — snapshot de imputaciones para aplicar al aprobar
+  allocations?: Array<{ invoiceId: string; invoiceRef?: string; amount: number }>;
 }
 
 // ─── Tesorería: Cuentas bancarias del negocio (P6) ────────────────────────────
@@ -793,4 +834,76 @@ export interface Communication {
   outcome?: CommunicationOutcome;
   promiseDate?: string;           // solo si outcome === 'promesa_pago'
   promiseAmount?: number;
+}
+
+// ─── Conciliación Industrial — batches y anti-reuso de referencias ─────────
+
+export type ReconciliationBatchStatus = 'processing' | 'done' | 'archived';
+export type ReconciliationBatchSource = 'capturas' | 'manual' | 'mixed';
+
+export interface ReconciliationBatchStats {
+  total: number;
+  confirmed: number;     // auto-aprobados (exact/high)
+  review: number;        // medium/low, requieren humano
+  notFound: number;
+  manual: number;        // entradas sin imagen
+}
+
+export interface ReconciliationBatch {
+  id: string;
+  businessId: string;
+  name: string;                       // libre, 3-40 chars
+  periodFrom?: string;                // ISO date YYYY-MM-DD
+  periodTo?: string;                  // ISO date YYYY-MM-DD
+  accountIds?: string[];              // restricción opcional al pool
+  createdAt: string;                  // ISO
+  createdBy: string;                  // uid
+  createdByName?: string;
+  status: ReconciliationBatchStatus;
+  stats: ReconciliationBatchStats;
+  source: ReconciliationBatchSource;
+}
+
+/**
+ * Registro atómico de "referencia ya conciliada".
+ * Doc id = SHA-256(`bankAccountId|reference|amount`) — garantiza unicidad cross-cuenta.
+ */
+export interface UsedReference {
+  fingerprint: string;
+  bankAccountId: string;
+  reference: string;
+  amount: number;
+  claimedAt: string;        // ISO
+  claimedByUid: string;
+  claimedByName?: string;
+  abonoId: string;          // SessionAbono que reclamó la fila
+  movementId?: string;      // si se enlazó a CxC/CxP
+  batchId?: string;
+  bankRowId?: string;       // rowId dentro del EdeC para auditoría
+  monthKey?: string;        // YYYY-MM del EdeC matched
+}
+
+/** Metadata extraída del header del PDF nativo del banco al cargar el EdeC. */
+export interface BankStatementExtractedMeta {
+  holderName?: string;
+  accountNumber?: string;
+  periodFrom?: string;     // ISO YYYY-MM-DD
+  periodTo?: string;       // ISO YYYY-MM-DD
+  openingBalance?: number;
+  closingBalance?: number;
+}
+
+/** Snapshot denormalizado de un candidato top-N del matcher para mostrar en la UI sin re-fetch. */
+export interface SessionAbonoCandidate {
+  rowId: string;
+  bankAccountId?: string;
+  accountAlias: string;
+  bankName?: string;
+  monthKey?: string;
+  score: number;
+  confidence: 'exact' | 'high' | 'medium' | 'low';
+  rowDate: string;
+  rowAmount: number;
+  rowRef?: string;
+  rowDescription?: string;
 }

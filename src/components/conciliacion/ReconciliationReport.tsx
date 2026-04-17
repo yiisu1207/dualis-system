@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Download, Landmark, CheckCircle2, AlertTriangle, XCircle, Eye } from 'lucide-react';
 import type { BankRow, DraftAbono } from '../../utils/bankReconciliation';
+import type { SessionAbonoCandidate } from '../../../types';
 
 export type AbonoStatus = 'confirmado' | 'revisar' | 'no_encontrado';
 
@@ -9,6 +10,14 @@ export interface SessionAbono extends DraftAbono {
   status: AbonoStatus;
   matchRowId: string | null;   // rowId del BankRow conciliado, si hay
   matchAccountAlias?: string;  // denormalized para display
+  matchBankAccountId?: string; // id del BusinessBankAccount conciliado (para fingerprint)
+  matchBankName?: string;      // denormalized para display
+  matchMonthKey?: string;      // YYYY-MM del EdeC matched (para join contra usedReferences)
+  batchId?: string;            // id del ReconciliationBatch al que pertenece
+  candidateMatches?: SessionAbonoCandidate[];  // top-3 snapshot
+  receiptUrl?: string;         // URL Cloudinary/Storage de la captura
+  receiptHash?: string;        // SHA-256 del archivo (dedupe upload)
+  ocrRaw?: any;                // ExtractedReceipt original (debug/edición)
 }
 
 interface ReconciliationReportProps {

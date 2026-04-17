@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
-import { CheckCircle2, FileCheck, Loader2, AlertTriangle, XCircle, Landmark, ShieldCheck, Zap } from 'lucide-react';
+import { CheckCircle2, FileCheck, Loader2, AlertTriangle, XCircle, Landmark, ShieldCheck, Zap, Layers, Upload, Camera, Plus } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import {
   findMatches,
@@ -25,7 +25,10 @@ import ReconciliationReport, {
   type SessionAbono,
   type AbonoStatus,
 } from '../components/conciliacion/ReconciliationReport';
-import type { Movement } from '../../types';
+import MultiBankUploadModal from '../components/tesoreria/MultiBankUploadModal';
+import ReceiptBatchModal from '../components/tesoreria/ReceiptBatchModal';
+import BatchReviewPanel from '../components/tesoreria/BatchReviewPanel';
+import type { Movement, ReconciliationBatch } from '../../types';
 
 interface ConciliacionProps {
   businessId: string;
@@ -41,6 +44,7 @@ interface BankStatementAccountDoc {
   accountLabel: string;
   bankCode?: string;
   bankName?: string;
+  bankAccountId?: string;          // FK a BusinessBankAccount.id (clave para fingerprint)
   amountTolerancePct?: number;
   sourceFilename: string;
   fileUrl?: string;
@@ -50,6 +54,7 @@ interface BankStatementAccountDoc {
   rowCount: number;
   totalCredit: number;
   totalDebit: number;
+  extractedMeta?: import('../../types').BankStatementExtractedMeta;
 }
 
 function currentMonthKey(): string {
@@ -73,7 +78,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const canEdit = userRole === 'owner' || userRole === 'admin';
   const effectiveCanVerify = canVerify ?? canEdit;
 
-  const [view, setView] = useState<'auto' | 'manual'>('auto');
+  const [view, setView] = useState<'auto' | 'manual' | 'lotes'>('auto');
   const [monthKey, setMonthKey] = useState<string>(currentMonthKey());
   const [accounts, setAccounts] = useState<BankStatementAccountDoc[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
@@ -85,6 +90,10 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [selectedMatchRowId, setSelectedMatchRowId] = useState<string | null>(null);
 
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showMultiUpload, setShowMultiUpload] = useState(false);
+  const [showReceiptBatch, setShowReceiptBatch] = useState(false);
+  const [batches, setBatches] = useState<ReconciliationBatch[]>([]);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [batchItems, setBatchItems] = useState<BatchItem[] | null>(null);
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
@@ -145,6 +154,25 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     setSelectedMatchRowId(null);
     processedHashesRef.current.clear();
   }, [monthKey]);
+
+  // Listener de ReconciliationBatches (independiente de monthKey)
+  useEffect(() => {
+    if (!businessId) return;
+    const ref = collection(db, `businesses/${businessId}/reconciliationBatches`);
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        const list: ReconciliationBatch[] = [];
+        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
+        list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        setBatches(list);
+      },
+      (err) => {
+        console.error('[Conciliacion] batches onSnapshot error', err);
+      }
+    );
+    return () => unsub();
+  }, [businessId]);
 
   const pool = useMemo<BankRow[]>(() => {
     const matchedMap = new Map<string, string>();
@@ -474,6 +502,8 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {view === 'auto'
                   ? `Pool: ${pool.length} filas · ${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''} · ${abonos.length} abono${abonos.length !== 1 ? 's' : ''}`
+                  : view === 'lotes'
+                  ? `${batches.length} lote${batches.length !== 1 ? 's' : ''} · pool global cross-cuenta`
                   : `Verificación fila por fila · ${unverifiedCount} sin verificar`}
               </p>
             </div>
@@ -517,6 +547,22 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
               </span>
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => { setView('lotes'); setSelectedBatchId(null); }}
+            className={`px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+              view === 'lotes'
+                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm'
+                : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
+            }`}
+          >
+            <Layers size={12} /> Lotes
+            {batches.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-indigo-500/20 text-indigo-600 dark:text-indigo-300">
+                {batches.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {view === 'manual' ? (
@@ -526,6 +572,24 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             currentUserName={currentUserName}
             canVerify={effectiveCanVerify}
           />
+        ) : view === 'lotes' ? (
+          selectedBatchId ? (
+            <BatchReviewPanel
+              businessId={businessId}
+              batchId={selectedBatchId}
+              currentUserId={currentUserId}
+              currentUserName={currentUserName}
+              onBack={() => setSelectedBatchId(null)}
+            />
+          ) : (
+            <BatchList
+              batches={batches}
+              onOpen={setSelectedBatchId}
+              onNewBatch={() => setShowReceiptBatch(true)}
+              onUploadEdec={() => setShowMultiUpload(true)}
+              canEdit={canEdit}
+            />
+          )
         ) : (
         <>
         {/* Dashboard resumen */}
@@ -656,9 +720,129 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           onConfirm={handleBatchConfirm}
         />
       )}
+
+      {showMultiUpload && (
+        <MultiBankUploadModal
+          businessId={businessId}
+          monthKey={monthKey}
+          uploadedByUid={currentUserId}
+          existingAliases={existingAliases}
+          onClose={() => setShowMultiUpload(false)}
+          onDone={() => setShowMultiUpload(false)}
+        />
+      )}
+
+      {showReceiptBatch && (
+        <ReceiptBatchModal
+          businessId={businessId}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          onClose={() => setShowReceiptBatch(false)}
+          onCreated={(batchId) => {
+            setShowReceiptBatch(false);
+            setView('lotes');
+            setSelectedBatchId(batchId);
+          }}
+        />
+      )}
     </div>
   );
 }
+
+// ── BatchList: lista de ReconciliationBatch con acciones ─────────────────
+interface BatchListProps {
+  batches: ReconciliationBatch[];
+  onOpen: (id: string) => void;
+  onNewBatch: () => void;
+  onUploadEdec: () => void;
+  canEdit: boolean;
+}
+
+const BatchList: React.FC<BatchListProps> = ({ batches, onOpen, onNewBatch, onUploadEdec, canEdit }) => {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {canEdit && (
+          <>
+            <button
+              onClick={onNewBatch}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 shadow-sm"
+            >
+              <Camera size={14} /> Nuevo lote de capturas
+            </button>
+            <button
+              onClick={onUploadEdec}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              <Upload size={14} /> Subir EdeC (múltiple)
+            </button>
+          </>
+        )}
+      </div>
+
+      {batches.length === 0 ? (
+        <div className="bg-white dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 text-center">
+          <Layers size={32} className="mx-auto text-slate-400 dark:text-slate-500 mb-3" />
+          <div className="text-sm font-medium text-slate-700 dark:text-slate-200">Aún no hay lotes creados</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Crea un lote para procesar múltiples capturas de pago contra el pool global de estados de cuenta.
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-900/40 text-xs uppercase text-slate-500 dark:text-slate-400">
+              <tr>
+                <th className="text-left px-4 py-2">Nombre</th>
+                <th className="text-left px-4 py-2">Período</th>
+                <th className="text-center px-4 py-2">Total</th>
+                <th className="text-center px-4 py-2">Confirmados</th>
+                <th className="text-center px-4 py-2">Revisar</th>
+                <th className="text-center px-4 py-2">Sin match</th>
+                <th className="text-left px-4 py-2">Creado</th>
+                <th className="text-center px-4 py-2">Estado</th>
+                <th className="text-right px-4 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {batches.map(b => (
+                <tr key={b.id} className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/30">
+                  <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{b.name}</td>
+                  <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-300">
+                    {b.periodFrom && b.periodTo ? `${b.periodFrom} → ${b.periodTo}` : '—'}
+                  </td>
+                  <td className="px-4 py-2 text-center font-mono">{b.stats?.total ?? 0}</td>
+                  <td className="px-4 py-2 text-center font-mono text-emerald-600">{b.stats?.confirmed ?? 0}</td>
+                  <td className="px-4 py-2 text-center font-mono text-amber-600">{b.stats?.review ?? 0}</td>
+                  <td className="px-4 py-2 text-center font-mono text-rose-600">{b.stats?.notFound ?? 0}</td>
+                  <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+                    {b.createdAt ? new Date(b.createdAt).toLocaleDateString() : '—'}
+                    <div className="text-[10px] text-slate-400">{b.createdByName || '—'}</div>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <span className={`text-[10px] px-2 py-0.5 rounded ${
+                      b.status === 'done' ? 'bg-emerald-100 text-emerald-700' :
+                      b.status === 'archived' ? 'bg-slate-100 text-slate-600' :
+                      'bg-amber-100 text-amber-700'
+                    }`}>{b.status}</span>
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <button
+                      onClick={() => onOpen(b.id)}
+                      className="text-xs px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                    >
+                      Abrir
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface ExtractedToDraftInput {
   amount: number | null;

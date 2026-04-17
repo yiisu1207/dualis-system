@@ -19,6 +19,8 @@ export interface ParseResult {
   detectedProfile?: BankStatementProfile;
   warnings: string[];
   needsManualMapping: boolean;
+  /** Texto crudo del PDF (solo cuando el archivo es PDF) — para extracción de metadata del header. */
+  rawText?: string;
 }
 
 export interface ParseOpts {
@@ -427,6 +429,7 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
   const warnings: string[] = [];
   let rawRows: string[][] = [];
   let pdfProfile: BankStatementProfile | undefined;
+  let pdfRawText: string | undefined;
 
   try {
     const name = file.name.toLowerCase();
@@ -434,6 +437,7 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
       const buf = await readFileAsBuffer(file);
       const result = await parsePDF(buf);
       rawRows = result.rows;
+      pdfRawText = result.rawText;
       pdfProfile = detectProfileFromPdfText(result.rawText);
     } else if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
       const buf = await readFileAsBuffer(file);
@@ -562,6 +566,7 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
     detectedProfile: profile,
     warnings,
     needsManualMapping,
+    rawText: pdfRawText,
   };
 }
 
