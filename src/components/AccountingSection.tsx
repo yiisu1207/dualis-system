@@ -26,6 +26,7 @@ import { useSubscription } from '../hooks/useSubscription';
 import CxCClientProfile from './cxc/CxCClientProfile';
 import CxPSupplierProfile from './cxc/CxPSupplierProfile';
 import CxCLedgerTable from './cxc/CxCLedgerTable';
+import { drawDualisFooter } from '../utils/dualisBranding';
 
 interface AccountingSectionProps {
   movements: Movement[];
@@ -848,6 +849,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       cursorY += 6;
     }
 
+    drawDualisFooter(doc, { tagline: 'Estado de cuenta · dualis.online' });
     doc.save(`estado-cuenta-resumen-${selectedEntityId}.pdf`);
     await copyShareText();
   };
@@ -928,6 +930,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       },
     });
 
+    drawDualisFooter(doc, { tagline: 'Estado de cuenta · dualis.online' });
     doc.save(`estado-cuenta-detallado-${selectedEntityId}.pdf`);
     await copyShareText();
   };

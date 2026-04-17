@@ -2,6 +2,7 @@
 // Lazy-imports jspdf y qrcode para no inflar el bundle inicial.
 
 import type { PortalPayment } from '../../types';
+import { drawDualisFooter } from './dualisBranding';
 
 interface BusinessForReceipt {
   id: string;
@@ -122,10 +123,11 @@ export async function generatePaymentReceiptPDF(opts: ReceiptOptions): Promise<B
   pdf.setFontSize(7);
   pdf.text(verifyUrl, W / 2, y, { align: 'center' });
 
-  // Footer
-  pdf.setFontSize(7);
-  pdf.setTextColor(148, 163, 184);
-  pdf.text('Generado por Dualis ERP', W / 2, 200, { align: 'center' });
+  // Footer Dualis unificado
+  drawDualisFooter(pdf, {
+    tagline: 'Comprobante oficial · dualis.online',
+    showPagination: false,
+  });
 
   return pdf.output('blob');
 }

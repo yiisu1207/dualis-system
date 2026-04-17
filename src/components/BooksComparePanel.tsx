@@ -16,6 +16,7 @@ import { db } from '../firebase/config';
 import { logAudit } from '../utils/auditLogger';
 import HelpTooltip from './HelpTooltip';
 import { useAuth } from '../context/AuthContext';
+import { drawDualisFooter } from '../utils/dualisBranding';
 
 /* ────────────────────────────────────────────────────────────
    TYPES
@@ -848,6 +849,7 @@ const BooksComparePanel: React.FC<BooksComparePanelProps> = ({
         styles: { fontSize: 7.5, cellPadding: 2 },
         headStyles: { fillColor: [15, 23, 42] },
       });
+      drawDualisFooter(pdfdoc, { tagline: 'Reporte oficial · dualis.online' });
       pdfdoc.save(`comparacion-libros-${activeRequestId}.pdf`);
     } catch {
       showToast('Error al exportar. Intenta de nuevo.');

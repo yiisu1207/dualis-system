@@ -318,21 +318,21 @@ export default function ExportPanel({
             </div>
           </div>
 
-          {/* Dualis brand signature */}
+          {/* Dualis brand signature — logo oficial de anillos entrelazados */}
           <div className="pt-3 pb-1">
-            <div className="h-px bg-gradient-to-r from-transparent via-indigo-500/20 to-transparent mb-3" />
+            <div className="h-[2px] rounded-full mb-3 bg-gradient-to-r from-cyan-400 via-indigo-400 to-violet-500" />
             <div className="flex items-center justify-center gap-2.5">
-              <div className="relative">
-                <div className="absolute w-5 h-5 rounded-lg bg-violet-500/30 translate-x-1 translate-y-1" />
-                <div className="relative w-5 h-5 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center">
-                  <span className="text-[10px] font-black text-white">D</span>
-                </div>
+              <div className="relative w-7 h-5 flex items-center">
+                {/* Anillo violeta (derecha, atrás) */}
+                <div className="absolute right-0 w-[18px] h-[18px] rounded-full border-[2.5px] border-violet-500" />
+                {/* Anillo cyan (izquierda, adelante) */}
+                <div className="absolute left-0 w-[18px] h-[18px] rounded-full border-[2.5px] border-cyan-400" />
               </div>
               <div className="leading-tight">
                 <p className="text-[10px] font-black text-slate-700 dark:text-white/80 tracking-wide">
-                  POWERED BY <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">DUALIS</span>
+                  HECHO POR <span className="bg-gradient-to-r from-cyan-400 to-violet-500 bg-clip-text text-transparent">DUALIS</span>
                 </p>
-                <p className="text-[8px] font-bold text-slate-400 dark:text-white/30 uppercase tracking-widest">Sistema ERP · dualis.online</p>
+                <p className="text-[8px] font-bold text-slate-400 dark:text-white/30 uppercase tracking-widest">Impulsando tu negocio · dualis.online</p>
               </div>
             </div>
           </div>

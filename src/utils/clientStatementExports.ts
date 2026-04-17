@@ -5,6 +5,7 @@ import {
   formatDateTime,
   type ChronoMovement,
 } from '../components/cxc/cxcHelpers';
+import { drawDualisFooter, DUALIS_TEXT_SIGNATURE } from './dualisBranding';
 
 export interface CompanyInfo {
   name?: string;
@@ -141,10 +142,7 @@ export function buildStatementText(
   }
 
   lines.push('');
-  lines.push('━━━━━━━━━━━━━━━━━━━━');
-  lines.push('◆ *DUALIS* — Sistema ERP');
-  lines.push('_Gestión integral de negocios_');
-  lines.push('🌐 dualis.online');
+  lines.push(DUALIS_TEXT_SIGNATURE);
   return lines.join('\n');
 }
 
@@ -264,67 +262,7 @@ function drawBalanceBlock(
 }
 
 function drawFooter(doc: JsPdfDoc): void {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const totalPages = doc.internal.getNumberOfPages();
-
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
-
-    const footerTop = pageHeight - 20;
-
-    // ── Gradient-style accent bar (two-tone) ───────────────────────
-    const half = pageWidth / 2;
-    doc.setFillColor(99, 102, 241);     // indigo-500
-    doc.rect(0, footerTop, half, 1.2, 'F');
-    doc.setFillColor(168, 85, 247);     // violet-500
-    doc.rect(half, footerTop, half, 1.2, 'F');
-
-    // ── Dualis brand mark: two overlapping rounded squares ─────────
-    const markX = 14;
-    const markY = footerTop + 5;
-    // Back square (violet)
-    doc.setFillColor(168, 85, 247);
-    doc.roundedRect(markX + 2.5, markY + 2.5, 7, 7, 1.3, 1.3, 'F');
-    // Front square (indigo) overlapping
-    doc.setFillColor(99, 102, 241);
-    doc.roundedRect(markX, markY, 7, 7, 1.3, 1.3, 'F');
-    // "D" letter
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.text('D', markX + 3.5, markY + 4.9, { align: 'center' });
-
-    // ── Brand name + tagline ────────────────────────────────────────
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
-    doc.text('DUALIS', markX + 13, markY + 3.5);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text('Sistema ERP · Gestión integral de negocios', markX + 13, markY + 8);
-
-    // ── Center tagline ──────────────────────────────────────────────
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.5);
-    doc.setTextColor(99, 102, 241);
-    doc.text('POWERED BY DUALIS', pageWidth / 2, markY + 4.5, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(148, 163, 184);
-    doc.text('dualis.online', pageWidth / 2, markY + 8, { align: 'center' });
-
-    // ── Right: page indicator ───────────────────────────────────────
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(15, 23, 42);
-    doc.text(`Página ${i} de ${totalPages}`, pageWidth - 14, markY + 3.5, { align: 'right' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Generado ${todayStr()}`, pageWidth - 14, markY + 8, { align: 'right' });
-  }
+  drawDualisFooter(doc);
 }
 
 export async function exportStatementFullPDF(
