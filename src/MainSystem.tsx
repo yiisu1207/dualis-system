@@ -1226,7 +1226,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   return (
     <div className="h-screen w-full flex bg-slate-50 dark:bg-[#0a0f1e] overflow-hidden font-inter transition-colors">
       {user && (
-        <div className="w-0 shrink-0 overflow-visible lg:w-auto">
+        <div className="absolute lg:relative shrink-0">
           <Sidebar
             activeTab={activeTab}
             isOpen={isSidebarOpen}
