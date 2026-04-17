@@ -867,22 +867,26 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     }
 
     // Crea pendingMovement — el write al ledger ocurrirá cuando se alcance el quórum
+    // El creador cuenta como primera firma automáticamente
+    const now = new Date().toISOString();
+    const quorumNeeded = Math.max(2, approvalConfig.quorumRequired || 2);
+    const creatorApproval = { userId: uid, userName: user?.name || '', at: now, note: 'Creador' };
     const pendingRef = await addDoc(
       collection(db, `businesses/${businessId}/pendingMovements`),
       {
         movementDraft: data,
         createdBy: uid,
         createdByName: user?.name || '',
-        createdAt: new Date().toISOString(),
+        createdAt: now,
         status: 'pending',
-        approvals: [],
+        approvals: [creatorApproval],
         rejections: [],
-        quorumRequired: Math.max(2, approvalConfig.quorumRequired || 2),
+        quorumRequired: quorumNeeded,
         quorumSnapshot: { validatorIds, validatorCount },
       }
     );
     logAudit(businessId, uid, 'CREAR', 'MOV_PENDIENTE', `${data.movementType || 'MOV'} → cola aprobación`);
-    toast.info(`Movimiento enviado a aprobación (0/${Math.max(2, approvalConfig.quorumRequired || 2)})`);
+    toast.info(`Movimiento enviado a aprobación (1/${quorumNeeded}) — falta ${quorumNeeded - 1} firma(s)`);
     return pendingRef.id;
   };
 
