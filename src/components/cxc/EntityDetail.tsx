@@ -196,11 +196,40 @@ const PendingFullCard: React.FC<{
             {(d.reference || d.referencia) && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Referencia</div><div className="font-mono text-slate-300 dark:text-white/50">{d.reference || d.referencia}</div></div>}
             {d.metodoPago && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Método</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.metodoPago)}</div></div>}
             {d.expenseCategory && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Categoría gasto</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.expenseCategory)}</div></div>}
-            {typeof d.paymentDays === 'number' && d.paymentDays > 0 && (
-              <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Días crédito</div><div className="font-bold text-slate-200 dark:text-white/70">{d.paymentDays}d{d.dueDate ? ` · vence ${d.dueDate}` : ''}</div></div>
-            )}
-            {typeof d.earlyPayDiscountPct === 'number' && d.earlyPayDiscountPct > 0 && (
-              <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Dscto. pronto pago</div><div className="font-bold text-emerald-300">{d.earlyPayDiscountPct}%{d.earlyPayDiscountExpiry ? ` hasta ${d.earlyPayDiscountExpiry}` : ''}</div></div>
+            {d.movementType === 'FACTURA' && (
+              <>
+                <div className="col-span-2">
+                  <div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Condición</div>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    {(typeof d.paymentDays === 'number' && d.paymentDays > 0) || d.esVentaContado === false ? (
+                      <>
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[9px] font-black uppercase tracking-wider">
+                          Crédito
+                        </span>
+                        <span className="font-bold text-slate-200 dark:text-white/70">
+                          {d.paymentDays}d{d.dueDate ? ` · vence ${d.dueDate}` : ''}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[9px] font-black uppercase tracking-wider">
+                        Contado
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="col-span-2">
+                  <div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Dscto. pronto pago</div>
+                  <div className="font-bold mt-0.5">
+                    {typeof d.earlyPayDiscountPct === 'number' && d.earlyPayDiscountPct > 0 ? (
+                      <span className="text-emerald-300">
+                        {d.earlyPayDiscountPct}%{d.earlyPayDiscountExpiry ? ` hasta ${d.earlyPayDiscountExpiry}` : ''}
+                      </span>
+                    ) : (
+                      <span className="text-slate-500 dark:text-white/25">Sin descuento</span>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
             {d.entityId && (
               <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Entidad</div><div className="font-mono text-slate-300 dark:text-white/50">{String(d.entityId)}</div></div>
