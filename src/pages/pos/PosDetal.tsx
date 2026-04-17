@@ -9,7 +9,7 @@ import { useCart, CartProvider, DiscountType, CartItem, effectiveLinePrice, effe
 import { useRates } from '../../context/RatesContext';
 import {
   collection, getDocs, query, where, addDoc, doc, updateDoc,
-  increment, getDoc, runTransaction, onSnapshot,
+  increment, getDoc, runTransaction,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
@@ -605,15 +605,14 @@ const PosContent = () => {
     });
   }, [cajaId, empresa_id]);
 
-  // Load businessConfigs (ticketFooter + commissions)
+  // Load businessConfigs (ticketFooter + commissions) — one-time read, no real-time needed
   useEffect(() => {
     if (!empresa_id) return;
-    const unsub = onSnapshot(doc(db, 'businessConfigs', empresa_id), snap => {
+    getDoc(doc(db, 'businessConfigs', empresa_id)).then(snap => {
       const data = snap.data();
       if (data && typeof data.ticketFooter === 'string') setTicketFooter(data.ticketFooter);
       if (data && data.commissions) setCommissionsCfg(data.commissions);
-    }, () => {});
-    return () => unsub();
+    }).catch(() => {});
   }, [empresa_id]);
 
   // Load almacenes
@@ -666,17 +665,13 @@ const PosContent = () => {
     loadData();
   }, [empresa_id]);
 
-  // ── Clientes en vivo ───────────────────────────────────────────
-  // Parity con PosMayor: onSnapshot para que clientes creados desde
-  // CxC / NewClientModal aparezcan sin recargar. Ver PosMayor ~L684
-  // para el mismo patrón y el reporte del usuario (2026-04-09).
+  // ── Clientes — one-time load (reduce Firestore reads) ───────────
   useEffect(() => {
     if (!empresa_id) return;
     const qc = query(collection(db, 'customers'), where('businessId', '==', empresa_id));
-    const unsub = onSnapshot(qc, snap => {
+    getDocs(qc).then(snap => {
       setClients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, () => {});
-    return () => unsub();
+    }).catch(() => {});
   }, [empresa_id]);
 
   const filteredClients = useMemo(() => {
@@ -1121,10 +1116,19 @@ const PosContent = () => {
           setTimeout(() => window.print(), 600);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError('Error al procesar la venta');
-      setTimeout(() => setError(''), 3000);
+      const code = err?.code || '';
+      if (code === 'resource-exhausted') {
+        setError('Cuota de Firestore agotada — espera unos minutos e intenta de nuevo');
+        setTimeout(() => setError(''), 8000);
+      } else if (code === 'permission-denied') {
+        setError('Sin permisos para procesar la venta — contacta al administrador');
+        setTimeout(() => setError(''), 5000);
+      } else {
+        setError('Error al procesar la venta');
+        setTimeout(() => setError(''), 3000);
+      }
     } finally {
       setPaymentLoading(false);
     }
