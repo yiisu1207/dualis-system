@@ -265,6 +265,10 @@ export default function CxCPage({
           onCreateNew={effectiveCanCreateCustomer ? () => setClientCreatorMode('picker') : undefined}
           pendingMovements={pendingMovements}
           currentUserId={currentUserId}
+          onQuickAction={(customer, type) => {
+            setSelectedClient(customer);
+            openForm(type);
+          }}
         />
       </div>
 

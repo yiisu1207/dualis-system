@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Search, Plus, Users, AlertTriangle, CheckCircle, Clock, ShieldCheck, Wallet } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Search, Plus, Users, AlertTriangle, CheckCircle, Clock, ShieldCheck, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
 import type { Customer, Movement, CustomRate, ExchangeRates, PendingMovement } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
 import {
@@ -8,6 +8,10 @@ import {
   getInitials,
   resolveAccountColor,
 } from './cxcHelpers';
+
+const LS_SEARCH = 'dualis_cxc_search';
+const LS_FILTER = 'dualis_cxc_filter';
+const LS_TAG = 'dualis_cxc_tag';
 
 interface CxCClientListProps {
   customers: Customer[];
@@ -19,6 +23,7 @@ interface CxCClientListProps {
   onCreateNew?: () => void;
   pendingMovements?: PendingMovement[];
   currentUserId?: string;
+  onQuickAction?: (customer: Customer, type: 'FACTURA' | 'ABONO') => void;
 }
 
 type QuickFilter = 'ALL' | 'OVERDUE' | 'AT_LIMIT' | 'ZERO' | 'PENDING';
@@ -156,10 +161,21 @@ export function CxCClientList({
   onCreateNew,
   pendingMovements = [],
   currentUserId,
+  onQuickAction,
 }: CxCClientListProps) {
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<QuickFilter>('ALL');
-  const [tagFilter, setTagFilter] = useState('');
+  const [search, setSearch] = useState<string>(() => {
+    try { return localStorage.getItem(LS_SEARCH) || ''; } catch { return ''; }
+  });
+  const [filter, setFilter] = useState<QuickFilter>(() => {
+    try { return (localStorage.getItem(LS_FILTER) as QuickFilter) || 'ALL'; } catch { return 'ALL'; }
+  });
+  const [tagFilter, setTagFilter] = useState<string>(() => {
+    try { return localStorage.getItem(LS_TAG) || ''; } catch { return ''; }
+  });
+
+  useEffect(() => { try { localStorage.setItem(LS_SEARCH, search); } catch {} }, [search]);
+  useEffect(() => { try { localStorage.setItem(LS_FILTER, filter); } catch {} }, [filter]);
+  useEffect(() => { try { localStorage.setItem(LS_TAG, tagFilter); } catch {} }, [tagFilter]);
 
   const summaries = useMemo(
     () => buildSummaries(customers, movements, rates, customRates, pendingMovements, currentUserId),
@@ -212,6 +228,26 @@ export function CxCClientList({
     pending: summaries.filter(s => s.pendingCount > 0).length,
   }), [summaries]);
 
+  const aggregates = useMemo(() => {
+    let totalOwed = 0;
+    let totalCredit = 0;
+    let overdueTotal = 0;
+    let debtorCount = 0;
+    for (const s of filtered) {
+      if (s.totalBalance > 0.01) { totalOwed += s.totalBalance; debtorCount++; }
+      else if (s.totalBalance < -0.01) { totalCredit += -s.totalBalance; }
+      if (s.overdueBalance > 0.01) overdueTotal += s.overdueBalance;
+    }
+    return { totalOwed, totalCredit, overdueTotal, debtorCount };
+  }, [filtered]);
+
+  const fmtK = (n: number) => {
+    if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 10_000) return `$${(n / 1000).toFixed(1)}k`;
+    if (n >= 1000) return `$${(n / 1000).toFixed(2)}k`;
+    return `$${n.toFixed(0)}`;
+  };
+
   const filterPill = (key: QuickFilter, label: string, count: number, Icon: any, accent: string) => (
     <button
       onClick={() => setFilter(filter === key ? 'ALL' : key)}
@@ -256,6 +292,45 @@ export function CxCClientList({
             className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] text-xs font-bold text-slate-700 dark:text-white/70 placeholder:text-slate-300 dark:placeholder:text-white/15 outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
           />
         </div>
+
+        {/* Stats agregadas del set filtrado */}
+        {filtered.length > 0 && (
+          <div className="grid grid-cols-3 gap-1.5 px-0.5">
+            <div className="rounded-lg bg-slate-50 dark:bg-white/[0.025] border border-slate-200/60 dark:border-white/[0.05] px-2 py-1.5">
+              <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30">
+                <TrendingUp size={8} /> Te deben
+              </div>
+              <div className="text-[11px] font-black tabular-nums text-slate-800 dark:text-white mt-0.5">
+                {fmtK(aggregates.totalOwed)}
+              </div>
+              <div className="text-[8px] font-bold text-slate-400 dark:text-white/30 mt-0.5">
+                {aggregates.debtorCount} {aggregates.debtorCount === 1 ? 'deudor' : 'deudores'}
+              </div>
+            </div>
+            <div className="rounded-lg bg-rose-500/[0.04] border border-rose-500/15 px-2 py-1.5">
+              <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-rose-400">
+                <AlertTriangle size={8} /> Vencido
+              </div>
+              <div className="text-[11px] font-black tabular-nums text-rose-500 dark:text-rose-400 mt-0.5">
+                {fmtK(aggregates.overdueTotal)}
+              </div>
+              <div className="text-[8px] font-bold text-rose-400/70 mt-0.5">
+                &gt;30d sin pagar
+              </div>
+            </div>
+            <div className="rounded-lg bg-emerald-500/[0.04] border border-emerald-500/15 px-2 py-1.5">
+              <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-emerald-400">
+                <TrendingDown size={8} /> A favor
+              </div>
+              <div className="text-[11px] font-black tabular-nums text-emerald-500 dark:text-emerald-400 mt-0.5">
+                {fmtK(aggregates.totalCredit)}
+              </div>
+              <div className="text-[8px] font-bold text-emerald-400/70 mt-0.5">
+                saldo acreedor
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-1 overflow-x-auto -mx-1 px-1">
           {filterPill('PENDING', 'Pendientes', counts.pending, ShieldCheck, 'bg-amber-500/15 text-amber-400')}
@@ -317,10 +392,13 @@ export function CxCClientList({
                 : 'bg-indigo-500/15 text-indigo-400 ring-indigo-500/30';
 
           return (
-            <button
+            <div
               key={s.customer.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(s.customer)}
-              className={`w-full px-3 py-3 text-left border-b border-slate-50 dark:border-white/[0.03] transition-all relative ${
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(s.customer); } }}
+              className={`group w-full px-3 py-3 text-left border-b border-slate-50 dark:border-white/[0.03] transition-all relative cursor-pointer outline-none focus-visible:bg-indigo-500/[0.05] ${
                 isSelected
                   ? 'bg-indigo-500/[0.08] border-l-[3px] border-l-indigo-500'
                   : 'hover:bg-slate-50 dark:hover:bg-white/[0.02] border-l-[3px] border-l-transparent'
@@ -406,7 +484,29 @@ export function CxCClientList({
                   </div>
                 </div>
               </div>
-            </button>
+
+              {/* Acciones rápidas en hover */}
+              {onQuickAction && (
+                <div className="absolute right-2 bottom-2 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); onQuickAction(s.customer, 'ABONO'); }}
+                    title="Registrar abono"
+                    className="h-6 px-2 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[9px] font-black uppercase tracking-wider hover:bg-emerald-500/25 transition-all flex items-center gap-1"
+                  >
+                    <Plus size={9} /> Abono
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); onQuickAction(s.customer, 'FACTURA'); }}
+                    title="Registrar cargo"
+                    className="h-6 px-2 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 text-[9px] font-black uppercase tracking-wider hover:bg-indigo-500/25 transition-all flex items-center gap-1"
+                  >
+                    <Plus size={9} /> Cargo
+                  </button>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>

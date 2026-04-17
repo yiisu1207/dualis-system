@@ -192,9 +192,16 @@ export default function CxPPage({
           suppliers={suppliers}
           movements={visibleMovements}
           rates={rates}
+          customRates={customRates}
           selectedId={selectedSupplier?.id}
           onSelect={setSelectedSupplier}
           onCreateNew={effectiveCanCreateSupplier ? () => setNewSupplierOpen(true) : undefined}
+          pendingMovements={pendingMovements}
+          currentUserId={currentUserId}
+          onQuickAction={(supplier, type) => {
+            setSelectedSupplier(supplier);
+            openForm(type);
+          }}
         />
       </div>
 
