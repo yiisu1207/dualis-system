@@ -1049,9 +1049,10 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   };
 
   const handleRegisterCustomer = async (c: Customer) => {
-    const docRef = await addDoc(collection(db, 'customers'), { ...c, businessId });
+    const payload = { ...c, businessId, createdAt: (c as any).createdAt || new Date().toISOString() };
+    const docRef = await addDoc(collection(db, 'customers'), payload);
     logAudit(businessId, uid, 'CREAR', 'CLIENTE', c.cedula || c.email || '');
-    const record = { ...c, id: docRef.id, businessId };
+    const record = { ...payload, id: docRef.id };
     customization.afterCustomerHook?.(record);
     fireWebhook(businessId, webhookUrl, 'customer.created', record);
   };

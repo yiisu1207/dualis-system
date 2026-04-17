@@ -1322,10 +1322,24 @@ export function EntityDetail({
             <div>
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Registro</p>
               <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] divide-y divide-slate-100 dark:divide-white/[0.04]">
-                {[
-                  { icon: <Calendar size={13} />, label: 'Fecha de registro', value: customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }) : '—' },
-                  ...(customer.birthday ? [{ icon: <Calendar size={13} />, label: 'Cumpleaños', value: new Date(customer.birthday + 'T12:00:00').toLocaleDateString('es-VE', { month: 'long', day: 'numeric' }) }] : []),
-                ].map((row, i) => (
+                {(() => {
+                  let regValue = '—';
+                  if (customer.createdAt) {
+                    regValue = new Date(customer.createdAt).toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' });
+                  } else {
+                    const custMovs = movements.filter(m => m.entityId === customer.id && !(m as any).isSupplierMovement);
+                    const oldest = custMovs
+                      .slice()
+                      .sort((a, b) => new Date(a.createdAt || a.date).getTime() - new Date(b.createdAt || b.date).getTime())[0];
+                    if (oldest) {
+                      regValue = `~${new Date(oldest.createdAt || oldest.date).toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' })} (1er mov.)`;
+                    }
+                  }
+                  return [
+                    { icon: <Calendar size={13} />, label: 'Fecha de registro', value: regValue },
+                    ...(customer.birthday ? [{ icon: <Calendar size={13} />, label: 'Cumpleaños', value: new Date(customer.birthday + 'T12:00:00').toLocaleDateString('es-VE', { month: 'long', day: 'numeric' }) }] : []),
+                  ];
+                })().map((row, i) => (
                   <div key={i} className="flex items-center gap-3 px-4 py-3">
                     <span className="text-slate-400 dark:text-white/20 shrink-0">{row.icon}</span>
                     <div className="flex-1 min-w-0">
