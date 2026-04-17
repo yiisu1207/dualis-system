@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, User, Phone, MapPin, Hash, Calendar, Shield, Star, Clock, CheckCircle2, XCircle, Ban, AlertCircle, Share2, TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, User, Phone, MapPin, Hash, Calendar, Shield, Star, Clock, CheckCircle2, XCircle, Ban, AlertCircle, Share2, TrendingUp, TrendingDown, Activity, Tag, Hourglass, CalendarClock } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement, PortalAccessToken } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -617,7 +617,8 @@ export function EntityDetail({
     [entityMovements]
   );
 
-  // Header quick stats — last activity, this-month flow, pending invoices count
+  // Header quick stats — last activity, this-month flow, pending invoices count,
+  // avg payment days (historical), next due date
   const headerStats = useMemo(() => {
     const now = new Date();
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -625,6 +626,16 @@ export function EntityDetail({
     let monthAbonos = 0;
     let pendingInvoices = 0;
     let lastActivity: string | null = null;
+
+    // Avg payment days: para cada FACTURA pagada con dueDate o paymentDays, calcular
+    // días entre date de emisión y date de pago (usando pagado/pagadoAt si existe).
+    let paySum = 0;
+    let payCount = 0;
+
+    // Next due: FACTURAs no pagadas con dueDate futuro más cercano
+    let nextDue: string | null = null;
+    let overdueCount = 0;
+
     for (const m of entityMovements) {
       if (m.anulada) continue;
       const usd = getMovementUsdAmount(m, rates);
@@ -635,9 +646,34 @@ export function EntityDetail({
       if (m.movementType === 'FACTURA' && !m.pagado && !m.anulada) pendingInvoices++;
       const d = m.date || (m as any).createdAt;
       if (d && (!lastActivity || d > lastActivity)) lastActivity = d;
+
+      // Avg pay days
+      if (m.movementType === 'FACTURA' && m.pagado && m.date) {
+        const issued = new Date(m.date).getTime();
+        const paidAt = (m as any).pagadoAt ? new Date((m as any).pagadoAt).getTime() : null;
+        if (paidAt && issued > 0 && paidAt >= issued) {
+          paySum += Math.floor((paidAt - issued) / 86_400_000);
+          payCount++;
+        }
+      }
+
+      // Next due
+      if (m.movementType === 'FACTURA' && !m.pagado && !m.anulada && m.dueDate) {
+        if (new Date(m.dueDate).getTime() < now.getTime()) overdueCount++;
+        if (!nextDue || m.dueDate < nextDue) nextDue = m.dueDate;
+      }
     }
+
     const daysSinceActivity = lastActivity ? daysSince(lastActivity) : null;
-    return { monthCargos, monthAbonos, pendingInvoices, lastActivity, daysSinceActivity };
+    const avgPayDays = payCount > 0 ? Math.round(paySum / payCount) : null;
+    const nextDueDays = nextDue
+      ? Math.ceil((new Date(nextDue).getTime() - now.getTime()) / 86_400_000)
+      : null;
+
+    return {
+      monthCargos, monthAbonos, pendingInvoices, lastActivity, daysSinceActivity,
+      avgPayDays, nextDue, nextDueDays, overdueCount,
+    };
   }, [entityMovements, rates]);
 
   // Credit config state (CxC only)
@@ -708,6 +744,14 @@ export function EntityDetail({
                   {score}
                 </span>
               )}
+              {isCxC && (customer?.tags || []).slice(0, 4).map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-violet-500/10 text-violet-400 border border-violet-500/20"
+                >
+                  <Tag size={8} /> {tag}
+                </span>
+              ))}
             </div>
             <p className="text-[11px] font-bold text-slate-400 dark:text-white/30 mt-0.5">
               {entityDoc}
@@ -728,6 +772,17 @@ export function EntityDetail({
             >
               <CreditCard size={12} /> Abono
             </button>
+            {(entity as Customer).telefono && (
+              <a
+                href={`https://wa.me/${(entity as Customer).telefono.replace(/\D/g, '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 text-[10px] font-black uppercase tracking-wider hover:bg-emerald-500/20 transition-all"
+                title={`WhatsApp: ${(entity as Customer).telefono}`}
+              >
+                <MessageCircle size={12} /> WhatsApp
+              </a>
+            )}
             <button
               onClick={() => setExportOpen(true)}
               disabled={entityMovements.length === 0}
@@ -812,9 +867,78 @@ export function EntityDetail({
               </p>
               <p className="text-sm font-black text-rose-500 mt-0.5">
                 {headerStats.pendingInvoices}
+                {headerStats.overdueCount > 0 && (
+                  <span className="ml-1 text-[9px] font-black uppercase text-rose-300">
+                    · {headerStats.overdueCount} vencida{headerStats.overdueCount === 1 ? '' : 's'}
+                  </span>
+                )}
               </p>
             </div>
           )}
+          {headerStats.avgPayDays !== null && (
+            <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
+                <Hourglass size={9} /> Paga en promedio
+              </p>
+              <p className={`text-sm font-black mt-0.5 ${
+                headerStats.avgPayDays <= 15 ? 'text-emerald-500'
+                  : headerStats.avgPayDays <= 30 ? 'text-amber-500'
+                    : 'text-rose-500'
+              }`}>
+                {headerStats.avgPayDays}d
+              </p>
+            </div>
+          )}
+          {headerStats.nextDueDays !== null && headerStats.nextDue && (
+            <div className={`flex-1 min-w-[140px] rounded-xl border px-3 py-2 ${
+              headerStats.nextDueDays < 0
+                ? 'bg-rose-500/[0.08] border-rose-500/30'
+                : headerStats.nextDueDays <= 7
+                  ? 'bg-amber-500/[0.06] border-amber-500/20'
+                  : 'bg-white dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]'
+            }`}>
+              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
+                <CalendarClock size={9} /> Próximo vencimiento
+              </p>
+              <p className={`text-sm font-black mt-0.5 ${
+                headerStats.nextDueDays < 0 ? 'text-rose-500'
+                  : headerStats.nextDueDays <= 7 ? 'text-amber-500'
+                    : 'text-slate-700 dark:text-white/70'
+              }`}>
+                {headerStats.nextDueDays < 0
+                  ? `Vencido ${Math.abs(headerStats.nextDueDays)}d`
+                  : headerStats.nextDueDays === 0
+                    ? 'Hoy'
+                    : `En ${headerStats.nextDueDays}d`}
+              </p>
+            </div>
+          )}
+          <div className="flex-1 min-w-[140px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1">
+              Tendencia 6 meses
+            </p>
+            <div className="flex items-end gap-[2px] h-6">
+              {(() => {
+                const maxVal = Math.max(1, ...trendData.map(d => Math.max(d.facturas, d.abonos)));
+                return trendData.map((d) => {
+                  const hF = Math.max(2, Math.round((d.facturas / maxVal) * 22));
+                  const hA = Math.max(2, Math.round((d.abonos / maxVal) * 22));
+                  return (
+                    <div key={d.key} className="flex-1 flex items-end gap-[1px] group relative" title={`${d.label}: Cargos ${d.facturas.toFixed(0)} · Abonos ${d.abonos.toFixed(0)}`}>
+                      <div
+                        className="flex-1 rounded-sm bg-rose-400/70 group-hover:bg-rose-500 transition-all"
+                        style={{ height: `${hF}px` }}
+                      />
+                      <div
+                        className="flex-1 rounded-sm bg-emerald-400/70 group-hover:bg-emerald-500 transition-all"
+                        style={{ height: `${hA}px` }}
+                      />
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
           <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
             <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30">
               Total movs.

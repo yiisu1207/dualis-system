@@ -66,6 +66,41 @@ export function buildBalancesByAccount(movements: ChronoMovement[], customRates:
   return [...map.values()].filter(v => Math.abs(v.balance) > 0.01);
 }
 
+/** Stats completos por cuenta: cargos, abonos, saldo y conteo. Incluye cuentas
+ * saldadas (balance 0) siempre que haya tenido actividad. Ordenado por saldo desc. */
+export interface AccountStats {
+  account: string;
+  label: string;
+  cargos: number;
+  abonos: number;
+  saldo: number;
+  count: number;
+}
+
+export function buildAccountStats(
+  movements: ChronoMovement[],
+  customRates: CustomRate[],
+): AccountStats[] {
+  const map = new Map<string, AccountStats>();
+  for (const m of movements) {
+    const key = (m.accountType as string) || 'BCV';
+    const cur = map.get(key) || {
+      account: key,
+      label: resolveAccountLabel(key, customRates),
+      cargos: 0,
+      abonos: 0,
+      saldo: 0,
+      count: 0,
+    };
+    cur.cargos += m.debe || 0;
+    cur.abonos += m.haber || 0;
+    cur.saldo = cur.cargos - cur.abonos;
+    cur.count += 1;
+    map.set(key, cur);
+  }
+  return [...map.values()].sort((a, b) => Math.abs(b.saldo) - Math.abs(a.saldo));
+}
+
 export function exportStatementCSV(
   entity: Entity,
   movements: ChronoMovement[],
@@ -85,7 +120,35 @@ export function exportStatementCSV(
       m.runningBalance.toFixed(2),
     ].join(',')
   );
-  const csv = [header, ...rows].join('\n');
+
+  // Resumen por cuenta al final del CSV
+  const stats = buildAccountStats(movements, customRates);
+  const totalDebe = movements.reduce((s, m) => s + m.debe, 0);
+  const totalHaber = movements.reduce((s, m) => s + m.haber, 0);
+  const saldo = movements.length ? movements[movements.length - 1].runningBalance : 0;
+
+  const summaryLines: string[] = [];
+  summaryLines.push('');
+  summaryLines.push('RESUMEN POR CUENTA');
+  summaryLines.push('Cuenta,Movimientos,Cargos,Abonos,Saldo');
+  stats.forEach(a => {
+    summaryLines.push([
+      `"${a.label.replace(/"/g, '""')}"`,
+      a.count,
+      a.cargos.toFixed(2),
+      a.abonos.toFixed(2),
+      a.saldo.toFixed(2),
+    ].join(','));
+  });
+  summaryLines.push([
+    'TOTAL',
+    movements.length,
+    totalDebe.toFixed(2),
+    totalHaber.toFixed(2),
+    saldo.toFixed(2),
+  ].join(','));
+
+  const csv = [header, ...rows, ...summaryLines].join('\n');
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -107,7 +170,7 @@ export function buildStatementText(
   const totalDebe = movements.reduce((s, m) => s + m.debe, 0);
   const totalHaber = movements.reduce((s, m) => s + m.haber, 0);
   const saldo = movements.length ? movements[movements.length - 1].runningBalance : 0;
-  const balances = buildBalancesByAccount(movements, customRates);
+  const accountStats = buildAccountStats(movements, customRates);
 
   const lines: string[] = [];
   lines.push(`*${(meta.company.name || 'Estado de cuenta').toUpperCase()}*`);
@@ -118,14 +181,20 @@ export function buildStatementText(
   if (meta.rangeLabel) lines.push(`📅 *Rango:* ${meta.rangeLabel}`);
   lines.push('');
   lines.push(`💰 *Saldo actual:* ${fmtMoney(saldo)}`);
-  if (balances.length > 1) {
-    lines.push('Por cuenta:');
-    balances.forEach(b => lines.push(`  • ${b.label}: ${fmtMoney(b.balance)}`));
-  }
   lines.push('');
   lines.push(`Total Cargos: ${fmtMoney(totalDebe)}`);
   lines.push(`Total Abonos: ${fmtMoney(totalHaber)}`);
   lines.push(`Movimientos: ${movements.length}`);
+
+  if (accountStats.length > 0) {
+    lines.push('');
+    lines.push('📊 *Desglose por cuenta:*');
+    accountStats.forEach(a => {
+      const saldoStr = Math.abs(a.saldo) < 0.01 ? 'Al día' : fmtMoney(a.saldo);
+      lines.push(`  • *${a.label}* (${a.count} mov.)`);
+      lines.push(`     Cargos: ${fmtMoney(a.cargos)}  ·  Abonos: ${fmtMoney(a.abonos)}  ·  Saldo: ${saldoStr}`);
+    });
+  }
 
   if (movements.length > 0 && movements.length <= 20) {
     lines.push('');
@@ -224,7 +293,6 @@ function drawBalanceBlock(
   doc: JsPdfDoc,
   startY: number,
   totals: { totalDebe: number; totalHaber: number; saldo: number; count: number },
-  balances: { label: string; balance: number }[],
 ): number {
   const pageWidth = doc.internal.pageSize.getWidth();
   doc.setFillColor(15, 23, 42);
@@ -247,18 +315,45 @@ function drawBalanceBlock(
   doc.setTextColor(255, 255, 255);
   doc.text(`${totals.count}`, 175, startY + 14);
 
-  let y = startY + 22;
-  if (balances.length > 1) {
-    doc.setTextColor(71, 85, 105);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Saldo por cuenta:', 14, y);
-    doc.setFont('helvetica', 'normal');
-    const line = balances.map(b => `${b.label}: ${fmtMoney(b.balance)}`).join('   ·   ');
-    doc.text(line, 45, y);
-    y += 6;
-  }
-  return y;
+  return startY + 22;
+}
+
+async function drawAccountStatsTable(
+  doc: JsPdfDoc,
+  startY: number,
+  stats: AccountStats[],
+): Promise<number> {
+  if (stats.length === 0) return startY;
+  const { default: autoTable } = await import('jspdf-autotable');
+
+  doc.setTextColor(71, 85, 105);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DESGLOSE POR CUENTA', 14, startY + 2);
+
+  autoTable(doc, {
+    startY: startY + 4,
+    head: [['Cuenta', 'Movs', 'Cargos', 'Abonos', 'Saldo']],
+    body: stats.map(a => [
+      a.label,
+      `${a.count}`,
+      fmtMoney(a.cargos),
+      fmtMoney(a.abonos),
+      Math.abs(a.saldo) < 0.01 ? 'Al día' : fmtMoney(a.saldo),
+    ]),
+    theme: 'grid',
+    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8.5, textColor: [51, 65, 85] },
+    columnStyles: {
+      0: { cellWidth: 40, fontStyle: 'bold' },
+      1: { cellWidth: 18, halign: 'center' },
+      2: { cellWidth: 32, halign: 'right', textColor: [225, 29, 72] },
+      3: { cellWidth: 32, halign: 'right', textColor: [5, 150, 105] },
+      4: { cellWidth: 32, halign: 'right', fontStyle: 'bold' },
+    },
+    margin: { left: 14, right: 14 },
+  });
+  return (doc as any).lastAutoTable.finalY + 4;
 }
 
 function drawFooter(doc: JsPdfDoc): void {
@@ -278,11 +373,12 @@ export async function exportStatementFullPDF(
   const totalDebe = movements.reduce((s, m) => s + m.debe, 0);
   const totalHaber = movements.reduce((s, m) => s + m.haber, 0);
   const saldo = movements.length ? movements[movements.length - 1].runningBalance : 0;
-  const balances = buildBalancesByAccount(movements, customRates);
+  const stats = buildAccountStats(movements, customRates);
 
   let y = drawPdfHeader(doc, 'EXPEDIENTE — ESTADO DE CUENTA', meta);
   y = drawEntityBlock(doc, entity, y, meta.mode || 'cxc');
-  y = drawBalanceBlock(doc, y, { totalDebe, totalHaber, saldo, count: movements.length }, balances);
+  y = drawBalanceBlock(doc, y, { totalDebe, totalHaber, saldo, count: movements.length });
+  y = await drawAccountStatsTable(doc, y, stats);
 
   autoTable(doc, {
     startY: y + 2,
