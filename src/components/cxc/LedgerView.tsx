@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Share2, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { Customer, Supplier, Movement, CustomRate, ExchangeRates } from '../../../types';
+import { Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { Movement, CustomRate, ExchangeRates } from '../../../types';
 import {
   type TabFilter,
   type RangeFilter,
@@ -14,16 +14,10 @@ import {
 } from './cxcHelpers';
 import VerificationBadge from '../VerificationBadge';
 import InlineVerifyControl from '../InlineVerifyControl';
-import ExportPanel from './ExportPanel';
-import type { CompanyInfo } from '../../utils/clientStatementExports';
 
 interface LedgerViewProps {
   movements: Movement[];
   entityId: string;
-  /** Full entity object — needed for exports with client data */
-  entity?: Customer | Supplier;
-  /** Company info for PDF headers (name, rif, phone, address, logo) */
-  company?: CompanyInfo;
   rates: ExchangeRates;
   customRates: CustomRate[];
   onEdit?: (movement: Movement) => void;
@@ -50,14 +44,11 @@ const pill = (active: boolean, color?: string) =>
 export function LedgerView({
   movements,
   entityId,
-  entity,
-  company,
   rates,
   customRates,
   onEdit,
   onDelete,
   canEdit,
-  mode = 'cxc',
   currentUserId,
   currentUserName,
   canVerify,
@@ -69,7 +60,6 @@ export function LedgerView({
   const [rangeFilter, setRangeFilter] = useState<RangeFilter>('ALL');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [exportOpen, setExportOpen] = useState(false);
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(0);
 
@@ -150,15 +140,6 @@ export function LedgerView({
               className="px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-xs font-bold text-slate-700 dark:text-white/70 outline-none" />
           </div>
         )}
-        <div className="flex-1" />
-        <button
-          onClick={() => setExportOpen(true)}
-          disabled={!entity}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-black uppercase text-indigo-400 hover:bg-indigo-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          title={entity ? 'Exportar movimientos' : 'No disponible'}
-        >
-          <Share2 size={12} /> Exportar
-        </button>
       </div>
 
       {/* Table */}
@@ -320,20 +301,6 @@ export function LedgerView({
             {chronoData.length} movimientos
           </div>
         </div>
-      )}
-
-      {/* Export panel */}
-      {entity && (
-        <ExportPanel
-          open={exportOpen}
-          onClose={() => setExportOpen(false)}
-          entity={entity}
-          movements={movements}
-          rates={rates}
-          customRates={customRates}
-          company={company || {}}
-          mode={mode}
-        />
       )}
     </div>
   );

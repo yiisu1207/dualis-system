@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, User, Phone, MapPin, Hash, Calendar, Shield, Star, Clock, CheckCircle2, XCircle, Ban, AlertCircle } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, User, Phone, MapPin, Hash, Calendar, Shield, Star, Clock, CheckCircle2, XCircle, Ban, AlertCircle, Share2, TrendingUp, TrendingDown, Activity } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement, PortalAccessToken } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -15,6 +15,7 @@ import {
 import { AccountCard } from './AccountCard';
 import VerificationBadge from '../VerificationBadge';
 import { LedgerView } from './LedgerView';
+import ExportPanel from './ExportPanel';
 import type { CompanyInfo } from '../../utils/clientStatementExports';
 import { collection, query, where, getDocs, addDoc, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
@@ -398,6 +399,7 @@ export function EntityDetail({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [pendingOTP, setPendingOTP] = useState<string | null>(null);
   const [otpCopied, setOtpCopied] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // ── Company info (for PDF exports) — loaded once from businessConfigs ──
   const [company, setCompany] = useState<CompanyInfo>({});
@@ -615,6 +617,29 @@ export function EntityDetail({
     [entityMovements]
   );
 
+  // Header quick stats — last activity, this-month flow, pending invoices count
+  const headerStats = useMemo(() => {
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let monthCargos = 0;
+    let monthAbonos = 0;
+    let pendingInvoices = 0;
+    let lastActivity: string | null = null;
+    for (const m of entityMovements) {
+      if (m.anulada) continue;
+      const usd = getMovementUsdAmount(m, rates);
+      if ((m.date || '').startsWith(monthKey)) {
+        if (m.movementType === 'FACTURA') monthCargos += usd;
+        else if (m.movementType === 'ABONO') monthAbonos += usd;
+      }
+      if (m.movementType === 'FACTURA' && !m.pagado && !m.anulada) pendingInvoices++;
+      const d = m.date || (m as any).createdAt;
+      if (d && (!lastActivity || d > lastActivity)) lastActivity = d;
+    }
+    const daysSinceActivity = lastActivity ? daysSince(lastActivity) : null;
+    return { monthCargos, monthAbonos, pendingInvoices, lastActivity, daysSinceActivity };
+  }, [entityMovements, rates]);
+
   // Credit config state (CxC only)
   // `defaultDays` es `number | null` — null significa "sin período predefinido"
   // (el vendedor lo elige al facturar). Antes defaulteaba a 30 aunque el cliente
@@ -703,6 +728,14 @@ export function EntityDetail({
             >
               <CreditCard size={12} /> Abono
             </button>
+            <button
+              onClick={() => setExportOpen(true)}
+              disabled={entityMovements.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 text-[10px] font-black uppercase tracking-wider hover:bg-indigo-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Exportar estado de cuenta"
+            >
+              <Share2 size={12} /> Exportar
+            </button>
             {canEdit && onUpdateEntity && isCxC && (
               <button
                 onClick={() => setEditModalOpen(true)}
@@ -721,6 +754,74 @@ export function EntityDetail({
                 <Trash2 size={14} />
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Quick stats strip */}
+        <div className="flex flex-wrap items-stretch gap-2 mb-3">
+          <div className={`flex-1 min-w-[120px] rounded-xl border px-3 py-2 ${
+            totalBalance > 0.01
+              ? 'bg-amber-500/[0.06] border-amber-500/20'
+              : totalBalance < -0.01
+                ? 'bg-emerald-500/[0.06] border-emerald-500/20'
+                : 'bg-slate-100 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]'
+          }`}>
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30">
+              {totalBalance > 0.01 ? (isCxC ? 'Te debe' : 'Le debes') : totalBalance < -0.01 ? 'A favor' : 'Al día'}
+            </p>
+            <p className={`text-sm font-black mt-0.5 ${
+              totalBalance > 0.01 ? 'text-amber-500' : totalBalance < -0.01 ? 'text-emerald-500' : 'text-slate-500 dark:text-white/40'
+            }`}>
+              ${Math.abs(totalBalance).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
+              <TrendingUp size={9} /> Cargos del mes
+            </p>
+            <p className="text-sm font-black text-rose-500 mt-0.5">
+              ${headerStats.monthCargos.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
+              <TrendingDown size={9} /> Abonos del mes
+            </p>
+            <p className="text-sm font-black text-emerald-500 mt-0.5">
+              ${headerStats.monthAbonos.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
+              <Activity size={9} /> Última actividad
+            </p>
+            <p className="text-sm font-black text-slate-700 dark:text-white/70 mt-0.5">
+              {headerStats.daysSinceActivity === null
+                ? '—'
+                : headerStats.daysSinceActivity === 0
+                  ? 'Hoy'
+                  : headerStats.daysSinceActivity === 1
+                    ? 'Ayer'
+                    : `${headerStats.daysSinceActivity}d`}
+            </p>
+          </div>
+          {headerStats.pendingInvoices > 0 && (
+            <div className="flex-1 min-w-[120px] rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-3 py-2">
+              <p className="text-[9px] font-black uppercase tracking-wider text-rose-400">
+                {isCxC ? 'Facturas pendientes' : 'Facturas por pagar'}
+              </p>
+              <p className="text-sm font-black text-rose-500 mt-0.5">
+                {headerStats.pendingInvoices}
+              </p>
+            </div>
+          )}
+          <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30">
+              Total movs.
+            </p>
+            <p className="text-sm font-black text-slate-700 dark:text-white/70 mt-0.5">
+              {entityMovements.length}
+            </p>
           </div>
         </div>
 
@@ -1416,8 +1517,6 @@ export function EntityDetail({
             <LedgerView
               movements={movements}
               entityId={entity.id}
-              entity={entity}
-              company={company}
               rates={rates}
               customRates={customRates}
               onEdit={canEdit ? onEditMovement : undefined}
@@ -1660,6 +1759,18 @@ export function EntityDetail({
           </div>
         </div>
       )}
+
+      {/* Export panel — triggered from header */}
+      <ExportPanel
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        entity={entity}
+        movements={movements}
+        rates={rates}
+        customRates={customRates}
+        company={company}
+        mode={mode}
+      />
     </div>
   );
 }
