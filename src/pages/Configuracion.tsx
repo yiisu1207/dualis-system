@@ -859,6 +859,8 @@ const Configuracion: React.FC = () => {
         { approvalConfig },
         { merge: true }
       );
+      // Notificar a MainSystem para que sincronice el estado local
+      window.dispatchEvent(new CustomEvent('approvalConfigChanged', { detail: approvalConfig }));
       toast.success('Configuración de aprobaciones guardada');
     } catch (e) {
       console.error(e);

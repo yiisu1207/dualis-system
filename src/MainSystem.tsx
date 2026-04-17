@@ -565,6 +565,16 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         setNavShortcutOverrides({});
       }
     }).catch(() => {});
+
+    // Escuchar cambios de approvalConfig hechos desde Configuración
+    const handleApprovalChange = (e: Event) => {
+      const cfg = (e as CustomEvent).detail;
+      if (cfg && typeof cfg === 'object') {
+        setApprovalConfig({ ...DEFAULT_APPROVAL_CONFIG, ...cfg });
+      }
+    };
+    window.addEventListener('approvalConfigChanged', handleApprovalChange);
+    return () => window.removeEventListener('approvalConfigChanged', handleApprovalChange);
   }, [businessId]);
 
   // ── Fase A.7: Auto-lock por inactividad ──────────────────────────────────────
@@ -850,6 +860,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     });
 
     if (!decision.needsQuorum) {
+      if (decision.reason === 'insufficient_validators' && approvalConfig.enabled) {
+        toast.warning('Aprobaciones activas pero validadores insuficientes — movimiento auto-aprobado');
+      }
       return commitMovement(data, opts);
     }
 
