@@ -266,7 +266,9 @@ service cloud.firestore {
     match /businessConfigs/{bid} {
       allow read, write, delete: if isOpsUser() || isSuperAdmin();
       allow read: if isMember(bid);
-      allow write: if isAdmin(bid);
+      // Miembros pueden escribir (POS necesita incrementar nroControl/counters via set+merge)
+      allow create, update: if isMember(bid);
+      allow delete: if isAdmin(bid);
 
       match /{allSubcollections=**} {
         allow read, write, delete: if isOpsUser() || isSuperAdmin();
