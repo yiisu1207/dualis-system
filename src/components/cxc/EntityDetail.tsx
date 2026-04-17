@@ -15,6 +15,7 @@ import {
 import { AccountCard } from './AccountCard';
 import VerificationBadge from '../VerificationBadge';
 import { LedgerView } from './LedgerView';
+import type { CompanyInfo } from '../../utils/clientStatementExports';
 import { collection, query, where, getDocs, addDoc, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { shareViaWhatsApp, shareViaEmail, messageTemplates } from '../../utils/shareLink';
@@ -397,6 +398,24 @@ export function EntityDetail({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [pendingOTP, setPendingOTP] = useState<string | null>(null);
   const [otpCopied, setOtpCopied] = useState(false);
+
+  // ── Company info (for PDF exports) — loaded once from businessConfigs ──
+  const [company, setCompany] = useState<CompanyInfo>({});
+  useEffect(() => {
+    if (!businessId) return;
+    getDoc(doc(db, 'businessConfigs', businessId)).then(snap => {
+      if (!snap.exists()) return;
+      const d: any = snap.data();
+      setCompany({
+        name: d.companyName || businessName,
+        rif: d.companyRif,
+        phone: d.companyPhone,
+        address: d.companyAddress,
+        email: d.companyEmail,
+        logo: d.companyLogo,
+      });
+    }).catch(() => {});
+  }, [businessId, businessName]);
 
 
   // Listen for pending OTP code for this customer (real-time)
@@ -1397,6 +1416,8 @@ export function EntityDetail({
             <LedgerView
               movements={movements}
               entityId={entity.id}
+              entity={entity}
+              company={company}
               rates={rates}
               customRates={customRates}
               onEdit={canEdit ? onEditMovement : undefined}

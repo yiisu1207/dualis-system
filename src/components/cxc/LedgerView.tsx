@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import { Download, Pencil, Trash2 } from 'lucide-react';
-import type { Movement, CustomRate, ExchangeRates } from '../../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Share2, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { Customer, Supplier, Movement, CustomRate, ExchangeRates } from '../../../types';
 import {
   type TabFilter,
   type RangeFilter,
@@ -14,10 +14,16 @@ import {
 } from './cxcHelpers';
 import VerificationBadge from '../VerificationBadge';
 import InlineVerifyControl from '../InlineVerifyControl';
+import ExportPanel from './ExportPanel';
+import type { CompanyInfo } from '../../utils/clientStatementExports';
 
 interface LedgerViewProps {
   movements: Movement[];
   entityId: string;
+  /** Full entity object — needed for exports with client data */
+  entity?: Customer | Supplier;
+  /** Company info for PDF headers (name, rif, phone, address, logo) */
+  company?: CompanyInfo;
   rates: ExchangeRates;
   customRates: CustomRate[];
   onEdit?: (movement: Movement) => void;
@@ -28,6 +34,8 @@ interface LedgerViewProps {
   currentUserName?: string;
   canVerify?: boolean;
 }
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 250];
 
 type TypeFilter = 'ALL' | 'FACTURA' | 'ABONO';
 type StatusFilter = 'ALL' | 'PENDIENTE' | 'PAGADO';
@@ -42,11 +50,14 @@ const pill = (active: boolean, color?: string) =>
 export function LedgerView({
   movements,
   entityId,
+  entity,
+  company,
   rates,
   customRates,
   onEdit,
   onDelete,
   canEdit,
+  mode = 'cxc',
   currentUserId,
   currentUserName,
   canVerify,
@@ -58,6 +69,9 @@ export function LedgerView({
   const [rangeFilter, setRangeFilter] = useState<RangeFilter>('ALL');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [exportOpen, setExportOpen] = useState(false);
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(0);
 
   const entityMovements = useMemo(
     () => movements.filter(m => m.entityId === entityId),
@@ -76,29 +90,14 @@ export function LedgerView({
 
   const chronoData = useMemo(() => buildChronoData(filtered, rates), [filtered, rates]);
 
-  const exportCSV = () => {
-    const header = 'Fecha,NroCtrl,Concepto,Cuenta,Tasa,Debe,Haber,Saldo';
-    const rows = chronoData.map(m =>
-      [
-        formatDateTime(m.displayDate),
-        m.nroControl || '',
-        `"${(m.concept || '').replace(/"/g, '""')}"`,
-        resolveAccountLabel(m.accountType as string, customRates),
-        m.rateUsed?.toFixed(2) || '',
-        m.debe > 0 ? m.debe.toFixed(2) : '',
-        m.haber > 0 ? m.haber.toFixed(2) : '',
-        m.runningBalance.toFixed(2),
-      ].join(',')
-    );
-    const csv = [header, ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ledger-${entityId}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  // Pagination: reset to page 0 when filters/data change
+  useEffect(() => { setPage(0); }, [accountFilter, typeFilter, statusFilter, rangeFilter, fromDate, toDate, pageSize, entityId]);
+
+  const totalPages = Math.max(1, Math.ceil(chronoData.length / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = safePage * pageSize;
+  const pageEnd = Math.min(pageStart + pageSize, chronoData.length);
+  const pagedData = useMemo(() => chronoData.slice(pageStart, pageEnd), [chronoData, pageStart, pageEnd]);
 
   return (
     <div className="space-y-4">
@@ -152,8 +151,13 @@ export function LedgerView({
           </div>
         )}
         <div className="flex-1" />
-        <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.04] text-[10px] font-black uppercase text-slate-500 dark:text-white/40 hover:bg-slate-200 dark:hover:bg-white/[0.08] transition-all">
-          <Download size={12} /> CSV
+        <button
+          onClick={() => setExportOpen(true)}
+          disabled={!entity}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-black uppercase text-indigo-400 hover:bg-indigo-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          title={entity ? 'Exportar movimientos' : 'No disponible'}
+        >
+          <Share2 size={12} /> Exportar
         </button>
       </div>
 
@@ -175,13 +179,13 @@ export function LedgerView({
               </tr>
             </thead>
             <tbody>
-              {chronoData.length === 0 ? (
+              {pagedData.length === 0 ? (
                 <tr>
                   <td colSpan={canEdit ? 9 : 8} className="px-4 py-12 text-center text-sm text-slate-300 dark:text-white/15 font-bold">
                     Sin movimientos
                   </td>
                 </tr>
-              ) : chronoData.map(m => {
+              ) : pagedData.map(m => {
                 const isPending = m.movementType === 'FACTURA' && !m.pagado && !m.anulada;
                 const accColor = resolveAccountColor(m.accountType as string, customRates);
                 const discount = hasActiveDiscount(m);
@@ -256,6 +260,45 @@ export function LedgerView({
         </div>
       </div>
 
+      {/* Pagination controls */}
+      {chronoData.length > pageSize && (
+        <div className="flex items-center gap-3 px-1 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30">Por página</label>
+            <select
+              value={pageSize}
+              onChange={e => setPageSize(Number(e.target.value))}
+              className="px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-[10px] font-black text-slate-700 dark:text-white/70 outline-none cursor-pointer"
+            >
+              {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <p className="text-[10px] font-bold text-slate-400 dark:text-white/30">
+            {pageStart + 1}–{pageEnd} de {chronoData.length}
+          </p>
+          <div className="flex-1" />
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              className="p-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 hover:bg-slate-100 dark:hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span className="px-3 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] text-[10px] font-black text-slate-700 dark:text-white/70">
+              {safePage + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={safePage >= totalPages - 1}
+              className="p-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 hover:bg-slate-100 dark:hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Summary */}
       {chronoData.length > 0 && (
         <div className="flex items-center gap-6 px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04]">
@@ -277,6 +320,20 @@ export function LedgerView({
             {chronoData.length} movimientos
           </div>
         </div>
+      )}
+
+      {/* Export panel */}
+      {entity && (
+        <ExportPanel
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          entity={entity}
+          movements={movements}
+          rates={rates}
+          customRates={customRates}
+          company={company || {}}
+          mode={mode}
+        />
       )}
     </div>
   );

@@ -40,7 +40,6 @@ import Inventario from './pages/Inventario';
 const VisionLab = lazy(() => import('./components/VisionLab'));
 const BooksComparePanel = lazy(() => import('./components/BooksComparePanel'));
 import UserProfileModalComp from './components/UserProfileModal';
-import CustomerViewer from './components/CustomerViewer';
 import CxCPage from './pages/CxCPage';
 import CxPPage from './pages/CxPPage';
 import AgendaCobranza from './pages/AgendaCobranza';
