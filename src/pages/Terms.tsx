@@ -72,6 +72,7 @@ export default function Terms() {
           <section>
             <h2 className="text-base font-black text-white mb-2">6. Propiedad Intelectual</h2>
             <p>Todo el código, diseño, marca, nombre "Dualis ERP" y materiales asociados son propiedad de Jesús Salazar. Se otorga una licencia de uso limitada, no exclusiva e intransferible, revocable en caso de incumplimiento. No se permite copiar, distribuir, modificar o crear obras derivadas sin autorización expresa por escrito.</p>
+            <p className="mt-2">Los documentos generados por el sistema (PDF, comprobantes, reportes, recibos, exportaciones) pueden incluir una <strong className="text-white/70">firma discreta del fabricante</strong> ("Hecho por Dualis" o equivalente) en el pie de página. Esta firma es la atribución estándar del proveedor del software y <strong className="text-white/70">no interfiere</strong> con los datos comerciales, contables ni legales del documento. El feature "white-label" ofrecido en planes Enterprise aplica específicamente al <strong className="text-white/70">Portal de Clientes</strong> (logo y colores del negocio), no implica la remoción automática de esta firma en documentos exportados. La remoción de la firma en PDFs requiere un addon o acuerdo específico.</p>
           </section>
 
           <section>

@@ -125,7 +125,7 @@ export const FEATURE_LABELS: Record<string, { name: string; minPlan: string; add
   precios_dinamicos:{ name: 'Precios Dinámicos',          minPlan: 'Negocio' },
   embajador:        { name: 'Programa Embajador',         minPlan: 'Pro'      },
   api_publica:      { name: 'API Pública',                minPlan: 'Enterprise' },
-  white_label:      { name: 'White-label',                minPlan: 'Enterprise' },
+  white_label:      { name: 'Portal white-label (logo/colores propios)', minPlan: 'Enterprise' },
 };
 
 // ─── Feature lists per plan (for UI display) ─────────────────────────────────
@@ -222,7 +222,7 @@ export const PLANS: PlanInfo[] = [
       'Todo del plan Pro',
       'Sucursales ilimitadas',
       'API pública + webhooks',
-      'White-label para contadores',
+      'Portal white-label (logo y colores propios)',
       'Gestión de franquicias',
       'Soporte dedicado 24/7',
       'SLA personalizado',
@@ -279,7 +279,7 @@ export const COMPARE_ROWS: CompareRow[] = [
   { cat: 'Crecimiento', label: 'Programa Embajador',             g: true,     b: true,        n: true,       p: true,       e: true },
   { cat: 'Crecimiento', label: 'Tienda pública',                  g: false,    b: false,       n: `+$${ADDON_PRICES.tienda}/mes`, p: `+$${ADDON_PRICES.tienda}/mes`, e: true },
   { cat: 'Crecimiento', label: 'API pública + webhooks',          g: false,    b: false,       n: false,      p: false,      e: true },
-  { cat: 'Crecimiento', label: 'White-label',                     g: false,    b: false,       n: false,      p: false,      e: true },
+  { cat: 'Crecimiento', label: 'Portal white-label',              g: false,    b: false,       n: false,      p: false,      e: true },
   // Soporte
   { cat: 'Soporte',     label: 'Canal de soporte',               g: 'Email',  b: 'Email',     n: 'WhatsApp', p: 'Prioritario', e: 'Dedicado 24/7' },
   { cat: 'Soporte',     label: 'Trial 30 días Plan Pro',          g: true,     b: true,        n: true,       p: true,       e: true },

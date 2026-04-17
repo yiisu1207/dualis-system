@@ -58,18 +58,29 @@ function drawGradientBar(
 export interface FooterOptions {
   tagline?: string;
   showPagination?: boolean;
+  /** Opt-out. Si true, no dibuja nada. Reservado para planes con white-label de exports. */
+  skip?: boolean;
 }
 
 /**
  * Footer oficial de Dualis en TODAS las páginas.
  * Barra degradada + logo de anillos + "HECHO POR DUALIS" + paginación.
  * NO incluye "Generado [fecha]" — usa un tagline en su lugar.
+ *
+ * Alcance del branding: firma discreta del fabricante en el pie de página. NO
+ * interfiere con datos legales ni fiscales del documento. El feature "white-label"
+ * de planes Enterprise aplica al Portal de Clientes (logo/colores del negocio),
+ * no a esta firma. Si en el futuro se comercializa un addon que retira esta firma
+ * de los PDFs, pasar `skip: true` desde los callsites.
  */
 export function drawDualisFooter(doc: JsPdfDoc, options: FooterOptions = {}) {
   const {
     tagline = 'Documento oficial · dualis.online',
     showPagination = true,
+    skip = false,
   } = options;
+
+  if (skip) return;
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
