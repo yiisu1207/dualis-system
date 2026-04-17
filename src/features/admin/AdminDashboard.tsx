@@ -30,7 +30,9 @@ import {
   Activity,
   Clock,
   Info,
+  ShieldCheck,
 } from 'lucide-react';
+import { isVerifiable, resolveVerificationStatus } from '../../utils/movementHelpers';
 import {
   AreaChart,
   Area,
@@ -269,6 +271,19 @@ export default function AdminDashboard({
       if (m.movementType === 'ABONO') t -= amt;
     });
     return Math.max(0, t);
+  }, [movements]);
+
+  // Fase D.2 — pagos verificables aún sin conciliar contra banco
+  const unverified = useMemo(() => {
+    let count = 0;
+    let amount = 0;
+    for (const m of movements) {
+      if (!isVerifiable(m)) continue;
+      if (resolveVerificationStatus(m) !== 'unverified') continue;
+      count++;
+      amount += (m as any).amountInUSD || m.amount || 0;
+    }
+    return { count, amount };
   }, [movements]);
 
   // Inventario
@@ -577,6 +592,21 @@ export default function AdminDashboard({
           }
           onClick={() => onTabChange?.('contabilidad')}
         />
+        {unverified.count > 0 && (
+          <KpiCard
+            icon={<ShieldCheck size={18} className="text-amber-600 dark:text-amber-400" />}
+            iconBg="bg-amber-50 dark:bg-amber-500/10"
+            label="Pagos sin verificar"
+            value={fmtUSD(unverified.amount)}
+            sub={`${unverified.count} movimiento${unverified.count !== 1 ? 's' : ''} · banco`}
+            onClick={() => onTabChange?.('conciliacion')}
+            badge={(
+              <div className="flex items-center gap-1 text-[9px] font-black bg-amber-50 dark:bg-amber-500/10 text-amber-500 dark:text-amber-400 px-2 py-0.5 rounded-xl">
+                <Clock size={8} /> Pendiente
+              </div>
+            )}
+          />
+        )}
       </div>
 
       {/* ── CHARTS ROW ── */}

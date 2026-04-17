@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, FileText, CreditCard, Settings2, ShieldCheck, ArrowRightLeft, Wallet } from 'lucide-react';
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { X, FileText, CreditCard, Settings2, ShieldCheck, ArrowRightLeft, Wallet, UploadCloud, CheckCircle2 } from 'lucide-react';
+import { doc, getDoc, collection, query, where, orderBy, limit, getDocs, setDoc } from 'firebase/firestore';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../../firebase/config';
 import type { Movement, Customer, Supplier, CustomRate, ExchangeRates, ApprovalConfig } from '../../../types';
 import { resolveAccountLabel, resolveAccountColor, resolveRateForAccount } from './cxcHelpers';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -61,7 +62,7 @@ interface MovementFormPanelProps {
   customRates: CustomRate[];
   rates: ExchangeRates;
   businessId: string;
-  onSave: (data: Partial<Movement>) => Promise<void>;
+  onSave: (data: Partial<Movement>) => Promise<void | string>;
   onClose: () => void;
   editingMovement?: Movement;
   approvalConfig?: ApprovalConfig;
@@ -111,6 +112,8 @@ export function MovementFormPanel({
   const [referencia, setReferencia] = useState(editingMovement?.referencia || editingMovement?.reference || '');
   const [expenseCategory, setExpenseCategory] = useState(editingMovement?.expenseCategory || '');
   const [saving, setSaving] = useState(false);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const receiptInputRef = useRef<HTMLInputElement | null>(null);
   const [panelPosition, setPanelPosition] = useState<PanelPosition>(() => {
     try { return (localStorage.getItem('dualis_panel_position') as PanelPosition) || 'right'; } catch { return 'right'; }
   });
@@ -343,7 +346,36 @@ export function MovementFormPanel({
         data.expenseCategory = expenseCategory;
       }
 
-      await onSave(data);
+      const saveResult = await onSave(data);
+      // Fase D.2 — si el abono trae comprobante, lo subimos a Storage y
+      // dejamos un DraftAbono pre-llenado en Conciliación con `fromMovementId`,
+      // para que al conciliarse dispare el auto-verify del Movement.
+      if (movType === 'ABONO' && receiptFile && mode === 'cxc' && typeof saveResult === 'string' && saveResult) {
+        try {
+          const movId = saveResult;
+          const monthKey = date.slice(0, 7); // YYYY-MM
+          const safeName = receiptFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const path = `bankStatements/${businessId}/${monthKey}/receipts/${movId}/${Date.now()}_${safeName}`;
+          const fileRef = storageRef(storage, path);
+          await uploadBytes(fileRef, receiptFile);
+          const receiptUrl = await getDownloadURL(fileRef);
+          const abonoId = `ab_${movId}`;
+          await setDoc(doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', abonoId), {
+            id: abonoId,
+            amount: amountInUSD,
+            date,
+            reference: referencia.trim() || undefined,
+            clientName: (selectedEntity as any)?.fullName || (selectedEntity as any)?.nombre || undefined,
+            note: concept.trim() || undefined,
+            status: 'no_encontrado',
+            matchRowId: null,
+            fromMovementId: movId,
+            receiptUrl,
+          });
+        } catch (e) {
+          console.warn('[MovementFormPanel] receipt upload failed', e);
+        }
+      }
       onClose();
     } catch (err) {
       console.error('Error saving movement:', err);
@@ -715,18 +747,63 @@ export function MovementFormPanel({
 
           {/* ABONO-only fields */}
           {movType === 'ABONO' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={label}>Metodo pago</label>
-                <select value={metodoPago} onChange={e => setMetodoPago(e.target.value)} className={inp}>
-                  {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={label}>Metodo pago</label>
+                  <select value={metodoPago} onChange={e => setMetodoPago(e.target.value)} className={inp}>
+                    {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={label}>Referencia</label>
+                  <input value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="Nro. ref" className={inp} />
+                </div>
               </div>
-              <div>
-                <label className={label}>Referencia</label>
-                <input value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="Nro. ref" className={inp} />
-              </div>
-            </div>
+
+              {/* Fase D.2 — Comprobante opcional para pre-llenar Conciliación */}
+              {mode === 'cxc' && !isEditing && (
+                <div>
+                  <label className={label}>Comprobante (opcional)</label>
+                  <input
+                    ref={receiptInputRef}
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                  />
+                  {receiptFile ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/20">
+                      <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+                      <span className="flex-1 truncate text-xs font-bold text-emerald-600 dark:text-emerald-400" title={receiptFile.name}>
+                        {receiptFile.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { setReceiptFile(null); if (receiptInputRef.current) receiptInputRef.current.value = ''; }}
+                        className="text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-500 transition-colors"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => receiptInputRef.current?.click()}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-white/[0.12] bg-slate-50/50 dark:bg-white/[0.02] hover:border-indigo-400 hover:bg-indigo-500/[0.04] transition-all text-left"
+                    >
+                      <UploadCloud size={14} className="text-slate-400" />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-white/40">
+                        Subir capture/PDF para conciliar
+                      </span>
+                    </button>
+                  )}
+                  <p className="mt-1 text-[9px] font-bold text-slate-400 dark:text-white/25">
+                    Se pre-llena en Conciliación. Al conciliar, el pago queda verificado automáticamente.
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
           {/* CxP expense category */}

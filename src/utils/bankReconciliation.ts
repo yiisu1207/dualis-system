@@ -32,6 +32,11 @@ export interface DraftAbono {
   phone?: string;          // "0414-1234567"
   clientName?: string;
   note?: string;
+  /** Puente opcional a un Movement: si el abono fue creado desde un form CxC/CxP,
+   *  al confirmarse la conciliación se auto-marca ese Movement como `verified`. */
+  fromMovementId?: string;
+  /** URL del comprobante en Storage (si viene del dropzone de CxC/CxP). */
+  receiptUrl?: string;
 }
 
 export type Confidence = 'exact' | 'high' | 'medium' | 'low';

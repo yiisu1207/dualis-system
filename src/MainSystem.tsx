@@ -35,7 +35,6 @@ const AccountingSection = lazy(() => import('./components/AccountingSection'));
 import SupplierSection from './components/SupplierSection';
 import RecursosHumanos from './pages/RecursosHumanos';
 const ComisionesReporte = lazy(() => import('./pages/ComisionesReporte'));
-const VerificacionPanel = lazy(() => import('./pages/VerificacionPanel'));
 const Tesoreria = lazy(() => import('./pages/Tesoreria'));
 import Inventario from './pages/Inventario';
 const VisionLab = lazy(() => import('./components/VisionLab'));
@@ -1420,11 +1419,12 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             )}
             {activeTab === 'verificacion' && (
               canCapability('aprobarPagos' as any)
-                ? <VerificacionPanel
-                    movements={movements}
+                ? <Conciliacion
                     businessId={businessId}
-                    currentUserId={firebaseUser?.uid || ''}
-                    currentUserName={user?.name || 'Usuario'}
+                    currentUserId={userProfile?.uid || firebaseUser?.uid || ''}
+                    userRole={userProfile?.role || ''}
+                    movements={movements}
+                    currentUserName={user?.name || userProfile?.displayName || userProfile?.email || 'Usuario'}
                     canVerify={canCapability('aprobarPagos' as any)}
                   />
                 : <NoAccess />
@@ -1447,7 +1447,14 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
             {activeTab === 'conciliacion' && (
               !canView('conciliacion') ? <NoAccess /> :
               canAccess('conciliacion')
-                ? <Conciliacion businessId={businessId} currentUserId={userProfile?.uid || ''} userRole={userProfile?.role || ''} />
+                ? <Conciliacion
+                    businessId={businessId}
+                    currentUserId={userProfile?.uid || firebaseUser?.uid || ''}
+                    userRole={userProfile?.role || ''}
+                    movements={movements}
+                    currentUserName={user?.name || userProfile?.displayName || userProfile?.email || 'Usuario'}
+                    canVerify={canCapability('aprobarPagos' as any)}
+                  />
                 : <LockedModule moduleName="Conciliación Bancaria" requiredPlan="negocio" isAddon />
             )}
             {activeTab === 'vision' && (
@@ -1487,6 +1494,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                   userRole={user?.role || 'member'}
                   isolationMode={isolationMode}
                   currentUserId={firebaseUser?.uid}
+                  currentUserName={user?.name || userProfile?.displayName || userProfile?.email || 'Usuario'}
+                  canVerify={canCapability('aprobarPagos' as any)}
                   approvalConfig={approvalConfig}
                   validatorCount={countValidators(businessUsersList, roleCapabilities).count}
                   pendingMovements={pendingMovementsList}
@@ -1553,6 +1562,8 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                   userRole={user?.role || 'member'}
                   isolationMode={isolationMode}
                   currentUserId={firebaseUser?.uid}
+                  currentUserName={user?.name || userProfile?.displayName || userProfile?.email || 'Usuario'}
+                  canVerify={canCapability('aprobarPagos' as any)}
                   approvalConfig={approvalConfig}
                   validatorCount={countValidators(businessUsersList, roleCapabilities).count}
                   pendingMovements={pendingMovementsList}

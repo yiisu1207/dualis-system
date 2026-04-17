@@ -15,6 +15,8 @@ interface CxPPageProps {
   userRole: string;
   isolationMode?: 'individual' | 'shared';
   currentUserId?: string;
+  currentUserName?: string;
+  canVerify?: boolean;
   approvalConfig?: ApprovalConfig;
   validatorCount?: number;
   pendingMovements?: PendingMovement[];
@@ -42,6 +44,8 @@ export default function CxPPage({
   userRole,
   isolationMode,
   currentUserId,
+  currentUserName,
+  canVerify,
   approvalConfig,
   validatorCount = 0,
   pendingMovements = [],
@@ -226,6 +230,9 @@ export default function CxPPage({
             onBack={() => setSelectedSupplier(null)}
             canEdit={canEdit}
             pendingMovements={pendingMovements}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            canVerify={canVerify}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">

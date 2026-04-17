@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, doc, onSnapshot, setDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
-import { CheckCircle2, FileCheck, Loader2, AlertTriangle, XCircle, Landmark } from 'lucide-react';
+import { CheckCircle2, FileCheck, Loader2, AlertTriangle, XCircle, Landmark, ShieldCheck, Zap } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import {
   findMatches,
@@ -13,21 +13,27 @@ import {
   type RankedMatch,
 } from '../utils/bankReconciliation';
 import { extractReceipt, extractReceiptsBatch, hashFile, type BatchItem } from '../utils/receiptOcr';
+import { isVerifiable, resolveVerificationStatus } from '../utils/movementHelpers';
 import AccountChips, { type AccountChipData } from '../components/conciliacion/AccountChips';
 import AbonoForm from '../components/conciliacion/AbonoForm';
 import LiveMatchList from '../components/conciliacion/LiveMatchList';
 import BankUploadModal from '../components/conciliacion/BankUploadModal';
 import ReceiptDropZone from '../components/conciliacion/ReceiptDropZone';
 import BatchReviewModal from '../components/conciliacion/BatchReviewModal';
+import ManualVerificationTab from '../components/conciliacion/ManualVerificationTab';
 import ReconciliationReport, {
   type SessionAbono,
   type AbonoStatus,
 } from '../components/conciliacion/ReconciliationReport';
+import type { Movement } from '../../types';
 
 interface ConciliacionProps {
   businessId: string;
   currentUserId: string;
   userRole: string;
+  movements?: Movement[];
+  currentUserName?: string;
+  canVerify?: boolean;
 }
 
 interface BankStatementAccountDoc {
@@ -62,10 +68,12 @@ function makeId(): string {
   return `ab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export default function Conciliacion({ businessId, currentUserId, userRole }: ConciliacionProps) {
+export default function Conciliacion({ businessId, currentUserId, userRole, movements = [], currentUserName = 'Usuario', canVerify }: ConciliacionProps) {
   const toast = useToast();
   const canEdit = userRole === 'owner' || userRole === 'admin';
+  const effectiveCanVerify = canVerify ?? canEdit;
 
+  const [view, setView] = useState<'auto' | 'manual'>('auto');
   const [monthKey, setMonthKey] = useState<string>(currentMonthKey());
   const [accounts, setAccounts] = useState<BankStatementAccountDoc[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
@@ -262,6 +270,25 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     toast.success(`Cuenta "${acc.accountLabel}" eliminada`);
   };
 
+  // Puente CxC/CxP ↔ Conciliación: si el abono venía de un Movement y acaba de
+  // confirmarse, marcamos ese Movement como 'verified' automáticamente.
+  const autoVerifyLinkedMovement = async (abono: SessionAbono) => {
+    if (abono.status !== 'confirmado' || !abono.fromMovementId) return;
+    try {
+      const mvRef = doc(db, 'movements', abono.fromMovementId);
+      await updateDoc(mvRef, {
+        verificationStatus: 'verified',
+        verifiedAt: new Date().toISOString(),
+        verifiedByUid: currentUserId,
+        verifiedByName: 'Conciliación automática',
+        verificationNote: `Auto-conciliado ${abono.matchAccountAlias || ''}`.trim(),
+        verificationUpdatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.warn('[Conciliacion] autoVerifyLinkedMovement failed', err);
+    }
+  };
+
   const addOrUpdateAbono = async (base: DraftAbono, matchRowId: string | null) => {
     const matches = findMatches(base, pool);
     const status: AbonoStatus = classifyAbono(base, matches, matchRowId || undefined);
@@ -277,6 +304,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     // Persistir en Firestore
     const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', id);
     await setDoc(ref, abonoDoc);
+    await autoVerifyLinkedMovement(abonoDoc);
   };
 
   const handleSubmitAbono = async () => {
@@ -401,6 +429,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
         };
         const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', id);
         await setDoc(ref, abonoDoc);
+        await autoVerifyLinkedMovement(abonoDoc);
       }
       setBatchItems(null);
       toast.success(`${confirmed.length} abono${confirmed.length !== 1 ? 's' : ''} agregado${confirmed.length !== 1 ? 's' : ''}`);
@@ -427,6 +456,11 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
     return <div className="p-6 text-slate-500 dark:text-slate-400">Cargando...</div>;
   }
 
+  const unverifiedCount = useMemo(
+    () => movements.filter((m) => isVerifiable(m) && resolveVerificationStatus(m) === 'unverified').length,
+    [movements]
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-4">
@@ -438,18 +472,62 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
             <div>
               <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Conciliación Bancaria</h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Pool: {pool.length} filas · {accounts.length} cuenta{accounts.length !== 1 ? 's' : ''} · {abonos.length} abono{abonos.length !== 1 ? 's' : ''}
+                {view === 'auto'
+                  ? `Pool: ${pool.length} filas · ${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''} · ${abonos.length} abono${abonos.length !== 1 ? 's' : ''}`
+                  : `Verificación fila por fila · ${unverifiedCount} sin verificar`}
               </p>
             </div>
           </div>
-          <input
-            type="month"
-            value={monthKey}
-            onChange={(e) => setMonthKey(e.target.value || currentMonthKey())}
-            className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-400"
-          />
+          {view === 'auto' && (
+            <input
+              type="month"
+              value={monthKey}
+              onChange={(e) => setMonthKey(e.target.value || currentMonthKey())}
+              className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-400"
+            />
+          )}
         </div>
 
+        {/* Tab switcher Auto vs Manual */}
+        <div className="inline-flex rounded-xl bg-slate-100 dark:bg-white/[0.04] p-1 gap-1">
+          <button
+            type="button"
+            onClick={() => setView('auto')}
+            className={`px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+              view === 'auto'
+                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm'
+                : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
+            }`}
+          >
+            <Zap size={12} /> Automática
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('manual')}
+            className={`px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+              view === 'manual'
+                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm'
+                : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
+            }`}
+          >
+            <ShieldCheck size={12} /> Manual
+            {unverifiedCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-amber-500/20 text-amber-600 dark:text-amber-300">
+                {unverifiedCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {view === 'manual' ? (
+          <ManualVerificationTab
+            movements={movements}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            canVerify={effectiveCanVerify}
+          />
+        ) : (
+        <>
         {/* Dashboard resumen */}
         {accounts.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -556,6 +634,8 @@ export default function Conciliacion({ businessId, currentUserId, userRole }: Co
             onEditAbono={handleEditAbono}
             onDeleteAbono={handleDeleteAbono}
           />
+        )}
+        </>
         )}
       </div>
 

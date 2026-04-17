@@ -45,6 +45,9 @@ interface EntityDetailProps {
   onRejectPending?: (pendingId: string, reason: string) => Promise<void>;
   onCancelPending?: (pendingId: string) => Promise<void>;
   currentUserId?: string;
+  currentUserName?: string;
+  /** Fase D.2 — enable inline verify controls on movement rows */
+  canVerify?: boolean;
   /** Portal access — needed to create/show portal link */
   businessId?: string;
   userId?: string;
@@ -358,6 +361,8 @@ export function EntityDetail({
   onRejectPending,
   onCancelPending,
   currentUserId,
+  currentUserName,
+  canVerify,
   businessId,
   userId,
   slug,
@@ -1398,6 +1403,9 @@ export function EntityDetail({
               onDelete={canEdit ? onDeleteMovement : undefined}
               canEdit={canEdit}
               mode={mode}
+              currentUserId={currentUserId}
+              currentUserName={currentUserName}
+              canVerify={canVerify ?? canEdit}
             />
           </div>
         )}

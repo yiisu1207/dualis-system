@@ -20,6 +20,8 @@ interface CxCPageProps {
   userRole: string;
   isolationMode?: 'individual' | 'shared';
   currentUserId?: string;
+  currentUserName?: string;
+  canVerify?: boolean;
   approvalConfig?: ApprovalConfig;
   validatorCount?: number;
   pendingMovements?: PendingMovement[];
@@ -51,6 +53,8 @@ export default function CxCPage({
   userRole,
   isolationMode,
   currentUserId,
+  currentUserName,
+  canVerify,
   approvalConfig,
   validatorCount = 0,
   pendingMovements = [],
@@ -122,12 +126,12 @@ export default function CxCPage({
     setFormOpen(true);
   }, []);
 
-  const handleSaveMovement = useCallback(async (data: Partial<Movement>) => {
+  const handleSaveMovement = useCallback(async (data: Partial<Movement>): Promise<void | string> => {
     if (editingMovement) {
       await onUpdateMovement(editingMovement.id, data);
-    } else {
-      await onSaveMovement(data);
+      return;
     }
+    return await onSaveMovement(data);
   }, [editingMovement, onSaveMovement, onUpdateMovement]);
 
   const handleDeleteMovement = useCallback(async (id: string) => {
@@ -299,6 +303,8 @@ export default function CxCPage({
             onRejectPending={onRejectPending}
             onCancelPending={onCancelPending}
             currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            canVerify={canVerify}
             businessId={businessId}
             userId={currentUserId}
             slug={slug}

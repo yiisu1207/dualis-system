@@ -1,34 +1,32 @@
 /**
- * Fase D.0.1 — Panel de verificación de llegada al banco.
+ * Fase D.2 — Pestaña "Manual" dentro de Conciliación.
  *
- * Cola unificada de todos los Movements verificables (ABONO/FACTURA con
- * metodoPago bancario) filtrados por status. Permite al admin marcar
- * fila por fila si el dinero entró realmente al banco.
+ * Extraída del antiguo VerificacionPanel. Permite al admin marcar
+ * fila por fila si el dinero entró realmente al banco. La verificación
+ * es puramente informativa: NO afecta saldos, NO recalcula reportes.
  *
- * IMPORTANTE: la verificación es puramente informativa. NO afecta saldos,
- * NO recalcula reportes, NO bloquea nada. Es un control paralelo para que
- * el admin concilie contra el estado de cuenta bancario.
+ * Fix: la ruta de Firestore corregida a top-level `movements/{id}` (antes
+ * apuntaba a `businesses/{bid}/movements/{id}` — path inexistente, por lo
+ * que los updates fallaban silenciosamente).
  */
 
 import React, { useMemo, useState } from 'react';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ShieldCheck, Clock, CheckCircle2, XCircle, Search, Filter } from 'lucide-react';
-import { db } from '../firebase/config';
-import type { Movement } from '../../types';
+import { Clock, CheckCircle2, XCircle, Search, Filter, ShieldCheck } from 'lucide-react';
+import { db } from '../../firebase/config';
+import type { Movement } from '../../../types';
 import {
   isVerifiable,
   resolveVerificationStatus,
   type VerificationStatus,
-} from '../utils/movementHelpers';
-import VerificationBadge from '../components/VerificationBadge';
-import VerificationActionMenu, { type VerificationUpdatePayload } from '../components/VerificationActionMenu';
+} from '../../utils/movementHelpers';
+import VerificationBadge from '../VerificationBadge';
+import VerificationActionMenu, { type VerificationUpdatePayload } from '../VerificationActionMenu';
 
 interface Props {
   movements: Movement[];
-  businessId: string;
   currentUserId: string;
   currentUserName: string;
-  /** Fase C.5 — si el usuario no tiene aprobarPagos, ve solo lectura. */
   canVerify?: boolean;
 }
 
@@ -53,7 +51,7 @@ const fmtDate = (iso?: string) => {
   }
 };
 
-const VerificacionPanel: React.FC<Props> = ({ movements, businessId, currentUserId, currentUserName, canVerify = true }) => {
+const ManualVerificationTab: React.FC<Props> = ({ movements, currentUserId, currentUserName, canVerify = true }) => {
   const [tab, setTab] = useState<TabKey>('unverified');
   const [search, setSearch] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -100,7 +98,7 @@ const VerificacionPanel: React.FC<Props> = ({ movements, businessId, currentUser
   const handleUpdate = async (movement: Movement, payload: VerificationUpdatePayload) => {
     setBusyId(movement.id);
     try {
-      const ref = doc(db, 'businesses', businessId, 'movements', movement.id);
+      const ref = doc(db, 'movements', movement.id);
       const update: Record<string, any> = {
         verificationStatus: payload.status,
       };
@@ -123,7 +121,7 @@ const VerificacionPanel: React.FC<Props> = ({ movements, businessId, currentUser
       update.verificationUpdatedAt = serverTimestamp();
       await updateDoc(ref, update);
     } catch (err) {
-      console.error('[VerificacionPanel] update failed', err);
+      console.error('[ManualVerificationTab] update failed', err);
       alert('No se pudo actualizar el estado de verificación.');
     } finally {
       setBusyId(null);
@@ -132,20 +130,6 @@ const VerificacionPanel: React.FC<Props> = ({ movements, businessId, currentUser
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <ShieldCheck className="text-indigo-500" size={24} />
-            Verificación bancaria
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-white/40 font-bold mt-1">
-            Marca fila por fila si cada cobro/pago apareció realmente en tu estado de cuenta.
-          </p>
-        </div>
-      </div>
-
-      {/* Tabs */}
       <div className="flex flex-wrap gap-2">
         {(['unverified', 'verified', 'not_arrived', 'all'] as TabKey[]).map((t) => {
           const active = tab === t;
@@ -173,7 +157,6 @@ const VerificacionPanel: React.FC<Props> = ({ movements, businessId, currentUser
         })}
       </div>
 
-      {/* Search */}
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
@@ -185,7 +168,6 @@ const VerificacionPanel: React.FC<Props> = ({ movements, businessId, currentUser
         />
       </div>
 
-      {/* Table */}
       <div className="rounded-2xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-slate-900 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-[12px]">
@@ -279,4 +261,4 @@ const VerificacionPanel: React.FC<Props> = ({ movements, businessId, currentUser
   );
 };
 
-export default VerificacionPanel;
+export default ManualVerificationTab;

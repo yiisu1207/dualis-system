@@ -13,6 +13,7 @@ import {
   hasActiveDiscount,
 } from './cxcHelpers';
 import VerificationBadge from '../VerificationBadge';
+import InlineVerifyControl from '../InlineVerifyControl';
 
 interface LedgerViewProps {
   movements: Movement[];
@@ -23,6 +24,9 @@ interface LedgerViewProps {
   onDelete?: (id: string) => void;
   canEdit: boolean;
   mode?: 'cxc' | 'cxp';
+  currentUserId?: string;
+  currentUserName?: string;
+  canVerify?: boolean;
 }
 
 type TypeFilter = 'ALL' | 'FACTURA' | 'ABONO';
@@ -43,7 +47,11 @@ export function LedgerView({
   onEdit,
   onDelete,
   canEdit,
+  currentUserId,
+  currentUserName,
+  canVerify,
 }: LedgerViewProps) {
+  const effectiveCanVerify = canVerify ?? canEdit;
   const [accountFilter, setAccountFilter] = useState<TabFilter>('ALL');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
@@ -192,7 +200,17 @@ export function LedgerView({
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1.5 min-w-0 max-w-[240px]">
                         <p className="text-xs font-bold text-slate-700 dark:text-white/70 line-clamp-1">{m.concept || '-'}</p>
-                        <VerificationBadge movement={m} size="xs" />
+                        {currentUserId ? (
+                          <InlineVerifyControl
+                            movement={m as Movement}
+                            currentUserId={currentUserId}
+                            currentUserName={currentUserName || 'Usuario'}
+                            canVerify={effectiveCanVerify}
+                            size="xs"
+                          />
+                        ) : (
+                          <VerificationBadge movement={m} size="xs" />
+                        )}
                       </div>
                       {discount && <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-500/10 text-emerald-500 uppercase">Dto. activo</span>}
                     </td>
