@@ -654,6 +654,11 @@ export default function RecursosHumanos() {
   // Reset to page 1 when employee filter changes
   useEffect(() => { setValesPage(1); }, [qv.empId]);
 
+  // Pagination for abonos table
+  const ABONOS_PER_PAGE = 10;
+  const [abonosPage, setAbonosPage] = useState(1);
+  useEffect(() => { setAbonosPage(1); }, [qa.empId]);
+
   // Emp dropdown state (G)
   const [empDropOpen, setEmpDropOpen] = useState(false);
   const [empSearch, setEmpSearch] = useState('');
@@ -1435,6 +1440,16 @@ export default function RecursosHumanos() {
     } finally { setSavingAbono(false); }
   };
 
+  // Delete abono
+  const handleDeleteAbono = (a: Abono) => setConfirm({
+    msg: `¿Eliminar abono de ${a.employeeName}?`,
+    detail: `${a.currency === 'USD' ? '$' : 'Bs '}${fmtHR(a.amount)} — ${a.concept || 'Sin concepto'}`,
+    onConfirm: async () => {
+      await deleteDoc(doc(db, `businesses/${bid}/abonos`, a.id));
+      toast.success('Abono eliminado');
+    },
+  });
+
   const handleDeleteEmployee = (emp:Employee) => setConfirm({
     msg:`¿Eliminar a ${emp.fullName}?`, detail:'Esta acción no se puede deshacer.',
     onConfirm:async()=>{
@@ -1942,6 +1957,14 @@ export default function RecursosHumanos() {
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Abonos a Cuenta</h3>
                   <span className="text-[9px] text-slate-400 dark:text-white/30 font-normal">Pagos del empleado que reducen su saldo de vales</span>
                 </div>
+                {/* Hint banner */}
+                <div className="flex items-start gap-3 p-3 mb-3 bg-emerald-50 dark:bg-emerald-500/[0.08] border border-emerald-200 dark:border-emerald-500/25 rounded-xl">
+                  <AlertTriangle size={14} className="text-emerald-500 shrink-0 mt-0.5"/>
+                  <p className="text-[10px] text-emerald-700 dark:text-emerald-300 flex-1">
+                    <strong>Recuerda:</strong> Verifica la fecha del abono antes de registrar. El sistema usa la tasa vigente de esa fecha.
+                  </p>
+                </div>
+                {/* Quick form — mirrors vales form layout */}
                 <form onSubmit={handleAddAbono} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-white dark:bg-[#0d1424] p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] shadow-md items-end">
                   {/* Abono employee dropdown */}
                   <div ref={abonoDropRef} className="relative">
@@ -1950,17 +1973,17 @@ export default function RecursosHumanos() {
                       className={`w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border rounded-xl text-xs font-bold dark:text-white outline-none text-left flex items-center justify-between gap-1 transition-all ${abonoDropOpen?'border-emerald-500 ring-2 ring-emerald-500/20':'border-slate-200 dark:border-white/[0.08]'}`}>
                       {qa.empId ? (()=>{
                         const e = employees.find(x=>x.id===qa.empId);
-                        return <span className="font-black text-emerald-700 dark:text-emerald-400">{e?.fullName}</span>;
+                        return <span className={`font-black ${e?.paymentCurrency==='USD'?'text-emerald-700 dark:text-emerald-400':'text-sky-700 dark:text-sky-400'}`}>{e?.fullName}</span>;
                       })() : <span className="text-slate-400 dark:text-white/30">Seleccionar...</span>}
                       <ChevronDown size={12} className={`text-slate-400 transition-transform shrink-0 ${abonoDropOpen?'rotate-180':''}`}/>
                     </button>
                     {abonoDropOpen && (
                       <div className="absolute z-30 top-full mt-1 left-0 w-full min-w-[320px] bg-white dark:bg-[#0d1424] border border-slate-200 dark:border-white/[0.1] rounded-xl shadow-xl overflow-hidden">
                         <div className="p-2 border-b border-slate-100 dark:border-white/[0.06]">
-                          <input autoFocus value={abonoSearch} onChange={e=>setAbonoSearch(e.target.value)} placeholder="Buscar..."
+                          <input autoFocus value={abonoSearch} onChange={e=>setAbonoSearch(e.target.value)} placeholder="Buscar empleado..."
                             className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg dark:text-white outline-none"/>
                         </div>
-                        <div className="max-h-40 overflow-y-auto">
+                        <div className="max-h-48 overflow-y-auto">
                           {employees.filter(e=>e.status==='Activo'&&(!abonoSearch||e.fullName.toLowerCase().includes(abonoSearch.toLowerCase()))).map(e=>(
                             <button key={e.id} type="button" onClick={()=>{
                               const autoCurrency = e.paymentCurrency === 'BS' ? 'BS' : 'USD';
@@ -1981,9 +2004,16 @@ export default function RecursosHumanos() {
                     )}
                   </div>
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Fecha</label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Fecha del Abono</label>
                     <input type="date" required value={qa.date} onChange={e=>setQa(f=>({...f,date:e.target.value}))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"/>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Moneda</label>
+                    <select value={qa.currency} onChange={e=>setQa(f=>({...f,currency:e.target.value as any}))}
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                      {abonoMonedaOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">
@@ -1999,14 +2029,9 @@ export default function RecursosHumanos() {
                         </>;
                       })()}
                     </label>
-                    <div className="flex gap-1.5">
-                      <select value={qa.currency} onChange={e=>setQa(f=>({...f,currency:e.target.value as any}))}
-                        className="px-2 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-bold dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
-                        {abonoMonedaOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                      <input required type="number" step="0.01" min="0.01" value={qa.amount} onChange={e=>setQa(f=>({...f,amount:e.target.value}))}
-                        placeholder="0.00" className="flex-1 px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"/>
-                    </div>
+                    <input required type="number" step="0.01" min="0.01" value={qa.amount} onChange={e=>setQa(f=>({...f,amount:e.target.value}))}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-xs font-black dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"/>
                   </div>
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 ml-1 block mb-1.5">Concepto</label>
@@ -2017,28 +2042,95 @@ export default function RecursosHumanos() {
                     {savingAbono?<Loader2 size={13} className="animate-spin"/>:<><Plus size={13}/>Registrar Abono</>}
                   </button>
                 </form>
-                {/* Abonos table */}
-                {visibleAbonos.filter(a=>a.status==='PENDIENTE').length>0&&(
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead><tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05]">
-                        <th className="px-4 py-2">Fecha</th><th className="px-4 py-2">Empleado</th>
-                        <th className="px-4 py-2 text-right">Monto</th><th className="px-4 py-2">Concepto</th>
-                      </tr></thead>
-                      <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
-                        {visibleAbonos.filter(a=>a.status==='PENDIENTE').map(a=>(
-                          <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.03]">
-                            <td className="px-4 py-2.5 font-mono text-[10px] text-slate-400 dark:text-white/30">{a.date}</td>
-                            <td className="px-4 py-2.5 font-black text-slate-900 dark:text-white text-sm">{a.employeeName}</td>
-                            <td className="px-4 py-2.5 text-right font-black text-emerald-600 dark:text-emerald-400">+{a.currency==='USD'?'$':'Bs '}{fmtHR(a.amount)}</td>
-                            <td className="px-4 py-2.5 text-slate-400 dark:text-white/40 italic text-xs">{a.concept}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </div>
+              {/* Abonos filter bar */}
+              {qa.empId && (() => {
+                const empFilt = employees.find(e => e.id === qa.empId);
+                return (
+                  <div className="flex items-center justify-between px-5 py-2.5 bg-emerald-500/[0.06] border-t border-emerald-500/[0.12]">
+                    <span className="text-xs font-black text-emerald-400">Mostrando abonos de: {empFilt?.fullName}</span>
+                    <button onClick={() => setQa(f => ({...f, empId: ''}))}
+                      className="text-[10px] text-white/30 hover:text-white/60 transition-all px-2 py-1 rounded-lg hover:bg-white/[0.04]">
+                      Ver todos ×
+                    </button>
+                  </div>
+                );
+              })()}
+              {/* Abonos table — mirrors vales table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 border-b border-slate-50 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02]">
+                      <th className="px-5 py-3.5">Fecha</th><th className="px-5 py-3.5">Empleado</th>
+                      <th className="px-5 py-3.5 text-center">Moneda</th><th className="px-5 py-3.5 text-right">Monto</th>
+                      <th className="px-5 py-3.5 text-right">Tasa</th><th className="px-5 py-3.5 text-right">Equiv. USD</th>
+                      <th className="px-5 py-3.5">Concepto</th><th className="px-5 py-3.5 text-right">Estatus</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-white/[0.04]">
+                    {(()=>{
+                      const filtered = qa.empId ? visibleAbonos.filter(a=>a.employeeId===qa.empId) : visibleAbonos;
+                      if (filtered.length===0) return <tr><td colSpan={8} className="px-5 py-16 text-center"><ArrowLeftRight size={40} className="mx-auto text-slate-200 dark:text-white/10 mb-3"/><p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Sin abonos registrados{isIndividual ? ' (modo individual — solo tus registros)' : ''}</p></td></tr>;
+                      return filtered.slice((abonosPage-1)*ABONOS_PER_PAGE, abonosPage*ABONOS_PER_PAGE).map(a=>{
+                        const equivUSD = a.currency==='USD' ? a.amount : (()=>{
+                          const emp = employees.find(e=>e.id===a.employeeId);
+                          const isBcv = emp?.paymentCurrency==='BS';
+                          const rate = isBcv ? getBcvRateForDate(a.date||'') : getRateForDate(a.date||'');
+                          return rate > 0 ? a.amount / rate : (a.amountUSD||0);
+                        })();
+                        return (
+                        <tr key={a.id} className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${a.status==='APLICADO'?'opacity-50':''}`}>
+                          <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{a.date || (a.createdAt?.toDate ? a.createdAt.toDate().toLocaleDateString('es-VE') : '—')}</td>
+                          <td className="px-5 py-3">
+                            <p className="font-black text-slate-900 dark:text-white text-sm">{a.employeeName}</p>
+                            {a.registeredByName && <p className="text-[9px] text-slate-400 dark:text-white/25 mt-0.5">por {a.registeredByName}</p>}
+                          </td>
+                          <td className="px-5 py-3 text-center"><span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase border ${a.currency==='USD'?'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20':'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-100 dark:border-sky-500/20'}`}>{a.currency}</span></td>
+                          <td className="px-5 py-3 text-right font-black text-emerald-600 dark:text-emerald-400">+{a.currency==='USD'?'$':'Bs '}{fmtHR(a.amount)}</td>
+                          <td className="px-5 py-3 text-right text-[10px] font-mono text-slate-400 dark:text-white/30">{a.rateUsed?`Bs ${fmtHR(a.rateUsed)}`:'—'}</td>
+                          <td className="px-5 py-3 text-right font-black text-slate-700 dark:text-slate-300">${fmtHR(equivUSD)}</td>
+                          <td className="px-5 py-3 text-slate-400 dark:text-white/40 italic text-xs">{a.concept}</td>
+                          <td className="px-5 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${a.status==='PENDIENTE'?'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30':'bg-slate-50 dark:bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-100 dark:border-slate-500/30'}`}>{a.status}</span>
+                              {a.status==='PENDIENTE'&&(
+                                <button onClick={()=>handleDeleteAbono(a)}
+                                  className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition-all" title="Eliminar abono">
+                                  <Trash2 size={11}/>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );});
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Abonos Pagination */}
+              {(()=>{
+                const filtered = qa.empId ? visibleAbonos.filter(a=>a.employeeId===qa.empId) : visibleAbonos;
+                return filtered.length > ABONOS_PER_PAGE ? (
+                  <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 dark:border-white/[0.06]">
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-white/30">
+                      {(abonosPage-1)*ABONOS_PER_PAGE+1}–{Math.min(abonosPage*ABONOS_PER_PAGE, filtered.length)} de {filtered.length}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      {Array.from({length: Math.ceil(filtered.length / ABONOS_PER_PAGE)}, (_,i) => i+1).map(p => (
+                        <button key={p} onClick={() => setAbonosPage(p)}
+                          className={`min-w-[28px] h-7 px-1.5 rounded-lg text-[10px] font-black transition-all ${
+                            p === abonosPage
+                              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                              : 'text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
+                          }`}>
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
 
               {/* ── TIME ENTRIES (Horas Extras / Ausencias / Días Faltantes) ── */}
               <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-t border-slate-100 dark:border-white/[0.06]">
