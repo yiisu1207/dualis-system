@@ -1765,10 +1765,13 @@ export default function RecursosHumanos() {
           {/* ── VOUCHERS ──────────────────────────────────────────────────── */}
           {activeTab==='vouchers' && (
             <>
-              <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.06]">
+              {/* VALES section — indigo accent */}
+              <div className="border-l-4 border-l-indigo-500 dark:border-l-indigo-400">
+              <div className="px-5 py-4 bg-indigo-50/30 dark:bg-indigo-500/[0.03] border-b border-slate-100 dark:border-white/[0.06]">
                 <div className="flex items-center gap-2 mb-4">
                   <Ticket size={18} className="text-indigo-500"/>
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Control de Vales</h3>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 font-black uppercase">Aumenta deuda</span>
                   {currentRate>0&&<span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase rounded-full border border-indigo-100 dark:border-indigo-500/25">Tasa: Bs {fmtHR(currentRate)}</span>}
                   <button
                     onClick={()=>setAuditOpen(true)}
@@ -1991,12 +1994,18 @@ export default function RecursosHumanos() {
                 </div>
               )}
 
-              {/* ── ABONOS (L) ── */}
-              <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-t border-slate-100 dark:border-white/[0.06]">
+              </div>{/* end vales indigo accent wrapper */}
+
+              {/* Spacer between sections */}
+              <div className="h-3 bg-slate-100/50 dark:bg-white/[0.02]"/>
+
+              {/* ── ABONOS (L) ── emerald accent */}
+              <div className="border-l-4 border-l-emerald-500 dark:border-l-emerald-400">
+              <div className="px-5 py-4 bg-emerald-50/30 dark:bg-emerald-500/[0.03] border-t border-slate-100 dark:border-white/[0.06]">
                 <div className="flex items-center gap-2 mb-3">
                   <ArrowLeftRight size={16} className="text-emerald-500"/>
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Abonos a Cuenta</h3>
-                  <span className="text-[9px] text-slate-400 dark:text-white/30 font-normal">Pagos del empleado que reducen su saldo de vales</span>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 font-black uppercase">Reduce deuda</span>
                 </div>
                 {/* Hint banner */}
                 <div className="flex items-start gap-3 p-3 mb-3 bg-emerald-50 dark:bg-emerald-500/[0.08] border border-emerald-200 dark:border-emerald-500/25 rounded-xl">
@@ -2235,6 +2244,8 @@ export default function RecursosHumanos() {
                   )}
                 </>;
               })()}
+
+              </div>{/* end abonos emerald accent wrapper */}
 
               {/* ── TIME ENTRIES (Horas Extras / Ausencias / Días Faltantes) ── */}
               <div className="px-5 py-4 bg-slate-50/50 dark:bg-white/[0.02] border-t border-slate-100 dark:border-white/[0.06]">
