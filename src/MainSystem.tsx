@@ -536,10 +536,10 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     return () => window.removeEventListener('keydown', onKey);
   }, [NAV_SHORTCUTS, goTab]);
 
-  // ── Fase A.7: Leer timeout de sesión desde businessConfigs ──────────────────
+  // ── Fase A.7: Leer timeout de sesión desde businessConfigs (one-time read) ──
   useEffect(() => {
     if (!businessId) return;
-    const unsub = onSnapshot(doc(db, 'businessConfigs', businessId), (snap) => {
+    getDoc(doc(db, 'businessConfigs', businessId)).then((snap) => {
       touchSync();
       if (!snap.exists()) return;
       const data = snap.data() as any;
@@ -547,14 +547,12 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       if (typeof raw === 'number' && raw >= 0) {
         setSessionTimeoutMinutes(raw);
       }
-      // Fase D.0 — config de quórum de aprobación (default seguro si no existe)
       const cfg = data?.approvalConfig;
       if (cfg && typeof cfg === 'object') {
         setApprovalConfig({ ...DEFAULT_APPROVAL_CONFIG, ...cfg });
       } else {
         setApprovalConfig(DEFAULT_APPROVAL_CONFIG);
       }
-      // Atajos de navegación personalizados
       const ns = data?.navShortcuts;
       if (ns && typeof ns === 'object') {
         const clean: Record<string, string> = {};
@@ -566,8 +564,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       } else {
         setNavShortcutOverrides({});
       }
-    }, () => { /* ignore */ });
-    return () => unsub();
+    }).catch(() => {});
   }, [businessId]);
 
   // ── Fase A.7: Auto-lock por inactividad ──────────────────────────────────────

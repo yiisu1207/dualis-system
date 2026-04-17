@@ -259,20 +259,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [authState.userProfile?.country, authState.userProfile?.language]);
 
-  // Listen to businessConfigs for isolation mode — global real-time sync for all users
+  // Load businessConfigs for isolation mode — one-time read to save quota
   useEffect(() => {
     const businessId = authState.userProfile?.businessId;
     if (!businessId) return;
-    const unsub = onSnapshot(doc(db, 'businessConfigs', businessId), snap => {
+    getDoc(doc(db, 'businessConfigs', businessId)).then(snap => {
       if (snap.exists()) {
         const personalBooks = snap.data()?.features?.personalBooks;
         const mode: 'individual' | 'shared' = personalBooks ? 'individual' : 'shared';
         setIsolationMode(mode);
-        // Keep localStorage in sync for backward compat
         localStorage.setItem('operation_isolation_mode', mode);
       }
-    }, () => {});
-    return () => unsub();
+    }).catch(() => {});
   }, [authState.userProfile?.businessId]);
 
   return (

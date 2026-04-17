@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from './AuthContext';
 import { backfillMissingRatesUpTo } from '../utils/rateBackfill';
@@ -118,7 +118,8 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setLoading(true);
     const docRef = doc(db, 'businessConfigs', businessId);
 
-    const unsub = onSnapshot(docRef, (docSnap) => {
+    // One-time read instead of onSnapshot — reduces Firestore reads drastically
+    getDoc(docRef).then(async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         const currentBCV = Number(data.tasaBCV || 36.5);
@@ -138,7 +139,6 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (Array.isArray(data.customRates)) {
           setCustomRates(data.customRates);
         } else if (grupoVal > 0) {
-          // Migración automática: construir array desde campos legacy
           const migrated: CustomRate[] = [
             { id: 'GRUPO', name: 'Grupo', value: grupoVal, enabled: true },
             { id: 'DIVISA', name: 'Divisa', value: divisaVal, enabled: true },
@@ -148,81 +148,40 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         setZoherEnabledState(!!data.zoherEnabled);
 
-        // AUTO-UPDATE: una sola vez por día, fuera del callback del snapshot
-        // para no generar loops de actualización.
+        // AUTO-UPDATE: una sola vez por día
         const today = new Date().toISOString().split('T')[0];
         if (!lastUpd.startsWith(today) && autoUpdateAttemptedForDayRef.current !== today) {
           autoUpdateAttemptedForDayRef.current = today;
-          // Stale por defecto hasta que el fetch responda
           setUsingStaleRate(true);
-          // Dispatch async sin bloquear el callback
-          void (async () => {
-            const freshRate = await fetchBCVRate();
-            if (freshRate && Math.abs(freshRate - currentBCV) > 0.0001) {
-              try {
-                await setDoc(
-                  doc(db, 'businessConfigs', businessId),
-                  { tasaBCV: freshRate, updatedAt: new Date().toISOString() },
-                  { merge: true },
-                );
-                setUsingStaleRate(false);
-                try {
-                  await backfillMissingRatesUpTo(
-                    businessId,
-                    today,
-                    freshRate,
-                    'auto-fetch',
-                    { uid: 'system', displayName: 'Auto-fetch BCV' },
-                  );
-                } catch (bfErr) {
-                  // eslint-disable-next-line no-console
-                  console.error('[RatesContext] Backfill post-fetch falló:', bfErr);
-                }
-              } catch (e) {
-                // eslint-disable-next-line no-console
-                console.error('[RatesContext] No se pudo guardar la tasa fresca:', e);
-              }
-            } else if (freshRate) {
-              // Misma tasa — ya estamos al día, pero marcar la fecha
-              try {
-                await setDoc(
-                  doc(db, 'businessConfigs', businessId),
-                  { updatedAt: new Date().toISOString() },
-                  { merge: true },
-                );
-                setUsingStaleRate(false);
-                try {
-                  await backfillMissingRatesUpTo(
-                    businessId,
-                    today,
-                    freshRate,
-                    'auto-fetch',
-                    { uid: 'system', displayName: 'Auto-fetch BCV' },
-                  );
-                } catch (bfErr) {
-                  // eslint-disable-next-line no-console
-                  console.error('[RatesContext] Backfill post-fetch (misma tasa) falló:', bfErr);
-                }
-              } catch {}
-            }
-            // Si freshRate es null, usingStaleRate queda true
-          })();
+          const freshRate = await fetchBCVRate();
+          if (freshRate && Math.abs(freshRate - currentBCV) > 0.0001) {
+            try {
+              await setDoc(docRef, { tasaBCV: freshRate, updatedAt: new Date().toISOString() }, { merge: true });
+              setRates(r => ({ ...r, tasaBCV: freshRate, lastUpdated: new Date().toISOString() }));
+              setUsingStaleRate(false);
+              try { await backfillMissingRatesUpTo(businessId, today, freshRate, 'auto-fetch', { uid: 'system', displayName: 'Auto-fetch BCV' }); }
+              catch (bfErr) { console.error('[RatesContext] Backfill falló:', bfErr); }
+            } catch (e) { console.error('[RatesContext] No se pudo guardar tasa:', e); }
+          } else if (freshRate) {
+            try {
+              await setDoc(docRef, { updatedAt: new Date().toISOString() }, { merge: true });
+              setUsingStaleRate(false);
+              try { await backfillMissingRatesUpTo(businessId, today, freshRate, 'auto-fetch', { uid: 'system', displayName: 'Auto-fetch BCV' }); }
+              catch (bfErr) { console.error('[RatesContext] Backfill falló:', bfErr); }
+            } catch {}
+          }
         } else if (lastUpd.startsWith(today)) {
           setUsingStaleRate(false);
         }
       } else {
-        // Doc doesn't exist yet — start with BCV only, no custom rates
         setRates({ tasaBCV: 36.5, tasaGrupo: 0, tasaDivisa: 0, lastUpdated: new Date().toISOString() });
         setCustomRates([]);
       }
       setLoading(false);
-    }, (error) => {
-      // eslint-disable-next-line no-console
-      console.error('Error listening to rates:', error);
+    }).catch((error) => {
+      console.error('Error loading rates:', error);
       setLoading(false);
     });
-
-    return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessId]);
 
