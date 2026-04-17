@@ -918,12 +918,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       const pendingDocRef = doc(db, `businesses/${businessId}/pendingMovements`, pendingId);
       const nowIso = new Date().toISOString();
 
-      // Verificar capability antes del transaction (no cambia entre reads)
-      const capCheck = canApprovePending(
-        { createdBy: '', approvals: [], status: 'pending' } as any,
-        { uid, role: user?.role },
-        (cap) => canCapability(cap as any)
-      );
+      // Firestore rechaza undefined dentro de arrays/objetos — construir la firma sin el campo si no hay nota
+      const mySignature: Record<string, any> = { userId: uid, userName: user?.name || '', at: nowIso };
+      if (note && note.trim()) mySignature.note = note.trim();
 
       // runTransaction garantiza lectura atómica — si otro click ya escribió,
       // el transaction reintenta con datos frescos y detecta la firma duplicada
@@ -936,15 +933,11 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
         if (pending.status !== 'pending') return { ok: false, msg: 'Esta solicitud ya fue procesada' } as const;
         if (pending.approvals.some((a: any) => a.userId === uid)) return { ok: false, msg: 'Ya firmaste esta solicitud' } as const;
 
-        // Validar que no es el creador intentando firmar dos veces
-        if (pending.createdBy === uid && pending.approvals.some((a: any) => a.userId === uid)) {
-          return { ok: false, msg: 'Ya firmaste como creador' } as const;
-        }
+        // Validar capability con datos frescos
+        const check = canApprovePending(pending, { uid, role: user?.role }, (cap) => canCapability(cap as any));
+        if (!check.allowed) return { ok: false, msg: `No se puede aprobar: ${check.reason}` } as const;
 
-        const newApprovals = [
-          ...(pending.approvals || []),
-          { userId: uid, userName: user?.name || '', at: nowIso, note },
-        ];
+        const newApprovals = [...(pending.approvals || []), mySignature];
         const quorumReached = newApprovals.length >= (pending.quorumRequired || 2);
 
         if (quorumReached) {
@@ -966,21 +959,29 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       }
 
       if (result.quorumReached) {
-        // Commit al ledger FUERA del transaction (addDoc no es transaccional)
-        const committedId = await commitMovement((result as any).draft, {
-          approvalFlowId: pendingId,
-          approvedBy: result.newApprovals.map((a: any) => a.userId),
-        });
-        // Guardar el ID del movimiento commiteado
-        await updateDoc(doc(db, `businesses/${businessId}/pendingMovements`, pendingId), {
-          committedMovementId: committedId,
-        });
-        logAudit(businessId, uid, 'APROBAR', 'MOV_PENDIENTE', `quórum alcanzado → ${committedId}`);
-        toast.success('Movimiento aprobado y registrado en el libro');
+        try {
+          // Commit al ledger FUERA del transaction (addDoc no es transaccional)
+          const committedId = await commitMovement((result as any).draft, {
+            approvalFlowId: pendingId,
+            approvedBy: result.newApprovals.map((a: any) => a.userId),
+          });
+          // Guardar el ID del movimiento commiteado
+          await updateDoc(doc(db, `businesses/${businessId}/pendingMovements`, pendingId), {
+            committedMovementId: committedId,
+          });
+          logAudit(businessId, uid, 'APROBAR', 'MOV_PENDIENTE', `quórum alcanzado → ${committedId}`);
+          toast.success('Movimiento aprobado y registrado en el libro');
+        } catch (err) {
+          console.error('[approvePendingMovement] commitMovement failed after quorum', err);
+          toast.error('Quórum alcanzado pero hubo un error al registrar el movimiento en el libro');
+        }
       } else {
         logAudit(businessId, uid, 'FIRMAR', 'MOV_PENDIENTE', `${result.newApprovals.length}/${result.quorum}`);
         toast.success(`Firma registrada (${result.newApprovals.length}/${result.quorum})`);
       }
+    } catch (err) {
+      console.error('[approvePendingMovement] transaction failed', err);
+      toast.error(`Error al aprobar: ${(err as Error)?.message || 'desconocido'}`);
     } finally {
       approvalLocks.current.delete(pendingId);
     }
