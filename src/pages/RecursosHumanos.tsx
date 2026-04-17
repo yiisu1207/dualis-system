@@ -86,8 +86,9 @@ interface TimeEntry {
 interface Abono {
   id: string; employeeId: string; employeeName: string;
   amount: number; currency: 'USD'|'BS'; amountUSD: number; rateUsed?: number;
-  concept: string; date: string; status: 'PENDIENTE'|'APLICADO';
+  concept: string; date: string; status: 'PENDIENTE'|'APLICADO'|'CORREGIDO';
   registeredBy?: string; registeredByName?: string; createdAt: any;
+  correctedFrom?: string; originalAmount?: number; correctionNote?: string;
 }
 interface Bonus {
   id: string;
@@ -647,6 +648,7 @@ export default function RecursosHumanos() {
   const [abonos, setAbonos] = useState<Abono[]>([]);
   const [qa, setQa] = useState({ empId:'', date: new Date().toISOString().slice(0,10), amount:'', currency:'USD' as 'USD'|'BS', concept:'Abono en efectivo' });
   const [savingAbono, setSavingAbono] = useState(false);
+  const [correctingAbono, setCorrectingAbono] = useState<{a:Abono; newAmt:string; newDate:string; newCurrency:'USD'|'BS'; note:string}|null>(null);
 
   // Pagination for vouchers table
   const VALES_PER_PAGE = 10;
@@ -1450,6 +1452,45 @@ export default function RecursosHumanos() {
     },
   });
 
+  // Correct abono (mirrors handleCorrectVoucher)
+  const handleCorrectAbono = async () => {
+    if (!correctingAbono || !bid) return;
+    const { a, newAmt, newDate, newCurrency, note } = correctingAbono;
+    const newAmount = Number(newAmt);
+    if (!newAmount || newAmount <= 0) return;
+    setSavingAbono(true);
+    try {
+      // Mark original as CORREGIDO
+      await updateDoc(doc(db, `businesses/${bid}/abonos`, a.id), {
+        status: 'CORREGIDO', correctedAt: serverTimestamp(),
+        correctionNote: note, correctedToAmount: newAmount,
+      });
+      // Create corrected abono
+      const emp = employees.find(x => x.id === a.employeeId);
+      const isBcvEmp = emp?.paymentCurrency === 'BS';
+      const corrDate = newDate || a.date || new Date().toISOString().slice(0, 10);
+      const rateForDate = newCurrency === 'BS'
+        ? (isBcvEmp ? getBcvRateForDate(corrDate) : getRateForDate(corrDate))
+        : 0;
+      const newAmountUSD = newCurrency === 'USD' ? newAmount : (rateForDate > 0 ? newAmount / rateForDate : 0);
+      await addDoc(collection(db, `businesses/${bid}/abonos`), {
+        employeeId: a.employeeId, employeeName: a.employeeName,
+        amount: newAmount, currency: newCurrency,
+        amountUSD: newAmountUSD,
+        ...(newCurrency === 'BS' && rateForDate > 0 ? { rateUsed: rateForDate } : {}),
+        concept: a.concept, status: 'PENDIENTE',
+        correctedFrom: a.id, originalAmount: a.amount, correctionNote: note,
+        date: newDate || a.date,
+        registeredBy: userProfile?.uid || '',
+        registeredByName: userProfile?.fullName || userProfile?.email || 'Usuario',
+        createdAt: serverTimestamp(),
+      });
+      toast.success(`Abono corregido: ${a.currency === 'USD' ? '$' : 'Bs '}${fmtHR(a.amount)} → ${newCurrency === 'USD' ? '$' : 'Bs '}${fmtHR(newAmount)}`);
+      setCorrectingAbono(null);
+    } catch { toast.error('Error al corregir el abono'); }
+    finally { setSavingAbono(false); }
+  };
+
   const handleDeleteEmployee = (emp:Employee) => setConfirm({
     msg:`¿Eliminar a ${emp.fullName}?`, detail:'Esta acción no se puede deshacer.',
     onConfirm:async()=>{
@@ -2079,57 +2120,120 @@ export default function RecursosHumanos() {
                           return rate > 0 ? a.amount / rate : (a.amountUSD||0);
                         })();
                         return (
-                        <tr key={a.id} className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${a.status==='APLICADO'?'opacity-50':''}`}>
+                        <React.Fragment key={a.id}>
+                        <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors ${a.status==='CORREGIDO'?'opacity-50':a.status==='APLICADO'?'opacity-50':''}`}>
                           <td className="px-5 py-3 font-mono text-[10px] text-slate-400 dark:text-white/30">{a.date || (a.createdAt?.toDate ? a.createdAt.toDate().toLocaleDateString('es-VE') : '—')}</td>
                           <td className="px-5 py-3">
-                            <p className="font-black text-slate-900 dark:text-white text-sm">{a.employeeName}</p>
+                            <p className="font-black text-slate-900 dark:text-white text-sm flex items-center gap-1.5 flex-wrap">
+                              {a.employeeName}
+                              {a.correctedFrom&&<span className="text-[8px] bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-black uppercase">Corrección</span>}
+                            </p>
                             {a.registeredByName && <p className="text-[9px] text-slate-400 dark:text-white/25 mt-0.5">por {a.registeredByName}</p>}
                           </td>
                           <td className="px-5 py-3 text-center"><span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase border ${a.currency==='USD'?'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20':'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-100 dark:border-sky-500/20'}`}>{a.currency}</span></td>
-                          <td className="px-5 py-3 text-right font-black text-emerald-600 dark:text-emerald-400">+{a.currency==='USD'?'$':'Bs '}{fmtHR(a.amount)}</td>
+                          <td className="px-5 py-3 text-right font-black text-emerald-600 dark:text-emerald-400">
+                            {a.correctedFrom&&a.originalAmount!=null&&<span className="text-[9px] text-slate-400 dark:text-white/25 line-through mr-1">{a.currency==='USD'?'$':'Bs '}{fmtHR(a.originalAmount)}</span>}
+                            +{a.currency==='USD'?'$':'Bs '}{fmtHR(a.amount)}
+                          </td>
                           <td className="px-5 py-3 text-right text-[10px] font-mono text-slate-400 dark:text-white/30">{a.rateUsed?`Bs ${fmtHR(a.rateUsed)}`:'—'}</td>
                           <td className="px-5 py-3 text-right font-black text-slate-700 dark:text-slate-300">${fmtHR(equivUSD)}</td>
-                          <td className="px-5 py-3 text-slate-400 dark:text-white/40 italic text-xs">{a.concept}</td>
+                          <td className="px-5 py-3 text-slate-400 dark:text-white/40 italic text-xs">{a.concept}{a.correctionNote&&<span className="block text-[9px] text-amber-500 not-italic">{a.correctionNote}</span>}</td>
                           <td className="px-5 py-3 text-right">
                             <div className="flex items-center justify-end gap-1.5">
-                              <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${a.status==='PENDIENTE'?'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30':'bg-slate-50 dark:bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-100 dark:border-slate-500/30'}`}>{a.status}</span>
+                              <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${a.status==='PENDIENTE'?'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/30':a.status==='CORREGIDO'?'bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/30':'bg-slate-50 dark:bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-100 dark:border-slate-500/30'}`}>{a.status}</span>
                               {a.status==='PENDIENTE'&&(
+                                <>
+                                <button onClick={()=>setCorrectingAbono({a, newAmt:String(a.amount), newDate: a.date||new Date().toISOString().slice(0,10), newCurrency: a.currency, note:''})}
+                                  className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-100 transition-all" title="Corregir abono">
+                                  <Pencil size={11}/>
+                                </button>
                                 <button onClick={()=>handleDeleteAbono(a)}
                                   className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition-all" title="Eliminar abono">
                                   <Trash2 size={11}/>
                                 </button>
+                                </>
                               )}
                             </div>
                           </td>
                         </tr>
+                        {/* Inline correction form */}
+                        {correctingAbono?.a.id===a.id&&(
+                          <tr>
+                            <td colSpan={8} className="px-5 py-3 bg-amber-50 dark:bg-amber-500/[0.06] border-l-4 border-amber-400">
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                                <div className="flex items-center gap-1.5 text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest shrink-0">
+                                  <RotateCcw size={11}/> Corrección: {a.currency==='USD'?'$':'Bs '}{fmtHR(a.amount)}
+                                  <ChevronRight size={11}/>
+                                </div>
+                                <input type="number" step="0.01" min="0.01" placeholder="Nuevo monto"
+                                  value={correctingAbono.newAmt} onChange={e=>setCorrectingAbono(c=>c?{...c,newAmt:e.target.value}:null)}
+                                  className="px-3 py-1.5 text-xs font-black bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500 w-28"/>
+                                <input type="date" value={correctingAbono.newDate}
+                                  onChange={e=>setCorrectingAbono(c=>c?{...c,newDate:e.target.value}:null)}
+                                  className="px-3 py-1.5 text-xs bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500 w-36"/>
+                                <select value={correctingAbono.newCurrency}
+                                  onChange={e=>setCorrectingAbono(c=>c?{...c,newCurrency:e.target.value as 'USD'|'BS'}:null)}
+                                  className="px-3 py-1.5 text-xs bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500">
+                                  <option value="USD">USD</option><option value="BS">Bs</option>
+                                </select>
+                                <input placeholder="Motivo (opcional)"
+                                  value={correctingAbono.note} onChange={e=>setCorrectingAbono(c=>c?{...c,note:e.target.value}:null)}
+                                  className="px-3 py-1.5 text-xs bg-white dark:bg-white/[0.08] border border-amber-300 dark:border-amber-500/30 rounded-lg dark:text-white outline-none focus:ring-2 focus:ring-amber-500 flex-1 min-w-0"/>
+                                <div className="flex gap-1.5 shrink-0">
+                                  <button onClick={handleCorrectAbono} disabled={savingAbono}
+                                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-black text-[10px] uppercase tracking-widest disabled:opacity-50 flex items-center gap-1">
+                                    {savingAbono?<Loader2 size={11} className="animate-spin"/>:<Save size={11}/>} Guardar
+                                  </button>
+                                  <button onClick={()=>setCorrectingAbono(null)} className="px-3 py-1.5 border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 rounded-lg font-black text-[10px] uppercase hover:bg-slate-50 dark:hover:bg-white/[0.04]">
+                                    <X size={11}/>
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       );});
                     })()}
                   </tbody>
                 </table>
               </div>
 
-              {/* Abonos Pagination */}
+              {/* Abonos totals + Pagination */}
               {(()=>{
                 const filtered = qa.empId ? visibleAbonos.filter(a=>a.employeeId===qa.empId) : visibleAbonos;
-                return filtered.length > ABONOS_PER_PAGE ? (
-                  <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 dark:border-white/[0.06]">
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-white/30">
-                      {(abonosPage-1)*ABONOS_PER_PAGE+1}–{Math.min(abonosPage*ABONOS_PER_PAGE, filtered.length)} de {filtered.length}
-                    </p>
-                    <div className="flex items-center gap-1">
-                      {Array.from({length: Math.ceil(filtered.length / ABONOS_PER_PAGE)}, (_,i) => i+1).map(p => (
-                        <button key={p} onClick={() => setAbonosPage(p)}
-                          className={`min-w-[28px] h-7 px-1.5 rounded-lg text-[10px] font-black transition-all ${
-                            p === abonosPage
-                              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
-                              : 'text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
-                          }`}>
-                          {p}
-                        </button>
-                      ))}
+                const pending = filtered.filter(a=>a.status==='PENDIENTE');
+                const totalUSD = pending.filter(a=>a.currency==='USD').reduce((s,a)=>s+a.amount,0);
+                const totalBs = pending.filter(a=>a.currency==='BS').reduce((s,a)=>s+a.amount,0);
+                return <>
+                  {pending.length > 0 && (
+                    <div className="flex items-center gap-4 px-5 py-2.5 border-t border-slate-100 dark:border-white/[0.06] bg-emerald-50/50 dark:bg-emerald-500/[0.04]">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Totales pendientes:</span>
+                      {totalUSD > 0 && <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">${fmtHR(totalUSD)} USD</span>}
+                      {totalBs > 0 && <span className="text-xs font-black text-sky-600 dark:text-sky-400">Bs {fmtHR(totalBs)}</span>}
+                      <span className="text-[10px] text-slate-400 dark:text-white/25">({pending.length} abono{pending.length!==1?'s':''})</span>
                     </div>
-                  </div>
-                ) : null;
+                  )}
+                  {filtered.length > ABONOS_PER_PAGE && (
+                    <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 dark:border-white/[0.06]">
+                      <p className="text-[10px] font-bold text-slate-400 dark:text-white/30">
+                        {(abonosPage-1)*ABONOS_PER_PAGE+1}–{Math.min(abonosPage*ABONOS_PER_PAGE, filtered.length)} de {filtered.length}
+                      </p>
+                      <div className="flex items-center gap-1">
+                        {Array.from({length: Math.ceil(filtered.length / ABONOS_PER_PAGE)}, (_,i) => i+1).map(p => (
+                          <button key={p} onClick={() => setAbonosPage(p)}
+                            className={`min-w-[28px] h-7 px-1.5 rounded-lg text-[10px] font-black transition-all ${
+                              p === abonosPage
+                                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                                : 'text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-white/[0.06]'
+                            }`}>
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>;
               })()}
 
               {/* ── TIME ENTRIES (Horas Extras / Ausencias / Días Faltantes) ── */}
