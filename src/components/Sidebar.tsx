@@ -408,7 +408,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Mobile overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[55] lg:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
@@ -421,7 +421,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         onTouchEnd={handleSidebarTouchEnd}
         style={swipeX < 0 ? { transform: `translateX(${swipeX}px)`, transition: swiping.current ? 'none' : undefined } : undefined}
         className={`
-          fixed lg:static top-0 left-0 h-full z-50 flex flex-col overflow-hidden
+          fixed lg:static top-0 left-0 h-full z-[56] lg:z-auto flex flex-col overflow-hidden
           transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]
           lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
           w-[280px] sm:w-[260px] ${collapsed ? 'lg:w-[72px]' : 'lg:w-[230px]'}
