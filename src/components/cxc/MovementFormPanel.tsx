@@ -220,20 +220,45 @@ export function MovementFormPanel({
     [entities, entityId]
   );
 
-  // Saldo pendiente del cliente/proveedor seleccionado, calculado en USD
-  // (incluye solo movimientos no anulados de esta entidad).
-  const entityBalanceUSD = useMemo(() => {
-    if (!entityId || !movements?.length) return 0;
-    let bal = 0;
+  // Saldo pendiente desglosado por cuenta (BCV + cada custom rate).
+  // Cada cuenta tiene su propia tasa actual, así que el equivalente Bs
+  // se calcula por separado.
+  const entityBalanceByAccount = useMemo(() => {
+    if (!entityId || !movements?.length) return [] as { account: string; label: string; color: string; usd: number; rate: number }[];
+    const balances = new Map<string, number>();
     for (const m of movements) {
       if (m.entityId !== entityId) continue;
       if ((m as any).anulada) continue;
+      const acc = (m.accountType as string) || 'BCV';
       const usd = getMovementUsdAmount(m, rates);
-      if (m.movementType === 'FACTURA') bal += usd;
-      else if (m.movementType === 'ABONO') bal -= usd;
+      const delta = m.movementType === 'FACTURA' ? usd : (m.movementType === 'ABONO' ? -usd : 0);
+      balances.set(acc, (balances.get(acc) || 0) + delta);
     }
-    return bal;
-  }, [entityId, movements, rates]);
+    const labelFor = (id: string) => {
+      if (id === 'BCV') return 'BCV';
+      const cr = customRates.find(r => r.id === id);
+      return cr?.name || id;
+    };
+    const colorFor = (id: string, idx: number) => {
+      if (id === 'BCV') return 'indigo';
+      return resolveAccountColor(id, customRates, idx);
+    };
+    return Array.from(balances.entries())
+      .filter(([, v]) => Math.abs(v) > 0.005)
+      .map(([account, usd], idx) => ({
+        account,
+        label: labelFor(account),
+        color: colorFor(account, idx),
+        usd,
+        rate: resolveRateForAccount(account, bcvRate, customRates),
+      }))
+      .sort((a, b) => Math.abs(b.usd) - Math.abs(a.usd));
+  }, [entityId, movements, rates, bcvRate, customRates]);
+
+  const entityTotalUSD = useMemo(
+    () => entityBalanceByAccount.reduce((s, b) => s + b.usd, 0),
+    [entityBalanceByAccount]
+  );
 
   const parsedAmountPreview = parseFloat(amount) || 0;
   const parsedRatePreview = parseFloat(rateUsed) || 0;
@@ -464,36 +489,53 @@ export function MovementFormPanel({
             )}
           </div>
 
-          {/* Saldo pendiente de la entidad seleccionada */}
-          {selectedEntity && (
-            <div className={`rounded-xl px-4 py-3 border flex items-center gap-3 ${
-              entityBalanceUSD > 0.01
-                ? 'bg-rose-500/[0.06] border-rose-500/20'
-                : entityBalanceUSD < -0.01
-                  ? 'bg-emerald-500/[0.06] border-emerald-500/20'
-                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.06]'
-            }`}>
-              <Wallet size={15} className={
-                entityBalanceUSD > 0.01 ? 'text-rose-400' : entityBalanceUSD < -0.01 ? 'text-emerald-400' : 'text-slate-400'
-              }/>
-              <div className="flex-1 min-w-0">
+          {/* Saldo pendiente desglosado por cuenta (cada una con su tasa) */}
+          {selectedEntity && entityBalanceByAccount.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">
-                  {entityBalanceUSD > 0.01
-                    ? (mode === 'cxc' ? 'Saldo deudor (te debe)' : 'Saldo deudor (le debes)')
-                    : entityBalanceUSD < -0.01
-                      ? (mode === 'cxc' ? 'Saldo a favor del cliente' : 'Saldo a favor del proveedor')
-                      : 'Saldo en cero'}
+                  {entityTotalUSD > 0.01
+                    ? (mode === 'cxc' ? 'Saldo deudor por cuenta (te debe)' : 'Saldo deudor por cuenta (le debes)')
+                    : entityTotalUSD < -0.01
+                      ? (mode === 'cxc' ? 'Saldo a favor por cuenta' : 'Saldo a favor por cuenta')
+                      : 'Saldos por cuenta'}
                 </p>
-                <p className={`text-base font-black tabular-nums ${
-                  entityBalanceUSD > 0.01 ? 'text-rose-400' : entityBalanceUSD < -0.01 ? 'text-emerald-400' : 'text-slate-700 dark:text-white/70'
+                <p className={`text-[10px] font-black tabular-nums ${
+                  entityTotalUSD > 0.01 ? 'text-rose-400' : entityTotalUSD < -0.01 ? 'text-emerald-400' : 'text-slate-400'
                 }`}>
-                  {fmtUSD(Math.abs(entityBalanceUSD))}
-                  {parsedRatePreview > 0 && Math.abs(entityBalanceUSD) > 0.01 && (
-                    <span className="ml-2 text-[10px] font-bold text-slate-400 dark:text-white/30">
-                      ≈ {fmtBS(Math.abs(entityBalanceUSD) * parsedRatePreview)}
-                    </span>
-                  )}
+                  TOTAL: {fmtUSD(Math.abs(entityTotalUSD))}
                 </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {entityBalanceByAccount.map(b => {
+                  const positive = b.usd > 0.01;
+                  const negative = b.usd < -0.01;
+                  const accentBorder = positive
+                    ? 'border-rose-500/30 bg-rose-500/[0.06]'
+                    : negative
+                      ? 'border-emerald-500/30 bg-emerald-500/[0.06]'
+                      : 'border-slate-200 dark:border-white/[0.08] bg-slate-100 dark:bg-white/[0.04]';
+                  const usdColor = positive ? 'text-rose-400' : negative ? 'text-emerald-400' : 'text-slate-400';
+                  return (
+                    <div key={b.account} className={`rounded-xl border px-3 py-2.5 ${accentBorder}`}>
+                      <div className="flex items-center gap-2">
+                        <Wallet size={12} className={usdColor} />
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${usdColor}`}>{b.label}</span>
+                        <span className="ml-auto text-[8px] font-bold text-slate-400 dark:text-white/30 tabular-nums">
+                          @ {b.rate > 0 ? `Bs ${b.rate.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : '—'}
+                        </span>
+                      </div>
+                      <p className={`mt-1 text-sm font-black tabular-nums ${usdColor}`}>
+                        {fmtUSD(Math.abs(b.usd))}
+                      </p>
+                      {b.rate > 0 && (
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 tabular-nums">
+                          ≈ {fmtBS(Math.abs(b.usd) * b.rate)}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
