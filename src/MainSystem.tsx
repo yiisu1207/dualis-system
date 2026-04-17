@@ -1293,6 +1293,18 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               cobranza: countPendingReminders(calculateReminders(movements, customers)),
               inventario: inventoryItems.filter(p => { const s = (p as any).stock ?? (p as any).quantity ?? 0; return s < ((p as any).minStock ?? 10); }).length,
               despacho: movements.filter((m: any) => m.esNotaEntrega && m.estadoNDE === 'pendiente_despacho' && !m.anulada).length,
+              clientes: pendingMovementsList.filter(p =>
+                p.status === 'pending' &&
+                !(p.movementDraft as any)?.isSupplierMovement &&
+                p.createdBy !== uid &&
+                !p.approvals?.some((a: any) => a.userId === uid)
+              ).length,
+              proveedores: pendingMovementsList.filter(p =>
+                p.status === 'pending' &&
+                (p.movementDraft as any)?.isSupplierMovement &&
+                p.createdBy !== uid &&
+                !p.approvals?.some((a: any) => a.userId === uid)
+              ).length,
             }}
             onLogout={() => auth.signOut()}
             onOpenProfile={() => setIsProfileOpen(true)}

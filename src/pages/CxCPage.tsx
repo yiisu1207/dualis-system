@@ -263,6 +263,8 @@ export default function CxCPage({
           selectedId={selectedClient?.id}
           onSelect={setSelectedClient}
           onCreateNew={effectiveCanCreateCustomer ? () => setClientCreatorMode('picker') : undefined}
+          pendingMovements={pendingMovements}
+          currentUserId={currentUserId}
         />
       </div>
 
