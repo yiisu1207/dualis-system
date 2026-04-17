@@ -836,8 +836,14 @@ export default function RecursosHumanos() {
       const carryOverUSD = carryOverVouchers.reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
       const vDedBs  = ev.filter(v=>v.currency==='BS').reduce((s,v)=>s+v.amount,0);
       // Subtract abonos from regular voucher deductions (not carry-overs)
+      // Recalculate BS abonos at current rate (stored amountUSD may be stale)
+      const isBcvEmpAbono = emp.paymentCurrency === 'BS';
       const empAbonosUSD = abonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
-        .reduce((s,a)=>s+(a.currency==='USD'? Number(a.amount)||0 : Number(a.amountUSD)||0),0);
+        .reduce((s,a)=>{
+          if (a.currency==='USD') return s + (Number(a.amount)||0);
+          const rate = isBcvEmpAbono ? getBcvRateForDate(a.date||'') : getRateForDate(a.date||'');
+          return s + (rate > 0 ? (Number(a.amount)||0) / rate : (Number(a.amountUSD)||0));
+        },0);
       const netVDedUSD = Math.max(0, regularVDedUSD - empAbonosUSD);
       const div = FREQ_DIV[emp.payFrequency] || 1;
       const periodSalUSD = (emp.salaryUSD||0) / div;
@@ -910,7 +916,7 @@ export default function RecursosHumanos() {
         bonusTotalUSD, netSalaryUSD, netBonusUSD, dedBonusUSD, bonusDetails,
       };
     });
-  },[employees,currentPeriodVouchers,abonos,activeLoans,allPendingTimeEntries,freqFilter,currentRate,bonuses]);
+  },[employees,currentPeriodVouchers,abonos,activeLoans,allPendingTimeEntries,freqFilter,currentRate,bonuses,getRateForDate,getBcvRateForDate]);
 
   const nominaTotals = useMemo(()=>({
     grossUSD:nominaRows.reduce((s,n)=>s+n.grossUSD,0),
@@ -924,11 +930,16 @@ export default function RecursosHumanos() {
     // Only regular vouchers (not carry-overs) cause salary overdraft
     const regularV = currentPeriodVouchers.filter(v=>v.employeeId===emp.id&&!v.isCarryOver)
       .reduce((s,v)=>s+(v.currency==='USD'?v.amount:(v.amountUSD||0)),0);
+    const isBcv = emp.paymentCurrency === 'BS';
     const abonosUSD = abonos.filter(a=>a.employeeId===emp.id&&a.status==='PENDIENTE')
-      .reduce((s,a)=>s+(a.currency==='USD'? Number(a.amount)||0 : Number(a.amountUSD)||0),0);
+      .reduce((s,a)=>{
+        if (a.currency==='USD') return s + (Number(a.amount)||0);
+        const rate = isBcv ? getBcvRateForDate(a.date||'') : getRateForDate(a.date||'');
+        return s + (rate > 0 ? (Number(a.amount)||0) / rate : (Number(a.amountUSD)||0));
+      },0);
     const netVales = Math.max(0, regularV - abonosUSD);
     return emp.salaryUSD>0 && netVales>periodSal(emp,'USD');
-  }),[employees,currentPeriodVouchers,abonos]);
+  }),[employees,currentPeriodVouchers,abonos,getRateForDate,getBcvRateForDate]);
 
   const loansTotal = useMemo(()=>activeLoans.reduce((s,l)=>{
     const remaining = (l.totalInstallments - l.paidInstallments) * l.installmentAmount;
