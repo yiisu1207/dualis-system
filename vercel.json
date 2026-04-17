@@ -9,7 +9,7 @@
   "crons": [
     {
       "path": "/api/cron-bcv",
-      "schedule": "30 14 * * *"
+      "schedule": "0 10 * * *"
     }
   ]
 }

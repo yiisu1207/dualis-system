@@ -1,6 +1,10 @@
 // Vercel Cron Job: /api/cron-bcv
-// Schedule: cada día 14:30 UTC = 10:30 AM America/Caracas (UTC-4)
-// BCV publica sus tasas oficiales ~9-10 AM, a las 10:30 ya están listas.
+// Schedule: cada día 10:00 UTC = 6:00 AM America/Caracas (UTC-4)
+//
+// El BCV publica la tasa oficial entre 4-6 PM del día anterior, y esa tasa
+// entra en vigencia al día siguiente. A las 6 AM las APIs de terceros
+// (ve.dolarapi, pydolarve, dolarapi.com) ya reflejan la tasa vigente HOY,
+// así que cualquier usuario que abra la app en la mañana ya la ve actualizada.
 //
 // Este endpoint reemplaza al scheduled function de Firebase porque el proyecto
 // no está en plan Blaze. Vercel Cron corre server-side sin depender de que
