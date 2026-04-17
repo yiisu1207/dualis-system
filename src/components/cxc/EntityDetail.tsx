@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, User, Phone, MapPin, Hash, Calendar, Shield, Star } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, User, Phone, MapPin, Hash, Calendar, Shield, Star, Clock, CheckCircle2, XCircle, Ban, AlertCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement, PortalAccessToken } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -56,112 +56,204 @@ interface EntityDetailProps {
 
 type Tab = 'resumen' | 'datos' | 'movimientos' | 'pendientes' | 'config';
 
-/* ── Inline approval card for "pendientes" tab ─────────────────────────── */
-const PendingInlineCard: React.FC<{
+/* ── Helpers para panel de aprobaciones inline ────────────────────────── */
+const fmtDateApproval = (iso?: string) => {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+  catch { return iso; }
+};
+const fmtMoney = (n?: number) =>
+  typeof n === 'number' ? `$${n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+
+const STATUS_META: Record<string, { label: string; cls: string; Icon: React.ComponentType<{ className?: string; size?: number }> }> = {
+  pending:   { label: 'Pendiente',  cls: 'bg-amber-500/15 text-amber-300 border-amber-500/40',       Icon: Clock },
+  approved:  { label: 'Aprobado',   cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40', Icon: CheckCircle2 },
+  rejected:  { label: 'Rechazado',  cls: 'bg-rose-500/15 text-rose-300 border-rose-500/40',          Icon: XCircle },
+  cancelled: { label: 'Cancelado',  cls: 'bg-slate-500/15 text-slate-300 border-slate-500/40',       Icon: Ban },
+};
+
+/* ── Card completa de aprobación (portada de AprobacionesPanel) ──────── */
+const PendingFullCard: React.FC<{
   p: PendingMovement;
+  mode: 'inbox' | 'mine' | 'history';
   currentUserId?: string;
   onApprove?: (id: string, note?: string) => Promise<void>;
   onReject?: (id: string, reason: string) => Promise<void>;
   onCancel?: (id: string) => Promise<void>;
-}> = ({ p, currentUserId, onApprove, onReject, onCancel }) => {
+}> = ({ p, mode, currentUserId, onApprove, onReject, onCancel }) => {
+  const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [acted, setActed] = useState(false);
-  const [showReject, setShowReject] = useState(false);
+  const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [approveNote, setApproveNote] = useState('');
+  const [acted, setActed] = useState(false);
 
-  const draft = p.movementDraft || {} as any;
-  const type = String(draft.movementType || '');
-  const amount = Number(draft.amountInUSD || draft.amount || 0);
-  const alreadySigned = p.approvals?.some(a => a.userId === currentUserId);
+  const d = p.movementDraft || {} as any;
+  const alreadySigned = p.approvals?.some((a: any) => a.userId === currentUserId);
   const isCreator = p.createdBy === currentUserId;
-  const isApproved = p.status === 'approved';
-  const isRejected = p.status === 'rejected';
-  const isCancelled = p.status === 'cancelled';
-  const isDone = isApproved || isRejected || isCancelled;
-  const canAct = !isDone && !isCreator && !alreadySigned && !acted && !!onApprove;
+  const canAct = mode === 'inbox' && !isCreator && !alreadySigned && !acted && p.status === 'pending';
+  const meta = STATUS_META[p.status] || STATUS_META.pending;
+  const StatusIcon = meta.Icon;
+  const pct = Math.min(100, Math.round(((p.approvals?.length || 0) / Math.max(1, p.quorumRequired || 2)) * 100));
 
   const handleApprove = async () => {
     if (!onApprove || acted) return;
     setBusy(true); setActed(true);
-    try { await onApprove(p.id); } catch { setActed(false); } finally { setBusy(false); }
+    try { await onApprove(p.id, approveNote.trim() || undefined); }
+    catch { setActed(false); }
+    finally { setBusy(false); setApproveNote(''); }
   };
   const handleReject = async () => {
     if (!onReject || !rejectReason.trim()) return;
     setBusy(true); setActed(true);
-    try { await onReject(p.id, rejectReason.trim()); } catch { setActed(false); } finally { setBusy(false); setShowReject(false); }
+    try { await onReject(p.id, rejectReason.trim()); }
+    catch { setActed(false); }
+    finally { setBusy(false); setShowRejectForm(false); setRejectReason(''); }
   };
   const handleCancel = async () => {
-    if (!onCancel || !window.confirm('¿Cancelar esta solicitud?')) return;
+    if (!onCancel || !window.confirm('¿Cancelar esta solicitud? No se podrá deshacer.')) return;
     setBusy(true); setActed(true);
-    try { await onCancel(p.id); } catch { setActed(false); } finally { setBusy(false); }
+    try { await onCancel(p.id); }
+    catch { setActed(false); }
+    finally { setBusy(false); }
   };
 
-  const statusBadge = isDone ? (
-    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
-      isApproved ? 'bg-emerald-500/20 text-emerald-400' : isRejected ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-500/20 text-slate-400'
-    }`}>{isApproved ? 'Aprobado' : isRejected ? 'Rechazado' : 'Cancelado'}</span>
-  ) : null;
-
   return (
-    <div className={`rounded-xl border p-4 ${isDone ? 'border-white/[0.06] bg-white/[0.01] opacity-60' : 'border-amber-500/30 bg-amber-500/[0.04]'}`}>
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-xl border border-white/10 bg-slate-900/40 dark:bg-white/[0.02] p-4 shadow-sm">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-500">{type}</span>
-            <span className="text-sm font-black text-slate-900 dark:text-white font-mono">${amount.toFixed(2)}</span>
-            {statusBadge}
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${meta.cls}`}>
+              <StatusIcon size={12} /> {meta.label}
+            </span>
+            <span className="text-sm font-black text-slate-900 dark:text-white truncate">
+              {d.concept || 'Movimiento sin concepto'}
+            </span>
           </div>
-          {draft.concept && <p className="text-[11px] font-bold text-slate-500 dark:text-white/40 mt-1 truncate">{draft.concept}</p>}
-          <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 mt-1">
-            Creado por {p.createdByName || 'usuario'} · {new Date(p.createdAt).toLocaleDateString()}
-          </p>
-          {/* Firmas */}
-          {(p.approvals?.length || 0) > 0 && (
-            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-              {p.approvals.map((a, i) => (
-                <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 text-[9px] font-bold">
-                  <ShieldCheck size={10} /> {a.userName || 'Usuario'}
-                </span>
-              ))}
-            </div>
-          )}
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-400 dark:text-white/30 font-bold">
+            <span className="inline-flex items-center gap-1"><User size={11} /> {p.createdByName || p.createdBy}</span>
+            <span className="inline-flex items-center gap-1"><Calendar size={11} /> {fmtDateApproval(p.createdAt)}</span>
+            <span className="font-black text-emerald-400">{fmtMoney(d.amountInUSD)}</span>
+          </div>
         </div>
-        <div className="shrink-0 text-right">
-          <p className="text-[9px] font-black uppercase tracking-widest text-amber-500/60">Progreso</p>
-          <p className="text-sm font-black text-amber-500 font-mono mt-0.5">{p.approvals?.length || 0}/{p.quorumRequired}</p>
-          {/* Progress bar */}
-          <div className="w-16 h-1.5 rounded-full bg-white/[0.06] mt-1.5 overflow-hidden">
-            <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all" style={{ width: `${Math.min(100, ((p.approvals?.length || 0) / (p.quorumRequired || 2)) * 100)}%` }} />
+        <div className="w-36 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10 dark:bg-white/[0.06]">
+              <div className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="text-xs font-black text-slate-300 dark:text-white/50 tabular-nums">{p.approvals?.length || 0}/{p.quorumRequired}</span>
           </div>
+          <p className="text-right text-[9px] text-slate-500 dark:text-white/20 mt-0.5">Validadores: {p.quorumSnapshot?.validatorCount || '—'}</p>
         </div>
       </div>
 
-      {/* Action buttons */}
-      {canAct && !showReject && (
-        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/[0.06]">
-          <button disabled={busy} onClick={handleApprove} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-black text-white hover:bg-emerald-500 disabled:opacity-50 transition-all">
-            <ShieldCheck size={13} /> Aprobar
-          </button>
-          <button disabled={busy} onClick={() => setShowReject(true)} className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 px-3 py-1.5 text-[11px] font-black text-rose-400 hover:bg-rose-500/10 disabled:opacity-50 transition-all">
-            Rechazar
-          </button>
+      {/* Expand toggle */}
+      <button onClick={() => setExpanded(v => !v)} className="mt-2.5 inline-flex items-center gap-1 text-[10px] font-bold text-sky-400 hover:text-sky-300">
+        <FileText size={12} /> {expanded ? 'Ocultar detalles' : 'Ver detalles del movimiento'}
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-3">
+          {/* Draft summary */}
+          <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 dark:border-white/[0.06] bg-black/20 dark:bg-white/[0.02] p-3 text-[11px] text-slate-300 dark:text-white/50 md:grid-cols-4">
+            <div><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Tipo</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.movementType || '—')}</div></div>
+            <div><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Cuenta</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.accountType || '—')}</div></div>
+            <div><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Monto USD</div><div className="font-black text-emerald-400">{fmtMoney(d.amountInUSD)}</div></div>
+            <div><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Fecha</div><div className="font-bold text-slate-200 dark:text-white/70">{d.date || '—'}</div></div>
+            <div className="col-span-2 md:col-span-4"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Concepto</div><div className="font-bold text-slate-200 dark:text-white/70 truncate">{d.concept || '—'}</div></div>
+            {d.reference && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Referencia</div><div className="font-mono text-slate-300 dark:text-white/50">{d.reference}</div></div>}
+            {d.metodoPago && <div className="col-span-2"><div className="text-[9px] uppercase text-slate-500 dark:text-white/20 font-black">Método</div><div className="font-bold text-slate-200 dark:text-white/70">{String(d.metodoPago)}</div></div>}
+          </div>
+
+          {/* Signatures */}
+          {(p.approvals?.length || 0) > 0 && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3 text-[11px]">
+              <div className="mb-1.5 font-black text-emerald-400 text-[10px] uppercase tracking-wider">Firmas ({p.approvals.length}/{p.quorumRequired})</div>
+              <ul className="space-y-1 text-slate-300 dark:text-white/50">
+                {p.approvals.map((a: any, i: number) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
+                    <span className="font-bold">{a.userName || 'Usuario'}</span>
+                    <span className="text-slate-500 dark:text-white/20">— {fmtDateApproval(a.at)}</span>
+                    {a.note && <span className="italic text-slate-400 dark:text-white/30">"{a.note}"</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Rejections */}
+          {(p.rejections?.length || 0) > 0 && (
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.04] p-3 text-[11px]">
+              <div className="mb-1.5 font-black text-rose-400 text-[10px] uppercase tracking-wider">Rechazos</div>
+              <ul className="space-y-1 text-slate-300 dark:text-white/50">
+                {p.rejections.map((r: any, i: number) => (
+                  <li key={i}>
+                    <span className="font-bold">{r.userName}</span>
+                    <span className="text-slate-500 dark:text-white/20"> — {fmtDateApproval(r.at)}</span>
+                    <div className="pl-4 italic text-slate-400 dark:text-white/30">"{r.reason}"</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Committed info */}
+          {p.committedMovementId && (
+            <div className="flex items-center gap-2 text-[11px] text-emerald-400">
+              <CheckCircle2 size={12} />
+              Registrado como movimiento <code className="font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded">{p.committedMovementId.slice(0, 8)}…</code> el {fmtDateApproval(p.committedAt)}
+            </div>
+          )}
         </div>
       )}
-      {canAct && showReject && (
-        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/[0.06]">
-          <input value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Razón del rechazo" className="flex-1 rounded-lg border border-rose-500/30 bg-black/20 px-2.5 py-1.5 text-[11px] text-white placeholder:text-white/30 focus:outline-none focus:border-rose-500" autoFocus />
-          <button disabled={busy || !rejectReason.trim()} onClick={handleReject} className="rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-black text-white disabled:opacity-50">Confirmar</button>
-          <button onClick={() => setShowReject(false)} className="text-[11px] text-white/40 hover:text-white/70">Cancelar</button>
+
+      {/* Action bar — inbox mode */}
+      {canAct && (
+        <div className="mt-3 space-y-2 border-t border-white/10 dark:border-white/[0.06] pt-3">
+          {!showRejectForm ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="text" value={approveNote} onChange={e => setApproveNote(e.target.value)} placeholder="Nota opcional…"
+                className="min-w-[140px] flex-1 rounded-lg border border-white/10 dark:border-white/[0.08] bg-black/20 dark:bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-white dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/20 focus:border-emerald-500/50 outline-none" />
+              <button disabled={busy} onClick={handleApprove}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-black text-white hover:bg-emerald-500 disabled:opacity-50 transition-all">
+                <ShieldCheck size={13} /> Aprobar
+              </button>
+              <button disabled={busy} onClick={() => setShowRejectForm(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 px-3 py-1.5 text-[11px] font-black text-rose-400 hover:bg-rose-500/10 disabled:opacity-50 transition-all">
+                <XCircle size={13} /> Rechazar
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="text" value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Razón del rechazo (obligatoria)"
+                className="min-w-[160px] flex-1 rounded-lg border border-rose-500/40 bg-black/20 dark:bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-white dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/20 focus:border-rose-500 outline-none" autoFocus />
+              <button disabled={busy || !rejectReason.trim()} onClick={handleReject}
+                className="rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-black text-white disabled:opacity-50">Confirmar</button>
+              <button onClick={() => { setShowRejectForm(false); setRejectReason(''); }}
+                className="text-[11px] font-bold text-white/40 hover:text-white/70">Cancelar</button>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Info messages */}
+      {mode === 'inbox' && !canAct && p.status === 'pending' && (
+        <div className="mt-3 flex items-center gap-1.5 border-t border-white/10 dark:border-white/[0.06] pt-3 text-[10px] font-bold text-slate-500 dark:text-white/25">
+          <AlertCircle size={12} />
+          {isCreator ? 'No puedes aprobar tu propia solicitud.' : alreadySigned ? 'Ya firmaste esta solicitud.' : 'No puedes actuar sobre esta solicitud.'}
+        </div>
+      )}
+
       {/* Creator can cancel */}
-      {isCreator && !isDone && (
-        <div className="mt-3 pt-3 border-t border-white/[0.06]">
-          <button disabled={busy} onClick={handleCancel} className="text-[10px] font-bold text-slate-500 hover:text-rose-400 transition-colors">Cancelar solicitud</button>
+      {mode === 'mine' && p.status === 'pending' && (
+        <div className="mt-3 border-t border-white/10 dark:border-white/[0.06] pt-3">
+          <button disabled={busy} onClick={handleCancel}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-500/40 px-3 py-1.5 text-[10px] font-black text-slate-400 hover:bg-slate-500/10 disabled:opacity-50 transition-all">
+            <Ban size={12} /> Cancelar mi solicitud
+          </button>
         </div>
-      )}
-      {alreadySigned && !isDone && !isCreator && (
-        <p className="text-[10px] font-bold text-emerald-500/60 mt-2">Ya firmaste esta solicitud</p>
       )}
     </div>
   );
@@ -348,15 +440,37 @@ export function EntityDetail({
     [movements, entity.id, isCxC]
   );
 
-  // Fase D.0 — pendings filtrados por esta entidad, solo los que aún están en cola
-  const entityPendings = useMemo(
+  // Fase D.0 — ALL pendings para esta entidad (todos los estados para tabs inbox/mine/history)
+  const allEntityPendings = useMemo(
     () => pendingMovements.filter(p =>
-      p.status === 'pending' &&
       p.movementDraft?.entityId === entity.id &&
       (isCxC ? !p.movementDraft?.isSupplierMovement : p.movementDraft?.isSupplierMovement)
     ),
     [pendingMovements, entity.id, isCxC]
   );
+
+  // Dividir en inbox (puedo firmar), mine (yo creé), history (finalizados)
+  const { pendingInbox, pendingMine, pendingHistory } = useMemo(() => {
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const inbox: PendingMovement[] = [];
+    const mine: PendingMovement[] = [];
+    const history: PendingMovement[] = [];
+    for (const p of allEntityPendings) {
+      if (p.status === 'pending') {
+        if (p.createdBy === currentUserId) mine.push(p);
+        if (p.createdBy !== currentUserId && !p.approvals?.some((a: any) => a.userId === currentUserId)) inbox.push(p);
+      } else {
+        const t = new Date(p.createdAt).getTime();
+        if (Number.isFinite(t) && t >= thirtyDaysAgo) history.push(p);
+      }
+    }
+    const byDate = (a: PendingMovement, b: PendingMovement) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    inbox.sort(byDate); mine.sort(byDate); history.sort(byDate);
+    return { pendingInbox: inbox, pendingMine: mine, pendingHistory: history };
+  }, [allEntityPendings, currentUserId]);
+
+  const entityPendings = allEntityPendings.filter(p => p.status === 'pending');
+  const [pendingTab, setPendingTab] = useState<'inbox' | 'mine' | 'history'>('inbox');
 
   const accountBalances = useMemo(
     () => calcAccountBalances(entityMovements, bcvRate, customRates, rates),
@@ -1204,22 +1318,78 @@ export function EntityDetail({
           </div>
         )}
 
-        {/* ═══ TAB: PENDIENTES (Fase D.0 — drafts en cola de aprobación) ═══ */}
+        {/* ═══ TAB: PENDIENTES (Fase D.0 — panel completo de aprobaciones) ═══ */}
         {tab === 'pendientes' && (
-          <div className="p-5">
-            {entityPendings.length === 0 ? (
-              <div className="rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] p-8 text-center">
-                <ShieldCheck size={24} className="mx-auto text-slate-300 dark:text-white/15 mb-2" />
-                <p className="text-sm font-bold text-slate-300 dark:text-white/15">Sin movimientos en cola</p>
-                <p className="text-[10px] font-bold text-slate-300 dark:text-white/10 mt-1">
-                  Los movimientos que requieran aprobación aparecerán aquí mientras esperan firmas.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {entityPendings.map(p => <PendingInlineCard key={p.id} p={p} currentUserId={currentUserId} onApprove={onApprovePending} onReject={onRejectPending} onCancel={onCancelPending} />)}
-              </div>
-            )}
+          <div className="p-5 space-y-4">
+            {/* Header */}
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white">
+                <ShieldCheck size={16} className="text-emerald-400" />
+                Aprobaciones de movimientos
+              </h3>
+              <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 mt-0.5">
+                Cola de quórum multi-firma para movimientos de esta entidad.
+              </p>
+            </div>
+
+            {/* Sub-tabs */}
+            <div className="flex gap-1 border-b border-slate-200 dark:border-white/10">
+              {([
+                { key: 'inbox' as const, label: 'Pendientes de mi firma', count: pendingInbox.length },
+                { key: 'mine' as const, label: 'Mis solicitudes', count: pendingMine.length },
+                { key: 'history' as const, label: 'Historial', count: pendingHistory.length },
+              ]).map(t => (
+                <button key={t.key} onClick={() => setPendingTab(t.key)}
+                  className={`relative -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-[10px] font-black uppercase tracking-wider transition-colors ${
+                    pendingTab === t.key
+                      ? 'border-emerald-500 text-emerald-500 dark:text-emerald-400'
+                      : 'border-transparent text-slate-400 dark:text-white/30 hover:text-slate-600 dark:hover:text-white/50'
+                  }`}>
+                  {t.label}
+                  {t.count > 0 && (
+                    <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${
+                      pendingTab === t.key ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-white/40'
+                    }`}>{t.count}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Content */}
+            {(() => {
+              const active = pendingTab === 'inbox' ? pendingInbox : pendingTab === 'mine' ? pendingMine : pendingHistory;
+              if (active.length === 0) {
+                const emptyMap = {
+                  inbox: { icon: ShieldCheck, title: 'Sin solicitudes esperando tu firma', hint: 'Cuando un compañero cree un movimiento que requiera quórum, aparecerá aquí.' },
+                  mine: { icon: FileText, title: 'Sin solicitudes en curso', hint: 'Los movimientos que crees y necesiten aprobación aparecerán aquí.' },
+                  history: { icon: Clock, title: 'Sin historial reciente', hint: 'Aprobados, rechazados y cancelados de los últimos 30 días.' },
+                };
+                const e = emptyMap[pendingTab];
+                const EmptyIcon = e.icon;
+                return (
+                  <div className="rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/10 p-8 text-center">
+                    <EmptyIcon size={28} className="mx-auto text-slate-300 dark:text-white/15" />
+                    <p className="mt-2 text-sm font-black text-slate-400 dark:text-white/20">{e.title}</p>
+                    <p className="mt-1 text-[10px] font-bold text-slate-300 dark:text-white/15">{e.hint}</p>
+                  </div>
+                );
+              }
+              return (
+                <div className="space-y-3">
+                  {active.map(p => (
+                    <PendingFullCard
+                      key={p.id}
+                      p={p}
+                      mode={pendingTab}
+                      currentUserId={currentUserId}
+                      onApprove={pendingTab === 'inbox' ? onApprovePending : undefined}
+                      onReject={pendingTab === 'inbox' ? onRejectPending : undefined}
+                      onCancel={pendingTab === 'mine' ? onCancelPending : undefined}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
 

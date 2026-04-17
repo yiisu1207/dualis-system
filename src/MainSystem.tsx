@@ -93,6 +93,7 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  runTransaction,
 } from 'firebase/firestore';
 import { applyLoyaltyForMovement } from './utils/loyaltyEngine';
 import { sendOverduePaymentsDigest, sendBirthdayEmail } from './utils/emailService';
@@ -370,8 +371,15 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('dualis_dismissed_notifs');
-      return raw ? new Set(JSON.parse(raw)) : new Set();
-    } catch { return new Set(); }
+      if (!raw) return new Set<string>();
+      const arr: string[] = JSON.parse(raw);
+      // Limpiar dismissed IDs viejos de pending-approvals (ahora usan IDs dinámicos)
+      const cleaned = arr.filter(id => !id.startsWith('pending-approvals'));
+      if (cleaned.length !== arr.length) {
+        localStorage.setItem('dualis_dismissed_notifs', JSON.stringify(cleaned));
+      }
+      return new Set(cleaned);
+    } catch { return new Set<string>(); }
   });
 
   const user: User | null = useMemo(() => {
@@ -905,72 +913,78 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   // ── Fase D.0 — handlers de aprobación ───────────────────────────────────
   const approvePendingMovement = async (pendingId: string, note?: string) => {
     if (!businessId || !uid) return;
+    // Lock local para evitar doble-click en la misma sesión
     if (approvalLocks.current.has(pendingId)) return;
     approvalLocks.current.add(pendingId);
-    try { await _doApprovePending(pendingId, note); } finally { approvalLocks.current.delete(pendingId); }
-  };
-  const _doApprovePending = async (pendingId: string, note?: string) => {
-    const pendingDocRef = doc(db, `businesses/${businessId}/pendingMovements`, pendingId);
+    try {
+      const pendingDocRef = doc(db, `businesses/${businessId}/pendingMovements`, pendingId);
+      const nowIso = new Date().toISOString();
 
-    // Leer datos FRESCOS de Firestore para evitar race conditions
-    const freshSnap = await getDoc(pendingDocRef);
-    if (!freshSnap.exists()) {
-      toast.error('Movimiento pendiente no encontrado');
-      return;
-    }
-    const pending = { id: freshSnap.id, ...freshSnap.data() } as PendingMovement;
-
-    // Ya fue aprobado/rechazado/cancelado
-    if (pending.status !== 'pending') {
-      toast.info('Esta solicitud ya fue procesada');
-      return;
-    }
-    // Ya firmó este usuario
-    if (pending.approvals.some(a => a.userId === uid)) {
-      toast.info('Ya firmaste esta solicitud');
-      return;
-    }
-    // Verificar capability
-    const check = canApprovePending(
-      pending,
-      { uid, role: user?.role },
-      (cap) => canCapability(cap as any)
-    );
-    if (!check.allowed) {
-      toast.error(`No se puede aprobar: ${check.reason}`);
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-    const newApprovals = [
-      ...(pending.approvals || []),
-      { userId: uid, userName: user?.name || '', at: nowIso, note },
-    ];
-
-    if (newApprovals.length >= (pending.quorumRequired || 2)) {
-      // Quórum alcanzado → commit + marca pending como aprobado
-      const committedId = await commitMovement(pending.movementDraft, {
-        approvalFlowId: pendingId,
-        approvedBy: newApprovals.map(a => a.userId),
-      });
-      await updateDoc(pendingDocRef, {
-        approvals: newApprovals,
-        status: 'approved',
-        committedMovementId: committedId,
-        committedAt: nowIso,
-      });
-      logAudit(businessId, uid, 'APROBAR', 'MOV_PENDIENTE', `quórum alcanzado → ${committedId}`);
-      toast.success('Movimiento aprobado y registrado en el libro');
-    } else {
-      await updateDoc(pendingDocRef, { approvals: newApprovals });
-      logAudit(
-        businessId,
-        uid,
-        'FIRMAR',
-        'MOV_PENDIENTE',
-        `${newApprovals.length}/${pending.quorumRequired}`
+      // Verificar capability antes del transaction (no cambia entre reads)
+      const capCheck = canApprovePending(
+        { createdBy: '', approvals: [], status: 'pending' } as any,
+        { uid, role: user?.role },
+        (cap) => canCapability(cap as any)
       );
-      toast.success(`Firma registrada (${newApprovals.length}/${pending.quorumRequired})`);
+
+      // runTransaction garantiza lectura atómica — si otro click ya escribió,
+      // el transaction reintenta con datos frescos y detecta la firma duplicada
+      const result = await runTransaction(db, async (transaction) => {
+        const freshSnap = await transaction.get(pendingDocRef);
+        if (!freshSnap.exists()) return { ok: false, msg: 'Movimiento pendiente no encontrado' } as const;
+
+        const pending = { id: freshSnap.id, ...freshSnap.data() } as PendingMovement;
+
+        if (pending.status !== 'pending') return { ok: false, msg: 'Esta solicitud ya fue procesada' } as const;
+        if (pending.approvals.some((a: any) => a.userId === uid)) return { ok: false, msg: 'Ya firmaste esta solicitud' } as const;
+
+        // Validar que no es el creador intentando firmar dos veces
+        if (pending.createdBy === uid && pending.approvals.some((a: any) => a.userId === uid)) {
+          return { ok: false, msg: 'Ya firmaste como creador' } as const;
+        }
+
+        const newApprovals = [
+          ...(pending.approvals || []),
+          { userId: uid, userName: user?.name || '', at: nowIso, note },
+        ];
+        const quorumReached = newApprovals.length >= (pending.quorumRequired || 2);
+
+        if (quorumReached) {
+          transaction.update(pendingDocRef, {
+            approvals: newApprovals,
+            status: 'approved',
+            committedAt: nowIso,
+          });
+          return { ok: true, quorumReached: true, newApprovals, draft: pending.movementDraft, quorum: pending.quorumRequired } as const;
+        } else {
+          transaction.update(pendingDocRef, { approvals: newApprovals });
+          return { ok: true, quorumReached: false, newApprovals, quorum: pending.quorumRequired } as const;
+        }
+      });
+
+      if (!result.ok) {
+        toast.info(result.msg);
+        return;
+      }
+
+      if (result.quorumReached) {
+        // Commit al ledger FUERA del transaction (addDoc no es transaccional)
+        const committedId = await commitMovement((result as any).draft, {
+          approvalFlowId: pendingId,
+          approvedBy: result.newApprovals.map((a: any) => a.userId),
+        });
+        // Guardar el ID del movimiento commiteado
+        await updateDoc(doc(db, `businesses/${businessId}/pendingMovements`, pendingId), {
+          committedMovementId: committedId,
+        });
+        logAudit(businessId, uid, 'APROBAR', 'MOV_PENDIENTE', `quórum alcanzado → ${committedId}`);
+        toast.success('Movimiento aprobado y registrado en el libro');
+      } else {
+        logAudit(businessId, uid, 'FIRMAR', 'MOV_PENDIENTE', `${result.newApprovals.length}/${result.quorum}`);
+        toast.success(`Firma registrada (${result.newApprovals.length}/${result.quorum})`);
+      }
+    } finally {
+      approvalLocks.current.delete(pendingId);
     }
   };
 
@@ -1177,7 +1191,9 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
       p.status === 'pending' && p.createdBy !== uid && !p.approvals?.some(a => a.userId === uid)
     );
     if (myPendingApprovals.length > 0) {
-      items.push({ id: 'pending-approvals', title: `${myPendingApprovals.length} movimiento${myPendingApprovals.length > 1 ? 's' : ''} esperando tu aprobación`, subtitle: 'Revisa en la ficha del cliente', type: 'warning' });
+      // ID dinámico con los IDs de los pendientes para que al cambiar la lista se muestre de nuevo
+      const pendingKey = myPendingApprovals.map(p => p.id).sort().join(',');
+      items.push({ id: `pending-approvals:${pendingKey}`, title: `${myPendingApprovals.length} movimiento${myPendingApprovals.length > 1 ? 's' : ''} esperando tu aprobación`, subtitle: 'Revisa en la ficha del cliente', type: 'warning' });
     }
 
     return items;

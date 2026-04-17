@@ -119,7 +119,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
             <div className="p-4 space-y-3">
               {notifications.map(notif => {
                 const isWarning = notif.type === 'warning';
-                const tab = NAV_MAP[notif.id] || 'resumen';
+                // NAV_MAP lookup: primero exacto, luego por prefijo (IDs dinámicos como pending-approvals:xxx)
+                const baseId = notif.id.split(':')[0];
+                const tab = NAV_MAP[notif.id] || NAV_MAP[baseId] || 'resumen';
 
                 const icon = (() => {
                   if (notif.id === 'low-stock') return <Package size={15} className="text-amber-600" />;
@@ -127,7 +129,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   if (notif.id === 'overdue-cxc') return <Users size={15} className="text-rose-600" />;
                   if (notif.id === 'pending-cxp') return <FileText size={15} className="text-blue-600" />;
                   if (notif.id === 'pending-compare') return <GitCompare size={15} className="text-indigo-500" />;
-                  if (notif.id === 'pending-approvals') return <ShieldCheck size={15} className="text-orange-500" />;
+                  if (baseId === 'pending-approvals') return <ShieldCheck size={15} className="text-orange-500" />;
                   return isWarning
                     ? <AlertTriangle size={15} className="text-amber-600" />
                     : <Info size={15} className="text-blue-600" />;
