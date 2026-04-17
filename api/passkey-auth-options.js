@@ -1,4 +1,4 @@
-const { getDb } = require('./_firebaseAdmin.cjs');
+const { getDb } = require('./_firebaseAdmin');
 const { generateAuthenticationOptions } = require('@simplewebauthn/server');
 const crypto = require('crypto');
 

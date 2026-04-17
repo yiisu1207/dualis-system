@@ -13,7 +13,7 @@
 // Security: Vercel Cron attaches header `Authorization: Bearer ${CRON_SECRET}`
 // cuando CRON_SECRET está en env. Rechazamos requests sin ese header.
 
-const { getDb } = require('./_firebaseAdmin.cjs');
+const { getDb } = require('./_firebaseAdmin');
 
 const BCV_SOURCES = [
   {

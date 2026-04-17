@@ -1,4 +1,4 @@
-const { getAuth } = require('./_firebaseAdmin.cjs');
+const { getAuth } = require('./_firebaseAdmin');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {

@@ -2,8 +2,6 @@
   "version": 2,
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/bcv", "destination": "/api/bcv.cjs" },
-    { "source": "/api/(.*)", "destination": "/api/$1.cjs" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "crons": [

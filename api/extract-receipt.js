@@ -2,7 +2,7 @@
 // Proxy a Anthropic Vision para OCR de comprobantes bancarios.
 // La API key ANTHROPIC_KEY vive en env vars de Vercel.
 
-const { getAuth, getDb } = require('./_firebaseAdmin.cjs');
+const { getAuth, getDb } = require('./_firebaseAdmin');
 
 const MODEL = 'claude-sonnet-4-5';
 const MAX_BYTES = 5 * 1024 * 1024;

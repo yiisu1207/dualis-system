@@ -1,4 +1,4 @@
-const { getAuth, getDb } = require('./_firebaseAdmin.cjs');
+const { getAuth, getDb } = require('./_firebaseAdmin');
 const {
   generateRegistrationOptions,
 } = require('@simplewebauthn/server');

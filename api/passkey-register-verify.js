@@ -1,4 +1,4 @@
-const { getAuth, getDb } = require('./_firebaseAdmin.cjs');
+const { getAuth, getDb } = require('./_firebaseAdmin');
 const { verifyRegistrationResponse } = require('@simplewebauthn/server');
 
 function getRpId(req) {
