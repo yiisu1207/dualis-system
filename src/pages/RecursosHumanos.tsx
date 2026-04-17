@@ -1226,7 +1226,14 @@ export default function RecursosHumanos() {
               settledTimeEntries:freqTimeEntries.filter(t=>t.employeeId===n.emp.id)
                 .map(t=>({type:t.type,date:t.date,hours:t.hours,amountUSD:t.amountUSD||0,note:t.note||''})),
               settledAbonos:freqAbonos.filter(a=>a.employeeId===n.emp.id)
-                .map(a=>({reason:a.reason||'Abono',amount:a.amount,currency:a.currency,amountUSD:a.amountUSD||0})),
+                .map(a=>{
+                  let aUSD = Number(a.amountUSD)||0;
+                  if (a.currency==='BS') {
+                    const r = n.emp.paymentCurrency==='BS' ? getBcvRateForDate(a.date||'') : getRateForDate(a.date||'');
+                    if (r>0) aUSD = (Number(a.amount)||0)/r;
+                  } else { aUSD = Number(a.amount)||0; }
+                  return {reason:a.reason||'Abono',amount:a.amount,currency:a.currency,amountUSD:aUSD};
+                }),
               settledLoans:freqLoans.filter(l=>l.employeeId===n.emp.id)
                 .map(l=>({description:l.description||'Préstamo',installmentAmount:l.installmentAmount,currency:l.currency,paidInstallments:l.paidInstallments,totalInstallments:l.totalInstallments})),
             };

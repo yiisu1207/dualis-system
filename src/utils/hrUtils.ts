@@ -325,7 +325,7 @@ ${pGrossUSD>0?`<table><tr class="subtotal"><td class="tl">Total Bruto Período (
 <div class="section-title">Deducciones (sobre salario)</div>
 <table>
   ${pVales>0?`<tr><td class="tl">Vales / Adelantos (${periodVouchers.filter((v:any)=>!v.deferToNextPeriod).length})</td><td class="tr negative">-$${fmtHR(pVales)}</td></tr>${voucherRows}`:''}
-  ${abonosTotalUSD>0?`<tr><td class="tl">Abonos a cuenta (${abonosList.length})</td><td class="tr positive">+$${fmtHR(abonosTotalUSD)}</td></tr>${abonoRows}`:''}
+  ${pAbonos>0?`<tr><td class="tl">Abonos a cuenta (${abonosList.length})</td><td class="tr positive">+$${fmtHR(pAbonos)}</td></tr>${abonoRows}`:''}
   ${pAbsences>0?`<tr><td class="tl">Ausencias / Faltas (${absenceEntries.length})</td><td class="tr negative">-$${fmtHR(pAbsences)}</td></tr>${absenceRows}`:''}
   ${pIVSS>0?`<tr><td class="tl">IVSS (${emp.ivssRate||4}%)</td><td class="tr negative">-$${fmtHR(pIVSS)}</td></tr>`:''}
   ${pParo>0?`<tr><td class="tl">Paro Forzoso (${emp.paroRate||2}%)</td><td class="tr negative">-$${fmtHR(pParo)}</td></tr>`:''}
