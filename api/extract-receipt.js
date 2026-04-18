@@ -123,6 +123,20 @@ FORMATOS POR BANCO (dónde buscar cada dato):
 - "Nº de referencia" o "Ref:" → reference.
 - Cuentas con prefijo 0191.
 
+**Banplus (web — "Operación Aprobada")**:
+- Header: "Transferencias | Otros Bancos" (amarillo/naranja) + "Operación Aprobada" (azul).
+- "**Número de Confirmación:**" (arriba-derecha, 12 dígitos típicamente, ej "011910826191") → reference.
+- "**Cuenta Origen:**" enmascarada "0174\*\*\*\*XXXX" → originBank = "BANPLUS" (prefijo 0174).
+- "**Cuenta Destino:**" enmascarada "XXXX\*\*\*\*YYYY" → destinationBank según prefijo (tabla arriba).
+- "**Banco:**" → texto del banco receptor (usar para destinationBank si no puedes deducirlo del prefijo).
+- "**Beneficiario:**" → nombre del RECEPTOR (destinatario, no senderName).
+- "**CI o RIF Destino:**" → cedula del receptor (ej "V13670527" → formatear "V-13670527").
+- "**Monto Transferido:**" formato "Bs. XX.XXX,XX" (ej "Bs. 64.382,00" → 64382). SIEMPRE VES.
+- "**Concepto:**" → notes (texto libre, ej "Al hady").
+- Fecha: en este layout a veces NO aparece o está arriba fuera del crop. Si no se ve, date=null (no inventar).
+- senderName: NO aparece en este formato → null.
+- operationType = "transferencia".
+
 **Bancamiga (app — "Pago realizado")**:
 - Cuentas con prefijo 0172.
 - "Número de operación" → reference.
