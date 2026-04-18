@@ -80,7 +80,11 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const canEdit = userRole === 'owner' || userRole === 'admin';
   const effectiveCanVerify = canVerify ?? canEdit;
 
-  const [view, setView] = useState<'auto' | 'manual' | 'lotes'>('auto');
+  // Default a 'lotes' (vista principal industrial). La antigua tab 'auto' escribía
+  // abonos sin reclamar referencia atómicamente — duplicaba lógica del pool global
+  // y permitía race conditions con dos operadores concurrentes. Se fusionó al flujo
+  // de lotes; una entrada individual ahora es un lote ad-hoc de 1 item.
+  const [view, setView] = useState<'lotes' | 'manual'>('lotes');
   const [monthKey, setMonthKey] = useState<string>(currentMonthKey());
   const [accounts, setAccounts] = useState<BankStatementAccountDoc[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
@@ -553,36 +557,31 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             <div>
               <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Conciliación Bancaria</h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {view === 'auto'
-                  ? `Pool: ${pool.length} filas · ${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''} · ${abonos.length} abono${abonos.length !== 1 ? 's' : ''}`
-                  : view === 'lotes'
-                  ? `${batches.length} lote${batches.length !== 1 ? 's' : ''} · pool global cross-cuenta`
+                {view === 'lotes'
+                  ? `${batches.length} lote${batches.length !== 1 ? 's' : ''} · ${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''} · pool global cross-cuenta`
                   : `Verificación fila por fila · ${unverifiedCount} sin verificar`}
               </p>
             </div>
           </div>
-          {view === 'auto' && (
-            <input
-              type="month"
-              value={monthKey}
-              onChange={(e) => setMonthKey(e.target.value || currentMonthKey())}
-              className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-400"
-            />
-          )}
         </div>
 
-        {/* Tab switcher Auto vs Manual */}
+        {/* Tabs: Conciliación (lotes, principal) · Verificar movimientos (CxC/CxP) */}
         <div className="inline-flex rounded-xl bg-slate-100 dark:bg-white/[0.04] p-1 gap-1">
           <button
             type="button"
-            onClick={() => setView('auto')}
+            onClick={() => { setView('lotes'); setSelectedBatchId(null); }}
             className={`px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-              view === 'auto'
+              view === 'lotes'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm'
                 : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
             }`}
           >
-            <Zap size={12} /> Automática
+            <Layers size={12} /> Conciliación
+            {batches.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-indigo-500/20 text-indigo-600 dark:text-indigo-300">
+                {batches.length}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -593,26 +592,10 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
                 : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
             }`}
           >
-            <ShieldCheck size={12} /> Manual
+            <ShieldCheck size={12} /> Verificar movimientos
             {unverifiedCount > 0 && (
               <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-amber-500/20 text-amber-600 dark:text-amber-300">
                 {unverifiedCount}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setView('lotes'); setSelectedBatchId(null); }}
-            className={`px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-              view === 'lotes'
-                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm'
-                : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
-            }`}
-          >
-            <Layers size={12} /> Lotes
-            {batches.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-indigo-500/20 text-indigo-600 dark:text-indigo-300">
-                {batches.length}
               </span>
             )}
           </button>
@@ -625,135 +608,29 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             currentUserName={currentUserName}
             canVerify={effectiveCanVerify}
           />
-        ) : view === 'lotes' ? (
-          selectedBatchId ? (
-            <BatchReviewPanel
-              businessId={businessId}
-              batchId={selectedBatchId}
-              currentUserId={currentUserId}
-              currentUserName={currentUserName}
-              onBack={() => setSelectedBatchId(null)}
-            />
-          ) : (
-            <BatchList
-              batches={batches}
-              onOpen={setSelectedBatchId}
-              onNewBatch={() => setShowReceiptBatch(true)}
-              onUploadEdec={() => setShowMultiUpload(true)}
-              onDelete={handleDeleteBatch}
-              canEdit={canEdit}
-            />
-          )
-        ) : (
-        <>
-        {/* Dashboard resumen */}
-        {accounts.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
-                <CheckCircle2 size={13} className="text-emerald-500" /> Confirmados
-              </div>
-              <div className="text-lg font-semibold text-slate-900 dark:text-white">{stats.confirmados}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">${stats.totalConfirmado.toLocaleString('es', { minimumFractionDigits: 2 })}</div>
-            </div>
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
-                <AlertTriangle size={13} className="text-amber-500" /> Por revisar
-              </div>
-              <div className="text-lg font-semibold text-slate-900 dark:text-white">{stats.porRevisar}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">{stats.noEncontrados} no encontrados</div>
-            </div>
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
-                <Landmark size={13} className="text-indigo-500" /> Crédito banco
-              </div>
-              <div className="text-lg font-semibold text-slate-900 dark:text-white">${poolTotalCredit.toLocaleString('es', { minimumFractionDigits: 2 })}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">${stats.sinConciliar.toLocaleString('es', { minimumFractionDigits: 2 })} sin conciliar</div>
-            </div>
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
-              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1">
-                <FileCheck size={13} className="text-indigo-500" /> % Conciliación
-              </div>
-              <div className="text-lg font-semibold text-slate-900 dark:text-white">{stats.pct.toFixed(1)}%</div>
-              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 mt-1">
-                <div
-                  className={`h-1.5 rounded-full ${stats.pct >= 90 ? 'bg-emerald-500' : stats.pct >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`}
-                  style={{ width: `${Math.min(100, stats.pct)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        <AccountChips
-          accounts={accountChips}
-          onAdd={() => setShowUploadModal(true)}
-          onDelete={canEdit ? handleDeleteAccount : undefined}
-        />
-
-        {(loadingAccounts || loadingAbonos) ? (
-          <div className="flex items-center justify-center py-12 text-slate-500 dark:text-slate-400">
-            <Loader2 size={18} className="animate-spin mr-2" /> Cargando datos del mes...
-          </div>
-        ) : accounts.length === 0 ? (
-          <div className="bg-white dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 text-center">
-            <FileCheck size={32} className="mx-auto text-slate-400 dark:text-slate-500 mb-3" />
-            <div className="text-sm font-medium text-slate-700 dark:text-slate-200">Sube el primer estado de cuenta del mes</div>
-            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Agrega una cuenta bancaria para empezar a conciliar abonos
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <div className="lg:col-span-2 space-y-3">
-              <ReceiptDropZone
-                disabled={ocrBusy}
-                progress={ocrProgress}
-                onDropSingle={handleDropSingle}
-                onDropBatch={handleDropBatch}
-              />
-              <AbonoForm
-                value={draft}
-                onChange={setDraft}
-                onSubmit={handleSubmitAbono}
-                onClear={handleClearEdit}
-                selectedMatchInfo={selectedMatchInfo}
-                duplicateWarning={duplicateWarning}
-                editingId={editingId}
-              />
-            </div>
-            <div className="lg:col-span-3">
-              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-slate-800 dark:text-slate-100">Coincidencias en el pool</h3>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    {liveMatches.length} match{liveMatches.length !== 1 ? 'es' : ''}
-                  </span>
-                </div>
-                <LiveMatchList
-                  matches={liveMatches}
-                  selectedRowId={selectedMatchRowId}
-                  onSelect={setSelectedMatchRowId}
-                  emptyMessage={
-                    draft.amount > 0 && draft.date
-                      ? 'Sin coincidencias en el pool — el abono quedará como "No encontrado".'
-                      : 'Ingresa monto y fecha para ver coincidencias.'
-                  }
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {accounts.length > 0 && (
-          <ReconciliationReport
-            abonos={abonos}
-            pool={pool}
-            onEditAbono={handleEditAbono}
-            onDeleteAbono={handleDeleteAbono}
+        ) : selectedBatchId ? (
+          <BatchReviewPanel
+            businessId={businessId}
+            batchId={selectedBatchId}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            onBack={() => setSelectedBatchId(null)}
           />
-        )}
-        </>
+        ) : (
+          <BatchList
+            batches={batches}
+            accountChips={accountChips}
+            onOpen={setSelectedBatchId}
+            onNewBatch={() => setShowReceiptBatch(true)}
+            onUploadEdec={() => setShowMultiUpload(true)}
+            onAddSingleAccount={() => setShowUploadModal(true)}
+            onDeleteAccount={canEdit ? handleDeleteAccount : undefined}
+            onDelete={handleDeleteBatch}
+            canEdit={canEdit}
+            ocrBusy={ocrBusy}
+            ocrProgress={ocrProgress}
+            onDropBatch={handleDropBatch}
+          />
         )}
       </div>
 
@@ -805,35 +682,87 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
 // ── BatchList: lista de ReconciliationBatch con acciones ─────────────────
 interface BatchListProps {
   batches: ReconciliationBatch[];
+  accountChips: AccountChipData[];
   onOpen: (id: string) => void;
   onNewBatch: () => void;
   onUploadEdec: () => void;
+  onAddSingleAccount: () => void;
+  onDeleteAccount?: (alias: string) => void;
   onDelete: (batch: ReconciliationBatch) => void;
   canEdit: boolean;
+  ocrBusy: boolean;
+  ocrProgress: { done: number; total: number } | null;
+  onDropBatch: (files: File[]) => void;
 }
 
-const BatchList: React.FC<BatchListProps> = ({ batches, onOpen, onNewBatch, onUploadEdec, onDelete, canEdit }) => {
+const BatchList: React.FC<BatchListProps> = ({
+  batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
+  onDeleteAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch,
+}) => {
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {canEdit && (
-          <>
+      {/* CTAs principales — una sola fila, jerarquía clara: lote (primario) / EdeC / individual */}
+      {canEdit && (
+        <div className="flex flex-wrap gap-2 items-center">
+          <button
+            onClick={onNewBatch}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 shadow-sm"
+          >
+            <Camera size={15} /> Nuevo lote de capturas
+          </button>
+          <button
+            onClick={onUploadEdec}
+            className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            <Upload size={14} /> Subir EdeC
+          </button>
+          <div className="flex-1" />
+          {ocrBusy && ocrProgress && (
+            <div className="text-xs text-slate-500 dark:text-slate-400 inline-flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin" />
+              Procesando {ocrProgress.done}/{ocrProgress.total}…
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Quick drop zone para crear un lote directo desde drag-drop (sin abrir modal) */}
+      {canEdit && (
+        <ReceiptDropZone
+          disabled={ocrBusy}
+          progress={ocrProgress}
+          onDropSingle={(file) => onDropBatch([file])}
+          onDropBatch={onDropBatch}
+        />
+      )}
+
+      {/* Cuentas bancarias cargadas — strip compacto, no es tab separada */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <Landmark size={13} /> Cuentas bancarias cargadas ({accountChips.length})
+          </div>
+          {canEdit && (
             <button
-              onClick={onNewBatch}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 shadow-sm"
+              onClick={onAddSingleAccount}
+              className="text-[11px] px-2 py-1 rounded text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 inline-flex items-center gap-1"
             >
-              <Camera size={14} /> Nuevo lote de capturas
+              <Plus size={11} /> Agregar cuenta (sola)
             </button>
-            <button
-              onClick={onUploadEdec}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
-            >
-              <Upload size={14} /> Subir EdeC (múltiple)
-            </button>
-          </>
+          )}
+        </div>
+        {accountChips.length === 0 ? (
+          <div className="text-xs text-slate-400 py-2">Sin cuentas aún. Usa "Subir EdeC" para cargar varias a la vez.</div>
+        ) : (
+          <AccountChips
+            accounts={accountChips}
+            onAdd={canEdit ? onAddSingleAccount : undefined}
+            onDelete={onDeleteAccount}
+          />
         )}
       </div>
 
+      {/* Lista de lotes */}
       {batches.length === 0 ? (
         <div className="bg-white dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 text-center">
           <Layers size={32} className="mx-auto text-slate-400 dark:text-slate-500 mb-3" />

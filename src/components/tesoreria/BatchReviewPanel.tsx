@@ -4,7 +4,7 @@ import {
   Loader2, Image as ImageIcon, ArrowLeft, Download, Plus,
 } from 'lucide-react';
 import {
-  collection, doc, onSnapshot, query, where, setDoc, getDocs, collectionGroup,
+  collection, doc, onSnapshot, query, where, setDoc, getDocs, collectionGroup, updateDoc,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { findMatches, type DraftAbono } from '../../utils/bankReconciliation';
@@ -108,6 +108,35 @@ export default function BatchReviewPanel({
   const confirmados = useMemo(() => abonos.filter(a => a.status === 'confirmado'), [abonos]);
   const revisar = useMemo(() => abonos.filter(a => a.status === 'revisar'), [abonos]);
   const noEncontrado = useMemo(() => abonos.filter(a => a.status === 'no_encontrado'), [abonos]);
+
+  // Sincroniza batch.stats cuando cambian los abonos. Antes los contadores del batch
+  // quedaban "congelados" al momento del procesamiento inicial: si confirmabas manualmente
+  // un item "revisar", el detalle mostraba "3 confirmados" pero la lista seguía con "3 revisar".
+  useEffect(() => {
+    if (!batch || loading) return;
+    if (!abonos.length && (batch.stats?.total ?? 0) === 0) return;
+    const manual = abonos.filter(a => !a.receiptUrl).length;
+    const nextStats = {
+      total: abonos.length,
+      confirmed: confirmados.length,
+      review: revisar.length,
+      notFound: noEncontrado.length,
+      manual,
+    };
+    const prev = batch.stats || { total: 0, confirmed: 0, review: 0, notFound: 0, manual: 0 };
+    const same = (
+      prev.total === nextStats.total &&
+      prev.confirmed === nextStats.confirmed &&
+      prev.review === nextStats.review &&
+      prev.notFound === nextStats.notFound &&
+      prev.manual === nextStats.manual
+    );
+    if (same) return;
+    const ref = doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`);
+    updateDoc(ref, { stats: nextStats }).catch(err => {
+      console.warn('[BatchReview] stats sync failed', err);
+    });
+  }, [abonos, confirmados.length, revisar.length, noEncontrado.length, batch, loading, businessId, batchId]);
 
   const updateAbono = async (entry: AbonoEntry, patch: Partial<SessionAbono>) => {
     const ref = doc(db, `businesses/${businessId}/bankStatements/${entry.monthKey}/abonos/${entry.id}`);
