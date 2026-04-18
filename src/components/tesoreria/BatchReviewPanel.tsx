@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronRight, RefreshCw,
-  Loader2, Image as ImageIcon, ArrowLeft, Download, Plus,
+  Loader2, Image as ImageIcon, ArrowLeft, Download, Plus, ExternalLink,
 } from 'lucide-react';
 import {
   collection, doc, onSnapshot, query, where, setDoc, getDocs, collectionGroup, updateDoc,
@@ -19,6 +19,8 @@ interface BatchReviewPanelProps {
   batchId: string;
   currentUserId: string;
   currentUserName?: string;
+  highlightAbonoId?: string;
+  onOpenAccountRow?: (accountAlias: string, rowId: string) => void;
   onBack: () => void;
 }
 
@@ -27,7 +29,7 @@ interface AbonoEntry extends SessionAbono {
 }
 
 export default function BatchReviewPanel({
-  businessId, batchId, currentUserId, currentUserName, onBack,
+  businessId, batchId, currentUserId, currentUserName, highlightAbonoId, onOpenAccountRow, onBack,
 }: BatchReviewPanelProps) {
   const [batch, setBatch] = useState<ReconciliationBatch | null>(null);
   const [abonos, setAbonos] = useState<AbonoEntry[]>([]);
@@ -39,6 +41,7 @@ export default function BatchReviewPanel({
   });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const highlightRef = useRef<HTMLTableRowElement | null>(null);
 
   // Cargar batch
   useEffect(() => {
@@ -108,6 +111,23 @@ export default function BatchReviewPanel({
   const confirmados = useMemo(() => abonos.filter(a => a.status === 'confirmado'), [abonos]);
   const revisar = useMemo(() => abonos.filter(a => a.status === 'revisar'), [abonos]);
   const noEncontrado = useMemo(() => abonos.filter(a => a.status === 'no_encontrado'), [abonos]);
+
+  // Si se vino desde "Ver lote" de una fila usada del EdeC, abre la sección
+  // correspondiente y scrollea al abono resaltado.
+  useEffect(() => {
+    if (!highlightAbonoId || !abonos.length) return;
+    const target = abonos.find(a => a.id === highlightAbonoId);
+    if (!target) return;
+    setOpenSection(s => ({
+      confirmed: target.status === 'confirmado' ? true : s.confirmed,
+      review: target.status === 'revisar' ? true : s.review,
+      notFound: target.status === 'no_encontrado' ? true : s.notFound,
+    }));
+    const t = setTimeout(() => {
+      if (highlightRef.current) highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [highlightAbonoId, abonos]);
 
   // Sincroniza batch.stats cuando cambian los abonos. Antes los contadores del batch
   // quedaban "congelados" al momento del procesamiento inicial: si confirmabas manualmente
@@ -350,15 +370,38 @@ export default function BatchReviewPanel({
               </tr>
             </thead>
             <tbody>
-              {confirmados.map(a => (
-                <tr key={a.id} className="border-t border-slate-100 dark:border-slate-700">
-                  <td className="py-1">{a.date}</td>
-                  <td className="py-1 font-mono">${a.amount.toFixed(2)}</td>
-                  <td className="py-1 font-mono">{a.reference || '—'}</td>
-                  <td className="py-1 truncate max-w-[150px]">{a.clientName || a.cedula || '—'}</td>
-                  <td className="py-1 text-slate-600 dark:text-slate-300">{a.matchBankName || a.matchAccountAlias || '—'}</td>
-                </tr>
-              ))}
+              {confirmados.map(a => {
+                const isHl = a.id === highlightAbonoId;
+                const canJump = !!(a.matchAccountAlias && a.matchRowId && onOpenAccountRow);
+                return (
+                  <tr
+                    key={a.id}
+                    ref={isHl ? highlightRef : undefined}
+                    className={`border-t border-slate-100 dark:border-slate-700 transition-colors ${
+                      isHl ? 'bg-amber-100 dark:bg-amber-900/30' : ''
+                    }`}
+                  >
+                    <td className="py-1">{a.date}</td>
+                    <td className="py-1 font-mono">${a.amount.toFixed(2)}</td>
+                    <td className="py-1 font-mono">{a.reference || '—'}</td>
+                    <td className="py-1 truncate max-w-[150px]">{a.clientName || a.cedula || '—'}</td>
+                    <td className="py-1 text-slate-600 dark:text-slate-300">
+                      {canJump ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenAccountRow!(a.matchAccountAlias!, a.matchRowId!)}
+                          className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-300 hover:underline"
+                          title="Ver fila en el EdeC"
+                        >
+                          {a.matchBankName || a.matchAccountAlias} <ExternalLink size={10} />
+                        </button>
+                      ) : (
+                        a.matchBankName || a.matchAccountAlias || '—'
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

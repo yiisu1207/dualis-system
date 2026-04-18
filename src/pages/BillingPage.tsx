@@ -12,7 +12,7 @@ import { useSubscription } from '../hooks/useSubscription';
 import { useAuth } from '../context/AuthContext';
 import { uploadToCloudinary } from '../utils/cloudinary';
 import {
-  PLANS as PLAN_CONFIG, PAYMENT_INFO, type PayMethod,
+  PLANS as PLAN_CONFIG, PAYMENT_INFO, buildQuoteWhatsApp, type PayMethod,
 } from '../utils/planConfig';
 
 // ─── Plan data (enriched from planConfig) ─────────────────────────────────────
@@ -232,7 +232,7 @@ export default function BillingPage() {
         {/* ── Plan cards ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {PLANS.map(p => {
-            const price = annual ? p.monthlyPrice * 0.8 : p.monthlyPrice;
+            const price = p.monthlyPrice == null ? null : (annual ? p.monthlyPrice * 0.8 : p.monthlyPrice);
             const isSelected = selectedPlan === p.id;
             return (
               <button
@@ -256,15 +256,23 @@ export default function BillingPage() {
 
                 <div className="mb-4">
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">{p.name}</p>
-                  <div className="flex items-end gap-1">
-                    <span className="text-3xl font-black text-slate-900 dark:text-white">${price.toFixed(0)}</span>
-                    <span className="text-xs text-slate-400 font-medium mb-1">/mes</span>
-                  </div>
-                  {annual && (
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      <s className="text-slate-300 dark:text-slate-600">${p.monthlyPrice}</s>
-                      {' '}facturado ${(price * 12).toFixed(0)}/año
-                    </p>
+                  {price == null ? (
+                    <div className="flex items-end gap-1">
+                      <span className="text-2xl font-black text-slate-900 dark:text-white">Cotización</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-end gap-1">
+                        <span className="text-3xl font-black text-slate-900 dark:text-white">${price.toFixed(0)}</span>
+                        <span className="text-xs text-slate-400 font-medium mb-1">/mes</span>
+                      </div>
+                      {annual && (
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          <s className="text-slate-300 dark:text-slate-600">${p.monthlyPrice}</s>
+                          {' '}facturado ${(price * 12).toFixed(0)}/año
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -287,8 +295,33 @@ export default function BillingPage() {
           })}
         </div>
 
-        {/* ── Payment section (shows after plan selected) ──────────────── */}
-        {selectedPlan && plan && (
+        {/* ── Enterprise: contacto comercial en vez de pago directo ────── */}
+        {selectedPlan && plan && plan.monthlyPrice == null && (
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.07] rounded-2xl shadow-lg overflow-hidden">
+            <div className={`bg-gradient-to-r ${plan.gradient} px-6 py-4`}>
+              <h2 className="text-white font-black text-base">{plan.name} — plan personalizado</h2>
+              <p className="text-white/70 text-xs mt-0.5">Cotizamos según tu volumen de operaciones, sucursales y SLA</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                Este plan incluye SLA personalizado, onboarding asistido y soporte dedicado.
+                Contáctanos para una cotización ajustada a tu operación.
+              </p>
+              <a
+                href={buildQuoteWhatsApp()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-black text-sm text-white transition-all bg-gradient-to-r ${plan.gradient} shadow-lg ${plan.shadow} hover:-translate-y-0.5`}
+              >
+                <Send size={15} /> Contactar ventas por WhatsApp
+                <ChevronRight size={14} />
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* ── Payment section (shows after plan selected, solo planes con precio) ──────────── */}
+        {selectedPlan && plan && plan.monthlyPrice != null && (
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.07] rounded-2xl shadow-lg overflow-hidden">
             <div className={`bg-gradient-to-r ${plan.gradient} px-6 py-4`}>
               <h2 className="text-white font-black text-base">Instrucciones de pago — {plan.name}</h2>

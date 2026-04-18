@@ -28,6 +28,7 @@ import {
 import { useToast } from '../context/ToastContext';
 import type { BankRow } from '../utils/bankReconciliation';
 import { processReceiptBatch, type ImageBatchItem } from '../utils/processReceiptBatch';
+import { rematchOrphanAbonos } from '../utils/rematchOrphanAbonos';
 import { isVerifiable, resolveVerificationStatus } from '../utils/movementHelpers';
 import AccountChips, { type AccountChipData } from '../components/conciliacion/AccountChips';
 import AccountRowsModal from '../components/conciliacion/AccountRowsModal';
@@ -38,7 +39,7 @@ import ManualVerificationTab from '../components/conciliacion/ManualVerification
 import MultiBankUploadModal from '../components/tesoreria/MultiBankUploadModal';
 import ReceiptBatchModal from '../components/tesoreria/ReceiptBatchModal';
 import BatchReviewPanel from '../components/tesoreria/BatchReviewPanel';
-import type { Movement, ReconciliationBatch } from '../../types';
+import type { Movement, ReconciliationBatch, UsedReference } from '../../types';
 
 interface ConciliacionProps {
   businessId: string;
@@ -89,11 +90,14 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [showMultiUpload, setShowMultiUpload] = useState(false);
   const [showReceiptBatch, setShowReceiptBatch] = useState(false);
   const [batches, setBatches] = useState<ReconciliationBatch[]>([]);
+  const [usedRefs, setUsedRefs] = useState<UsedReference[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [pendingBatchFiles, setPendingBatchFiles] = useState<File[] | null>(null);
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [viewingAccountAlias, setViewingAccountAlias] = useState<string | null>(null);
+  const [viewingAccountHighlightRowId, setViewingAccountHighlightRowId] = useState<string | null>(null);
+  const [highlightAbonoInBatch, setHighlightAbonoInBatch] = useState<string | null>(null);
 
   useEffect(() => {
     if (!businessId) return;
@@ -132,17 +136,60 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     return () => unsub();
   }, [businessId]);
 
+  useEffect(() => {
+    if (!businessId) return;
+    const ref = collection(db, `businesses/${businessId}/usedReferences`);
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        const list: UsedReference[] = [];
+        snap.forEach((d) => list.push(d.data() as UsedReference));
+        setUsedRefs(list);
+      },
+      (err) => {
+        console.error('[Conciliacion] usedReferences onSnapshot error', err);
+      }
+    );
+    return () => unsub();
+  }, [businessId]);
+
+  // Indexa por identidad de cuenta (bankAccountId o accountAlias) → Set<bankRowId>
+  // para marcar filas "usadas" en la UI del EdeC y poder saltar al abono que la
+  // reclamó al hacer click.
+  const usedByAccountIdentity = useMemo(() => {
+    const map = new Map<string, Map<string, UsedReference>>();
+    for (const u of usedRefs) {
+      if (!u.bankRowId) continue;
+      const identity = u.bankAccountId || '';
+      if (!identity) continue;
+      let inner = map.get(identity);
+      if (!inner) { inner = new Map(); map.set(identity, inner); }
+      inner.set(u.bankRowId, u);
+    }
+    return map;
+  }, [usedRefs]);
+
+  const totalUsedRefs = usedRefs.length;
+
   const accountChips = useMemo<AccountChipData[]>(
     () =>
-      accounts.map((a) => ({
-        accountAlias: a.accountAlias,
-        accountLabel: a.accountLabel,
-        bankName: a.bankName,
-        rowCount: a.rowCount,
-        totalCredit: a.totalCredit,
-        fileUrl: a.fileUrl,
-      })),
-    [accounts]
+      accounts.map((a) => {
+        const identity = a.bankAccountId || a.accountAlias;
+        const used = usedByAccountIdentity.get(identity)?.size || 0;
+        // Solo créditos son candidatos reales a conciliarse (abonos entrantes).
+        const creditRows = (a.rows || []).filter((r) => r.amount > 0).length;
+        return {
+          accountAlias: a.accountAlias,
+          accountLabel: a.accountLabel,
+          bankName: a.bankName,
+          rowCount: a.rowCount,
+          totalCredit: a.totalCredit,
+          fileUrl: a.fileUrl,
+          usedCount: used,
+          creditRowCount: creditRows,
+        };
+      }),
+    [accounts, usedByAccountIdentity]
   );
 
   const existingAliases = useMemo(() => accounts.map((a) => a.accountAlias), [accounts]);
@@ -213,6 +260,20 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     const docRef = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'accounts', data.accountAlias);
     await setDoc(docRef, payload);
     toast.success(`Cuenta "${data.accountLabel}" guardada (${data.rows.length} filas)`);
+
+    // Al cargar un EdeC nuevo, re-evalúa los abonos huérfanos (no_encontrado):
+    // los matches que antes no existían pueden aparecer ahora.
+    try {
+      const rematch = await rematchOrphanAbonos(db, businessId, currentUserId, currentUserName);
+      if (rematch.scanned > 0 && (rematch.confirmed > 0 || rematch.movedToReview > 0)) {
+        const parts = [];
+        if (rematch.confirmed > 0) parts.push(`${rematch.confirmed} auto-confirmadas`);
+        if (rematch.movedToReview > 0) parts.push(`${rematch.movedToReview} a revisar`);
+        toast.success(`Re-match con el nuevo EdeC: ${parts.join(' · ')} (de ${rematch.scanned} sin match)`);
+      }
+    } catch (err: any) {
+      console.warn('[Conciliacion] rematchOrphanAbonos falló', err);
+    }
   };
 
   const handleDeleteAccount = async (alias: string) => {
@@ -317,7 +378,14 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
               <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Conciliación Bancaria</h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {view === 'lotes'
-                  ? `${batches.length} lote${batches.length !== 1 ? 's' : ''} · ${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''} · pool global cross-cuenta`
+                  ? (
+                    <>
+                      {batches.length} lote{batches.length !== 1 ? 's' : ''} · {accounts.length} cuenta{accounts.length !== 1 ? 's' : ''}
+                      {totalUsedRefs > 0 && (
+                        <> · <span className="font-semibold text-emerald-600 dark:text-emerald-400">{totalUsedRefs}</span> referencia{totalUsedRefs !== 1 ? 's' : ''} conciliada{totalUsedRefs !== 1 ? 's' : ''}</>
+                      )}
+                    </>
+                  )
                   : `Verificación fila por fila · ${unverifiedCount} sin verificar`}
               </p>
             </div>
@@ -373,7 +441,14 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             batchId={selectedBatchId}
             currentUserId={currentUserId}
             currentUserName={currentUserName}
-            onBack={() => setSelectedBatchId(null)}
+            highlightAbonoId={highlightAbonoInBatch || undefined}
+            onOpenAccountRow={(alias, rowId) => {
+              setSelectedBatchId(null);
+              setHighlightAbonoInBatch(null);
+              setViewingAccountAlias(alias);
+              setViewingAccountHighlightRowId(rowId);
+            }}
+            onBack={() => { setSelectedBatchId(null); setHighlightAbonoInBatch(null); }}
           />
         ) : (
           <BatchList
@@ -439,6 +514,8 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
       {viewingAccountAlias && (() => {
         const acc = accounts.find(a => a.accountAlias === viewingAccountAlias);
         if (!acc) return null;
+        const identity = acc.bankAccountId || acc.accountAlias;
+        const usedForAcc = usedByAccountIdentity.get(identity);
         return (
           <AccountRowsModal
             accountLabel={acc.accountLabel}
@@ -450,7 +527,18 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             periodFrom={acc.extractedMeta?.periodFrom}
             periodTo={acc.extractedMeta?.periodTo}
             rows={acc.rows || []}
-            onClose={() => setViewingAccountAlias(null)}
+            usedRowsMap={usedForAcc}
+            highlightRowId={viewingAccountHighlightRowId || undefined}
+            onOpenAbono={(batchId, abonoId) => {
+              setViewingAccountAlias(null);
+              setViewingAccountHighlightRowId(null);
+              setHighlightAbonoInBatch(abonoId);
+              setSelectedBatchId(batchId);
+            }}
+            onClose={() => {
+              setViewingAccountAlias(null);
+              setViewingAccountHighlightRowId(null);
+            }}
           />
         );
       })()}
@@ -479,8 +567,63 @@ const BatchList: React.FC<BatchListProps> = ({
   batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
   onDeleteAccount, onViewAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch,
 }) => {
+  const kpis = useMemo(() => {
+    let total = 0, confirmed = 0, review = 0, notFound = 0;
+    let stalledNotFound = 0;
+    const staleCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    for (const b of batches) {
+      const s = b.stats || { total: 0, confirmed: 0, review: 0, notFound: 0, manual: 0 };
+      total += s.total;
+      confirmed += s.confirmed;
+      review += s.review;
+      notFound += s.notFound;
+      const created = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (s.notFound > 0 && created && created < staleCutoff) {
+        stalledNotFound += s.notFound;
+      }
+    }
+    const autoRatio = total > 0 ? Math.round((confirmed / total) * 100) : 0;
+    const lowAccounts = accountChips.filter(c => {
+      const denom = c.creditRowCount || c.rowCount;
+      if (denom < 5) return false;  // muy pocas filas: descartar ruido
+      const pct = ((c.usedCount || 0) / denom) * 100;
+      return pct < 20;
+    }).length;
+    return { total, confirmed, review, notFound, autoRatio, stalledNotFound, lowAccounts };
+  }, [batches, accountChips]);
+
   return (
     <div className="space-y-4">
+      {/* KPIs globales — ratio auto-match, colgados, cuentas bajas */}
+      {batches.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <KpiCard
+            label="Auto-match"
+            value={`${kpis.autoRatio}%`}
+            sub={`${kpis.confirmed}/${kpis.total} abonos`}
+            color={kpis.autoRatio >= 70 ? 'emerald' : kpis.autoRatio >= 40 ? 'amber' : 'rose'}
+          />
+          <KpiCard
+            label="Por revisar"
+            value={String(kpis.review)}
+            sub="candidatos ambiguos"
+            color={kpis.review === 0 ? 'slate' : 'amber'}
+          />
+          <KpiCard
+            label="Colgados >7d"
+            value={String(kpis.stalledNotFound)}
+            sub="sin match en lotes viejos"
+            color={kpis.stalledNotFound === 0 ? 'slate' : 'rose'}
+          />
+          <KpiCard
+            label="Cuentas <20%"
+            value={String(kpis.lowAccounts)}
+            sub="EdeC con poca conciliación"
+            color={kpis.lowAccounts === 0 ? 'slate' : 'amber'}
+          />
+        </div>
+      )}
+
       {/* CTAs principales — una sola fila, jerarquía clara: lote (primario) / EdeC / individual */}
       {canEdit && (
         <div className="flex flex-wrap gap-2 items-center">
@@ -615,6 +758,22 @@ const BatchList: React.FC<BatchListProps> = ({
           </table>
         </div>
       )}
+    </div>
+  );
+};
+
+const KpiCard: React.FC<{ label: string; value: string; sub?: string; color: 'emerald' | 'amber' | 'rose' | 'slate' }> = ({ label, value, sub, color }) => {
+  const cls: Record<string, string> = {
+    emerald: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40',
+    amber: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-700/40',
+    rose: 'bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-700/40',
+    slate: 'bg-slate-50 dark:bg-slate-900/40 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+  };
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${cls[color]}`}>
+      <div className="text-[10px] uppercase tracking-wider opacity-80">{label}</div>
+      <div className="text-2xl font-black leading-tight">{value}</div>
+      {sub && <div className="text-[10px] opacity-70 mt-0.5">{sub}</div>}
     </div>
   );
 };

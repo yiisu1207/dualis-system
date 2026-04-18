@@ -8,6 +8,8 @@ export interface AccountChipData {
   rowCount: number;
   totalCredit: number;
   fileUrl?: string;
+  usedCount?: number;        // referencias ya quemadas para esta cuenta
+  creditRowCount?: number;   // total de filas crédito (denominador realista)
 }
 
 interface AccountChipsProps {
@@ -23,6 +25,10 @@ export default function AccountChips({ accounts, activeAlias, onSelect, onAdd, o
     <div className="flex flex-wrap items-center gap-2">
       {accounts.map(acc => {
         const isActive = acc.accountAlias === activeAlias;
+        const used = acc.usedCount || 0;
+        const denom = acc.creditRowCount || acc.rowCount;
+        const pct = denom > 0 ? Math.min(100, Math.round((used / denom) * 100)) : 0;
+        const fullyReconciled = denom > 0 && used >= denom;
         return (
           <div
             key={acc.accountAlias}
@@ -36,11 +42,35 @@ export default function AccountChips({ accounts, activeAlias, onSelect, onAdd, o
               type="button"
               onClick={() => onSelect?.(acc.accountAlias)}
               className="flex items-center gap-2"
-              title={acc.bankName || ''}
+              title={acc.bankName ? `${acc.bankName}${denom > 0 ? ` · ${used}/${denom} conciliadas (${pct}%)` : ''}` : ''}
             >
               <Landmark size={14} />
               <span className="font-medium">{acc.accountLabel}</span>
               <span className="text-xs opacity-70">· {acc.rowCount}</span>
+              {denom > 0 && (
+                <span className="flex items-center gap-1">
+                  <span
+                    className={`inline-block w-10 h-1.5 rounded-full overflow-hidden ${
+                      isActive ? 'bg-indigo-200 dark:bg-indigo-800' : 'bg-slate-200 dark:bg-slate-700'
+                    }`}
+                    aria-label={`${pct}% conciliada`}
+                  >
+                    <span
+                      className={`block h-full transition-all ${
+                        fullyReconciled ? 'bg-emerald-500' : 'bg-emerald-400'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </span>
+                  <span className={`text-[10px] font-mono ${
+                    fullyReconciled
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'opacity-70'
+                  }`}>
+                    {used}/{denom}
+                  </span>
+                </span>
+              )}
             </button>
             {acc.fileUrl && (
               <a

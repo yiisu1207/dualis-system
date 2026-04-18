@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { X, Search, Download, Landmark, ArrowDownUp } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { X, Search, Download, Landmark, ArrowDownUp, Lock, ExternalLink } from 'lucide-react';
 import type { BankRow } from '../../utils/bankReconciliation';
+import type { UsedReference } from '../../../types';
 
 interface AccountRowsModalProps {
   accountLabel: string;
@@ -12,10 +13,14 @@ interface AccountRowsModalProps {
   periodFrom?: string;
   periodTo?: string;
   rows: BankRow[];
+  usedRowsMap?: Map<string, UsedReference>;
+  highlightRowId?: string;
+  onOpenAbono?: (batchId: string, abonoId: string) => void;
   onClose: () => void;
 }
 
 type SortKey = 'date' | 'amount' | 'reference';
+type UsageFilter = 'all' | 'used' | 'free';
 
 function fmtMoney(n: number): string {
   return n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -23,18 +28,34 @@ function fmtMoney(n: number): string {
 
 export default function AccountRowsModal({
   accountLabel, bankName, rowCount, totalCredit, totalDebit, fileUrl,
-  periodFrom, periodTo, rows, onClose,
+  periodFrom, periodTo, rows, usedRowsMap, highlightRowId, onOpenAbono, onClose,
 }: AccountRowsModalProps) {
   const [q, setQ] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filter, setFilter] = useState<'all' | 'credit' | 'debit'>('all');
+  const [usageFilter, setUsageFilter] = useState<UsageFilter>('all');
+
+  const usedCount = usedRowsMap?.size || 0;
+  const creditRowCount = useMemo(() => rows.filter(r => r.amount > 0).length, [rows]);
+  const highlightedRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    if (highlightRowId && highlightedRef.current) {
+      highlightedRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightRowId]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const base = rows.filter(r => {
       if (filter === 'credit' && !(r.amount > 0)) return false;
       if (filter === 'debit' && !(r.amount < 0)) return false;
+      if (usageFilter !== 'all' && usedRowsMap) {
+        const isUsed = !!r.rowId && usedRowsMap.has(r.rowId);
+        if (usageFilter === 'used' && !isUsed) return false;
+        if (usageFilter === 'free' && isUsed) return false;
+      }
       if (!needle) return true;
       const hay = `${r.date} ${r.reference || ''} ${r.description || ''} ${r.amount}`.toLowerCase();
       return hay.includes(needle);
@@ -46,7 +67,7 @@ export default function AccountRowsModal({
       return (a.date || '').localeCompare(b.date || '') * dir;
     });
     return sorted;
-  }, [rows, q, sortKey, sortDir, filter]);
+  }, [rows, q, sortKey, sortDir, filter, usageFilter, usedRowsMap]);
 
   const toggleSort = (k: SortKey) => {
     if (sortKey === k) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -84,6 +105,11 @@ export default function AccountRowsModal({
               <span className="text-emerald-600 dark:text-emerald-400">Créditos: {fmtMoney(totalCredit)}</span>
               {totalDebit !== 0 && (
                 <span className="text-rose-600 dark:text-rose-400">Débitos: {fmtMoney(totalDebit)}</span>
+              )}
+              {usedRowsMap && (
+                <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-300">
+                  <Lock size={11} /> {usedCount}{creditRowCount > 0 ? `/${creditRowCount}` : ''} conciliada{usedCount !== 1 ? 's' : ''}
+                </span>
               )}
             </div>
           </div>
@@ -140,6 +166,27 @@ export default function AccountRowsModal({
               </button>
             ))}
           </div>
+          {usedRowsMap && usedCount > 0 && (
+            <div className="inline-flex rounded-lg bg-slate-200 dark:bg-slate-800 p-0.5 text-[11px] font-semibold">
+              {([
+                { k: 'all', label: 'Todas' },
+                { k: 'free', label: 'Libres' },
+                { k: 'used', label: 'Usadas' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.k}
+                  onClick={() => setUsageFilter(opt.k)}
+                  className={`px-3 py-1 rounded-md transition-colors ${
+                    usageFilter === opt.k
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex-1" />
           <div className="text-xs text-slate-500 dark:text-slate-400">
             Mostrando <span className="font-semibold text-slate-700 dark:text-slate-200">{filtered.length}</span> de {rows.length}
@@ -181,30 +228,69 @@ export default function AccountRowsModal({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r, idx) => (
-                  <tr
-                    key={r.rowId || idx}
-                    className={`border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 ${
-                      r.matched ? 'bg-emerald-50/40 dark:bg-emerald-900/10' : ''
-                    }`}
-                  >
-                    <td className="px-4 py-2 font-mono text-xs text-slate-700 dark:text-slate-200 whitespace-nowrap">{r.date}</td>
-                    <td className="px-4 py-2 font-mono text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                      {r.reference || <span className="text-slate-400">—</span>}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-400 max-w-md truncate" title={r.description || ''}>
-                      {r.description || <span className="text-slate-400">—</span>}
-                    </td>
-                    <td className={`px-4 py-2 font-mono text-right whitespace-nowrap ${
-                      r.amount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                    }`}>
-                      {r.amount > 0 ? '+' : ''}{fmtMoney(r.amount)}
-                    </td>
-                    <td className="px-4 py-2 font-mono text-xs text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                      {typeof r.balance === 'number' ? fmtMoney(r.balance) : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map((r, idx) => {
+                  const used = !!r.rowId && usedRowsMap ? usedRowsMap.get(r.rowId) : undefined;
+                  const usedTitle = used
+                    ? `Conciliada el ${new Date(used.claimedAt).toLocaleString('es-VE')}${
+                        used.claimedByName ? ` por ${used.claimedByName}` : ''
+                      }${used.batchId ? ` · ver lote` : ''}`
+                    : '';
+                  const isHighlighted = !!highlightRowId && r.rowId === highlightRowId;
+                  return (
+                    <tr
+                      key={r.rowId || idx}
+                      ref={isHighlighted ? highlightedRef : undefined}
+                      className={`border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${
+                        isHighlighted
+                          ? 'bg-amber-100 dark:bg-amber-900/30 ring-2 ring-amber-400 dark:ring-amber-500/60'
+                          : used
+                            ? 'bg-indigo-50/40 dark:bg-indigo-900/10'
+                            : r.matched
+                              ? 'bg-emerald-50/40 dark:bg-emerald-900/10'
+                              : ''
+                      }`}
+                    >
+                      <td className="px-4 py-2 font-mono text-xs text-slate-700 dark:text-slate-200 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          {used && (
+                            used.batchId && onOpenAbono ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenAbono(used.batchId!, used.abonoId)}
+                                className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/40 hover:bg-indigo-200 dark:hover:bg-indigo-900/60 px-1.5 py-0.5 rounded cursor-pointer"
+                                title={usedTitle}
+                              >
+                                <Lock size={9} /> Usada <ExternalLink size={8} />
+                              </button>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/40 px-1.5 py-0.5 rounded"
+                                title={usedTitle}
+                              >
+                                <Lock size={9} /> Usada
+                              </span>
+                            )
+                          )}
+                          {r.date}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 font-mono text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                        {r.reference || <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-400 max-w-md truncate" title={r.description || ''}>
+                        {r.description || <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className={`px-4 py-2 font-mono text-right whitespace-nowrap ${
+                        r.amount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                      }`}>
+                        {r.amount > 0 ? '+' : ''}{fmtMoney(r.amount)}
+                      </td>
+                      <td className="px-4 py-2 font-mono text-xs text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        {typeof r.balance === 'number' ? fmtMoney(r.balance) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

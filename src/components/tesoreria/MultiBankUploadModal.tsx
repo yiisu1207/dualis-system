@@ -6,6 +6,7 @@ import { uploadToCloudinary } from '../../utils/cloudinary';
 import { BANK_PROFILES, GENERIC_PROFILE, type BankStatementProfile } from '../../data/bankStatementFormats';
 import { parseBankStatement, slugifyAlias, type ParseResult } from '../../utils/bankStatementParser';
 import { extractStatementMeta, autoMapToBusinessAccount } from '../../utils/bankStatementMeta';
+import { rematchOrphanAbonos } from '../../utils/rematchOrphanAbonos';
 import type { BankRow } from '../../utils/bankReconciliation';
 import type { BusinessBankAccount, BankStatementExtractedMeta } from '../../../types';
 
@@ -248,6 +249,12 @@ export default function MultiBankUploadModal({
         } catch (e: any) {
           updateEntry(entry.id, { status: 'error', errorMsg: e?.message || String(e) });
         }
+      }
+      // Tras guardar los EdeC nuevos, re-evalúa abonos huérfanos globalmente
+      try {
+        await rematchOrphanAbonos(db, businessId, uploadedByUid);
+      } catch (err) {
+        console.warn('[MultiBankUploadModal] rematchOrphanAbonos falló', err);
       }
       onDone?.();
     } finally {
