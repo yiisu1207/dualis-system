@@ -44,7 +44,7 @@ REGLAS GENERALES:
 - notes: si ves "Concepto:", "Descripción:", "Motivo:" o similar, copia ese texto corto aquí.
 
 CÓDIGOS DE BANCO (prefijos de cuenta 4 dígitos):
-0102=BDV (Banco de Venezuela), 0105=MERCANTIL, 0108=PROVINCIAL, 0134=BANESCO, 0191=BNC, 0172=BANCAMIGA, 0114=BANCARIBE, 0163=BANCO DEL TESORO, 0175=BICENTENARIO, 0138=PLAZA, 0151=BFC, 0156=100% BANCO, 0157=DELSUR, 0166=BANAGRÍCOLA, 0168=BANCRECER, 0169=MIBANCO, 0171=BANCO ACTIVO, 0174=BANPLUS, 0177=BANFANB
+0102=BDV (Banco de Venezuela), 0105=MERCANTIL, 0108=PROVINCIAL, 0115=EXTERIOR, 0134=BANESCO, 0191=BNC, 0172=BANCAMIGA, 0114=BANCARIBE, 0163=BANCO DEL TESORO, 0175=BICENTENARIO, 0138=PLAZA, 0151=BFC, 0156=100% BANCO, 0157=DELSUR, 0166=BANAGRÍCOLA, 0168=BANCRECER, 0169=MIBANCO, 0171=BANCO ACTIVO, 0174=BANPLUS, 0177=BANFANB
 
 FORMATOS POR BANCO (dónde buscar cada dato):
 
@@ -88,13 +88,28 @@ FORMATOS POR BANCO (dónde buscar cada dato):
   - operationType = "pago_movil".
   - senderName típicamente NO visible → devuelve null.
 
-**Mercantil (app — "Operación Exitosa")**:
-- Header: "Transferencia exitosa" / "Pago móvil exitoso" / "Movimiento exitoso".
-- Monto: "Monto: Bs X.XXX,XX".
-- "Número de comprobante" o "Comprobante:" → reference.
-- "Fecha de la operación:" → date.
-- "Enviado desde:" → cuenta origen. "Enviado a:" → destinatario.
-- "Titular:" → senderName.
+**Mercantil (app Tpago / móvil — "Transferencias")**:
+- Header azul con título "Transferencias" (iOS/Android Tpago).
+- Monto: label "**Monto (Bs.):**" seguido del número formato "XX.XXX,XX" (ej "44.785,92" → 44785.92). SIEMPRE VES.
+- Referencia: label "**Nro. de referencia:**" → 11 dígitos típicamente (ej "20479441066") → reference.
+- Fecha: label "**Fecha y hora de envío:**" formato "DD/MM/YYYY a las HH:MM:SS AM/PM" (ej "20/01/2026 a las 10:28:30 AM" → "2026-01-20"). Descarta la hora.
+- Cuenta origen: label "**Cuenta origen:**" → número de cuenta de 12-20 dígitos + nombre del titular debajo (ej "001681175266 Eduardo Aronica"). El nombre debajo es senderName.
+- Cuenta destino: label "**Cuenta destino:**" → cuenta enmascarada o completa (20 dígitos). Prefijo identifica destinationBank (ver tabla).
+- Concepto: label "**Concepto:**" → copiar texto a notes (ej "ali tachira").
+- originBank: si no aparece explícito pero el header dice Tpago/Mercantil o el prefijo de "Cuenta origen" es 0105 → "MERCANTIL".
+- operationType: "transferencia" si hay dos cuentas largas; "pago_movil" si destino es teléfono.
+
+**Banco Exterior / BE (app móvil — "Transferencias Inmediatas")**:
+- Header: barra azul con logo "EXTERIOR" + banner naranja "TRANSFERENCIAS INMEDIATAS".
+- Confirmación: texto "Transferencia Exitosa Ref. XXXXXXXXXXXXX" (13 dígitos, ej "0000000918600") → reference.
+- Origen: label "**Origen:**" → últimos 4 dígitos de cuenta enmascarada (ej "9409") → cuenta origen.
+- Destino: label "**Destino:**" → últimos 4 dígitos de cuenta destino (ej "7601").
+- Monto: label "**Monto:**" formato "XXX.XXX,XX" sin símbolo (ej "427923,00" → 427923). SIEMPRE VES.
+- **IMPORTANTE**: este formato típicamente NO incluye fecha visible → devuelve date=null (el usuario completará manual si es necesario). NO inventes la fecha.
+- originBank = "EXTERIOR".
+- senderName: NO aparece → null.
+- operationType = "transferencia".
+- confidence: "medium" (falta la fecha — es limitación del comprobante, no de la extracción).
 
 **Provincial / BBVA (app — "Exitoso")**:
 - Header: "¡Exitoso!" o "Operación realizada".
