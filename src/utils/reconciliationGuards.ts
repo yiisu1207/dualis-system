@@ -8,7 +8,11 @@ import { buildReferenceFingerprint } from './referenceFingerprint';
 import type { UsedReference } from '../../types';
 
 export interface ClaimReferencePayload {
-  bankAccountId: string;
+  // Al menos uno de estos dos debe venir: bankAccountId (preferido, es el ID estable
+  // de BusinessBankAccount) o accountAlias (fallback, es el doc ID del EdeC en
+  // bankStatements/{month}/accounts/{alias}). Si ambos existen, bankAccountId gana.
+  bankAccountId?: string;
+  accountAlias?: string;
   reference: string;
   amount: number;
   abonoId: string;
@@ -29,8 +33,12 @@ export async function claimReference(
   businessId: string,
   payload: ClaimReferencePayload,
 ): Promise<ClaimResult> {
+  const identity = payload.bankAccountId || payload.accountAlias;
+  if (!identity) {
+    throw new Error('claimReference: se requiere bankAccountId o accountAlias');
+  }
   const fingerprint = await buildReferenceFingerprint(
-    payload.bankAccountId,
+    identity,
     payload.reference,
     payload.amount,
   );
@@ -48,7 +56,7 @@ export async function claimReference(
     }
     const record: UsedReference = {
       fingerprint,
-      bankAccountId: payload.bankAccountId,
+      bankAccountId: payload.bankAccountId || payload.accountAlias || '',
       reference: payload.reference.trim(),
       amount: Number(payload.amount.toFixed(2)),
       claimedAt: new Date().toISOString(),

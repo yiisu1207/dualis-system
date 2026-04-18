@@ -120,12 +120,14 @@ export default function BatchReviewPanel({
     setError(null);
     setBusyId(entry.id);
     try {
-      if (!cand.bankAccountId || !cand.rowRef) {
-        setError('Candidato sin bankAccountId o referencia — no se puede claim atómico.');
+      const identity = cand.bankAccountId || cand.accountAlias;
+      if (!identity || !cand.rowRef) {
+        setError('Candidato sin cuenta/alias o referencia — no se puede claim atómico.');
         return;
       }
       const claim = await claimReference(db, businessId, {
         bankAccountId: cand.bankAccountId,
+        accountAlias: cand.accountAlias,
         reference: cand.rowRef,
         amount: cand.rowAmount,
         abonoId: entry.id,

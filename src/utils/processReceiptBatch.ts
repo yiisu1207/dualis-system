@@ -218,10 +218,15 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
       let matchBankName: string | undefined;
       let matchMonthKey: string | undefined;
 
+      // Auto-claim cuando el top candidate es exact/high. Usa bankAccountId si está
+      // presente, si no cae a accountAlias (el EdeC puede no estar mapeado a una
+      // BusinessBankAccount aún — no queremos bloquear por eso).
+      const topIdentity = top?.row.bankAccountId || top?.row.accountAlias;
       if (top && (top.confidence === 'exact' || top.confidence === 'high')
-          && top.row.bankAccountId && top.row.reference && abonoBase.reference) {
+          && topIdentity && top.row.reference && abonoBase.reference) {
         const claim = await claimReference(db, businessId, {
           bankAccountId: top.row.bankAccountId,
+          accountAlias: top.row.accountAlias,
           reference: top.row.reference,
           amount: top.row.amount,
           abonoId: newId('ab'),
