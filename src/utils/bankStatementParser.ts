@@ -587,7 +587,13 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
     }
 
     if (amount == null || amount === 0) {
-      warnings.push(`Fila ${i + headerIdx + 2}: monto inválido`);
+      // Filas tipo "SALDO ANTERIOR / SALDO INICIAL" tienen fecha + saldo pero sin
+      // crédito/débito — NO son un error de parseo, son informativas. Skip silente.
+      const descRaw = descIdx >= 0 ? String(row[descIdx] || '').toLowerCase() : '';
+      const isSaldoInformativo = /saldo\s+(anterior|inicial|final)/.test(descRaw);
+      if (!isSaldoInformativo) {
+        warnings.push(`Fila ${i + headerIdx + 2}: monto inválido`);
+      }
       continue;
     }
 
