@@ -467,13 +467,13 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
   const formatPhone = (value?: string) => (value || '').replace(/\s+/g, ' ').trim();
   const getEntityField = (value?: string) => (value && value.trim() ? value.trim() : 'N/A');
 
-  const getInitials = (name: string) =>
-    name
+  const getInitials = (name?: string) =>
+    (name || '')
       .split(' ')
       .filter(Boolean)
       .slice(0, 2)
-      .map((part) => part[0].toUpperCase())
-      .join('');
+      .map((part) => part[0]?.toUpperCase() || '')
+      .join('') || '??';
 
   const daysSince = (dateValue?: string) => {
     if (!dateValue) return null;
