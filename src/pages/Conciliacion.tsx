@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, collectionGroup, doc, getDocs, onSnapshot, query, setDoc, deleteDoc, updateDoc, where, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { uploadToCloudinary } from '../utils/cloudinary';
-import { CheckCircle2, FileCheck, Loader2, AlertTriangle, XCircle, Landmark, ShieldCheck, Zap, Layers, Upload, Camera, Plus } from 'lucide-react';
+import { CheckCircle2, FileCheck, Loader2, AlertTriangle, XCircle, Landmark, ShieldCheck, Zap, Layers, Upload, Camera, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import {
   findMatches,
@@ -485,6 +485,27 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     }
   };
 
+  const handleDeleteBatch = async (batch: ReconciliationBatch) => {
+    if (!confirm(`¿Eliminar el lote "${batch.name}" y todos sus abonos? Esta acción no se puede deshacer.`)) return;
+    try {
+      // 1) buscar abonos del lote (collectionGroup)
+      const abonosSnap = await getDocs(query(collectionGroup(db, 'abonos'), where('batchId', '==', batch.id)));
+      // 2) borrar abonos en batches de 400 (límite de writeBatch = 500)
+      const docs = abonosSnap.docs;
+      for (let i = 0; i < docs.length; i += 400) {
+        const wb = writeBatch(db);
+        docs.slice(i, i + 400).forEach(d => wb.delete(d.ref));
+        await wb.commit();
+      }
+      // 3) borrar el batch doc
+      await deleteDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${batch.id}`));
+      toast.success(`Lote "${batch.name}" eliminado · ${docs.length} abono${docs.length === 1 ? '' : 's'} también borrado${docs.length === 1 ? '' : 's'}`);
+      if (selectedBatchId === batch.id) setSelectedBatchId(null);
+    } catch (err: any) {
+      toast.error('Error eliminando lote: ' + (err?.message || String(err)));
+    }
+  };
+
   const poolTotalCredit = useMemo(() => pool.reduce((s, r) => s + Math.max(0, r.amount), 0), [pool]);
 
   // Métricas del dashboard
@@ -606,6 +627,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
               onOpen={setSelectedBatchId}
               onNewBatch={() => setShowReceiptBatch(true)}
               onUploadEdec={() => setShowMultiUpload(true)}
+              onDelete={handleDeleteBatch}
               canEdit={canEdit}
             />
           )
@@ -773,10 +795,11 @@ interface BatchListProps {
   onOpen: (id: string) => void;
   onNewBatch: () => void;
   onUploadEdec: () => void;
+  onDelete: (batch: ReconciliationBatch) => void;
   canEdit: boolean;
 }
 
-const BatchList: React.FC<BatchListProps> = ({ batches, onOpen, onNewBatch, onUploadEdec, canEdit }) => {
+const BatchList: React.FC<BatchListProps> = ({ batches, onOpen, onNewBatch, onUploadEdec, onDelete, canEdit }) => {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
@@ -845,12 +868,23 @@ const BatchList: React.FC<BatchListProps> = ({ batches, onOpen, onNewBatch, onUp
                     }`}>{b.status}</span>
                   </td>
                   <td className="px-4 py-2 text-right">
-                    <button
-                      onClick={() => onOpen(b.id)}
-                      className="text-xs px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-                    >
-                      Abrir
-                    </button>
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        onClick={() => onOpen(b.id)}
+                        className="text-xs px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                      >
+                        Abrir
+                      </button>
+                      {canEdit && (
+                        <button
+                          onClick={() => onDelete(b)}
+                          title="Eliminar lote"
+                          className="text-xs p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
