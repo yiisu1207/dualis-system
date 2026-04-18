@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from '../firebase/config';
+import { db } from '../firebase/config';
+import { uploadToCloudinary } from '../utils/cloudinary';
 import { CheckCircle2, FileCheck, Loader2, AlertTriangle, XCircle, Landmark, ShieldCheck, Zap, Layers, Upload, Camera, Plus } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import {
@@ -48,6 +48,7 @@ interface BankStatementAccountDoc {
   amountTolerancePct?: number;
   sourceFilename: string;
   fileUrl?: string;
+  filePublicId?: string;       // Cloudinary public_id — para auditoría y delete futuro vía backend
   uploadedAt: any;
   uploadedBy: string;
   rows: BankRow[];
@@ -252,10 +253,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     const totalCredit = data.rows.filter((r) => r.amount > 0).reduce((s, r) => s + r.amount, 0);
     const totalDebit = data.rows.filter((r) => r.amount < 0).reduce((s, r) => s + r.amount, 0);
 
-    // Subir archivo original a Firebase Storage.
-    // Sanitizar filename: Firebase Storage tolera mal espacios/paréntesis en rutas
-    // (rompe preflight CORS en algunos proxies). Normalizamos a [a-z0-9._-] y
-    // conservamos la extensión original.
+    // Sanitizar filename: caracteres raros rompen URLs firmadas en algunos CDNs.
     const safeFilename = (() => {
       const name = data.sourceFilename || 'archivo';
       const dotIdx = name.lastIndexOf('.');
@@ -265,12 +263,19 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
       const cleanExt = ext.toLowerCase().replace(/[^a-z0-9.]+/g, '');
       return `${cleanBase}${cleanExt}`;
     })();
+    // Subir archivo original a Cloudinary (preset 'dualis_payments', resource_type 'raw' para PDFs).
+    // Firebase Storage no se usa: el bucket no está provisionado (requiere plan Blaze, inaccesible desde VE).
     let fileUrl: string | undefined;
+    let filePublicId: string | undefined;
     if (data.file) {
-      const filePath = `bankStatements/${businessId}/${monthKey}/${data.accountAlias}/${safeFilename}`;
-      const fileRef = storageRef(storage, filePath);
-      await uploadBytes(fileRef, data.file);
-      fileUrl = await getDownloadURL(fileRef);
+      try {
+        const result = await uploadToCloudinary(data.file, 'dualis_payments', 'raw', safeFilename);
+        fileUrl = result.secure_url;
+        filePublicId = result.public_id;
+      } catch (err: any) {
+        console.warn('[Conciliacion] Cloudinary upload failed; guardando sin fileUrl', err);
+        toast.error(`Subida del archivo falló (${err?.message || 'error'}). Guardando cuenta sin archivo adjunto.`);
+      }
     }
 
     const payload: BankStatementAccountDoc = {
@@ -281,6 +286,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
       amountTolerancePct: data.amountTolerancePct || 0,
       sourceFilename: safeFilename,
       fileUrl,
+      filePublicId,
       uploadedAt: Timestamp.now(),
       uploadedBy: currentUserId,
       rows: data.rows.map((r) => ({ ...r, matched: false, matchedAbonoId: undefined })),
@@ -298,13 +304,9 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     const acc = accounts.find((a) => a.accountAlias === alias);
     if (!acc) return;
     if (!confirm(`¿Borrar la cuenta "${acc.accountLabel}" y sus ${acc.rowCount} filas del ${monthKey}?`)) return;
-    // Eliminar archivo de Storage si existe
-    if (acc.fileUrl && acc.sourceFilename) {
-      try {
-        const filePath = `bankStatements/${businessId}/${monthKey}/${alias}/${acc.sourceFilename}`;
-        await deleteObject(storageRef(storage, filePath));
-      } catch { /* archivo ya no existe — OK */ }
-    }
+    // NOTA: Cloudinary unsigned upload preset no permite delete desde cliente.
+    // El asset queda huérfano (accesible por URL si alguien la tuviera, pero sin referencia).
+    // Un job backend futuro puede barrer `filePublicId` de docs borrados y limpiar vía API admin.
     const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'accounts', alias);
     await deleteDoc(ref);
     toast.success(`Cuenta "${acc.accountLabel}" eliminada`);

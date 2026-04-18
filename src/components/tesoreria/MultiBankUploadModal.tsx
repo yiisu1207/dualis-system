@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Upload, Loader2, AlertTriangle, CheckCircle2, Trash2, FileText } from 'lucide-react';
 import { Timestamp, collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../firebase/config';
+import { db } from '../../firebase/config';
+import { uploadToCloudinary } from '../../utils/cloudinary';
 import { BANK_PROFILES, GENERIC_PROFILE, type BankStatementProfile } from '../../data/bankStatementFormats';
 import { parseBankStatement, slugifyAlias, type ParseResult } from '../../utils/bankStatementParser';
 import { extractStatementMeta, autoMapToBusinessAccount } from '../../utils/bankStatementMeta';
@@ -176,15 +176,17 @@ export default function MultiBankUploadModal({
     const totalCredit = entry.parseResult.rows.filter(r => r.amount > 0).reduce((s, r) => s + r.amount, 0);
     const totalDebit = entry.parseResult.rows.filter(r => r.amount < 0).reduce((s, r) => s + r.amount, 0);
 
-    // Subir PDF a Storage
+    // Subir PDF a Cloudinary (Firebase Storage no se usa — bucket no provisionado).
+    // Sanitizar el nombre: algunos PDFs de banco traen espacios/paréntesis.
+    const safeFilename = entry.file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, '_').replace(/_+/g, '_');
     let fileUrl: string | undefined;
+    let filePublicId: string | undefined;
     try {
-      const path = `bankStatements/${businessId}/${monthKey}/${entry.alias}/${entry.file.name}`;
-      const sref = storageRef(storage, path);
-      await uploadBytes(sref, entry.file);
-      fileUrl = await getDownloadURL(sref);
+      const result = await uploadToCloudinary(entry.file, 'dualis_payments', 'raw', safeFilename);
+      fileUrl = result.secure_url;
+      filePublicId = result.public_id;
     } catch (e) {
-      console.warn('[MultiBankUpload] storage upload failed; saving without fileUrl', e);
+      console.warn('[MultiBankUpload] cloudinary upload failed; saving without fileUrl', e);
     }
 
     const profile = entry.detectedProfile;
@@ -211,8 +213,9 @@ export default function MultiBankUploadModal({
       bankName: entry.bankAccountId ? mappedAccount?.bankName : profile?.bankName,
       bankAccountId: entry.bankAccountId,
       amountTolerancePct: entry.amountTolerancePct,
-      sourceFilename: entry.file.name,
+      sourceFilename: safeFilename,
       fileUrl,
+      filePublicId,
       uploadedAt: Timestamp.now(),
       uploadedBy: uploadedByUid,
       rows,

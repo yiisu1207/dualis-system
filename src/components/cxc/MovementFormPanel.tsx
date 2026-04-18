@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { X, FileText, CreditCard, Settings2, ShieldCheck, ArrowRightLeft, Wallet, UploadCloud, CheckCircle2 } from 'lucide-react';
+import { X, FileText, CreditCard, Settings2, ShieldCheck, ArrowRightLeft, Wallet, UploadCloud, CheckCircle2, ListChecks, Layers } from 'lucide-react';
 import { doc, getDoc, collection, query, where, orderBy, limit, getDocs, setDoc } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../firebase/config';
-import type { Movement, Customer, Supplier, CustomRate, ExchangeRates, ApprovalConfig } from '../../../types';
-import { resolveAccountLabel, resolveAccountColor, resolveRateForAccount } from './cxcHelpers';
+import { db } from '../../firebase/config';
+import { uploadToCloudinary } from '../../utils/cloudinary';
+import type { Movement, Customer, Supplier, CustomRate, ExchangeRates, ApprovalConfig, CreditMode } from '../../../types';
+import { resolveAccountLabel, resolveAccountColor, resolveRateForAccount, getEffectiveCreditMode } from './cxcHelpers';
 import { getMovementUsdAmount } from '../../utils/formatters';
 import { mapMovementToApprovalKind } from '../../utils/approvalHelpers';
+import { computeFifoAllocations, getInvoiceRemaining, applyAbonoAllocations, reverseAbonoAllocations } from '../../utils/invoiceAllocations';
 
 export type PanelPosition = 'right' | 'left' | 'center' | 'bottom' | 'top';
 
@@ -118,6 +119,23 @@ export function MovementFormPanel({
     try { return (localStorage.getItem('dualis_panel_position') as PanelPosition) || 'right'; } catch { return 'right'; }
   });
   const [showPositionMenu, setShowPositionMenu] = useState(false);
+  const [businessCreditMode, setBusinessCreditMode] = useState<CreditMode | undefined>(undefined);
+  // invoiceLinked — imputación manual: mapa invoiceId → monto USD asignado.
+  // Vacío ⇒ aplicar FIFO en submit. Cada slot refleja el input numérico por factura.
+  const [allocInputs, setAllocInputs] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!businessId) return;
+    let cancelled = false;
+    getDoc(doc(db, 'businessConfigs', businessId))
+      .then(snap => {
+        if (cancelled) return;
+        const cm = snap.data()?.creditMode;
+        if (cm === 'invoiceLinked' || cm === 'accumulated') setBusinessCreditMode(cm);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [businessId]);
 
   const changePanelPosition = (pos: PanelPosition) => {
     setPanelPosition(pos);
@@ -297,8 +315,74 @@ export function MovementFormPanel({
     return d.toISOString().split('T')[0];
   }, [date, paymentDays, movType]);
 
+  // Modo efectivo (override por cliente > global del negocio > accumulated)
+  const effectiveCreditMode: CreditMode = useMemo(() => {
+    if (mode !== 'cxc') return 'accumulated';
+    const customer = selectedEntity as Customer | undefined;
+    return getEffectiveCreditMode(customer, { creditMode: businessCreditMode });
+  }, [mode, selectedEntity, businessCreditMode]);
+
+  const showInvoiceAllocator =
+    mode === 'cxc' && movType === 'ABONO' && !isEditing && effectiveCreditMode === 'invoiceLinked' && !!entityId;
+
+  // Facturas pendientes del cliente en la cuenta seleccionada
+  const openInvoices = useMemo(() => {
+    if (!showInvoiceAllocator) return [] as Array<Movement & { remaining: number }>;
+    return movements
+      .filter(m => m.entityId === entityId
+        && m.movementType === 'FACTURA'
+        && m.accountType === accountType
+        && !m.anulada)
+      .map(m => ({ ...m, remaining: getInvoiceRemaining(m) }))
+      .filter(m => m.remaining > 0.009)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [showInvoiceAllocator, movements, entityId, accountType]);
+
+  // Abono USD previsualizado (lo mismo que se escribe en Firestore al guardar)
+  const previewAbonoUSD = useMemo(() => {
+    const parsedAmount = parseFloat(amount) || 0;
+    const parsedRate = parseFloat(rateUsed) || 0;
+    return currency === 'BS' && parsedRate > 0 ? parsedAmount / parsedRate : parsedAmount;
+  }, [amount, rateUsed, currency]);
+
+  // Imputación total seleccionada manualmente (0 ⇒ caer a FIFO automático)
+  const selectedAllocatedTotal = useMemo(() => {
+    return Object.values(allocInputs).reduce<number>((s, v) => s + (parseFloat(String(v)) || 0), 0);
+  }, [allocInputs]);
+
+  const handleAllocChange = (invoiceId: string, value: string, max: number) => {
+    let n = parseFloat(value);
+    if (Number.isNaN(n) || n < 0) n = 0;
+    if (n > max) n = max;
+    setAllocInputs(prev => ({ ...prev, [invoiceId]: n > 0 ? n.toFixed(2) : '' }));
+  };
+
+  const handleSelectAllInvoices = () => {
+    let remainingPool = previewAbonoUSD;
+    const next: Record<string, string> = {};
+    for (const inv of openInvoices) {
+      if (remainingPool <= 0.009) break;
+      const take = Math.min(remainingPool, inv.remaining);
+      next[inv.id] = take.toFixed(2);
+      remainingPool -= take;
+    }
+    setAllocInputs(next);
+  };
+
+  const handleApplyFifo = () => {
+    const fifo = computeFifoAllocations(openInvoices, previewAbonoUSD);
+    const next: Record<string, string> = {};
+    fifo.forEach(a => { next[a.invoiceId] = a.amount.toFixed(2); });
+    setAllocInputs(next);
+  };
+
+  const handleClearAllocations = () => setAllocInputs({});
+
+  const allocationOverLimit = selectedAllocatedTotal - 0.009 > previewAbonoUSD;
+
   const handleSubmit = async () => {
     if (!entityId || !amount || saving) return;
+    if (showInvoiceAllocator && allocationOverLimit) return;
 
     const parsedAmount = parseFloat(amount) || 0;
     const parsedRate = parseFloat(rateUsed) || 0;
@@ -334,6 +418,13 @@ export function MovementFormPanel({
           data.earlyPayDiscountPct = parseFloat(discountPct) || 0;
           data.earlyPayDiscountExpiry = dueDate;
         }
+        // invoiceLinked: inicializar estado de la factura.
+        // Contado ⇒ PAID con allocatedTotal = monto; crédito ⇒ OPEN sin allocations.
+        if (mode === 'cxc' && effectiveCreditMode === 'invoiceLinked') {
+          data.invoiceStatus = paymentDays === 0 ? 'PAID' : 'OPEN';
+          data.allocatedTotal = paymentDays === 0 ? amountInUSD : 0;
+          data.allocations = [];
+        }
       } else {
         data.metodoPago = metodoPago;
         data.referencia = referencia.trim();
@@ -346,7 +437,57 @@ export function MovementFormPanel({
         data.expenseCategory = expenseCategory;
       }
 
+      // invoiceLinked — al editar un ABONO con imputaciones previas, revertirlas
+      // ANTES del update para que el read del FACTURA venga limpio. Luego aplicamos
+      // las nuevas (manual o FIFO) sobre el abono editado.
+      if (
+        isEditing &&
+        showInvoiceAllocator &&
+        movType === 'ABONO' &&
+        editingMovement?.id &&
+        Array.isArray(editingMovement.allocations) &&
+        editingMovement.allocations.length > 0
+      ) {
+        try {
+          await reverseAbonoAllocations(db, editingMovement.id);
+        } catch (err) {
+          console.warn('[MovementFormPanel] reverseAbonoAllocations (pre-edit) failed', err);
+        }
+      }
+
       const saveResult = await onSave(data);
+      const abonoId: string | undefined =
+        typeof saveResult === 'string' && saveResult
+          ? saveResult
+          : (isEditing ? editingMovement?.id : undefined);
+
+      // invoiceLinked — aplicar allocations al ABONO recién creado o editado
+      if (showInvoiceAllocator && movType === 'ABONO' && abonoId) {
+        try {
+          type AllocEntry = { invoiceId: string; invoiceRef?: string; amount: number };
+          const manual: AllocEntry[] = [];
+          for (const [invoiceId, v] of Object.entries(allocInputs)) {
+            const n = parseFloat(String(v)) || 0;
+            const inv = openInvoices.find(i => i.id === invoiceId);
+            if (n > 0 && inv) {
+              manual.push({
+                invoiceId,
+                invoiceRef: inv.nroControl || inv.concept || undefined,
+                amount: Number(n.toFixed(2)),
+              });
+            }
+          }
+          const finalAllocs: AllocEntry[] = manual.length > 0
+            ? manual
+            : computeFifoAllocations(openInvoices, amountInUSD);
+          if (finalAllocs.length > 0) {
+            await applyAbonoAllocations(db, abonoId, amountInUSD, finalAllocs);
+          }
+        } catch (err) {
+          console.warn('[MovementFormPanel] applyAbonoAllocations failed', err);
+        }
+      }
+
       // Fase D.2 — si el abono trae comprobante, lo subimos a Storage y
       // dejamos un DraftAbono pre-llenado en Conciliación con `fromMovementId`,
       // para que al conciliarse dispare el auto-verify del Movement.
@@ -354,11 +495,11 @@ export function MovementFormPanel({
         try {
           const movId = saveResult;
           const monthKey = date.slice(0, 7); // YYYY-MM
-          const safeName = receiptFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-          const path = `bankStatements/${businessId}/${monthKey}/receipts/${movId}/${Date.now()}_${safeName}`;
-          const fileRef = storageRef(storage, path);
-          await uploadBytes(fileRef, receiptFile);
-          const receiptUrl = await getDownloadURL(fileRef);
+          const safeName = receiptFile.name.toLowerCase().replace(/[^a-z0-9._-]+/g, '_').replace(/_+/g, '_');
+          // Cloudinary — Firebase Storage no se usa (bucket no provisionado).
+          // `auto` detecta tipo: imagen o PDF (raw). El comprobante puede ser cualquiera.
+          const uploaded = await uploadToCloudinary(receiptFile, 'dualis_payments', 'auto', `${Date.now()}_${safeName}`);
+          const receiptUrl = uploaded.secure_url;
           const abonoId = `ab_${movId}`;
           await setDoc(doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', abonoId), {
             id: abonoId,
@@ -760,6 +901,135 @@ export function MovementFormPanel({
                   <input value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="Nro. ref" className={inp} />
                 </div>
               </div>
+
+              {/* invoiceLinked — selector de imputación a facturas */}
+              {showInvoiceAllocator && (
+                <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.04] overflow-hidden">
+                  <div className="px-3 py-2.5 border-b border-indigo-500/15 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ListChecks size={13} className="text-indigo-400 shrink-0" />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500 dark:text-indigo-400 truncate">
+                        Imputar a facturas pendientes
+                      </span>
+                    </div>
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 shrink-0">
+                      {openInvoices.length} {openInvoices.length === 1 ? 'abierta' : 'abiertas'}
+                    </span>
+                  </div>
+
+                  {openInvoices.length === 0 ? (
+                    <div className="px-3 py-4 text-center">
+                      <p className="text-[11px] font-bold text-slate-500 dark:text-white/40">
+                        Este cliente no tiene facturas pendientes en {resolveAccountLabel(accountType, customRates)}.
+                      </p>
+                      <p className="text-[10px] font-medium text-slate-400 dark:text-white/25 mt-1">
+                        El abono quedará como crédito a favor.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="px-3 py-2 flex flex-wrap items-center gap-2 border-b border-indigo-500/10 bg-white/40 dark:bg-white/[0.02]">
+                        <button
+                          type="button"
+                          onClick={handleApplyFifo}
+                          className="text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/25 transition-all flex items-center gap-1"
+                        >
+                          <Layers size={10} /> FIFO
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSelectAllInvoices}
+                          className="text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md bg-slate-200/70 dark:bg-white/[0.06] text-slate-600 dark:text-white/60 hover:bg-slate-300/80 dark:hover:bg-white/[0.1] transition-all"
+                        >
+                          Seleccionar todo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleClearAllocations}
+                          className="text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md text-slate-500 dark:text-white/40 hover:text-rose-500 transition-all"
+                        >
+                          Limpiar
+                        </button>
+                        <span className="ml-auto text-[9px] font-bold text-slate-400 dark:text-white/30">
+                          Vacío ⇒ FIFO automático
+                        </span>
+                      </div>
+
+                      <div className="max-h-56 overflow-y-auto divide-y divide-indigo-500/10">
+                        {openInvoices.map(inv => {
+                          const ref = inv.nroControl || inv.concept || inv.id.slice(0, 6);
+                          const currentVal = allocInputs[inv.id] || '';
+                          const selected = (parseFloat(currentVal) || 0) > 0;
+                          return (
+                            <div key={inv.id} className={`px-3 py-2.5 flex items-center gap-2.5 transition-all ${selected ? 'bg-indigo-500/[0.05]' : ''}`}>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    handleAllocChange(inv.id, inv.remaining.toFixed(2), inv.remaining);
+                                  } else {
+                                    setAllocInputs(prev => { const n = { ...prev }; delete n[inv.id]; return n; });
+                                  }
+                                }}
+                                className="accent-indigo-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[11px] font-black text-slate-700 dark:text-white/80 truncate">{ref}</span>
+                                  {inv.invoiceStatus === 'PARTIAL' && (
+                                    <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">Parcial</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[9px] text-slate-400 dark:text-white/25">{inv.date}</span>
+                                  {inv.dueDate && (
+                                    <span className="text-[9px] text-slate-400 dark:text-white/25">vence {inv.dueDate}</span>
+                                  )}
+                                  <span className="text-[9px] font-bold text-slate-500 dark:text-white/40 ml-auto">
+                                    restante {fmtUSD(inv.remaining)}
+                                  </span>
+                                </div>
+                              </div>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={currentVal}
+                                onChange={(e) => handleAllocChange(inv.id, e.target.value, inv.remaining)}
+                                placeholder="0.00"
+                                className="w-20 px-2 py-1.5 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-[11px] font-black text-slate-900 dark:text-white text-right focus:ring-2 focus:ring-indigo-500 outline-none"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="px-3 py-2.5 border-t border-indigo-500/10 bg-white/40 dark:bg-white/[0.02] space-y-1">
+                        <div className="flex items-center justify-between text-[10px] font-black">
+                          <span className="text-slate-500 dark:text-white/40 uppercase tracking-wider">Imputado</span>
+                          <span className={allocationOverLimit ? 'text-rose-500' : 'text-indigo-600 dark:text-indigo-400'}>
+                            {fmtUSD(selectedAllocatedTotal)} / {fmtUSD(previewAbonoUSD)}
+                          </span>
+                        </div>
+                        {allocationOverLimit && (
+                          <p className="text-[10px] font-bold text-rose-500">La imputación excede el monto del abono.</p>
+                        )}
+                        {!allocationOverLimit && selectedAllocatedTotal > 0 && previewAbonoUSD - selectedAllocatedTotal > 0.009 && (
+                          <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                            Crédito a favor: {fmtUSD(previewAbonoUSD - selectedAllocatedTotal)}
+                          </p>
+                        )}
+                        {selectedAllocatedTotal <= 0.009 && previewAbonoUSD > 0 && (
+                          <p className="text-[10px] font-medium text-slate-400 dark:text-white/30">
+                            Sin selección ⇒ se aplicará FIFO a las facturas más viejas.
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* Fase D.2 — Comprobante opcional para pre-llenar Conciliación */}
               {mode === 'cxc' && !isEditing && (
