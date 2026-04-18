@@ -995,8 +995,12 @@ function BizEditModal({ biz, slug, onClose, onSave, saving, setSaving, showToast
 
       // Bonus days — extend trial/period end
       if (bonusDays > 0) {
-        const baseDate = biz.trialEndsAt ? new Date(biz.trialEndsAt) :
+        const rawBase = biz.trialEndsAt ? new Date(biz.trialEndsAt) :
           biz.currentPeriodEnd ? new Date(biz.currentPeriodEnd) : new Date();
+        // Si la fecha base ya venció, partimos desde HOY — si no, +30 días a
+        // una fecha pasada deja el trial casi expirado (o sigue expirado).
+        const now = new Date();
+        const baseDate = rawBase.getTime() < now.getTime() ? now : rawBase;
         const newDate = new Date(baseDate.getTime() + bonusDays * 24 * 60 * 60 * 1000);
         if (editSubStatus === 'trial') {
           bizUpdate['subscription.trialEndsAt'] = newDate;
@@ -1119,13 +1123,41 @@ function BizEditModal({ biz, slug, onClose, onSave, saving, setSaving, showToast
 
           {/* Bonus days */}
           <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4">
-            <label className="text-[10px] font-black uppercase tracking-widest text-amber-400/60 mb-2 flex items-center gap-1.5 block">
-              <Sparkles size={11} /> Otorgar días bonus
+            <label className="text-[10px] font-black uppercase tracking-widest text-amber-400/60 mb-3 flex items-center gap-1.5 block">
+              <Sparkles size={11} /> Otorgar días bonus / extender trial
             </label>
+            {/* Presets rápidos */}
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {[
+                { days: 7,  label: '+7 días',  sub: 'Cortesía' },
+                { days: 15, label: '+15 días', sub: 'Quincena' },
+                { days: 30, label: '+30 días', sub: 'Mes extra' },
+              ].map(p => {
+                const active = bonusDays === p.days;
+                const highlight = p.days === 30;
+                return (
+                  <button
+                    key={p.days}
+                    type="button"
+                    onClick={() => setBonusDays(p.days)}
+                    className={`py-2.5 rounded-xl border transition-all flex flex-col items-center gap-0.5 ${
+                      active
+                        ? 'bg-amber-500/25 border-amber-400/60 text-amber-200 shadow-[0_0_0_1px_rgba(251,191,36,0.3)]'
+                        : highlight
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+                        : 'bg-white/[0.04] border-white/[0.08] text-white/70 hover:bg-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    <span className="text-[11px] font-black tracking-wide">{p.label}</span>
+                    <span className="text-[8px] font-semibold uppercase tracking-widest opacity-60">{p.sub}</span>
+                  </button>
+                );
+              })}
+            </div>
             <div className="flex items-center gap-3">
               <input type="number" min={0} max={365} value={bonusDays} onChange={e => setBonusDays(Number(e.target.value))}
                 className="w-24 px-3 py-2 bg-white/[0.04] border border-white/[0.08] text-sm text-white rounded-xl focus:outline-none text-center" />
-              <span className="text-xs text-white/30">días</span>
+              <span className="text-xs text-white/30">días personalizados</span>
               {bonusDays > 0 && (
                 <span className="text-[10px] text-amber-400/70">
                   Se extenderá {editSubStatus === 'trial' ? 'el trial' : 'el período'} por {bonusDays} días
@@ -1137,6 +1169,9 @@ function BizEditModal({ biz, slug, onClose, onSave, saving, setSaving, showToast
               {biz.trialEndsAt && <span>Trial ends: {fmtDate(biz.trialEndsAt)}</span>}
               {biz.currentPeriodEnd && <span>Period ends: {fmtDate(biz.currentPeriodEnd)}</span>}
             </div>
+            <p className="mt-2 text-[9px] text-white/35">
+              Tip: si el trial ya venció, cambia Estado → <span className="text-amber-400/80 font-semibold">Trial</span> y aplica los días — los días se suman desde hoy si la fecha base ya pasó.
+            </p>
           </div>
 
           {/* Current info */}
