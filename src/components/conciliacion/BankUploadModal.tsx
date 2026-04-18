@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { X, Upload, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { BANK_PROFILES, GENERIC_PROFILE, type BankStatementProfile } from '../../data/bankStatementFormats';
+import { BANK_PROFILES, GENERIC_PROFILE, profileLabel, type BankStatementProfile } from '../../data/bankStatementFormats';
 import { parseBankStatement, slugifyAlias, type ParseResult } from '../../utils/bankStatementParser';
 import type { BankRow } from '../../utils/bankReconciliation';
 
@@ -60,8 +60,13 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
 
   const handleFile = useCallback((f: File | null) => {
     setFile(f);
-    if (f) doParse(f);
-  }, [doParse]);
+    if (!f) return;
+    if (!bankCode) {
+      setError('Selecciona el banco antes de subir el archivo — así sabemos qué formato usar.');
+      return;
+    }
+    doParse(f);
+  }, [doParse, bankCode]);
 
   const handleConfirm = async () => {
     if (!file || !result || !alias.trim() || !result.rows.length) return;
@@ -118,18 +123,24 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
             </label>
 
             <label className="block">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Banco</span>
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Banco *</span>
               <select
                 value={bankCode}
-                onChange={(e) => setBankCode(e.target.value)}
-                className="w-full mt-1 px-3 py-2 border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 rounded-lg text-sm focus:outline-none focus:border-indigo-400"
+                onChange={(e) => {
+                  setBankCode(e.target.value);
+                  if (file && e.target.value) doParse(file);
+                }}
+                className={`w-full mt-1 px-3 py-2 border ${bankCode ? 'border-slate-300 dark:border-slate-600' : 'border-amber-400 dark:border-amber-500'} dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 rounded-lg text-sm focus:outline-none focus:border-indigo-400`}
               >
-                <option value="">Auto-detectar</option>
+                <option value="" disabled>— Selecciona el banco —</option>
                 {BANK_PROFILES.map(p => (
-                  <option key={p.bankCode} value={p.bankCode}>{p.bankName}</option>
+                  <option key={p.bankCode} value={p.bankCode}>{profileLabel(p)}</option>
                 ))}
                 <option value="generico">Genérico / Otro</option>
               </select>
+              {!bankCode && (
+                <span className="text-xs text-amber-600 dark:text-amber-400 mt-1 block">⚠ Requerido para parsear correctamente.</span>
+              )}
             </label>
           </div>
 
@@ -160,7 +171,7 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
             </div>
           </details>
 
-          <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center">
+          <div className={`border-2 border-dashed ${bankCode ? 'border-slate-300 dark:border-slate-600' : 'border-slate-200 dark:border-slate-700 opacity-50'} rounded-xl p-8 text-center transition`}>
             <Upload size={32} className="mx-auto text-slate-400 dark:text-slate-500 mb-3" />
             <input
               ref={fileRef}
@@ -168,14 +179,19 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
               accept=".csv,.xlsx,.xls,.pdf"
               onChange={(e) => handleFile(e.target.files?.[0] || null)}
               className="hidden"
+              disabled={!bankCode}
             />
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 dark:hover:bg-indigo-600"
+              disabled={!bankCode}
+              className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Seleccionar archivo CSV / Excel / PDF
             </button>
+            {!bankCode && (
+              <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">Primero elige el banco arriba.</div>
+            )}
             {file && (
               <div className="mt-3 text-sm text-slate-600 dark:text-slate-300">
                 📎 {file.name} <span className="text-slate-400 dark:text-slate-500">({(file.size / 1024).toFixed(1)} KB)</span>

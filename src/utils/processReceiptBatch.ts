@@ -234,7 +234,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
 
       const abonoId = newId('ab');
       const abonoMonthKey = matchMonthKey || abonoBase.date.slice(0, 7);
-      const sessionAbono: SessionAbono = {
+      const sessionAbono: SessionAbono & { businessId: string } = {
         ...abonoBase,
         id: abonoId,
         status,
@@ -248,6 +248,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
         receiptUrl,
         receiptHash,
         ocrRaw,
+        businessId,
       };
       await setDoc(
         doc(db, `businesses/${businessId}/bankStatements/${abonoMonthKey}/abonos/${abonoId}`),

@@ -252,6 +252,18 @@ service cloud.firestore {
         }
       }
 
+      // Reconciliation batches — usados por la nueva conciliación industrial
+      match /reconciliationBatches/{batchId} {
+        allow read, create, update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
+      // usedReferences — anti-reuso atómico de filas de EdeC
+      match /usedReferences/{fingerprint} {
+        allow read, create, update: if isMember(bid);
+        allow delete: if isAdmin(bid);
+      }
+
       // Catch-all: cualquier subcollection NO listada arriba
       // Miembros pueden leer y crear/actualizar; solo admin puede borrar
       match /{allSubcollections=**} {
@@ -260,6 +272,14 @@ service cloud.firestore {
         allow create, update: if isMember(bid);
         allow delete: if isAdmin(bid);
       }
+    }
+
+    // CollectionGroup queries para conciliación industrial.
+    // BatchReviewPanel hace `collectionGroup(db, 'abonos').where('batchId', '==', X)`.
+    // Las reglas anidadas no aplican a collectionGroup — necesita match wildcard que
+    // valide tenancy via campo `businessId` en el doc.
+    match /{path=**}/abonos/{abonoId} {
+      allow read: if isSignedIn() && resource.data.businessId == myBID();
     }
 
     // CONFIGURACIONES (solo admin puede escribir)

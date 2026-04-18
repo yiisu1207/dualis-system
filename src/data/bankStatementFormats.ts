@@ -7,6 +7,7 @@ export type DecimalSep = ',' | '.';
 export interface BankStatementProfile {
   bankCode: string;             // '0134'
   bankName: string;             // 'Banesco'
+  variantLabel?: string;        // 'Personal' | 'Empresa' — mostrado en el dropdown como "Banesco — Personal"
   headerKeywords: string[];     // para detección de la fila de encabezados
   pdfDetectionKeywords?: string[]; // palabras clave para detectar el banco desde texto PDF
   columnMap: {
@@ -22,6 +23,10 @@ export interface BankStatementProfile {
   decimalSep: DecimalSep;
 }
 
+export function profileLabel(p: BankStatementProfile): string {
+  return p.variantLabel ? `${p.bankName} — ${p.variantLabel}` : p.bankName;
+}
+
 // Las listas de alias de columna son intencionadamente amplias porque los bancos VE
 // cambian el encabezado entre exports CSV / XLS / web / app / PDF.
 // Se matchean case-insensitive con `.includes()` tras normalizar.
@@ -29,6 +34,7 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0134',
     bankName: 'Banesco',
+    variantLabel: 'Personal',
     headerKeywords: ['fecha', 'descripcion', 'referencia', 'cargos', 'abonos'],
     pdfDetectionKeywords: ['banesco banco universal', 'banesconline', 'detalle de movimientos'],
     columnMap: {
@@ -46,6 +52,7 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0105',
     bankName: 'Mercantil',
+    variantLabel: 'Personal',
     headerKeywords: ['fecha', 'concepto', 'monto', 'cargos', 'abonos', 'referencia'],
     pdfDetectionKeywords: ['mercantil banco universal', 'mercantil en linea', 'banco mercantil'],
     columnMap: {
@@ -63,6 +70,7 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0102',
     bankName: 'Banco de Venezuela',
+    variantLabel: 'Personal',
     headerKeywords: ['fecha', 'concepto', 'monto', 'referencia', 'operacion', 'saldo'],
     pdfDetectionKeywords: ['banco de venezuela', 'bdvenlinea', 'bdv'],
     columnMap: {
@@ -80,6 +88,7 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0108',
     bankName: 'Provincial (BBVA)',
+    variantLabel: 'Personal',
     headerKeywords: ['fecha', 'concepto', 'importe', 'debitos', 'creditos'],
     pdfDetectionKeywords: ['bbva provincial', 'provincial s.a.', 'provinet', 'banco provincial'],
     columnMap: {
@@ -97,6 +106,7 @@ export const BANK_PROFILES: BankStatementProfile[] = [
   {
     bankCode: '0191',
     bankName: 'BNC',
+    variantLabel: 'Personal',
     headerKeywords: ['fecha', 'descripcion', 'monto', 'debitos', 'creditos'],
     pdfDetectionKeywords: ['banco nacional de credito', 'bnc', 'bncnet'],
     columnMap: {
