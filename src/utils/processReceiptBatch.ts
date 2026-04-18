@@ -87,12 +87,25 @@ function topCandidatesSnapshot(matches: RankedMatch[]): SessionAbonoCandidate[] 
   }));
 }
 
-function stripUndefined<T extends Record<string, any>>(obj: T): Record<string, any> {
-  const clean: Record<string, any> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (v !== undefined) clean[k] = v;
+// Recursivo: Firestore rechaza cualquier `undefined` anidado (p.ej. dentro de
+// ocrRaw o candidateMatches). Limpia objetos planos y arrays; deja null/Date/primitivos intactos.
+function stripUndefined(obj: any): any {
+  if (obj === undefined) return undefined;
+  if (obj === null) return null;
+  if (Array.isArray(obj)) {
+    return obj
+      .map(v => stripUndefined(v))
+      .filter(v => v !== undefined);
   }
-  return clean;
+  if (typeof obj === 'object' && obj.constructor === Object) {
+    const clean: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const cleaned = stripUndefined(v);
+      if (cleaned !== undefined) clean[k] = cleaned;
+    }
+    return clean;
+  }
+  return obj;
 }
 
 export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<ProcessBatchOutcome> {
@@ -278,7 +291,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
           batchId,
           businessId,
           matchRowId: null,
-          note: `⚠ OCR falló (${fallbackName}): ${errMsg.slice(0, 200)}`,
+          note: `⚠ Falló procesamiento (${fallbackName}): ${errMsg.slice(0, 200)}`,
           errorMsg: errMsg.slice(0, 500),
           candidateMatches: [],
         };
