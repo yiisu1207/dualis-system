@@ -1230,11 +1230,17 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
     setSaving(true);
     try {
       const sub = biz.subscription;
-      const isTrial = sub?.status === 'trial';
-      const dateField = isTrial ? 'subscription.trialEndsAt' : 'subscription.currentPeriodEnd';
-      const currentEnd = isTrial ? sub?.trialEndsAt : sub?.currentPeriodEnd;
-      const baseDate = currentEnd instanceof Date ? currentEnd
+      // Trial y expired-trial se manejan como trial: extender trialEndsAt y
+      // (si aplica) revivir status a 'trial'. Solo active se extiende sobre currentPeriodEnd.
+      const treatAsTrial = sub?.status === 'trial' || (sub?.status === 'expired' && !!sub?.trialEndsAt);
+      const dateField = treatAsTrial ? 'subscription.trialEndsAt' : 'subscription.currentPeriodEnd';
+      const currentEnd = treatAsTrial ? sub?.trialEndsAt : sub?.currentPeriodEnd;
+      const rawBase = currentEnd instanceof Date ? currentEnd
         : (currentEnd as any)?.toDate?.() ?? new Date();
+      // Si añadimos días (days > 0) y la fecha base ya está vencida, partimos
+      // de HOY — si no, +30 días a una fecha pasada deja el trial casi expirado.
+      const now = new Date();
+      const baseDate = days > 0 && rawBase.getTime() < now.getTime() ? now : rawBase;
       const newDate = new Date(baseDate.getTime() + days * 86_400_000);
 
       const histEntry: SubHistory = {
@@ -1245,8 +1251,12 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
       };
       const prevHistory: SubHistory[] = sub?.history ?? [];
 
+      // Si estábamos en 'expired' y revivimos, volvemos a 'trial'
+      const reviveToTrial = sub?.status === 'expired' && treatAsTrial && days > 0;
+
       await updateDoc(doc(db, 'businesses', biz.id), {
         [dateField]: newDate,
+        ...(reviveToTrial ? { 'subscription.status': 'trial' } : {}),
         'subscription.history': [...prevHistory, histEntry],
         'subscription.updatedAt': serverTimestamp(),
       });
@@ -1255,7 +1265,8 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
         ...prev,
         subscription: {
           ...(prev.subscription ?? {}),
-          ...(isTrial ? { trialEndsAt: newDate } : { currentPeriodEnd: newDate }),
+          ...(treatAsTrial ? { trialEndsAt: newDate } : { currentPeriodEnd: newDate }),
+          ...(reviveToTrial ? { status: 'trial' } : {}),
           history: [...prevHistory, histEntry],
         }
       } : null);
@@ -2081,10 +2092,32 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                 {/* ── Modify Days ─────────────────────────────────────── */}
                 <div className="mt-6 pt-5 border-t border-white/[0.06]">
                   <p className="text-[10px] font-black uppercase tracking-widest text-white/25 mb-3 flex items-center gap-2">
-                    <Calendar size={12} /> Gestión de días
+                    <Calendar size={12} /> Extender / ajustar días
                   </p>
                   <div className="space-y-3">
-                    <div className="flex gap-2">
+                    {/* Presets rápidos — la acción más común: extender trial 30 días */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { days: 7,  label: '+7 días',  sub: 'Cortesía' },
+                        { days: 15, label: '+15 días', sub: 'Quincena' },
+                        { days: 30, label: '+30 días', sub: 'Mes extra' },
+                      ].map(preset => (
+                        <button
+                          key={preset.days}
+                          onClick={() => handleModifyDays(selected, preset.days, modReason || `Extensión ${preset.label} por admin`)}
+                          disabled={saving}
+                          className={`py-2.5 rounded-xl border transition-all disabled:opacity-40 flex flex-col items-center gap-0.5 ${
+                            preset.days === 30
+                              ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/40 hover:bg-emerald-500/25 shadow-[0_0_0_1px_rgba(16,185,129,0.15)]'
+                              : 'text-emerald-400 bg-emerald-500/[0.08] border-emerald-500/20 hover:bg-emerald-500/15'
+                          }`}
+                        >
+                          <span className="text-[11px] font-black tracking-wide">{preset.label}</span>
+                          <span className="text-[8px] font-semibold uppercase tracking-widest opacity-60">{preset.sub}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 pt-1">
                       <input
                         type="number" min={1} max={365}
                         value={modDays} onChange={e => setModDays(Math.max(1, Math.min(365, +e.target.value)))}
@@ -2092,7 +2125,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                       />
                       <input
                         value={modReason} onChange={e => setModReason(e.target.value)}
-                        placeholder="Motivo..."
+                        placeholder="Motivo (opcional)..."
                         className="flex-1 px-3 py-2 rounded-xl bg-white/[0.06] border border-white/[0.08] text-sm text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
                       />
                     </div>
@@ -2102,7 +2135,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                         disabled={saving}
                         className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
                       >
-                        <Plus size={12} /> Añadir {modDays}d
+                        <Plus size={12} /> Añadir {modDays}d personalizado
                       </button>
                       <button
                         onClick={() => { handleModifyDays(selected, -modDays, modReason || 'Días removidos por admin'); setModReason(''); }}
