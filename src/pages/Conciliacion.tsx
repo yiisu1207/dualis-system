@@ -285,11 +285,17 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
       bankName: data.bankName,
       amountTolerancePct: data.amountTolerancePct || 0,
       sourceFilename: safeFilename,
-      fileUrl,
-      filePublicId,
+      ...(fileUrl ? { fileUrl } : {}),
+      ...(filePublicId ? { filePublicId } : {}),
       uploadedAt: Timestamp.now(),
       uploadedBy: currentUserId,
-      rows: data.rows.map((r) => ({ ...r, matched: false, matchedAbonoId: undefined })),
+      rows: data.rows.map((r) => {
+        const clean: Record<string, any> = { matched: false };
+        for (const [k, v] of Object.entries(r)) {
+          if (v !== undefined) clean[k] = v;
+        }
+        return clean as BankRow & { matched: boolean };
+      }),
       rowCount: data.rows.length,
       totalCredit,
       totalDebit,
