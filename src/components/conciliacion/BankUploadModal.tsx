@@ -244,12 +244,44 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
           )}
 
           {result && result.needsManualMapping && (
-            <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/50 text-amber-800 dark:text-amber-300 rounded-lg p-3 text-sm">
-              <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-              <div>
-                El parser no pudo mapear bien este archivo. Verifica que hayas elegido el banco correcto,
-                o prueba con el perfil Genérico. El mapeo manual por columna no está disponible en v1.
+            <div className="space-y-2">
+              <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700/50 text-amber-800 dark:text-amber-300 rounded-lg p-3 text-sm">
+                <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                <div>
+                  El parser no pudo mapear bien este archivo. Verifica que hayas elegido el banco correcto,
+                  o prueba con el perfil Genérico. El mapeo manual por columna no está disponible en v1.
+                </div>
               </div>
+
+              {(result.debugRawRows?.length || result.rawText) && (
+                <details className="text-xs bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg p-3">
+                  <summary className="cursor-pointer font-medium text-slate-700 dark:text-slate-200">
+                    🔍 Debug: ver qué extrajo el parser (compártelo si pides ayuda)
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    {result.debugRawRows && result.debugRawRows.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Filas tabulares ({result.debugRawRows.length}) — header detectado en idx {result.debugHeaderIdx}
+                        </p>
+                        <pre className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-2 overflow-x-auto max-h-60 text-[10px] font-mono text-slate-700 dark:text-slate-300">
+{result.debugRawRows.slice(0, 15).map((r, i) => `${i}: [${r.map(c => JSON.stringify(c)).join(', ')}]`).join('\n')}
+                        </pre>
+                      </div>
+                    )}
+                    {result.rawText && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Texto raw del PDF (primeros 1500 chars)
+                        </p>
+                        <pre className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded p-2 overflow-x-auto max-h-40 text-[10px] font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+{result.rawText.slice(0, 1500)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )}
             </div>
           )}
         </div>

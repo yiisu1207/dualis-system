@@ -23,6 +23,10 @@ export interface ParseResult {
   needsManualMapping: boolean;
   /** Texto crudo del PDF (solo cuando el archivo es PDF) — para extracción de metadata del header. */
   rawText?: string;
+  /** Filas tabulares brutas extraídas del archivo (post-parser, pre-mapeo) — para debug cuando falla. */
+  debugRawRows?: string[][];
+  /** Índice del header detectado dentro de debugRawRows (-1 si no se detectó). */
+  debugHeaderIdx?: number;
 }
 
 export interface ParseOpts {
@@ -457,7 +461,10 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
   }
 
   if (!rawRows.length) {
-    return { rows: [], warnings: ['Archivo vacío'], needsManualMapping: true };
+    return {
+      rows: [], warnings: ['Archivo vacío'], needsManualMapping: true,
+      rawText: pdfRawText, debugRawRows: rawRows, debugHeaderIdx: -1,
+    };
   }
 
   const headerIdx = findHeaderRow(rawRows);
@@ -466,6 +473,7 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
       rows: [],
       warnings: ['No se detectó la fila de encabezados. Revisa el archivo o usa mapeo manual.'],
       needsManualMapping: true,
+      rawText: pdfRawText, debugRawRows: rawRows, debugHeaderIdx: -1,
     };
   }
 
@@ -569,6 +577,8 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
     warnings,
     needsManualMapping,
     rawText: pdfRawText,
+    debugRawRows: rawRows,
+    debugHeaderIdx: headerIdx,
   };
 }
 
