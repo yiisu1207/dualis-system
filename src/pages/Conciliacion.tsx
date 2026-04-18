@@ -30,6 +30,7 @@ import type { BankRow } from '../utils/bankReconciliation';
 import { processReceiptBatch, type ImageBatchItem } from '../utils/processReceiptBatch';
 import { isVerifiable, resolveVerificationStatus } from '../utils/movementHelpers';
 import AccountChips, { type AccountChipData } from '../components/conciliacion/AccountChips';
+import AccountRowsModal from '../components/conciliacion/AccountRowsModal';
 import BankUploadModal from '../components/conciliacion/BankUploadModal';
 import ReceiptDropZone from '../components/conciliacion/ReceiptDropZone';
 import BatchNamePromptModal from '../components/conciliacion/BatchNamePromptModal';
@@ -92,6 +93,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [pendingBatchFiles, setPendingBatchFiles] = useState<File[] | null>(null);
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
+  const [viewingAccountAlias, setViewingAccountAlias] = useState<string | null>(null);
 
   useEffect(() => {
     if (!businessId) return;
@@ -382,6 +384,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             onUploadEdec={() => setShowMultiUpload(true)}
             onAddSingleAccount={() => setShowUploadModal(true)}
             onDeleteAccount={canEdit ? handleDeleteAccount : undefined}
+            onViewAccount={setViewingAccountAlias}
             onDelete={handleDeleteBatch}
             canEdit={canEdit}
             ocrBusy={ocrBusy}
@@ -432,6 +435,25 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           }}
         />
       )}
+
+      {viewingAccountAlias && (() => {
+        const acc = accounts.find(a => a.accountAlias === viewingAccountAlias);
+        if (!acc) return null;
+        return (
+          <AccountRowsModal
+            accountLabel={acc.accountLabel}
+            bankName={acc.bankName}
+            rowCount={acc.rowCount}
+            totalCredit={acc.totalCredit}
+            totalDebit={acc.totalDebit}
+            fileUrl={acc.fileUrl}
+            periodFrom={acc.extractedMeta?.periodFrom}
+            periodTo={acc.extractedMeta?.periodTo}
+            rows={acc.rows || []}
+            onClose={() => setViewingAccountAlias(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -445,6 +467,7 @@ interface BatchListProps {
   onUploadEdec: () => void;
   onAddSingleAccount: () => void;
   onDeleteAccount?: (alias: string) => void;
+  onViewAccount?: (alias: string) => void;
   onDelete: (batch: ReconciliationBatch) => void;
   canEdit: boolean;
   ocrBusy: boolean;
@@ -454,7 +477,7 @@ interface BatchListProps {
 
 const BatchList: React.FC<BatchListProps> = ({
   batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
-  onDeleteAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch,
+  onDeleteAccount, onViewAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch,
 }) => {
   return (
     <div className="space-y-4">
@@ -515,6 +538,7 @@ const BatchList: React.FC<BatchListProps> = ({
             accounts={accountChips}
             onAdd={canEdit ? onAddSingleAccount : undefined}
             onDelete={onDeleteAccount}
+            onSelect={onViewAccount}
           />
         )}
       </div>

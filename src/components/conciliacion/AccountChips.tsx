@@ -14,7 +14,7 @@ interface AccountChipsProps {
   accounts: AccountChipData[];
   activeAlias?: string;
   onSelect?: (alias: string) => void;
-  onAdd: () => void;
+  onAdd?: () => void;
   onDelete?: (alias: string) => void;
 }
 
@@ -68,14 +68,16 @@ export default function AccountChips({ accounts, activeAlias, onSelect, onAdd, o
           </div>
         );
       })}
-      <button
-        type="button"
-        onClick={onAdd}
-        className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-dashed border-indigo-300 dark:border-indigo-700/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-sm font-medium"
-      >
-        <Plus size={14} />
-        Agregar cuenta
-      </button>
+      {onAdd && (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg border-2 border-dashed border-indigo-300 dark:border-indigo-700/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-sm font-medium"
+        >
+          <Plus size={14} />
+          Agregar cuenta
+        </button>
+      )}
     </div>
   );
 }
