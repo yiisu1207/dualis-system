@@ -153,12 +153,20 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     return () => unsub();
   }, [businessId]);
 
+  // Solo contamos refs cuyo batchId aún existe entre los lotes vivos: si el lote
+  // se borró, su registro en usedReferences queda huérfano y no debe aparecer en
+  // la UI (ni bloquear re-matches futuros de ese slot).
+  const validUsedRefs = useMemo(() => {
+    const validBatchIds = new Set(batches.map(b => b.id));
+    return usedRefs.filter(u => u.batchId && validBatchIds.has(u.batchId));
+  }, [usedRefs, batches]);
+
   // Indexa por identidad de cuenta (bankAccountId o accountAlias) → Set<bankRowId>
   // para marcar filas "usadas" en la UI del EdeC y poder saltar al abono que la
   // reclamó al hacer click.
   const usedByAccountIdentity = useMemo(() => {
     const map = new Map<string, Map<string, UsedReference>>();
-    for (const u of usedRefs) {
+    for (const u of validUsedRefs) {
       if (!u.bankRowId) continue;
       const identity = u.bankAccountId || '';
       if (!identity) continue;
@@ -167,9 +175,36 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
       inner.set(u.bankRowId, u);
     }
     return map;
-  }, [usedRefs]);
+  }, [validUsedRefs]);
 
-  const totalUsedRefs = usedRefs.length;
+  const totalUsedRefs = validUsedRefs.length;
+
+  // Refs huérfanas = batchId no existe en lotes vivos, o batchId vacío.
+  // Se pueden liberar con un click — siguen bloqueando filas del EdeC si no.
+  const orphanUsedRefs = useMemo(() => {
+    const validBatchIds = new Set(batches.map(b => b.id));
+    return usedRefs.filter(u => !u.batchId || !validBatchIds.has(u.batchId));
+  }, [usedRefs, batches]);
+
+  const handleCleanOrphanRefs = async () => {
+    if (!orphanUsedRefs.length) return;
+    if (!confirm(
+      `Se van a liberar ${orphanUsedRefs.length} referencia${orphanUsedRefs.length === 1 ? '' : 's'} huérfana${orphanUsedRefs.length === 1 ? '' : 's'} (de lotes borrados). ` +
+      `Las filas del EdeC correspondientes volverán a estar disponibles para conciliar. ¿Continuar?`
+    )) return;
+    try {
+      for (let i = 0; i < orphanUsedRefs.length; i += 400) {
+        const wb = writeBatch(db);
+        orphanUsedRefs.slice(i, i + 400).forEach(u => {
+          wb.delete(doc(db, `businesses/${businessId}/usedReferences/${u.fingerprint}`));
+        });
+        await wb.commit();
+      }
+      toast.success(`${orphanUsedRefs.length} referencia${orphanUsedRefs.length === 1 ? '' : 's'} liberada${orphanUsedRefs.length === 1 ? '' : 's'}`);
+    } catch (err: any) {
+      toast.error('Error liberando refs: ' + (err?.message || String(err)));
+    }
+  };
 
   const accountChips = useMemo<AccountChipData[]>(
     () =>
@@ -349,8 +384,22 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
         docs.slice(i, i + 400).forEach(d => wb.delete(d.ref));
         await wb.commit();
       }
+      // También liberamos las refs quemadas por este lote — si no, quedan
+      // bloqueando filas del EdeC aunque el lote ya no exista.
+      const usedSnap = await getDocs(
+        query(collection(db, `businesses/${businessId}/usedReferences`), where('batchId', '==', batch.id))
+      );
+      const usedDocs = usedSnap.docs;
+      for (let i = 0; i < usedDocs.length; i += 400) {
+        const wb = writeBatch(db);
+        usedDocs.slice(i, i + 400).forEach(d => wb.delete(d.ref));
+        await wb.commit();
+      }
       await deleteDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${batch.id}`));
-      toast.success(`Lote "${batch.name}" eliminado · ${docs.length} abono${docs.length === 1 ? '' : 's'} también borrado${docs.length === 1 ? '' : 's'}`);
+      toast.success(
+        `Lote "${batch.name}" eliminado · ${docs.length} abono${docs.length === 1 ? '' : 's'}` +
+        (usedDocs.length ? ` · ${usedDocs.length} referencia${usedDocs.length === 1 ? '' : 's'} liberada${usedDocs.length === 1 ? '' : 's'}` : '')
+      );
       if (selectedBatchId === batch.id) setSelectedBatchId(null);
     } catch (err: any) {
       toast.error('Error eliminando lote: ' + (err?.message || String(err)));
@@ -390,6 +439,16 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
               </p>
             </div>
           </div>
+          {canEdit && view === 'lotes' && orphanUsedRefs.length > 0 && (
+            <button
+              type="button"
+              onClick={handleCleanOrphanRefs}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs font-medium hover:bg-amber-100 dark:hover:bg-amber-900/40"
+              title="Libera referencias marcadas como 'Usada' pero cuyo lote ya no existe"
+            >
+              <Trash2 size={12} /> Liberar {orphanUsedRefs.length} ref{orphanUsedRefs.length === 1 ? '' : 's'} huérfana{orphanUsedRefs.length === 1 ? '' : 's'}
+            </button>
+          )}
         </div>
 
         {/* Tabs: Conciliación (lotes, principal) · Verificar movimientos (CxC/CxP) */}
