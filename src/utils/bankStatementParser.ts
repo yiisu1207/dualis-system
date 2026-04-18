@@ -3,6 +3,8 @@
 
 import ExcelJS from 'exceljs';
 import * as pdfjsLib from 'pdfjs-dist';
+// @ts-ignore — Vite ?url suffix resuelve a un string en build
+import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
   BANK_PROFILES,
   GENERIC_PROFILE,
@@ -11,8 +13,8 @@ import {
 } from '../data/bankStatementFormats';
 import type { BankRow, OperationType } from './bankReconciliation';
 
-// Worker de pdf.js — usa el CDN para evitar problemas de bundling
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+// Worker de pdf.js — bundled local por Vite para evitar 404 de CDN y "fake worker".
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 export interface ParseResult {
   rows: BankRow[];
