@@ -177,6 +177,7 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
   // Cuando detectamos un header, guardamos los X de cada columna para usarlos
   // de "snap" en las filas de datos siguientes — más preciso que clustering por gaps.
   let headerColumnXs: number[] | null = null;
+  let headerPushed = false;
 
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
@@ -232,11 +233,23 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
       if (isHeader) {
         // Reconstruir header como columnas separadas por posición X
         const sortedItems = [...items].sort((a, b) => a.x - b.x);
-        const headerCells = sortedItems.map(i => i.text.trim()).filter(Boolean);
         headerColumnXs = sortedItems.map(i => i.x);
-        allRows.push(headerCells);
+        // Solo pushear el primer header — los siguientes son repeticiones por página
+        // y contaminan dataRows con "fecha inválida: 'Fecha'".
+        if (!headerPushed) {
+          const headerCells = sortedItems.map(i => i.text.trim()).filter(Boolean);
+          allRows.push(headerCells);
+          headerPushed = true;
+        }
         continue;
       }
+
+      // Filtrar resúmenes numéricos entre páginas (ej: "16.018,48 568.610,25 ...")
+      // — son puros montos y se concatenaban como continuación del row anterior.
+      const wordCount = lineText.split(/\s+/).filter(Boolean).length;
+      const letterCount = (lineText.match(/[a-záéíóúüñ]/gi) || []).length;
+      const isNumericOnly = letterCount === 0 && wordCount >= 2;
+      if (isNumericOnly) continue;
 
       // Detectar si es una fila de datos (contiene fecha en cualquier posición)
       if (DATE_ANYWHERE_RE.test(lineText)) {
@@ -247,15 +260,18 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
           : splitPdfRowByClusters(items);
         allRows.push(cells);
       } else {
-        // Línea continuación — concatenar al concepto de la fila anterior
+        // Línea continuación — solo aplicar si es un token corto/conocido.
+        // Rechazar líneas largas (son casi seguro metadata de página, no wrap).
+        const trimmed = lineText.trim();
+        if (trimmed.length > 40) continue;
         if (allRows.length > 0) {
           const prev = allRows[allRows.length - 1];
-          const trimmed = lineText.trim();
           if (/^(cr[eé]dito|d[eé]bito|inicial)$/i.test(trimmed)) {
             if (prev.length >= 4) {
               prev[3] = (prev[3] + ' ' + trimmed).trim();
             }
-          } else {
+          } else if (/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ\s]+$/.test(trimmed) && trimmed.length < 30) {
+            // Nombre propio corto (ej. nombre de cliente), posible continuación real
             if (prev.length >= 2) {
               prev[1] = (prev[1] + ' ' + trimmed).trim();
             }
