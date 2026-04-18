@@ -261,8 +261,36 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
 
       updateResult(idx, { status: 'done', abono: sessionAbono });
     } catch (e: any) {
+      // Aún en error, escribimos un abono placeholder para que aparezca en el panel
+      // con el mensaje de error visible en `note`. Sin esto el contador del lote
+      // dice "3 sin match" pero el panel está vacío (data huérfana).
+      const errMsg = e?.message || String(e);
       aggregated.notFound += 1;
-      updateResult(idx, { status: 'error', errorMsg: e?.message || String(e) });
+      try {
+        const fallbackId = newId('ab');
+        const fallbackMonth = todayISO().slice(0, 7);
+        const fallbackName = draft.kind === 'image' ? draft.file.name : 'Manual';
+        const errorAbono: SessionAbono & { businessId: string; errorMsg: string } = {
+          id: fallbackId,
+          status: 'no_encontrado',
+          amount: 0,
+          date: todayISO(),
+          batchId,
+          businessId,
+          matchRowId: null,
+          note: `⚠ OCR falló (${fallbackName}): ${errMsg.slice(0, 200)}`,
+          errorMsg: errMsg.slice(0, 500),
+          candidateMatches: [],
+        };
+        await setDoc(
+          doc(db, `businesses/${businessId}/bankStatements/${fallbackMonth}/abonos/${fallbackId}`),
+          stripUndefined(errorAbono),
+        );
+      } catch (writeErr) {
+        // si el escribirlo también falla, igual aggregamos al contador
+        console.warn('[processReceiptBatch] no se pudo guardar abono de error', writeErr);
+      }
+      updateResult(idx, { status: 'error', errorMsg: errMsg });
     } finally {
       done += 1;
       onProgress?.(done, items.length);
