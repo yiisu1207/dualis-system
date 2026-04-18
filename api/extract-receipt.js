@@ -4,7 +4,14 @@
 
 const { getAuth, getDb } = require('./_firebaseAdmin');
 
-const MODEL = 'claude-sonnet-4-6';
+// Cadena de modelos: prueba en orden, cae al siguiente si 404/400 (modelo no disponible).
+// El ID del modelo activo en la API de Anthropic varía con el tiempo; este fallback
+// evita quedar rotos cuando un ID específico es retirado.
+const MODEL_CHAIN = [
+  'claude-sonnet-4-6',
+  'claude-sonnet-4-5',
+  'claude-3-5-sonnet-latest',
+];
 const MAX_BYTES = 5 * 1024 * 1024;
 
 const EXTRACT_PROMPT = `Eres un extractor de datos de comprobantes bancarios venezolanos. Analiza la imagen (captura de pago móvil, transferencia, o depósito) y devuelve SOLO un JSON válido con esta estructura exacta:
@@ -152,30 +159,51 @@ module.exports = async (req, res) => {
       return res.status(413).json({ error: `Imagen excede 5 MB (${(approxBytes / 1024 / 1024).toFixed(1)} MB)` });
     }
 
-    const anthropicRes = await fetchFn('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 512,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } },
-            { type: 'text', text: EXTRACT_PROMPT },
-          ],
-        }],
-      }),
-    });
+    // Intenta la cadena de modelos: cae al siguiente si el actual retorna 404 (not_found)
+    // o 400 con "model" en el mensaje (modelo no válido / retirado).
+    let anthropicRes = null;
+    let lastErrText = '';
+    let lastStatus = 0;
+    let modelUsed = '';
+    for (const model of MODEL_CHAIN) {
+      const attempt = await fetchFn('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 512,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } },
+              { type: 'text', text: EXTRACT_PROMPT },
+            ],
+          }],
+        }),
+      });
+      if (attempt.ok) {
+        anthropicRes = attempt;
+        modelUsed = model;
+        break;
+      }
+      lastStatus = attempt.status;
+      lastErrText = await attempt.text().catch(() => '');
+      console.error('[extract-receipt] modelo fallido', model, attempt.status, lastErrText.slice(0, 300));
+      // Solo cae al siguiente si es error de modelo (404 not_found, o 400 con "model")
+      const isModelError = attempt.status === 404 ||
+        (attempt.status === 400 && /model/i.test(lastErrText));
+      if (!isModelError) break;
+    }
 
-    if (!anthropicRes.ok) {
-      const errText = await anthropicRes.text().catch(() => '');
-      console.error('[extract-receipt] Anthropic error', anthropicRes.status, errText.slice(0, 500));
-      return res.status(502).json({ error: `Anthropic API error ${anthropicRes.status}` });
+    if (!anthropicRes) {
+      return res.status(502).json({
+        error: `Anthropic rechazó todos los modelos (último: ${lastStatus}): ${lastErrText.slice(0, 300)}`,
+        triedModels: MODEL_CHAIN,
+      });
     }
 
     const data = await anthropicRes.json();
@@ -199,16 +227,20 @@ module.exports = async (req, res) => {
 
     return res.json({
       ...parsed,
+      modelUsed,
       usage: data.usage || null,
     });
   } catch (err) {
     const msg = err?.message || String(err);
-    console.error('[extract-receipt] error', msg, err?.stack);
+    const stack = (err?.stack || '').split('\n').slice(0, 3).join(' | ');
+    console.error('[extract-receipt] error', msg, stack);
     // Detalle visible al cliente para distinguir misconfig vs token vs Anthropic
     let stage = 'internal';
     if (/FIREBASE_SERVICE_ACCOUNT/.test(msg)) stage = 'firebase_admin_init';
     else if (/verifyIdToken|auth\/|token/i.test(msg)) stage = 'auth_token';
     else if (/credential|service account/i.test(msg)) stage = 'firebase_admin_credential';
-    return res.status(500).json({ error: msg, stage });
+    else if (/fetch|network|ENOTFOUND|ECONNREFUSED/i.test(msg)) stage = 'network';
+    else if (/JSON/.test(msg)) stage = 'parse';
+    return res.status(500).json({ error: `[${stage}] ${msg}`, stage, detail: stack });
   }
 };

@@ -480,8 +480,11 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
         },
       });
       if (outcome.stats.notFound > 0 && outcome.stats.confirmed === 0 && outcome.stats.review === 0 && lastError) {
-        // Todos fallaron y hay un error real → surface al usuario
-        toast.error(`OCR falló en todos los items (${outcome.stats.notFound}). Detalle: ${lastError.slice(0, 160)}`);
+        // Todos fallaron y hay un error real → surface al usuario (toast largo, 12s)
+        toast.error(`OCR falló (${outcome.stats.notFound}/${outcome.stats.total}): ${lastError.slice(0, 400)}`, { duration: 12000 });
+      } else if (lastError) {
+        toast.error(`Hay items con error en el lote: ${lastError.slice(0, 400)}`, { duration: 10000 });
+        toast.success(`Lote "${name}" procesado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
       } else {
         toast.success(`Lote "${name}" procesado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
       }

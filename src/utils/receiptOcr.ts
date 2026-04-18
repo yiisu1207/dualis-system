@@ -73,8 +73,15 @@ export async function extractReceipt(file: File): Promise<ExtractedReceipt> {
     res = await doFetch(token);
   }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.error || `HTTP ${res.status}`);
+    const rawText = await res.text().catch(() => '');
+    let body: any = {};
+    try { body = JSON.parse(rawText); } catch { /* no era JSON */ }
+    let msg = body?.error || rawText?.slice(0, 300) || `HTTP ${res.status}`;
+    if (Array.isArray(body?.triedModels)) {
+      msg = `${msg} [intentó: ${body.triedModels.join(', ')}]`;
+    }
+    console.error('[extractReceipt] backend error', res.status, body, 'raw:', rawText.slice(0, 500));
+    throw new Error(msg);
   }
   return (await res.json()) as ExtractedReceipt;
 }

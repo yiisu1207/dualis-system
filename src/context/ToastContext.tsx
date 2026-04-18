@@ -9,11 +9,15 @@ interface ToastItem {
   message: string;
 }
 
+interface ToastOptions {
+  duration?: number;
+}
+
 interface ToastContextValue {
-  success: (msg: string) => void;
-  error: (msg: string) => void;
-  warning: (msg: string) => void;
-  info: (msg: string) => void;
+  success: (msg: string, opts?: ToastOptions) => void;
+  error: (msg: string, opts?: ToastOptions) => void;
+  warning: (msg: string, opts?: ToastOptions) => void;
+  info: (msg: string, opts?: ToastOptions) => void;
 }
 
 const ToastCtx = createContext<ToastContextValue | null>(null);
@@ -53,16 +57,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const add = useCallback((message: string, type: ToastType) => {
+  const add = useCallback((message: string, type: ToastType, opts?: ToastOptions) => {
     const id = `t${++counter.current}`;
     setToasts(prev => [...prev.slice(-2), { id, type, message }]);
-    setTimeout(() => dismiss(id), 4500);
+    setTimeout(() => dismiss(id), opts?.duration ?? 4500);
   }, [dismiss]);
 
-  const success = useCallback((msg: string) => add(msg, 'success'), [add]);
-  const error = useCallback((msg: string) => add(msg, 'error'), [add]);
-  const warning = useCallback((msg: string) => add(msg, 'warning'), [add]);
-  const info = useCallback((msg: string) => add(msg, 'info'), [add]);
+  const success = useCallback((msg: string, opts?: ToastOptions) => add(msg, 'success', opts), [add]);
+  const error = useCallback((msg: string, opts?: ToastOptions) => add(msg, 'error', opts), [add]);
+  const warning = useCallback((msg: string, opts?: ToastOptions) => add(msg, 'warning', opts), [add]);
+  const info = useCallback((msg: string, opts?: ToastOptions) => add(msg, 'info', opts), [add]);
 
   return (
     <ToastCtx.Provider value={{ success, error, warning, info }}>
