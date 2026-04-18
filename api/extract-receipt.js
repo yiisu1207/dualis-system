@@ -59,15 +59,34 @@ FORMATOS POR BANCO (dónde buscar cada dato):
 - Label "Concepto:" → copiar a notes.
 - Si destino es un teléfono (04XX-XXXXXXX) → operationType="pago_movil". Si es cuenta → "transferencia".
 
-**Banesco (app/web — "Operación Exitosa")**:
-- Header suele decir "Operación Exitosa", "Transferencia realizada" o "Pago Móvil realizado".
-- Monto en "Bs X.XXX,XX" o "Bs. X.XXX,XX".
-- "Nº de Operación", "Nro. Referencia" o "Referencia:" → reference (típicamente 6-10 dígitos).
-- "Fecha y hora:" o "Fecha:" → date.
-- "Beneficiario:" → destinatario. "Ordenante:" → senderName.
-- "Cédula:" o "C.I.:" → cedula.
-- "Teléfono:" o "Celular:" → phone.
-- "Banco destino" → destinationBank.
+**Banesco** — tiene DOS formatos muy distintos; identifica cuál es antes de extraer:
+
+  (A) **Banesco web — "Transferencia a Terceros en Banesco"** (captura de pantalla de banesconline.com):
+  - Header: logo verde "Banesco" + "RECIBO" arriba a la derecha + título "TRANSFERENCIA A TERCEROS EN BANESCO".
+  - "Nº DE RECIBO: XXXXXXXXXX" (arriba-derecha, 10 dígitos) → **reference**. NO confundir con el RIF del banco que aparece debajo.
+  - "Fecha: DD/MM/YYYY" → date.
+  - "Código cuenta cliente debitada: 0134****-**-***XXXX" → cuenta origen enmascarada (siempre 0134 = Banesco, origin bank).
+  - "Código cuenta cliente transferida: 013404XXXXXXXXXXXXXX" → cuenta destino (20 dígitos completos; prefijo 0134 = Banesco, otro prefijo → ver tabla arriba).
+  - "Monto: X.XXX.XXX,XX" (sin símbolo; SIEMPRE VES en este formato) → amount. Ej "2.401.250,00" → 2401250.
+  - "Beneficiario: NOMBRE APELLIDO" → este es el RECEPTOR (destinatario), NO senderName. Úsalo solo si no hay otro indicio del receptor. senderName típicamente NO visible en este formato.
+  - "Concepto: texto libre" → notes.
+  - "Resultado: Operación Exitosa" → confirma que el recibo es válido.
+  - operationType = "transferencia".
+  - currency = "VES".
+
+  (B) **Banesco app móvil — "¡Operación Exitosa!" (pago móvil)**:
+  - Header: barra verde con "Recibo" + check verde grande + "¡Operación Exitosa!".
+  - "NÚMERO DE REFERENCIA: XXXXXXXXXXXX" (típicamente 12 dígitos, en verde subrayado) → reference.
+  - "FECHA: DD/MM/YYYY HH:MM AM/PM" → date (convierte a YYYY-MM-DD; descarta hora).
+  - "NÚMERO CELULAR DE ORIGEN: 04**-***XXXX" → phone del emisor, pero viene enmascarado; NO lo uses para phone a menos que esté completo.
+  - "NÚMERO CELULAR DE DESTINO: 04XXXXXXXXXX" → phone del receptor (el comercio). Úsalo como phone ya que está completo.
+  - "IDENTIFICACIÓN RECEPTOR: VXXXXXXXX" (sin guion, ej "V12921400") → cedula del RECEPTOR (comercio). Formatéala con guion: "V-12921400". NO es la del ordenante.
+  - "BANCO RECEPTOR: BANCO DE VENEZUELA" → destinationBank (convierte: "BANCO DE VENEZUELA"→"BDV", "MERCANTIL"→"MERCANTIL", etc.).
+  - "BANCO EMISOR: BANESCO BANCO UNIVERSAL S.A.C.A." → originBank = "BANESCO".
+  - "MONTO DE LA OPERACIÓN: BS X.XXX,XX" → amount (currency = "VES"). Ej "BS 9.600,00" → 9600.
+  - "CONCEPTO: PAGO" (o texto libre) → notes.
+  - operationType = "pago_movil".
+  - senderName típicamente NO visible → devuelve null.
 
 **Mercantil (app — "Operación Exitosa")**:
 - Header: "Transferencia exitosa" / "Pago móvil exitoso" / "Movimiento exitoso".
