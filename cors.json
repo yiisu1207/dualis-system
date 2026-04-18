@@ -1,0 +1,27 @@
+[
+  {
+    "origin": [
+      "https://losangeles.dualis.online",
+      "https://dualis.online",
+      "https://www.dualis.online",
+      "https://erp-web-f99dc.web.app",
+      "https://erp-web-f99dc.firebaseapp.com",
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "http://localhost:4173"
+    ],
+    "method": ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Encoding",
+      "Content-Disposition",
+      "Authorization",
+      "x-goog-resumable",
+      "x-goog-meta-*",
+      "x-firebase-storage-version",
+      "ETag"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

@@ -252,10 +252,22 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     const totalCredit = data.rows.filter((r) => r.amount > 0).reduce((s, r) => s + r.amount, 0);
     const totalDebit = data.rows.filter((r) => r.amount < 0).reduce((s, r) => s + r.amount, 0);
 
-    // Subir archivo original a Firebase Storage
+    // Subir archivo original a Firebase Storage.
+    // Sanitizar filename: Firebase Storage tolera mal espacios/paréntesis en rutas
+    // (rompe preflight CORS en algunos proxies). Normalizamos a [a-z0-9._-] y
+    // conservamos la extensión original.
+    const safeFilename = (() => {
+      const name = data.sourceFilename || 'archivo';
+      const dotIdx = name.lastIndexOf('.');
+      const base = dotIdx > 0 ? name.slice(0, dotIdx) : name;
+      const ext = dotIdx > 0 ? name.slice(dotIdx) : '';
+      const cleanBase = base.toLowerCase().replace(/[^a-z0-9._-]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'archivo';
+      const cleanExt = ext.toLowerCase().replace(/[^a-z0-9.]+/g, '');
+      return `${cleanBase}${cleanExt}`;
+    })();
     let fileUrl: string | undefined;
     if (data.file) {
-      const filePath = `bankStatements/${businessId}/${monthKey}/${data.accountAlias}/${data.sourceFilename}`;
+      const filePath = `bankStatements/${businessId}/${monthKey}/${data.accountAlias}/${safeFilename}`;
       const fileRef = storageRef(storage, filePath);
       await uploadBytes(fileRef, data.file);
       fileUrl = await getDownloadURL(fileRef);
@@ -267,7 +279,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
       bankCode: data.bankCode,
       bankName: data.bankName,
       amountTolerancePct: data.amountTolerancePct || 0,
-      sourceFilename: data.sourceFilename,
+      sourceFilename: safeFilename,
       fileUrl,
       uploadedAt: Timestamp.now(),
       uploadedBy: currentUserId,
