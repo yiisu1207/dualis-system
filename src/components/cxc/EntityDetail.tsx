@@ -17,7 +17,7 @@ import VerificationBadge from '../VerificationBadge';
 import { LedgerView } from './LedgerView';
 import ExportPanel from './ExportPanel';
 import type { CompanyInfo } from '../../utils/clientStatementExports';
-import { collection, query, where, getDocs, addDoc, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, getDoc, onSnapshot, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { shareViaWhatsApp, shareViaEmail, messageTemplates } from '../../utils/shareLink';
 import { Key } from 'lucide-react';
@@ -403,6 +403,7 @@ export function EntityDetail({
 
   // ── Company info (for PDF exports) — loaded once from businessConfigs ──
   const [company, setCompany] = useState<CompanyInfo>({});
+  const [businessCreditMode, setBusinessCreditMode] = useState<'accumulated' | 'invoiceLinked' | undefined>(undefined);
   useEffect(() => {
     if (!businessId) return;
     getDoc(doc(db, 'businessConfigs', businessId)).then(snap => {
@@ -416,8 +417,15 @@ export function EntityDetail({
         email: d.companyEmail,
         logo: d.companyLogo,
       });
+      if (d.creditMode === 'invoiceLinked' || d.creditMode === 'accumulated') {
+        setBusinessCreditMode(d.creditMode);
+      }
     }).catch(() => {});
   }, [businessId, businessName]);
+
+  // Modo efectivo: override por cliente > global del negocio > 'accumulated'
+  const effectiveCreditMode: 'accumulated' | 'invoiceLinked' =
+    customer?.creditMode ?? businessCreditMode ?? 'accumulated';
 
 
   // Listen for pending OTP code for this customer (real-time)
@@ -685,7 +693,54 @@ export function EntityDetail({
   const [defaultDays, setDefaultDays] = useState<number | null>(customer?.defaultPaymentDays ?? null);
   const [creditApproved, setCreditApproved] = useState(customer?.creditApproved ?? false);
   const [internalNotes, setInternalNotes] = useState(customer?.internalNotes || '');
+  const [creditModeOverride, setCreditModeOverride] = useState<'' | 'accumulated' | 'invoiceLinked'>(customer?.creditMode ?? '');
   const [savingConfig, setSavingConfig] = useState(false);
+  const [migrating, setMigrating] = useState(false);
+
+  // Flag: el cliente está a punto de pasar (guardado o no-guardado) a invoiceLinked
+  // y tiene FACTURAs "legacy" (sin invoiceStatus) → se recomienda migrar.
+  const needsInvoiceLinkedMigration = useMemo(() => {
+    if (!isCxC) return false;
+    const targetMode = (creditModeOverride || businessCreditMode || 'accumulated');
+    if (targetMode !== 'invoiceLinked') return false;
+    return entityMovements.some(m =>
+      m.movementType === 'FACTURA' && !(m as any).anulada && !(m as any).invoiceStatus,
+    );
+  }, [creditModeOverride, businessCreditMode, entityMovements, isCxC]);
+
+  const handleMigrateToInvoiceLinked = async () => {
+    if (!customer) return;
+    const legacyInvoices = entityMovements.filter(m =>
+      m.movementType === 'FACTURA' && !(m as any).anulada && !(m as any).invoiceStatus,
+    );
+    if (legacyInvoices.length === 0) return;
+    const confirmed = confirm(
+      `Se marcarán ${legacyInvoices.length} factura(s) existente(s):\n` +
+      `• Las pagadas → PAID (allocatedTotal = total)\n` +
+      `• Las pendientes → OPEN (allocatedTotal = 0)\n\n` +
+      `Los abonos viejos NO se imputarán retroactivamente (quedan como crédito accumulated). ` +
+      `Esto es un corte limpio: los nuevos abonos sí imputarán por factura. ¿Continuar?`
+    );
+    if (!confirmed) return;
+    setMigrating(true);
+    try {
+      const batch = writeBatch(db);
+      for (const inv of legacyInvoices) {
+        const total = Number((inv as any).amountInUSD || (inv as any).amount || 0);
+        const isPaid = !!(inv as any).pagado;
+        batch.update(doc(db, 'movements', inv.id), {
+          invoiceStatus: isPaid ? 'PAID' : 'OPEN',
+          allocatedTotal: isPaid ? total : 0,
+          allocations: [],
+        });
+      }
+      await batch.commit();
+    } catch (err) {
+      console.error('[EntityDetail] migrate invoiceLinked failed', err);
+    } finally {
+      setMigrating(false);
+    }
+  };
 
   const handleSaveConfig = async () => {
     if (!onUpdateEntity || !customer) return;
@@ -694,12 +749,15 @@ export function EntityDetail({
       // Solo escribimos defaultPaymentDays cuando el usuario eligió un período.
       // Si está en null, omitimos el campo para no sobrescribir con un default
       // espurio (mismo patrón que NewClientModal).
-      await onUpdateEntity(customer.id, {
+      // Para creditMode: si el usuario elige '' se borra el override (null → usa global).
+      const update: Record<string, any> = {
         creditLimit: parseFloat(creditLimit) || 0,
-        ...(defaultDays !== null ? { defaultPaymentDays: defaultDays } : {}),
         creditApproved,
         internalNotes: internalNotes.trim(),
-      });
+        creditMode: creditModeOverride || null,
+      };
+      if (defaultDays !== null) update.defaultPaymentDays = defaultDays;
+      await onUpdateEntity(customer.id, update);
     } finally {
       setSavingConfig(false);
     }
@@ -996,6 +1054,79 @@ export function EntityDetail({
                 <p className="text-xs text-slate-300 dark:text-white/20 mt-1">Los movimientos aparecerán aquí cuando registres la primera factura o abono</p>
               </div>
             )}
+
+            {/* ── Section: Facturas abiertas (solo modo invoiceLinked) ── */}
+            {isCxC && effectiveCreditMode === 'invoiceLinked' && (() => {
+              const openInvs = entityMovements
+                .filter(m => m.movementType === 'FACTURA' && !m.anulada)
+                .map(m => {
+                  const original = m.amountInUSD ?? 0;
+                  const allocated = m.allocatedTotal ?? (m.pagado ? original : 0);
+                  const status = m.invoiceStatus ?? (m.pagado ? 'PAID' : 'OPEN');
+                  const remaining = status === 'PAID' ? 0 : Math.max(0, original - allocated);
+                  return { m, original, allocated, status, remaining };
+                })
+                .filter(x => x.status !== 'PAID' && x.remaining > 0.009)
+                .sort((a, b) => new Date(a.m.date).getTime() - new Date(b.m.date).getTime());
+
+              if (openInvs.length === 0) return null;
+              const totalOpen = openInvs.reduce((s, x) => s + x.remaining, 0);
+
+              return (
+                <section className="rounded-2xl bg-white dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04] overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-white/[0.04]">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1 h-4 rounded-full bg-gradient-to-b from-amber-500 to-rose-500" />
+                      <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-white/70">Facturas abiertas</h3>
+                      <span className="text-[9px] font-black text-slate-400 dark:text-white/30">· {openInvs.length}</span>
+                    </div>
+                    <span className="text-[11px] font-black text-rose-500">${totalOpen.toFixed(2)} pendiente</span>
+                  </div>
+                  <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
+                    {openInvs.slice(0, 6).map(({ m, original, allocated, status, remaining }) => {
+                      const ref = m.nroControl || m.concept || m.id.slice(0, 6);
+                      const pct = original > 0 ? Math.round((allocated / original) * 100) : 0;
+                      const overdue = m.dueDate && m.dueDate < new Date().toISOString().split('T')[0];
+                      return (
+                        <div key={m.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-white/[0.02]">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-black text-slate-700 dark:text-white/70 truncate">{ref}</span>
+                              <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                status === 'PARTIAL'
+                                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                  : 'bg-slate-500/15 text-slate-500 dark:text-white/40'
+                              }`}>
+                                {status === 'PARTIAL' ? `${status} · ${pct}%` : status}
+                              </span>
+                              {overdue && (
+                                <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400">Vencida</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5 text-[9px] text-slate-400 dark:text-white/25 font-bold">
+                              <span>{m.date}</span>
+                              {m.dueDate && <span>· vence {m.dueDate}</span>}
+                              {allocated > 0.009 && <span>· pagado ${allocated.toFixed(2)} de ${original.toFixed(2)}</span>}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/25">Restante</p>
+                            <p className="text-sm font-black text-rose-500">${remaining.toFixed(2)}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {openInvs.length > 6 && (
+                      <div className="px-4 py-2 text-center">
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-white/30">
+                          + {openInvs.length - 6} factura(s) más · ver pestaña Movimientos
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              );
+            })()}
 
             {/* ═══ Dashboard de 2 columnas (xl) ══════════════════════════ */}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
@@ -1767,6 +1898,7 @@ export function EntityDetail({
               currentUserId={currentUserId}
               currentUserName={currentUserName}
               canVerify={canVerify ?? canEdit}
+              creditMode={effectiveCreditMode}
             />
           </div>
         )}
@@ -1906,6 +2038,49 @@ export function EntityDetail({
                 </div>
                 <span className="text-xs font-black text-slate-700 dark:text-white/70">Credito aprobado</span>
               </label>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className={lbl + ' mb-0'}>Modo de control de crédito</label>
+                <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 dark:text-white/25 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.04]">Override</span>
+              </div>
+              <select
+                value={creditModeOverride}
+                onChange={e => setCreditModeOverride(e.target.value as any)}
+                className={inp}
+              >
+                <option value="">Usar default del negocio</option>
+                <option value="accumulated">Saldo acumulado</option>
+                <option value="invoiceLinked">Facturas pendientes</option>
+              </select>
+              <p className="text-[9px] text-slate-400 dark:text-white/25 mt-1">
+                {creditModeOverride
+                  ? 'Este cliente usa un modo distinto al del negocio.'
+                  : 'Este cliente hereda el modo configurado en el negocio.'}
+              </p>
+
+              {needsInvoiceLinkedMigration && (
+                <div className="mt-3 rounded-xl border border-amber-400/40 bg-amber-50 dark:bg-amber-500/[0.06] p-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400 mb-1">
+                    Migración recomendada
+                  </p>
+                  <p className="text-[10px] text-amber-900/80 dark:text-amber-200/80 leading-relaxed mb-2">
+                    Hay facturas existentes sin estado. Al migrar se marcarán según su flag
+                    <code className="px-1 mx-0.5 bg-amber-100 dark:bg-amber-500/15 rounded text-[9px]">pagado</code>:
+                    las pagadas → <strong>PAID</strong>, las pendientes → <strong>OPEN</strong>.
+                    Los abonos viejos no se re-imputan (corte limpio).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleMigrateToInvoiceLinked}
+                    disabled={migrating}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-white rounded-lg text-[10px] font-black uppercase tracking-wider disabled:opacity-40"
+                  >
+                    {migrating ? 'Migrando...' : 'Migrar facturas ahora'}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div>

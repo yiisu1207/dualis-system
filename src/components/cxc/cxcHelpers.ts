@@ -1,5 +1,12 @@
-import { Movement, MovementType, ExchangeRates, AccountType, CustomRate } from '../../../types';
+import { Movement, MovementType, ExchangeRates, AccountType, CustomRate, Customer, CreditMode } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
+
+export function getEffectiveCreditMode(
+  customer: Pick<Customer, 'creditMode'> | undefined | null,
+  businessConfig: { creditMode?: CreditMode } | undefined | null
+): CreditMode {
+  return customer?.creditMode ?? businessConfig?.creditMode ?? 'accumulated';
+}
 
 export type TabFilter = 'ALL' | string;
 
@@ -101,37 +108,79 @@ export function buildChronoData(items: Movement[], rates: ExchangeRates): Chrono
   });
 }
 
+/** Saldo restante USD de una factura según el modo activo. */
+function invoiceRemainingUSD(inv: Movement, rates: ExchangeRates, mode: CreditMode): number {
+  if (inv.anulada) return 0;
+  const original = getMovementUsdAmount(inv, rates);
+  if (mode === 'accumulated') return inv.pagado ? 0 : original;
+
+  const hasNewFields =
+    inv.invoiceStatus !== undefined ||
+    inv.allocations !== undefined ||
+    inv.allocatedTotal !== undefined;
+  if (!hasNewFields) return inv.pagado ? 0 : original;
+
+  if (inv.invoiceStatus === 'PAID') return 0;
+  const allocated = inv.allocatedTotal ?? 0;
+  return Math.max(0, original - allocated);
+}
+
+/** ¿La factura está pendiente (total o parcialmente) según el modo? */
+function isInvoicePending(inv: Movement, mode: CreditMode): boolean {
+  if (inv.anulada) return false;
+  if (mode === 'accumulated') return !inv.pagado;
+  const hasNewFields =
+    inv.invoiceStatus !== undefined ||
+    inv.allocations !== undefined ||
+    inv.allocatedTotal !== undefined;
+  if (!hasNewFields) return !inv.pagado;
+  return inv.invoiceStatus !== 'PAID';
+}
+
 export function sumByAccount(
   movs: Movement[],
   accountType: AccountType,
-  rates: ExchangeRates
+  rates: ExchangeRates,
+  mode: CreditMode = 'accumulated'
 ): number {
-  const accountMovs = movs.filter((m) => m.accountType === accountType);
-  const totalDebt = accountMovs
+  const accountMovs = movs.filter((m) => m.accountType === accountType && !m.anulada);
+  if (mode === 'accumulated') {
+    const totalDebt = accountMovs
+      .filter((m) => m.movementType === MovementType.FACTURA)
+      .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+    const totalPaid = accountMovs
+      .filter((m) => m.movementType === MovementType.ABONO)
+      .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+    return totalDebt - totalPaid;
+  }
+
+  // invoiceLinked: saldo = Σ(factura.remaining) − Σ(abono.overpaymentUSD)
+  const pendingInvoices = accountMovs
     .filter((m) => m.movementType === MovementType.FACTURA)
-    .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
-  const totalPaid = accountMovs
+    .reduce((sum, m) => sum + invoiceRemainingUSD(m, rates, mode), 0);
+  const credits = accountMovs
     .filter((m) => m.movementType === MovementType.ABONO)
-    .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
-  return totalDebt - totalPaid;
+    .reduce((sum, m) => sum + (m.overpaymentUSD ?? 0), 0);
+  return pendingInvoices - credits;
 }
 
 export function calculateAgingBuckets(
   movs: Movement[],
-  rates: ExchangeRates
+  rates: ExchangeRates,
+  mode: CreditMode = 'accumulated'
 ): AgingBuckets {
   const now = Date.now();
   const buckets: AgingBuckets = { current: 0, d31_60: 0, d61_90: 0, d90plus: 0 };
 
-  // Only unpaid FACTURAs contribute to aging
-  const unpaidInvoices = movs.filter(
-    (m) => m.movementType === MovementType.FACTURA && !(m as any).pagado && !(m as any).anulada
+  const pendingInvoices = movs.filter(
+    (m) => m.movementType === MovementType.FACTURA && isInvoicePending(m, mode)
   );
 
-  unpaidInvoices.forEach((inv) => {
+  pendingInvoices.forEach((inv) => {
     const invoiceDate = new Date(inv.date).getTime();
     const daysOld = Math.floor((now - invoiceDate) / (1000 * 60 * 60 * 24));
-    const amount = getMovementUsdAmount(inv, rates);
+    const amount = invoiceRemainingUSD(inv, rates, mode);
+    if (amount <= 0.009) return;
 
     if (daysOld <= 30) buckets.current += amount;
     else if (daysOld <= 60) buckets.d31_60 += amount;
@@ -227,29 +276,49 @@ import type { CreditScore } from '../../../types';
  * - REGULAR: average delay 8–30 days
  * - RIESGO: average delay > 30 days or has unpaid invoices > 90 days old
  */
-export function calcCreditScore(movements: Movement[]): CreditScore | null {
+export function calcCreditScore(
+  movements: Movement[],
+  mode: CreditMode = 'accumulated'
+): CreditScore | null {
   const invoices = movements.filter(
     m => m.movementType === 'FACTURA' && !m.anulada && m.dueDate
   );
   if (invoices.length === 0) return null;
 
+  const isPaid = (inv: Movement) =>
+    mode === 'invoiceLinked' && inv.invoiceStatus !== undefined
+      ? inv.invoiceStatus === 'PAID'
+      : !!inv.pagado;
+
   // Check for very old unpaid invoices (risk flag)
   const now = Date.now();
   const hasOldUnpaid = invoices.some(inv => {
-    if (inv.pagado) return false;
+    if (isPaid(inv)) return false;
     const age = Math.floor((now - new Date(inv.date).getTime()) / 86_400_000);
     return age > 90;
   });
   if (hasOldUnpaid) return 'RIESGO';
 
   // Calculate average delay for paid invoices
-  const paidInvoices = invoices.filter(inv => inv.pagado && inv.dueDate);
+  const paidInvoices = invoices.filter(inv => isPaid(inv) && inv.dueDate);
   if (paidInvoices.length === 0) return null;
 
   const abonos = movements.filter(m => m.movementType === 'ABONO' && !m.anulada);
 
   const delays: number[] = paidInvoices.map(inv => {
-    // Find closest ABONO after the invoice date
+    // invoiceLinked: usar la última allocation aplicada a esta factura.
+    if (mode === 'invoiceLinked' && Array.isArray(inv.allocations) && inv.allocations.length > 0) {
+      const lastAlloc = [...inv.allocations].sort((a, b) =>
+        new Date(a.allocatedAt).getTime() - new Date(b.allocatedAt).getTime()
+      ).pop();
+      if (lastAlloc && inv.dueDate) {
+        const due  = new Date(inv.dueDate).getTime();
+        const paid = new Date(lastAlloc.allocatedAt).getTime();
+        return Math.floor((paid - due) / 86_400_000);
+      }
+    }
+
+    // Legacy/accumulated: ABONO más cercano en la misma cuenta después de la factura
     const relatedAbono = abonos
       .filter(a => a.accountType === inv.accountType && a.date >= inv.date)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
@@ -321,19 +390,20 @@ export function calcAccountBalances(
   entityMovements: Movement[],
   bcvRate: number,
   customRates: CustomRate[],
-  rates: ExchangeRates
+  rates: ExchangeRates,
+  mode: CreditMode = 'accumulated'
 ): { accountType: string; label: string; color: string; balance: number; overdue: number; lastDate?: string }[] {
   const accounts = getDistinctAccounts(entityMovements);
   return accounts.map((acc, idx) => {
     const accMovs = entityMovements.filter(m => m.accountType === acc);
-    const balance = sumByAccount(accMovs, acc as any, rates);
+    const balance = sumByAccount(accMovs, acc as any, rates, mode);
 
-    // Overdue: sum of unpaid FACTURAs > 30 days old
+    // Overdue: saldo restante de FACTURAs pendientes > 30 días
     const now = Date.now();
     const overdue = accMovs
-      .filter(m => m.movementType === MovementType.FACTURA && !m.pagado && !m.anulada)
+      .filter(m => m.movementType === MovementType.FACTURA && isInvoicePending(m, mode))
       .filter(m => Math.floor((now - new Date(m.date).getTime()) / 86_400_000) > 30)
-      .reduce((sum, m) => sum + getMovementUsdAmount(m, rates), 0);
+      .reduce((sum, m) => sum + invoiceRemainingUSD(m, rates, mode), 0);
 
     // Last movement date
     const sorted = accMovs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

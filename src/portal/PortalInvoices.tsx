@@ -236,8 +236,13 @@ export default function PortalInvoices() {
           <div className="divide-y divide-white/[0.05]">
             {filtered.map((mov) => {
               const isInvoice = mov.movementType === MovementType.FACTURA;
-              const isPaid = (mov as any).pagado;
+              const invStatus = (mov as any).invoiceStatus as 'OPEN' | 'PARTIAL' | 'PAID' | undefined;
+              const allocatedTotal = Number((mov as any).allocatedTotal || 0);
               const amount = mov.amountInUSD || mov.amount;
+              // invoiceLinked: usar invoiceStatus; legacy: usar pagado
+              const isPaid = invStatus ? invStatus === 'PAID' : (mov as any).pagado;
+              const isPartial = invStatus === 'PARTIAL';
+              const paidPct = isPartial && amount > 0 ? Math.round((allocatedTotal / amount) * 100) : 0;
 
               return (
                 <div
@@ -263,7 +268,15 @@ export default function PortalInvoices() {
                           Pagado
                         </span>
                       )}
-                      {!isPaid && isInvoice && (
+                      {isPartial && (
+                        <span
+                          className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 text-[7px] font-black uppercase rounded shrink-0"
+                          title={`$${allocatedTotal.toFixed(2)} de $${amount.toFixed(2)} pagado`}
+                        >
+                          Parcial · {paidPct}%
+                        </span>
+                      )}
+                      {!isPaid && !isPartial && isInvoice && (
                         <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 text-[7px] font-black uppercase rounded shrink-0">
                           Pend.
                         </span>

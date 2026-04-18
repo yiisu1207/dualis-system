@@ -60,29 +60,49 @@ export default function PortalStatement() {
       pdf.setFont('helvetica', 'bold');
       pdf.text(`Saldo: ${currencySymbol}${(totalDebe - totalHaber).toFixed(2)}`, 14, startY);
 
-      // Table
-      autoTable(pdf, {
-        startY: startY + 6,
-        head: [['Fecha', 'Concepto', 'Cuenta', `Debe (${currencySymbol})`, `Haber (${currencySymbol})`, `Saldo (${currencySymbol})`]],
-        body: statementData.map(row => [
+      // Columna Estado: solo útil en invoiceLinked (muestra OPEN/PARTIAL/PAID).
+      // Si ningún movimiento tiene invoiceStatus → legacy, la omitimos.
+      const hasInvoiceStatus = statementData.some(row => !!(row as any).invoiceStatus);
+
+      const head = hasInvoiceStatus
+        ? [['Fecha', 'Concepto', 'Cuenta', 'Estado', `Debe (${currencySymbol})`, `Haber (${currencySymbol})`, `Saldo (${currencySymbol})`]]
+        : [['Fecha', 'Concepto', 'Cuenta', `Debe (${currencySymbol})`, `Haber (${currencySymbol})`, `Saldo (${currencySymbol})`]];
+
+      const body = statementData.map(row => {
+        const status = (row as any).invoiceStatus as 'OPEN' | 'PARTIAL' | 'PAID' | undefined;
+        const estadoLabel = row.movementType === MovementType.FACTURA
+          ? (status === 'PAID' ? 'Pagada'
+             : status === 'PARTIAL' ? 'Parcial'
+             : status === 'OPEN' ? 'Abierta'
+             : ((row as any).pagado ? 'Pagada' : 'Pendiente'))
+          : '';
+        const base = [
           row.date,
           row.concept,
           row.accountType,
           row.debe > 0 ? row.debe.toFixed(2) : '',
           row.haber > 0 ? row.haber.toFixed(2) : '',
           row.saldo.toFixed(2),
-        ]),
-        foot: [['', 'TOTALES', '', totalDebe.toFixed(2), totalHaber.toFixed(2), (totalDebe - totalHaber).toFixed(2)]],
+        ];
+        return hasInvoiceStatus ? [base[0], base[1], base[2], estadoLabel, base[3], base[4], base[5]] : base;
+      });
+
+      const foot = hasInvoiceStatus
+        ? [['', 'TOTALES', '', '', totalDebe.toFixed(2), totalHaber.toFixed(2), (totalDebe - totalHaber).toFixed(2)]]
+        : [['', 'TOTALES', '', totalDebe.toFixed(2), totalHaber.toFixed(2), (totalDebe - totalHaber).toFixed(2)]];
+
+      autoTable(pdf, {
+        startY: startY + 6,
+        head,
+        body,
+        foot,
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
         footStyles: { fillColor: [240, 240, 250], textColor: [30, 30, 30], fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [248, 248, 255] },
-        columnStyles: {
-          0: { cellWidth: 22 },
-          3: { halign: 'right' },
-          4: { halign: 'right' },
-          5: { halign: 'right' },
-        },
+        columnStyles: hasInvoiceStatus
+          ? { 0: { cellWidth: 20 }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } }
+          : { 0: { cellWidth: 22 }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
       });
 
       // Footer

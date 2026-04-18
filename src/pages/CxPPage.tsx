@@ -4,6 +4,8 @@ import { CxPSupplierList } from '../components/cxc/CxPSupplierList';
 import { EntityDetail } from '../components/cxc/EntityDetail';
 import { MovementFormPanel } from '../components/cxc/MovementFormPanel';
 import NewSupplierModal from '../components/cxc/NewSupplierModal';
+import { reverseAbonoAllocations } from '../utils/invoiceAllocations';
+import { db } from '../firebase/config';
 
 interface CxPPageProps {
   suppliers: Supplier[];
@@ -101,9 +103,21 @@ export default function CxPPage({
   }, [editingMovement, onSaveMovement, onUpdateMovement]);
 
   const handleDeleteMovement = useCallback(async (id: string) => {
+    const mov = movements.find(m => m.id === id);
+    if (mov?.movementType === 'FACTURA' && Array.isArray(mov.allocations) && mov.allocations.length > 0) {
+      alert('Esta factura tiene pagos imputados. Anula primero los abonos relacionados para poder eliminarla.');
+      return;
+    }
     if (!confirm('Eliminar este movimiento?')) return;
+    if (mov?.movementType === 'ABONO' && Array.isArray(mov.allocations) && mov.allocations.length > 0) {
+      try {
+        await reverseAbonoAllocations(db, id);
+      } catch (err) {
+        console.error('reverseAbonoAllocations failed', err);
+      }
+    }
     await onDeleteMovement(id);
-  }, [onDeleteMovement]);
+  }, [onDeleteMovement, movements]);
 
   const handleUpdateEntity = useCallback(async (id: string, data: Partial<Supplier>) => {
     await onUpdateSupplier(id, data as any);

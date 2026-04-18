@@ -245,6 +245,10 @@ const Configuracion: React.FC = () => {
     portalKycRequired: true,
   });
 
+  // Modo de control de crédito (global del negocio).
+  // 'accumulated' = saldo neto por cuenta · 'invoiceLinked' = facturas con estado + allocations.
+  const [creditMode, setCreditMode] = useState<'accumulated' | 'invoiceLinked'>('accumulated');
+
   // Commissions config
   const [commissions, setCommissions] = useState({
     enabled: false,
@@ -391,6 +395,9 @@ const Configuracion: React.FC = () => {
         }
         if (featuresSnap?.creditConfig) {
           setCreditConfig(prev => ({ ...prev, ...featuresSnap.creditConfig }));
+        }
+        if (featuresSnap?.creditMode === 'invoiceLinked' || featuresSnap?.creditMode === 'accumulated') {
+          setCreditMode(featuresSnap.creditMode);
         }
         if (featuresSnap?.commissions) {
           setCommissions(prev => ({ ...prev, ...featuresSnap.commissions }));
@@ -787,6 +794,7 @@ const Configuracion: React.FC = () => {
         ndeConfig,
         paymentPeriods,
         creditConfig,
+        creditMode,
       }, { merge: true });
       toast.success('Configuración de Despacho y Crédito guardada');
     } catch (e) {
@@ -2274,6 +2282,53 @@ const Configuracion: React.FC = () => {
                         </button>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* ═══ MODO DE CONTROL DE CRÉDITO ═══ */}
+                <div className="bg-white dark:bg-[#0d1424] rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-50 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2">
+                      <Clock size={15} className="text-indigo-500" />
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">Modo de Control de Crédito</h3>
+                    </div>
+                    <p className="text-[11px] text-slate-400 dark:text-white/30 mt-1">Cómo se contabilizan las deudas y los abonos del cliente. Puedes sobreescribirlo por cliente desde su ficha.</p>
+                  </div>
+                  <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {[
+                      {
+                        id: 'accumulated' as const,
+                        label: 'Saldo Acumulado',
+                        tag: 'Simple',
+                        desc: 'Un cliente con 3 facturas tiene un saldo neto. Los abonos reducen el saldo total, no se imputan a una factura específica.',
+                      },
+                      {
+                        id: 'invoiceLinked' as const,
+                        label: 'Facturas Pendientes',
+                        tag: 'Por factura',
+                        desc: 'Cada factura tiene estado OPEN/PARTIAL/PAID. Al abonar, eliges qué factura cobras (o FIFO automático si no seleccionas).',
+                      },
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setCreditMode(opt.id)}
+                        className={`text-left p-4 rounded-2xl border-2 transition-all ${
+                          creditMode === opt.id
+                            ? 'bg-indigo-500/[0.08] border-indigo-500/40'
+                            : 'bg-slate-50/50 dark:bg-white/[0.02] border-slate-100 dark:border-white/[0.06] hover:border-indigo-500/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <p className="text-sm font-black text-slate-900 dark:text-white">{opt.label}</p>
+                          <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">{opt.tag}</span>
+                          {creditMode === opt.id && (
+                            <span className="ml-auto text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Activo</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-white/40 leading-relaxed">{opt.desc}</p>
+                      </button>
+                    ))}
                   </div>
                 </div>
 

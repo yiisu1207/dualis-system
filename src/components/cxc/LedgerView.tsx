@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { Movement, CustomRate, ExchangeRates } from '../../../types';
+import type { Movement, CustomRate, ExchangeRates, CreditMode } from '../../../types';
 import {
   type TabFilter,
   type RangeFilter,
@@ -27,6 +27,8 @@ interface LedgerViewProps {
   currentUserId?: string;
   currentUserName?: string;
   canVerify?: boolean;
+  /** Si es invoiceLinked, se muestra columna Estado con OPEN/PARTIAL/PAID y allocations. */
+  creditMode?: CreditMode;
 }
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 250];
@@ -52,8 +54,10 @@ export function LedgerView({
   currentUserId,
   currentUserName,
   canVerify,
+  creditMode = 'accumulated',
 }: LedgerViewProps) {
   const effectiveCanVerify = canVerify ?? canEdit;
+  const showInvoiceCol = creditMode === 'invoiceLinked';
   const [accountFilter, setAccountFilter] = useState<TabFilter>('ALL');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
@@ -156,13 +160,14 @@ export function LedgerView({
                 <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 text-right">Debe</th>
                 <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 text-right">Haber</th>
                 <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 text-right">Saldo</th>
+                {showInvoiceCol && <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Estado</th>}
                 {canEdit && <th className="px-2 py-2.5 w-16" />}
               </tr>
             </thead>
             <tbody>
               {pagedData.length === 0 ? (
                 <tr>
-                  <td colSpan={canEdit ? 9 : 8} className="px-4 py-12 text-center text-sm text-slate-300 dark:text-white/15 font-bold">
+                  <td colSpan={(canEdit ? 9 : 8) + (showInvoiceCol ? 1 : 0)} className="px-4 py-12 text-center text-sm text-slate-300 dark:text-white/15 font-bold">
                     Sin movimientos
                   </td>
                 </tr>
@@ -217,6 +222,42 @@ export function LedgerView({
                     <td className={`px-3 py-2.5 text-right text-sm font-black ${m.runningBalance > 0.01 ? 'text-slate-900 dark:text-white' : m.runningBalance < -0.01 ? 'text-emerald-500' : 'text-slate-300 dark:text-white/20'}`}>
                       ${m.runningBalance.toFixed(2)}
                     </td>
+                    {showInvoiceCol && (
+                      <td className="px-3 py-2.5">
+                        {m.movementType === 'FACTURA' ? (() => {
+                          const status = m.invoiceStatus
+                            ?? (m.pagado ? 'PAID' : 'OPEN');
+                          const amount = m.amountInUSD ?? 0;
+                          const allocated = m.allocatedTotal ?? (m.pagado ? amount : 0);
+                          const pct = amount > 0 ? Math.round((allocated / amount) * 100) : 0;
+                          const style =
+                            status === 'PAID' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            : status === 'PARTIAL' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                            : 'bg-slate-500/15 text-slate-500 dark:text-white/40';
+                          return (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${style}`}
+                              title={`$${allocated.toFixed(2)} de $${amount.toFixed(2)} pagado`}
+                            >
+                              {status}
+                              {status === 'PARTIAL' && <span className="opacity-70">· {pct}%</span>}
+                            </span>
+                          );
+                        })() : m.movementType === 'ABONO' && Array.isArray(m.allocations) && m.allocations.length > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-400"
+                            title={m.allocations.map(a => `${a.invoiceRef || a.invoiceId.slice(0,6)}: $${a.amount.toFixed(2)}`).join(' · ')}
+                          >
+                            → {m.allocations.length} fact.
+                            {m.overpaymentUSD && m.overpaymentUSD > 0.009 && (
+                              <span className="opacity-70">· +${m.overpaymentUSD.toFixed(2)}</span>
+                            )}
+                          </span>
+                        ) : m.movementType === 'ABONO' ? (
+                          <span className="text-[9px] font-bold text-slate-300 dark:text-white/20">—</span>
+                        ) : null}
+                      </td>
+                    )}
                     {canEdit && (
                       <td className="px-2 py-2.5">
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

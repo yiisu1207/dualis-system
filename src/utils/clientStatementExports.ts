@@ -55,6 +55,49 @@ const todayStr = () => new Date().toLocaleDateString('es-VE', { day: '2-digit', 
 
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40) || 'cliente';
 
+/** invoiceLinked — devuelve las facturas abiertas (OPEN/PARTIAL) con el restante
+ *  por factura. Se gate por la presencia de `invoiceStatus` en los movimientos:
+ *  si ningún movimiento lo trae, modo accumulated → devuelve []. */
+export interface OpenInvoiceRow {
+  id: string;
+  ref: string;
+  date: string;
+  dueDate?: string;
+  total: number;
+  paid: number;
+  remaining: number;
+  status: 'OPEN' | 'PARTIAL';
+}
+
+export function buildOpenInvoicesRows(movements: ChronoMovement[], customRates: CustomRate[]): OpenInvoiceRow[] {
+  const hasInvoiceStatus = movements.some(m => !!(m as any).invoiceStatus);
+  if (!hasInvoiceStatus) return [];
+  const out: OpenInvoiceRow[] = [];
+  for (const m of movements) {
+    if ((m as any).movementType !== 'FACTURA') continue;
+    if ((m as any).anulada) continue;
+    const status = (m as any).invoiceStatus as 'OPEN' | 'PARTIAL' | 'PAID' | undefined;
+    if (status === 'PAID') continue;
+    if (!status) continue;
+    const total = (m.debe || 0) || Number((m as any).amountInUSD || (m as any).amount || 0);
+    const paid = Number((m as any).allocatedTotal || 0);
+    const remaining = Math.max(0, total - paid);
+    if (remaining <= 0.009) continue;
+    out.push({
+      id: (m as any).id || '',
+      ref: (m as any).nroControl || (m as any).concept || '—',
+      date: formatDateTime(m.displayDate),
+      dueDate: (m as any).dueDate || undefined,
+      total,
+      paid,
+      remaining,
+      status: status === 'PARTIAL' ? 'PARTIAL' : 'OPEN',
+    });
+  }
+  void customRates;
+  return out.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
 export function buildBalancesByAccount(movements: ChronoMovement[], customRates: CustomRate[]) {
   const map = new Map<string, { label: string; balance: number }>();
   for (const m of movements) {
@@ -148,6 +191,27 @@ export function exportStatementCSV(
     saldo.toFixed(2),
   ].join(','));
 
+  // invoiceLinked — sección "Facturas abiertas" al final del CSV
+  const openInvoices = buildOpenInvoicesRows(movements, customRates);
+  if (openInvoices.length > 0) {
+    summaryLines.push('');
+    summaryLines.push('FACTURAS ABIERTAS');
+    summaryLines.push('Referencia,Fecha,Vencimiento,Total,Pagado,Restante,Estado,% Pagado');
+    openInvoices.forEach(inv => {
+      const pct = inv.total > 0 ? Math.round((inv.paid / inv.total) * 100) : 0;
+      summaryLines.push([
+        `"${inv.ref.replace(/"/g, '""')}"`,
+        inv.date,
+        inv.dueDate || '',
+        inv.total.toFixed(2),
+        inv.paid.toFixed(2),
+        inv.remaining.toFixed(2),
+        inv.status,
+        `${pct}%`,
+      ].join(','));
+    });
+  }
+
   const csv = [header, ...rows, ...summaryLines].join('\n');
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -194,6 +258,24 @@ export function buildStatementText(
       lines.push(`  • *${a.label}* (${a.count} mov.)`);
       lines.push(`     Cargos: ${fmtMoney(a.cargos)}  ·  Abonos: ${fmtMoney(a.abonos)}  ·  Saldo: ${saldoStr}`);
     });
+  }
+
+  // invoiceLinked — listado compacto de facturas abiertas
+  const openInvoices = buildOpenInvoicesRows(movements, customRates);
+  if (openInvoices.length > 0) {
+    const today = Date.now();
+    lines.push('');
+    lines.push('📄 *Facturas abiertas:*');
+    openInvoices.slice(0, 12).forEach(inv => {
+      const overdue = inv.dueDate ? Math.floor((today - new Date(inv.dueDate).getTime()) / 86_400_000) : 0;
+      const overdueLabel = overdue > 0 ? ` · venció hace ${overdue}d` : '';
+      const pct = inv.total > 0 ? Math.round((inv.paid / inv.total) * 100) : 0;
+      const stateStr = inv.status === 'PARTIAL' ? ` · ${pct}% pagado` : '';
+      lines.push(`  • ${inv.ref} · ${fmtMoney(inv.remaining)}${stateStr}${overdueLabel}`);
+    });
+    if (openInvoices.length > 12) {
+      lines.push(`  _(+${openInvoices.length - 12} más)_`);
+    }
   }
 
   if (movements.length > 0 && movements.length <= 20) {
@@ -379,6 +461,41 @@ export async function exportStatementFullPDF(
   y = drawEntityBlock(doc, entity, y, meta.mode || 'cxc');
   y = drawBalanceBlock(doc, y, { totalDebe, totalHaber, saldo, count: movements.length });
   y = await drawAccountStatsTable(doc, y, stats);
+
+  // invoiceLinked — tabla "Facturas abiertas" antes del cronológico
+  const openInvoicesPdf = buildOpenInvoicesRows(movements, customRates);
+  if (openInvoicesPdf.length > 0) {
+    autoTable(doc, {
+      startY: y + 2,
+      head: [['Facturas Abiertas', 'Fecha', 'Venc.', 'Total', 'Pagado', 'Restante', 'Estado']],
+      body: openInvoicesPdf.map(inv => [
+        inv.ref,
+        inv.date,
+        inv.dueDate || '—',
+        fmtMoney(inv.total),
+        fmtMoney(inv.paid),
+        fmtMoney(inv.remaining),
+        inv.status === 'PARTIAL'
+          ? `Parcial ${inv.total > 0 ? Math.round((inv.paid / inv.total) * 100) : 0}%`
+          : 'Abierta',
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [245, 158, 11], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
+      alternateRowStyles: { fillColor: [255, 251, 235] },
+      columnStyles: {
+        0: { cellWidth: 'auto', fontStyle: 'bold' },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 22, halign: 'right' },
+        4: { cellWidth: 22, halign: 'right' },
+        5: { cellWidth: 24, halign: 'right', fontStyle: 'bold', textColor: [180, 83, 9] },
+        6: { cellWidth: 22 },
+      },
+      margin: { left: 14, right: 14 },
+    });
+    y = (doc as any).lastAutoTable?.finalY ?? y + 40;
+  }
 
   autoTable(doc, {
     startY: y + 2,

@@ -5,10 +5,12 @@ import { EntityDetail } from '../components/cxc/EntityDetail';
 import { MovementFormPanel } from '../components/cxc/MovementFormPanel';
 import NewClientModal from '../components/cxc/NewClientModal';
 import ClientOnboardingWizard from '../components/cxc/ClientOnboardingWizard';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useSubdomain } from '../context/SubdomainContext';
 import { Zap, Sparkles, X } from 'lucide-react';
+import { reverseAbonoAllocations, applyAbonoAllocations, computeFifoAllocations } from '../utils/invoiceAllocations';
+import { getEffectiveCreditMode } from '../components/cxc/cxcHelpers';
 
 interface CxCPageProps {
   customers: Customer[];
@@ -74,6 +76,25 @@ export default function CxCPage({
 }: CxCPageProps) {
   const [selectedClient, setSelectedClient] = useState<Customer | null>(null);
 
+  // Modo de crédito del negocio (para compensación auto-imputante en invoiceLinked)
+  const [businessCreditMode, setBusinessCreditMode] = useState<'accumulated' | 'invoiceLinked' | undefined>(undefined);
+  useEffect(() => {
+    if (!businessId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'businessConfigs', businessId));
+        if (!cancelled && snap.exists()) {
+          const data = snap.data() as any;
+          if (data?.creditMode === 'accumulated' || data?.creditMode === 'invoiceLinked') {
+            setBusinessCreditMode(data.creditMode);
+          }
+        }
+      } catch { /* noop */ }
+    })();
+    return () => { cancelled = true; };
+  }, [businessId]);
+
   // Keep selectedClient in sync with live customers array (e.g. after edit)
   useEffect(() => {
     if (!selectedClient) return;
@@ -135,9 +156,21 @@ export default function CxCPage({
   }, [editingMovement, onSaveMovement, onUpdateMovement]);
 
   const handleDeleteMovement = useCallback(async (id: string) => {
+    const mov = movements.find(m => m.id === id);
+    if (mov?.movementType === 'FACTURA' && Array.isArray(mov.allocations) && mov.allocations.length > 0) {
+      alert('Esta factura tiene pagos imputados. Anula primero los abonos relacionados para poder eliminarla.');
+      return;
+    }
     if (!confirm('Eliminar este movimiento?')) return;
+    if (mov?.movementType === 'ABONO' && Array.isArray(mov.allocations) && mov.allocations.length > 0) {
+      try {
+        await reverseAbonoAllocations(db, id);
+      } catch (err) {
+        console.error('reverseAbonoAllocations failed', err);
+      }
+    }
     await onDeleteMovement(id);
-  }, [onDeleteMovement]);
+  }, [onDeleteMovement, movements]);
 
   const handleUpdateEntity = useCallback(async (id: string, data: Partial<Customer>) => {
     await onUpdateCustomer(id, data);
@@ -245,13 +278,31 @@ export default function CxCPage({
       concept: `Compensación → ${toAccount}`,
     });
     // Abono on target account (reduce debt using the transferred amount)
-    await onSaveMovement({
+    const abonoRes = await onSaveMovement({
       ...base,
       movementType: 'ABONO' as any,
       accountType: toAccount as any,
       concept: `Compensación ← ${fromAccount}`,
     });
-  }, [selectedClient, businessId, onSaveMovement]);
+    // invoiceLinked — auto-imputar FIFO sobre facturas abiertas de la cuenta destino
+    const mode = getEffectiveCreditMode(selectedClient, { creditMode: businessCreditMode });
+    if (mode === 'invoiceLinked' && typeof abonoRes === 'string' && abonoRes) {
+      try {
+        const openInvoices = movements.filter(m =>
+          m.entityId === selectedClient.id
+          && m.movementType === 'FACTURA'
+          && m.accountType === toAccount
+          && !m.anulada
+          && m.invoiceStatus !== 'PAID'
+          && !m.pagado
+        );
+        const allocs = computeFifoAllocations(openInvoices, amountUSD);
+        if (allocs.length > 0) await applyAbonoAllocations(db, abonoRes, amountUSD, allocs);
+      } catch (err) {
+        console.warn('[CxCPage] compensate FIFO auto-allocate failed', err);
+      }
+    }
+  }, [selectedClient, businessId, onSaveMovement, movements, businessCreditMode]);
 
   return (
     <div className="h-full flex">

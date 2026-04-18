@@ -15,6 +15,7 @@ import { getBancoByCode, CEDULA_VE_REGEX, REFERENCE_6_REGEX } from '../data/banc
 import { sendPaymentApprovedEmail, sendPaymentRejectedEmail } from '../utils/emailService';
 import { uploadToCloudinary } from '../utils/cloudinary';
 import { applyLoyaltyForMovement } from '../utils/loyaltyEngine';
+import { applyAbonoAllocations, computeFifoAllocations } from '../utils/invoiceAllocations';
 
 interface PaymentRequestsPanelProps {
   businessId: string;
@@ -248,9 +249,20 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
       applyLoyaltyForMovement(db, businessId, movementPayload, movementRef.id)
         .catch(err => console.error('[loyalty] portal-approve failed', err));
 
-      // Back-fill facturas: si el monto del abono cubre la suma de las facturas,
-      // marcarlas como PAGADO. Si parcial, dejar como está (solo el ABONO suma).
-      if (isPortal && Array.isArray(req.invoiceIds) && req.invoiceIds.length > 0) {
+      // invoiceLinked — si el PortalPayment trae allocations, aplicarlas al ABONO
+      // recién creado. Esto escribe per-factura `allocations` / `invoiceStatus` /
+      // `allocatedTotal` y también setea `pagado:true` en facturas completamente
+      // cubiertas, reemplazando el legacy back-fill en ese caso.
+      const portalAllocs = (req as any).allocations as Array<{ invoiceId: string; invoiceRef?: string; amount: number }> | undefined;
+      if (isPortal && Array.isArray(portalAllocs) && portalAllocs.length > 0) {
+        try {
+          await applyAbonoAllocations(db, movementRef.id, Number(req.amount), portalAllocs);
+        } catch (err) {
+          console.error('[paymentRequests] applyAbonoAllocations failed', err);
+        }
+      } else if (isPortal && Array.isArray(req.invoiceIds) && req.invoiceIds.length > 0) {
+        // Legacy back-fill: si el monto del abono cubre la suma de las facturas,
+        // marcarlas como PAGADO. Si parcial, dejar como está (solo el ABONO suma).
         try {
           let invoicesTotal = 0;
           const invoiceDocs = await Promise.all(
@@ -264,8 +276,18 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
             const data: any = d!.data();
             invoicesTotal += Number(data.amountInUSD || data.amount || 0);
           });
-          // Tolerancia ±$0.50
-          if (req.amount + 0.5 >= invoicesTotal) {
+          // Si todas las facturas están en invoiceLinked (tienen invoiceStatus), aplicar FIFO
+          const allInvoiceLinked = validInvoices.length > 0 && validInvoices.every(d => !!(d!.data() as any).invoiceStatus);
+          if (allInvoiceLinked) {
+            const fifoAllocs = computeFifoAllocations(
+              validInvoices.map(d => ({ id: d!.id, ...(d!.data() as any) })) as any,
+              Number(req.amount),
+            );
+            if (fifoAllocs.length > 0) {
+              await applyAbonoAllocations(db, movementRef.id, Number(req.amount), fifoAllocs);
+            }
+          } else if (req.amount + 0.5 >= invoicesTotal) {
+            // Tolerancia ±$0.50 — legacy accumulated
             await Promise.all(
               validInvoices.map(d => updateDoc(doc(db, 'movements', d!.id), {
                 pagado: true,

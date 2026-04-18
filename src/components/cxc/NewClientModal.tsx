@@ -48,6 +48,8 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
   const [creditLimit, setCreditLimit] = useState(0);
   const [defaultPaymentDays, setDefaultPaymentDays] = useState<number | null>(null);
   const [creditApproved, setCreditApproved] = useState(false);
+  // '' = heredar default del negocio · override explícito con 'accumulated' o 'invoiceLinked'
+  const [creditMode, setCreditMode] = useState<'' | 'accumulated' | 'invoiceLinked'>('');
   const [creditOpen, setCreditOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
@@ -83,7 +85,8 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
       setCreditLimit(editCustomer.creditLimit || 0);
       setDefaultPaymentDays(editCustomer.defaultPaymentDays ?? null);
       setCreditApproved(editCustomer.creditApproved ?? false);
-      setCreditOpen(!!(editCustomer.creditLimit || editCustomer.creditApproved || editCustomer.defaultPaymentDays));
+      setCreditMode(editCustomer.creditMode ?? '');
+      setCreditOpen(!!(editCustomer.creditLimit || editCustomer.creditApproved || editCustomer.defaultPaymentDays || editCustomer.creditMode));
     } else {
       setNombre('');
       setCedulaPrefix('V-');
@@ -165,6 +168,7 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
         creditLimit,
         creditApproved,
         ...(defaultPaymentDays !== null ? { defaultPaymentDays } : {}),
+        ...(creditMode ? { creditMode } : {}),
         cedula: cedulaNum.trim() ? fullCedula : '',
         ...(fullRif ? { rif: fullRif } : {}),
         telefono: phoneNum ? `${phoneCode}${phoneNum}` : '',
@@ -479,6 +483,26 @@ export default function NewClientModal({ open, onClose, onSave, existingCustomer
                         }`}
                       />
                     </button>
+                  </div>
+
+                  {/* Modo de control (override por cliente) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className={labelCls + ' mb-0'}>Modo de control</label>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/30">Opcional</span>
+                    </div>
+                    <select
+                      value={creditMode}
+                      onChange={e => setCreditMode(e.target.value as any)}
+                      className={inputCls}
+                    >
+                      <option value="">Usar default del negocio</option>
+                      <option value="accumulated">Saldo acumulado</option>
+                      <option value="invoiceLinked">Facturas pendientes</option>
+                    </select>
+                    <p className="text-[11px] font-medium text-slate-400 dark:text-white/30 mt-1.5">
+                      Si eliges un modo distinto al del negocio, este cliente lo usará en vez del default.
+                    </p>
                   </div>
                 </div>
               </div>

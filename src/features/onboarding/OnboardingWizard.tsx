@@ -44,6 +44,7 @@ export default function OnboardingWizard() {
     igtfEnabled:       true,
     igtfRate:          '3',
     fiscalMediumType:  'maquina_fiscal' as 'maquina_fiscal' | 'imprenta' | 'digital_homologado' | 'ninguno',
+    creditMode:        'accumulated' as 'accumulated' | 'invoiceLinked',
     terminalName:      'Caja Principal 01',
     terminalType:      'detal' as 'detal' | 'mayor',
     pin:               '',
@@ -161,6 +162,7 @@ export default function OnboardingWizard() {
         igtfEnabled:    formData.igtfEnabled,
         igtfRate:       parseFloat(formData.igtfRate) || 3,
         fiscalMediumType: formData.fiscalMediumType,
+        creditMode:     formData.creditMode,
         setupCompleted: true,
         updatedAt:      new Date().toISOString(),
       });
@@ -495,6 +497,50 @@ export default function OnboardingWizard() {
                       >
                         <p className="text-xs font-black text-slate-900 dark:text-white">{opt.label}</p>
                         <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{opt.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Credit mode — Saldo acumulado vs Facturas pendientes */}
+                <div className="bg-indigo-50 dark:bg-indigo-500/5 border border-indigo-200 dark:border-indigo-500/20 rounded-3xl p-6 space-y-4">
+                  <div>
+                    <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">Control de Crédito</p>
+                    <p className="text-sm font-black text-slate-900 dark:text-white">¿Cómo manejas el crédito de tus clientes?</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                      Puedes cambiarlo por cliente en su ficha si algún caso particular lo requiere.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      {
+                        id: 'accumulated',
+                        label: 'Saldo Acumulado',
+                        tag: 'Simple',
+                        desc: 'Pedro debe $500, abona $100 → saldo $400. No distingues qué factura pagó.',
+                      },
+                      {
+                        id: 'invoiceLinked',
+                        label: 'Facturas Pendientes',
+                        tag: 'Recomendado',
+                        desc: 'Pedro tiene FAC-001 $300 y FAC-002 $200. Al abonar $100, tú decides a cuál imputar.',
+                      },
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => f('creditMode', opt.id)}
+                        className={`text-left px-4 py-3 rounded-2xl border transition-all ${
+                          formData.creditMode === opt.id
+                            ? 'bg-indigo-500/10 border-indigo-500/40'
+                            : 'bg-white dark:bg-[#0d1424]/40 border-slate-200 dark:border-white/10 hover:border-indigo-500/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-xs font-black text-slate-900 dark:text-white">{opt.label}</p>
+                          <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">{opt.tag}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">{opt.desc}</p>
                       </button>
                     ))}
                   </div>
