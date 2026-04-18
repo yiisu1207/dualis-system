@@ -147,11 +147,15 @@ async function parseExcel(buffer: ArrayBuffer): Promise<string[][]> {
 
 // ——— Parser PDF via pdfjs-dist ———
 
-// Regex para detectar fechas DD/MM/YYYY al inicio de una línea de texto
-const DATE_LINE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}\b/;
+// Regex para detectar fechas DD/MM/YYYY en cualquier posición de la línea.
+// BDV "persona" pone Referencia primero; otros bancos ponen Fecha primero.
+// Por eso buscamos en cualquier parte y filtramos los headers de página por separado.
+const DATE_ANYWHERE_RE = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/;
 
-// Regex para montos venezolanos: -1.100.000,00 o 48.754,00
-const VE_AMOUNT_RE = /^-?[\d.]+,\d{2}$/;
+// Headers de página que también contienen fechas (deben ser ignorados):
+const PERIOD_HEADER_RE = /\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4}/;
+const ACCOUNT_NUM_HEADER_RE = /\*{2,}\d{3,}/;
+
 
 /**
  * Extrae texto de un PDF y reconstruye filas tabulares.
@@ -169,6 +173,10 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const allRows: string[][] = [];
   const rawTextParts: string[] = [];
+
+  // Cuando detectamos un header, guardamos los X de cada columna para usarlos
+  // de "snap" en las filas de datos siguientes — más preciso que clustering por gaps.
+  let headerColumnXs: number[] | null = null;
 
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
@@ -201,45 +209,53 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
       rawTextParts.push(lineText);
 
       // Filtrar líneas de pie de página / encabezado de página
-      if (/^Pagina:\s*\d/i.test(lineText)) continue;
+      if (/^P[aá]gina:?\s*\d/i.test(lineText)) continue;
       if (/Banco de Venezuela.*RIF/i.test(lineText)) continue;
       if (/BDVenl[ií]nea/i.test(lineText)) continue;
       if (/^Hist[oó]rico de movimientos$/i.test(lineText)) continue;
       if (/Banco Universal.*RIF/i.test(lineText)) continue;
       if (/DETALLE DE MOVIMIENTOS/i.test(lineText)) continue;
+      if (/^Estado de cuenta/i.test(lineText)) continue;
+      if (/^Cliente\s/i.test(lineText)) continue;
+      if (/^Direcci[oó]n\s/i.test(lineText)) continue;
+      if (/Saldo inicial.*Saldo promedio/i.test(lineText)) continue;
+      if (/Intereses pagados.*Intereses cobrados/i.test(lineText)) continue;
+      // Filas que solo traen el período (DD/MM/YYYY - DD/MM/YYYY) o el nro de cuenta enmascarado
+      if (PERIOD_HEADER_RE.test(lineText)) continue;
+      if (ACCOUNT_NUM_HEADER_RE.test(lineText)) continue;
 
       // Detectar si es una fila de header
       const lNorm = norm(lineText);
-      const isHeader = ['fecha', 'concepto', 'monto', 'saldo', 'referencia', 'operacion']
+      const isHeader = ['fecha', 'concepto', 'monto', 'saldo', 'referencia', 'operacion', 'descripcion', 'debito', 'credito', 'mov']
         .filter(k => lNorm.includes(k)).length >= 3;
 
       if (isHeader) {
         // Reconstruir header como columnas separadas por posición X
-        // Usar las posiciones X de los items para inferir columnas
-        const headerCells = items.map(i => i.text.trim()).filter(Boolean);
+        const sortedItems = [...items].sort((a, b) => a.x - b.x);
+        const headerCells = sortedItems.map(i => i.text.trim()).filter(Boolean);
+        headerColumnXs = sortedItems.map(i => i.x);
         allRows.push(headerCells);
         continue;
       }
 
-      // Detectar si es una fila de datos (empieza con fecha)
-      if (DATE_LINE_RE.test(lineText)) {
-        // Fila nueva con fecha — parsear columnas por posición X
-        const cells = splitPdfRowByClusters(items);
+      // Detectar si es una fila de datos (contiene fecha en cualquier posición)
+      if (DATE_ANYWHERE_RE.test(lineText)) {
+        // Fila nueva — usar X del header como anclas si está disponible,
+        // si no caer al clustering por gaps
+        const cells = headerColumnXs
+          ? splitByHeaderColumns(items, headerColumnXs)
+          : splitPdfRowByClusters(items);
         allRows.push(cells);
       } else {
         // Línea continuación — concatenar al concepto de la fila anterior
-        // (ej. nombre del cliente en la segunda línea, "Débito"/"Crédito" suelto)
         if (allRows.length > 0) {
           const prev = allRows[allRows.length - 1];
-          // Si es solo "Crédito" o "Débito" (parte de la columna Operación)
           const trimmed = lineText.trim();
           if (/^(cr[eé]dito|d[eé]bito|inicial)$/i.test(trimmed)) {
-            // Buscar la celda de operación (normalmente la 4ta columna) y concatenar
             if (prev.length >= 4) {
               prev[3] = (prev[3] + ' ' + trimmed).trim();
             }
           } else {
-            // Es continuación del concepto (columna 2, ej. nombre del cliente)
             if (prev.length >= 2) {
               prev[1] = (prev[1] + ' ' + trimmed).trim();
             }
@@ -250,6 +266,28 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
   }
 
   return { rows: allRows, rawText: rawTextParts.join(' ') };
+}
+
+/**
+ * Asigna cada item de texto a la columna del header más cercana por X.
+ * Mucho más preciso que clustering por gaps cuando tenemos X de referencia.
+ */
+function splitByHeaderColumns(
+  items: { x: number; text: string }[],
+  headerXs: number[],
+): string[] {
+  const cells: string[] = headerXs.map(() => '');
+  const sorted = [...items].sort((a, b) => a.x - b.x);
+  for (const it of sorted) {
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < headerXs.length; i++) {
+      const d = Math.abs(it.x - headerXs[i]);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    cells[bestIdx] = cells[bestIdx] ? `${cells[bestIdx]} ${it.text}` : it.text;
+  }
+  return cells.map(c => c.trim());
 }
 
 /**
@@ -522,7 +560,11 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
     let amount: number | null = null;
     if (creditIx >= 0 || debitIdx >= 0) {
       const credit = creditIx >= 0 ? (normalizeAmount(row[creditIx] || '', profile.decimalSep) ?? 0) : 0;
-      const debit  = debitIdx >= 0 ? (normalizeAmount(row[debitIdx] || '', profile.decimalSep) ?? 0) : 0;
+      const debitRaw = debitIdx >= 0 ? (normalizeAmount(row[debitIdx] || '', profile.decimalSep) ?? 0) : 0;
+      // Algunos bancos (BDV) ya muestran el débito con signo negativo en la columna.
+      // Otros usan valor absoluto. Normalizar a positivo y restar para tener convención uniforme:
+      // amount > 0 = ingreso, amount < 0 = egreso.
+      const debit = Math.abs(debitRaw);
       amount = credit - debit;
     } else if (amountIdx >= 0) {
       amount = normalizeAmount(row[amountIdx] || '', profile.decimalSep);
