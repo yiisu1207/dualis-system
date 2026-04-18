@@ -278,8 +278,14 @@ service cloud.firestore {
     // BatchReviewPanel hace `collectionGroup(db, 'abonos').where('batchId', '==', X)`.
     // Las reglas anidadas no aplican a collectionGroup — necesita match wildcard que
     // valide tenancy via campo `businessId` en el doc.
+    // Transición: aceptamos docs legacy sin `businessId` (creados antes de 2026-04-17)
+    // si el usuario está autenticado. Endurecer a `== myBID()` estricto cuando se
+    // termine el backfill de abonos viejos.
     match /{path=**}/abonos/{abonoId} {
-      allow read: if isSignedIn() && resource.data.businessId == myBID();
+      allow read: if isSignedIn() && (
+        !('businessId' in resource.data) ||
+        resource.data.businessId == myBID()
+      );
     }
 
     // CONFIGURACIONES (solo admin puede escribir)
