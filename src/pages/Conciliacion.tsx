@@ -1,31 +1,39 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, collectionGroup, doc, getDocs, onSnapshot, query, setDoc, deleteDoc, updateDoc, where, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  collection,
+  collectionGroup,
+  doc,
+  getDocs,
+  onSnapshot,
+  query,
+  setDoc,
+  deleteDoc,
+  where,
+  writeBatch,
+  Timestamp,
+} from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { uploadToCloudinary } from '../utils/cloudinary';
-import { CheckCircle2, FileCheck, Loader2, AlertTriangle, XCircle, Landmark, ShieldCheck, Zap, Layers, Upload, Camera, Plus, Trash2 } from 'lucide-react';
-import { useToast } from '../context/ToastContext';
 import {
-  findMatches,
-  findDuplicateAbono,
-  classifyAbono,
-  type BankRow,
-  type DraftAbono,
-  type RankedMatch,
-} from '../utils/bankReconciliation';
-import { extractReceipt, hashFile } from '../utils/receiptOcr';
+  FileCheck,
+  Loader2,
+  Landmark,
+  ShieldCheck,
+  Layers,
+  Upload,
+  Camera,
+  Plus,
+  Trash2,
+} from 'lucide-react';
+import { useToast } from '../context/ToastContext';
+import type { BankRow } from '../utils/bankReconciliation';
 import { processReceiptBatch, type ImageBatchItem } from '../utils/processReceiptBatch';
 import { isVerifiable, resolveVerificationStatus } from '../utils/movementHelpers';
 import AccountChips, { type AccountChipData } from '../components/conciliacion/AccountChips';
-import AbonoForm from '../components/conciliacion/AbonoForm';
-import LiveMatchList from '../components/conciliacion/LiveMatchList';
 import BankUploadModal from '../components/conciliacion/BankUploadModal';
 import ReceiptDropZone from '../components/conciliacion/ReceiptDropZone';
 import BatchNamePromptModal from '../components/conciliacion/BatchNamePromptModal';
 import ManualVerificationTab from '../components/conciliacion/ManualVerificationTab';
-import ReconciliationReport, {
-  type SessionAbono,
-  type AbonoStatus,
-} from '../components/conciliacion/ReconciliationReport';
 import MultiBankUploadModal from '../components/tesoreria/MultiBankUploadModal';
 import ReceiptBatchModal from '../components/tesoreria/ReceiptBatchModal';
 import BatchReviewPanel from '../components/tesoreria/BatchReviewPanel';
@@ -45,11 +53,11 @@ interface BankStatementAccountDoc {
   accountLabel: string;
   bankCode?: string;
   bankName?: string;
-  bankAccountId?: string;          // FK a BusinessBankAccount.id (clave para fingerprint)
+  bankAccountId?: string;
   amountTolerancePct?: number;
   sourceFilename: string;
   fileUrl?: string;
-  filePublicId?: string;       // Cloudinary public_id — para auditoría y delete futuro vía backend
+  filePublicId?: string;
   uploadedAt: any;
   uploadedBy: string;
   rows: BankRow[];
@@ -64,36 +72,17 @@ function currentMonthKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function emptyDraft(): DraftAbono {
-  return {
-    amount: 0,
-    date: new Date().toISOString().slice(0, 10),
-  };
-}
-
-function makeId(): string {
-  return `ab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
 export default function Conciliacion({ businessId, currentUserId, userRole, movements = [], currentUserName = 'Usuario', canVerify }: ConciliacionProps) {
   const toast = useToast();
   const canEdit = userRole === 'owner' || userRole === 'admin';
   const effectiveCanVerify = canVerify ?? canEdit;
 
-  // Default a 'lotes' (vista principal industrial). La antigua tab 'auto' escribía
-  // abonos sin reclamar referencia atómicamente — duplicaba lógica del pool global
-  // y permitía race conditions con dos operadores concurrentes. Se fusionó al flujo
-  // de lotes; una entrada individual ahora es un lote ad-hoc de 1 item.
+  // Única vista de conciliación. La antigua tab 'auto' escribía abonos sin
+  // reclamar referencia atómicamente — se fusionó al flujo de lotes (un abono
+  // individual ahora es un lote ad-hoc de 1 item).
   const [view, setView] = useState<'lotes' | 'manual'>('lotes');
-  const [monthKey, setMonthKey] = useState<string>(currentMonthKey());
+  const monthKey = currentMonthKey();
   const [accounts, setAccounts] = useState<BankStatementAccountDoc[]>([]);
-  const [loadingAccounts, setLoadingAccounts] = useState(true);
-
-  const [abonos, setAbonos] = useState<SessionAbono[]>([]);
-  const [loadingAbonos, setLoadingAbonos] = useState(true);
-  const [draft, setDraft] = useState<DraftAbono>(emptyDraft);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [selectedMatchRowId, setSelectedMatchRowId] = useState<string | null>(null);
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showMultiUpload, setShowMultiUpload] = useState(false);
@@ -104,12 +93,8 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
 
-  const processedHashesRef = useRef<Map<string, string>>(new Map());
-
-  // Listener de cuentas bancarias
   useEffect(() => {
     if (!businessId) return;
-    setLoadingAccounts(true);
     const ref = collection(db, 'businesses', businessId, 'bankStatements', monthKey, 'accounts');
     const unsub = onSnapshot(
       ref,
@@ -118,50 +103,15 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
         snap.forEach((d) => list.push(d.data() as BankStatementAccountDoc));
         list.sort((a, b) => a.accountLabel.localeCompare(b.accountLabel));
         setAccounts(list);
-        setLoadingAccounts(false);
       },
       (err) => {
         console.error('[Conciliacion] accounts onSnapshot error', err);
         toast.error('Error cargando cuentas: ' + (err?.message || 'desconocido'));
-        setLoadingAccounts(false);
       }
     );
     return () => unsub();
   }, [businessId, monthKey, toast]);
 
-  // Listener de abonos persistidos en Firestore
-  useEffect(() => {
-    if (!businessId) return;
-    setLoadingAbonos(true);
-    const ref = collection(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos');
-    const unsub = onSnapshot(
-      ref,
-      (snap) => {
-        const list: SessionAbono[] = [];
-        snap.forEach((d) => {
-          const data = d.data() as SessionAbono;
-          list.push({ ...data, id: d.id });
-        });
-        list.sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.amount - b.amount);
-        setAbonos(list);
-        setLoadingAbonos(false);
-      },
-      (err) => {
-        console.error('[Conciliacion] abonos onSnapshot error', err);
-        setLoadingAbonos(false);
-      }
-    );
-    return () => unsub();
-  }, [businessId, monthKey]);
-
-  useEffect(() => {
-    setDraft(emptyDraft());
-    setEditingId(null);
-    setSelectedMatchRowId(null);
-    processedHashesRef.current.clear();
-  }, [monthKey]);
-
-  // Listener de ReconciliationBatches (independiente de monthKey)
   useEffect(() => {
     if (!businessId) return;
     const ref = collection(db, `businesses/${businessId}/reconciliationBatches`);
@@ -180,30 +130,6 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     return () => unsub();
   }, [businessId]);
 
-  const pool = useMemo<BankRow[]>(() => {
-    const matchedMap = new Map<string, string>();
-    for (const a of abonos) {
-      if (a.matchRowId) matchedMap.set(a.matchRowId, a.id);
-    }
-    const flat: BankRow[] = [];
-    for (const acc of accounts) {
-      for (const row of acc.rows || []) {
-        const matchedAbonoId = matchedMap.get(row.rowId);
-        flat.push({
-          ...row,
-          accountAlias: acc.accountAlias,
-          accountLabel: acc.accountLabel,
-          bankCode: acc.bankCode,
-          bankName: acc.bankName,
-          amountTolerancePct: acc.amountTolerancePct,
-          matched: !!matchedAbonoId,
-          matchedAbonoId,
-        });
-      }
-    }
-    return flat;
-  }, [accounts, abonos]);
-
   const accountChips = useMemo<AccountChipData[]>(
     () =>
       accounts.map((a) => ({
@@ -218,28 +144,6 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   );
 
   const existingAliases = useMemo(() => accounts.map((a) => a.accountAlias), [accounts]);
-
-  const liveMatches = useMemo<RankedMatch[]>(() => {
-    if (!(draft.amount > 0) || !draft.date) return [];
-    return findMatches(draft, pool);
-  }, [draft, pool]);
-
-  const duplicateAbonoId = useMemo(() => {
-    if (!(draft.amount > 0) || !draft.date) return null;
-    const others = editingId ? abonos.filter((a) => a.id !== editingId) : abonos;
-    return findDuplicateAbono(draft, others);
-  }, [draft, abonos, editingId]);
-
-  const duplicateWarning = duplicateAbonoId
-    ? `Posible duplicado del abono #${abonos.findIndex((a) => a.id === duplicateAbonoId) + 1}`
-    : null;
-
-  const selectedMatchInfo = useMemo(() => {
-    if (!selectedMatchRowId) return null;
-    const row = pool.find((r) => r.rowId === selectedMatchRowId);
-    if (!row) return null;
-    return `${row.accountLabel || row.accountAlias} · $${row.amount.toFixed(2)} · ${row.date}`;
-  }, [selectedMatchRowId, pool]);
 
   const handleUploadAccount = async (data: {
     accountAlias: string;
@@ -268,8 +172,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
       const cleanExt = ext.toLowerCase().replace(/[^a-z0-9.]+/g, '');
       return `${cleanBase}${cleanExt}`;
     })();
-    // Subir archivo original a Cloudinary (preset 'dualis_payments', resource_type 'raw' para PDFs).
-    // Firebase Storage no se usa: el bucket no está provisionado (requiere plan Blaze, inaccesible desde VE).
+    // Firebase Storage no se usa (bucket no provisionado, Blaze inaccesible desde VE).
     let fileUrl: string | undefined;
     let filePublicId: string | undefined;
     if (data.file) {
@@ -315,138 +218,10 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     const acc = accounts.find((a) => a.accountAlias === alias);
     if (!acc) return;
     if (!confirm(`¿Borrar la cuenta "${acc.accountLabel}" y sus ${acc.rowCount} filas del ${monthKey}?`)) return;
-    // NOTA: Cloudinary unsigned upload preset no permite delete desde cliente.
-    // El asset queda huérfano (accesible por URL si alguien la tuviera, pero sin referencia).
-    // Un job backend futuro puede barrer `filePublicId` de docs borrados y limpiar vía API admin.
+    // Cloudinary unsigned upload preset no permite delete desde cliente: asset queda huérfano.
     const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'accounts', alias);
     await deleteDoc(ref);
     toast.success(`Cuenta "${acc.accountLabel}" eliminada`);
-  };
-
-  // Puente CxC/CxP ↔ Conciliación: si el abono venía de un Movement y acaba de
-  // confirmarse, marcamos ese Movement como 'verified' automáticamente.
-  const autoVerifyLinkedMovement = async (abono: SessionAbono) => {
-    if (abono.status !== 'confirmado' || !abono.fromMovementId) return;
-    try {
-      const mvRef = doc(db, 'movements', abono.fromMovementId);
-      await updateDoc(mvRef, {
-        verificationStatus: 'verified',
-        verifiedAt: new Date().toISOString(),
-        verifiedByUid: currentUserId,
-        verifiedByName: 'Conciliación automática',
-        verificationNote: `Auto-conciliado ${abono.matchAccountAlias || ''}`.trim(),
-        verificationUpdatedAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.warn('[Conciliacion] autoVerifyLinkedMovement failed', err);
-    }
-  };
-
-  const addOrUpdateAbono = async (base: DraftAbono, matchRowId: string | null) => {
-    const matches = findMatches(base, pool);
-    const status: AbonoStatus = classifyAbono(base, matches, matchRowId || undefined);
-    const matchAccountAlias = matchRowId ? pool.find((r) => r.rowId === matchRowId)?.accountAlias : undefined;
-    const id = editingId || base.id || makeId();
-    const abonoDoc: SessionAbono = {
-      ...base,
-      id,
-      status,
-      matchRowId,
-      matchAccountAlias,
-    };
-    // Persistir en Firestore
-    const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', id);
-    await setDoc(ref, abonoDoc);
-    await autoVerifyLinkedMovement(abonoDoc);
-  };
-
-  const handleSubmitAbono = async () => {
-    if (!(draft.amount > 0) || !draft.date) return;
-    if (duplicateAbonoId && !confirm('Hay un posible duplicado con estos datos. ¿Continuar igualmente?')) {
-      return;
-    }
-    try {
-      await addOrUpdateAbono(draft, selectedMatchRowId);
-      toast.success(editingId ? 'Abono actualizado' : 'Abono agregado');
-      setDraft(emptyDraft());
-      setEditingId(null);
-      setSelectedMatchRowId(null);
-    } catch (err: any) {
-      toast.error('Error guardando abono: ' + (err?.message || String(err)));
-    }
-  };
-
-  const handleClearEdit = () => {
-    setDraft(emptyDraft());
-    setEditingId(null);
-    setSelectedMatchRowId(null);
-  };
-
-  const handleEditAbono = (id: string) => {
-    const a = abonos.find((x) => x.id === id);
-    if (!a) return;
-    setDraft({
-      id: a.id,
-      amount: a.amount,
-      date: a.date,
-      operationType: a.operationType,
-      reference: a.reference,
-      cedula: a.cedula,
-      phone: a.phone,
-      clientName: a.clientName,
-      note: a.note,
-    });
-    setEditingId(id);
-    setSelectedMatchRowId(a.matchRowId);
-  };
-
-  const handleDeleteAbono = async (id: string) => {
-    if (!confirm('¿Borrar este abono?')) return;
-    try {
-      const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', id);
-      await deleteDoc(ref);
-      if (editingId === id) handleClearEdit();
-    } catch (err: any) {
-      toast.error('Error borrando abono: ' + (err?.message || String(err)));
-    }
-  };
-
-  const mapExtractedToDraft = (r: ExtractedToDraftInput): DraftAbono => ({
-    amount: r.amount && r.amount > 0 ? r.amount : 0,
-    date: r.date || new Date().toISOString().slice(0, 10),
-    reference: r.reference || undefined,
-    cedula: r.cedula || undefined,
-    phone: r.phone || undefined,
-    operationType: r.operationType || undefined,
-    clientName: r.senderName || undefined,
-    note: r.notes || undefined,
-  });
-
-  const handleDropSingle = async (file: File) => {
-    try {
-      const hash = await hashFile(file);
-      if (processedHashesRef.current.has(hash)) {
-        toast.warning('Esta imagen ya fue procesada en esta sesión');
-        return;
-      }
-      setOcrBusy(true);
-      setOcrProgress({ done: 0, total: 1 });
-      const result = await extractReceipt(file);
-      processedHashesRef.current.set(hash, 'form');
-      setOcrProgress({ done: 1, total: 1 });
-      if (!result.amount || result.amount <= 0) {
-        toast.warning('No se pudo extraer el monto de la imagen');
-      } else {
-        toast.success('Comprobante extraído — revisa el form');
-      }
-      setDraft((prev) => ({ ...prev, ...mapExtractedToDraft(result as any) }));
-      setEditingId(null);
-    } catch (err: any) {
-      toast.error('OCR falló: ' + (err?.message || String(err)));
-    } finally {
-      setOcrBusy(false);
-      setOcrProgress(null);
-    }
   };
 
   // Multi-drop → pide nombre y crea un ReconciliationBatch (mismo flujo que la pestaña Lotes).
@@ -484,7 +259,6 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
         },
       });
       if (outcome.stats.notFound > 0 && outcome.stats.confirmed === 0 && outcome.stats.review === 0 && lastError) {
-        // Todos fallaron y hay un error real → surface al usuario (toast largo, 12s)
         toast.error(`OCR falló (${outcome.stats.notFound}/${outcome.stats.total}): ${lastError.slice(0, 400)}`, { duration: 12000 });
       } else if (lastError) {
         toast.error(`Hay items con error en el lote: ${lastError.slice(0, 400)}`, { duration: 10000 });
@@ -505,16 +279,13 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const handleDeleteBatch = async (batch: ReconciliationBatch) => {
     if (!confirm(`¿Eliminar el lote "${batch.name}" y todos sus abonos? Esta acción no se puede deshacer.`)) return;
     try {
-      // 1) buscar abonos del lote (collectionGroup)
       const abonosSnap = await getDocs(query(collectionGroup(db, 'abonos'), where('batchId', '==', batch.id)));
-      // 2) borrar abonos en batches de 400 (límite de writeBatch = 500)
       const docs = abonosSnap.docs;
       for (let i = 0; i < docs.length; i += 400) {
         const wb = writeBatch(db);
         docs.slice(i, i + 400).forEach(d => wb.delete(d.ref));
         await wb.commit();
       }
-      // 3) borrar el batch doc
       await deleteDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${batch.id}`));
       toast.success(`Lote "${batch.name}" eliminado · ${docs.length} abono${docs.length === 1 ? '' : 's'} también borrado${docs.length === 1 ? '' : 's'}`);
       if (selectedBatchId === batch.id) setSelectedBatchId(null);
@@ -523,28 +294,14 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     }
   };
 
-  const poolTotalCredit = useMemo(() => pool.reduce((s, r) => s + Math.max(0, r.amount), 0), [pool]);
-
-  // Métricas del dashboard
-  const stats = useMemo(() => {
-    const confirmados = abonos.filter(a => a.status === 'confirmado');
-    const porRevisar = abonos.filter(a => a.status === 'revisar');
-    const noEncontrados = abonos.filter(a => a.status === 'no_encontrado');
-    const totalConfirmado = confirmados.reduce((s, a) => s + a.amount, 0);
-    const totalAbonos = abonos.reduce((s, a) => s + a.amount, 0);
-    const pct = poolTotalCredit > 0 ? Math.min(100, (totalConfirmado / poolTotalCredit) * 100) : 0;
-    const sinConciliar = poolTotalCredit - totalConfirmado;
-    return { confirmados: confirmados.length, porRevisar: porRevisar.length, noEncontrados: noEncontrados.length, totalConfirmado, totalAbonos, pct, sinConciliar };
-  }, [abonos, poolTotalCredit]);
-
-  if (!businessId) {
-    return <div className="p-6 text-slate-500 dark:text-slate-400">Cargando...</div>;
-  }
-
   const unverifiedCount = useMemo(
     () => movements.filter((m) => isVerifiable(m) && resolveVerificationStatus(m) === 'unverified').length,
     [movements]
   );
+
+  if (!businessId) {
+    return <div className="p-6 text-slate-500 dark:text-slate-400">Cargando...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
@@ -837,14 +594,3 @@ const BatchList: React.FC<BatchListProps> = ({
     </div>
   );
 };
-
-interface ExtractedToDraftInput {
-  amount: number | null;
-  date: string | null;
-  reference: string | null;
-  cedula: string | null;
-  phone: string | null;
-  operationType: DraftAbono['operationType'] | null;
-  senderName: string | null;
-  notes: string | null;
-}
