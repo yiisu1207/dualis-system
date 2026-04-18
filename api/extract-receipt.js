@@ -7,7 +7,7 @@ const { getAuth, getDb } = require('./_firebaseAdmin');
 const MODEL = 'claude-sonnet-4-6';
 const MAX_BYTES = 5 * 1024 * 1024;
 
-const EXTRACT_PROMPT = `Eres un extractor de datos de comprobantes bancarios venezolanos. Analiza la imagen (captura de pago móvil, transferencia, o depósito de Banesco/Mercantil/BDV/Provincial/BNC o similares) y devuelve SOLO un JSON válido con esta estructura exacta:
+const EXTRACT_PROMPT = `Eres un extractor de datos de comprobantes bancarios venezolanos. Analiza la imagen (captura de pago móvil, transferencia, o depósito) y devuelve SOLO un JSON válido con esta estructura exacta:
 
 {
   "amount": number | null,
@@ -24,13 +24,85 @@ const EXTRACT_PROMPT = `Eres un extractor de datos de comprobantes bancarios ven
   "notes": string | null
 }
 
-- amount: monto numérico visible (sin separadores).
-- currency: USD si dice $ o USD; VES si dice Bs.
-- date: formato YYYY-MM-DD.
-- reference: número de comprobante/operación, solo dígitos.
-- cedula: formato "V-12345678" o "J-123456789".
-- phone: formato "0414-1234567".
-- Si un campo no se ve claro, devolvé null. NO inventes. NO añadas texto fuera del JSON.`;
+REGLAS GENERALES:
+- amount: monto numérico en number (sin separadores de miles, punto decimal). Ej "1.234,56 Bs" → 1234.56. Ej "$45.00" → 45.
+- currency: "VES" si ves "Bs", "Bs.", "BsS", "Bolívares". "USD" si ves "$", "USD", "Dólares". Si ambos aparecen, prioriza el monto más prominente.
+- date: convierte SIEMPRE a "YYYY-MM-DD". "15/04/2026" → "2026-04-15". "15-04-2026" → "2026-04-15". "15 abr 2026" → "2026-04-15".
+- reference: solo dígitos, sin espacios ni guiones. Ej "059 136 068 515" → "059136068515".
+- cedula: formato "V-12345678" o "J-123456789" (con guion).
+- phone: formato "0414-1234567" (con guion, 11 dígitos totales).
+- originBank / destinationBank: nombre corto del banco en mayúsculas (ej "BDV", "BANESCO", "MERCANTIL", "PROVINCIAL", "BNC", "BANCAMIGA"). Para cuentas enmascaradas "0102****1234" el prefijo 0102 indica BDV (ver tabla abajo).
+- senderName: nombre completo del que envió/hace el pago (no del receptor, a menos que solo aparezca uno).
+- confidence: "high" si extrajiste ≥5 campos claros, "medium" si 3-4, "low" si <3 o imagen borrosa.
+- notes: si ves "Concepto:", "Descripción:", "Motivo:" o similar, copia ese texto corto aquí.
+
+CÓDIGOS DE BANCO (prefijos de cuenta 4 dígitos):
+0102=BDV (Banco de Venezuela), 0105=MERCANTIL, 0108=PROVINCIAL, 0134=BANESCO, 0191=BNC, 0172=BANCAMIGA, 0114=BANCARIBE, 0163=BANCO DEL TESORO, 0175=BICENTENARIO, 0138=PLAZA, 0151=BFC, 0156=100% BANCO, 0157=DELSUR, 0166=BANAGRÍCOLA, 0168=BANCRECER, 0169=MIBANCO, 0171=BANCO ACTIVO, 0174=BANPLUS, 0177=BANFANB
+
+FORMATOS POR BANCO (dónde buscar cada dato):
+
+**BDV / Banco de Venezuela (app móvil — "Comprobante de operación")**:
+- Header dice "Comprobante de operación" con subtítulo "Transferencias a terceros" / "Pago móvil" / "Transferencia entre cuentas".
+- Monto grande en formato "X.XXX,XX Bs" (siempre VES).
+- Label "Fecha:" → DD/MM/YYYY.
+- Label "Operación:" → reference (12 dígitos típicamente).
+- Label "Nombre:" → senderName (el que envió).
+- Label "Origen:" → cuenta origen enmascarada "0102****XXXX" (siempre BDV en este formato).
+- Label "Destino:" → cuenta/teléfono destino. Si empieza con "0102" es BDV; otros prefijos ver tabla.
+- Label "Concepto:" → copiar a notes.
+- Si destino es un teléfono (04XX-XXXXXXX) → operationType="pago_movil". Si es cuenta → "transferencia".
+
+**Banesco (app/web — "Operación Exitosa")**:
+- Header suele decir "Operación Exitosa", "Transferencia realizada" o "Pago Móvil realizado".
+- Monto en "Bs X.XXX,XX" o "Bs. X.XXX,XX".
+- "Nº de Operación", "Nro. Referencia" o "Referencia:" → reference (típicamente 6-10 dígitos).
+- "Fecha y hora:" o "Fecha:" → date.
+- "Beneficiario:" → destinatario. "Ordenante:" → senderName.
+- "Cédula:" o "C.I.:" → cedula.
+- "Teléfono:" o "Celular:" → phone.
+- "Banco destino" → destinationBank.
+
+**Mercantil (app — "Operación Exitosa")**:
+- Header: "Transferencia exitosa" / "Pago móvil exitoso" / "Movimiento exitoso".
+- Monto: "Monto: Bs X.XXX,XX".
+- "Número de comprobante" o "Comprobante:" → reference.
+- "Fecha de la operación:" → date.
+- "Enviado desde:" → cuenta origen. "Enviado a:" → destinatario.
+- "Titular:" → senderName.
+
+**Provincial / BBVA (app — "Exitoso")**:
+- Header: "¡Exitoso!" o "Operación realizada".
+- Monto: "Bs X,XX".
+- "Referencia:" o "Nº Operación:" → reference.
+- "Fecha:" → date.
+- "Cuenta origen" / "Cuenta destino" → con prefijo 0108.
+
+**BNC (app — "Comprobante")**:
+- Header: "Comprobante de pago" / "Transferencia exitosa".
+- "Nº de referencia" o "Ref:" → reference.
+- Cuentas con prefijo 0191.
+
+**Bancamiga (app — "Pago realizado")**:
+- Cuentas con prefijo 0172.
+- "Número de operación" → reference.
+
+**Pago Móvil genérico (cualquier banco)**:
+- Incluye siempre: monto, cédula del destinatario, teléfono destinatario (04XX-XXXXXXX), banco destino, referencia.
+- operationType siempre = "pago_movil".
+- Si ves "V-12345678" y un teléfono "0414-1234567" y un banco destino → es pago móvil.
+
+**Transferencia entre cuentas**:
+- Dos números de cuenta largos (20 dígitos o enmascarados).
+- operationType = "transferencia".
+
+**Zelle / Divisas USD**:
+- Aparece "$", "USD", "Zelle".
+- currency = "USD". Ref puede ser un código alfanumérico; extrae solo si es claro.
+
+IMPORTANTE:
+- Si un campo no se ve claro o no aparece, devuelve null. NO inventes dígitos ni nombres.
+- Devuelve SOLO el JSON, sin texto extra, sin markdown, sin \`\`\`.
+- Si la imagen no es un comprobante bancario (es foto de persona, recibo de supermercado, meme, etc.), devuelve todos los campos en null con confidence="low" y notes="No es un comprobante bancario".`;
 
 const fetchFn = globalThis.fetch
   ? (...args) => globalThis.fetch(...args)
