@@ -51,8 +51,15 @@ export default function BatchReviewPanel({
   }, [businessId, batchId]);
 
   // Cargar abonos del batch (collectionGroup query)
+  // Skip si el batch existe pero stats.total === 0 (lote vacío — sin OCR exitoso)
   useEffect(() => {
     if (!businessId || !batchId) return;
+    if (batch && (batch.stats?.total ?? 0) === 0) {
+      setAbonos([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     const q = query(collectionGroup(db, 'abonos'), where('batchId', '==', batchId));
     const unsub = onSnapshot(q, (snap) => {
@@ -65,14 +72,20 @@ export default function BatchReviewPanel({
       });
       list.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
       setAbonos(list);
+      setError(null);
       setLoading(false);
     }, (err) => {
       console.error('[BatchReview] abonos query error', err);
       setLoading(false);
-      setError('Error cargando abonos del lote: ' + (err?.message || ''));
+      const raw = err?.message || '';
+      if (/index is not ready yet|requires a COLLECTION_GROUP/i.test(raw)) {
+        setError('Firestore aún está construyendo el índice (puede tardar 1–5 min después del primer despliegue). Recarga en un minuto.');
+      } else {
+        setError('Error cargando abonos del lote: ' + raw);
+      }
     });
     return () => unsub();
-  }, [businessId, batchId]);
+  }, [businessId, batchId, batch?.stats?.total]);
 
   // Cargar pool global (lazy, on-demand para acciones)
   const ensurePool = async (): Promise<PooledRow[]> => {

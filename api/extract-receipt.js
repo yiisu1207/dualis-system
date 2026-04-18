@@ -4,7 +4,7 @@
 
 const { getAuth, getDb } = require('./_firebaseAdmin');
 
-const MODEL = 'claude-sonnet-4-5';
+const MODEL = 'claude-sonnet-4-6';
 const MAX_BYTES = 5 * 1024 * 1024;
 
 const EXTRACT_PROMPT = `Eres un extractor de datos de comprobantes bancarios venezolanos. Analiza la imagen (captura de pago móvil, transferencia, o depósito de Banesco/Mercantil/BDV/Provincial/BNC o similares) y devuelve SOLO un JSON válido con esta estructura exacta:
@@ -130,7 +130,13 @@ module.exports = async (req, res) => {
       usage: data.usage || null,
     });
   } catch (err) {
-    console.error('[extract-receipt] error', err?.message || err);
-    return res.status(500).json({ error: err?.message || 'Error interno' });
+    const msg = err?.message || String(err);
+    console.error('[extract-receipt] error', msg, err?.stack);
+    // Detalle visible al cliente para distinguir misconfig vs token vs Anthropic
+    let stage = 'internal';
+    if (/FIREBASE_SERVICE_ACCOUNT/.test(msg)) stage = 'firebase_admin_init';
+    else if (/verifyIdToken|auth\/|token/i.test(msg)) stage = 'auth_token';
+    else if (/credential|service account/i.test(msg)) stage = 'firebase_admin_credential';
+    return res.status(500).json({ error: msg, stage });
   }
 };
