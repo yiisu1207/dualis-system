@@ -3,15 +3,16 @@ import {
   X, Upload, Loader2, ArrowRight, ArrowLeft, Plus, Trash2, ImageIcon,
   CheckCircle2, AlertTriangle, XCircle, Calendar,
 } from 'lucide-react';
-import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { uploadToCloudinary } from '../../utils/cloudinary';
-import { extractReceipt, hashFile, type ExtractedReceipt } from '../../utils/receiptOcr';
-import { findMatches, type DraftAbono, type RankedMatch, type OperationType } from '../../utils/bankReconciliation';
-import { loadGlobalPool, type PooledRow } from '../../utils/globalBankPool';
-import { claimReference } from '../../utils/reconciliationGuards';
-import type { BusinessBankAccount, ReconciliationBatch, SessionAbonoCandidate } from '../../../types';
-import type { SessionAbono, AbonoStatus } from '../../components/conciliacion/ReconciliationReport';
+import {
+  processReceiptBatch,
+  type BatchItemDraft,
+  type ImageBatchItem,
+  type ManualBatchItem,
+  type ProcessingResult,
+} from '../../utils/processReceiptBatch';
+import type { BusinessBankAccount } from '../../../types';
 
 interface ReceiptBatchModalProps {
   businessId: string;
@@ -23,58 +24,16 @@ interface ReceiptBatchModalProps {
 
 const MAX_ITEMS = 20;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const OCR_CONCURRENCY = 4;
+
+type ImageItem = ImageBatchItem;
+type ManualItem = ManualBatchItem;
 
 function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-interface ImageItem {
-  id: string;
-  kind: 'image';
-  file: File;
-  hash?: string;
-}
-
-interface ManualItem {
-  id: string;
-  kind: 'manual';
-  amount: number;
-  date: string;
-  reference: string;
-  bankAccountId: string;
-  cedula?: string;
-  clientName?: string;
-  note?: string;
-}
-
-type BatchItemDraft = ImageItem | ManualItem;
-
-interface ProcessingResult {
-  draft: BatchItemDraft;
-  abono?: SessionAbono;
-  status: 'pending' | 'processing' | 'done' | 'error';
-  errorMsg?: string;
-}
-
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function topCandidatesSnapshot(matches: RankedMatch[]): SessionAbonoCandidate[] {
-  return matches.slice(0, 3).map(m => ({
-    rowId: m.row.rowId,
-    bankAccountId: m.row.bankAccountId,
-    accountAlias: m.row.accountAlias,
-    bankName: m.row.bankName,
-    monthKey: m.row.monthKey,
-    score: m.score,
-    confidence: m.confidence,
-    rowDate: m.row.date,
-    rowAmount: m.row.amount,
-    rowRef: m.row.reference,
-    rowDescription: m.row.description,
-  }));
 }
 
 export default function ReceiptBatchModal({
@@ -138,193 +97,25 @@ export default function ReceiptBatchModal({
     setStep(3);
     setProcessing(true);
     setProgress({ done: 0, total: items.length });
-
-    // 1. Crear batch en Firestore (status processing)
-    const batchId = newId('batch');
-    setCreatedBatchId(batchId);
-    const batchDoc: ReconciliationBatch = {
-      id: batchId,
-      businessId,
-      name: name.trim(),
-      periodFrom: periodFrom || undefined,
-      periodTo: periodTo || undefined,
-      accountIds: accountIds.length ? accountIds : undefined,
-      createdAt: new Date().toISOString(),
-      createdBy: currentUserId,
-      createdByName: currentUserName,
-      status: 'processing',
-      stats: { total: items.length, confirmed: 0, review: 0, notFound: 0, manual: items.filter(i => i.kind === 'manual').length },
-      source: items.every(i => i.kind === 'manual') ? 'manual' : items.every(i => i.kind === 'image') ? 'capturas' : 'mixed',
-    };
-    const cleanBatch: Record<string, any> = {};
-    for (const [k, v] of Object.entries(batchDoc)) if (v !== undefined) cleanBatch[k] = v;
-    await setDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`), cleanBatch);
-
-    // 2. Cargar pool global con filtros del batch
-    const pool: PooledRow[] = await loadGlobalPool(db, businessId, {
-      periodFrom: periodFrom || undefined,
-      periodTo: periodTo || undefined,
-      accountIds: accountIds.length ? accountIds : undefined,
-      excludeUsed: true,
-    });
-
-    // 3. Procesar items con concurrencia limitada
-    const initialResults: ProcessingResult[] = items.map(it => ({ draft: it, status: 'pending' }));
-    setResults(initialResults);
-
-    let done = 0;
-    const aggregated = { confirmed: 0, review: 0, notFound: 0 };
-
-    async function processOne(idx: number): Promise<void> {
-      const draft = items[idx];
-      setResults(prev => prev.map((r, i) => i === idx ? { ...r, status: 'processing' } : r));
-
-      try {
-        let abonoBase: DraftAbono;
-        let receiptUrl: string | undefined;
-        let receiptHash: string | undefined;
-        let ocrRaw: ExtractedReceipt | undefined;
-
-        if (draft.kind === 'image') {
-          // OCR + upload paralelo
-          const [ocr, hash, uploaded] = await Promise.all([
-            extractReceipt(draft.file),
-            hashFile(draft.file),
-            uploadToCloudinary(draft.file, 'dualis_payments').catch(() => undefined),
-          ]);
-          ocrRaw = ocr;
-          receiptHash = hash;
-          receiptUrl = uploaded?.secure_url;
-          abonoBase = {
-            amount: ocr.amount || 0,
-            date: ocr.date || todayISO(),
-            reference: ocr.reference || undefined,
-            cedula: ocr.cedula || undefined,
-            phone: ocr.phone || undefined,
-            clientName: ocr.senderName || undefined,
-            operationType: (ocr.operationType && ocr.operationType !== 'otro' ? ocr.operationType : undefined) as Exclude<OperationType, 'otro'> | undefined,
-            note: ocr.notes || undefined,
-            receiptUrl,
-          };
-        } else {
-          abonoBase = {
-            amount: draft.amount,
-            date: draft.date,
-            reference: draft.reference || undefined,
-            cedula: draft.cedula || undefined,
-            clientName: draft.clientName || undefined,
-            note: draft.note || undefined,
-          };
-        }
-
-        // Filtrar pool a la cuenta especificada si es manual
-        const filteredPool = draft.kind === 'manual' && draft.bankAccountId
-          ? pool.filter(p => p.bankAccountId === draft.bankAccountId)
-          : pool;
-
-        const matches = findMatches(abonoBase, filteredPool);
-        const candidateMatches = topCandidatesSnapshot(matches);
-        const top = matches[0];
-
-        // Auto-confirmar exact/high si ref + monto + cuenta calzan
-        let status: AbonoStatus = 'no_encontrado';
-        let matchRowId: string | null = null;
-        let matchAccountAlias: string | undefined;
-        let matchBankAccountId: string | undefined;
-        let matchBankName: string | undefined;
-        let matchMonthKey: string | undefined;
-
-        if (top && (top.confidence === 'exact' || top.confidence === 'high')
-            && top.row.bankAccountId && top.row.reference && abonoBase.reference) {
-          // Intentar reclamar referencia atómicamente
-          const claim = await claimReference(db, businessId, {
-            bankAccountId: top.row.bankAccountId,
-            reference: top.row.reference,
-            amount: top.row.amount,
-            abonoId: newId('ab'),
-            batchId,
-            bankRowId: top.row.rowId,
-            monthKey: top.row.monthKey,
-            claimedByUid: currentUserId,
-            claimedByName: currentUserName,
-          });
-          if (claim.ok) {
-            status = 'confirmado';
-            matchRowId = top.row.rowId;
-            matchAccountAlias = top.row.accountAlias;
-            matchBankAccountId = top.row.bankAccountId;
-            matchBankName = top.row.bankName;
-            matchMonthKey = top.row.monthKey;
-          } else {
-            // Ya estaba reclamada por otra sesión → marcar como revisar para que el usuario lo resuelva
-            status = matches.length > 0 ? 'revisar' : 'no_encontrado';
-          }
-        } else if (matches.length > 0) {
-          status = 'revisar';
-        }
-
-        const abonoId = newId('ab');
-        const abonoMonthKey = (matchMonthKey || abonoBase.date.slice(0, 7));
-        const sessionAbono: SessionAbono = {
-          ...abonoBase,
-          id: abonoId,
-          status,
-          matchRowId,
-          matchAccountAlias,
-          matchBankAccountId,
-          matchBankName,
-          matchMonthKey,
-          batchId,
-          candidateMatches,
-          receiptUrl,
-          receiptHash,
-          ocrRaw,
-        };
-        const cleanAbono: Record<string, any> = {};
-        for (const [k, v] of Object.entries(sessionAbono)) if (v !== undefined) cleanAbono[k] = v;
-        await setDoc(doc(db, `businesses/${businessId}/bankStatements/${abonoMonthKey}/abonos/${abonoId}`), cleanAbono);
-
-        if (status === 'confirmado') aggregated.confirmed += 1;
-        else if (status === 'revisar') aggregated.review += 1;
-        else aggregated.notFound += 1;
-
-        setResults(prev => prev.map((r, i) => i === idx ? { ...r, status: 'done', abono: sessionAbono } : r));
-      } catch (e: any) {
-        aggregated.notFound += 1;
-        setResults(prev => prev.map((r, i) => i === idx ? { ...r, status: 'error', errorMsg: e?.message || String(e) } : r));
-      } finally {
-        done += 1;
-        setProgress({ done, total: items.length });
-      }
+    try {
+      const outcome = await processReceiptBatch({
+        db,
+        businessId,
+        name,
+        periodFrom: periodFrom || undefined,
+        periodTo: periodTo || undefined,
+        accountIds: accountIds.length ? accountIds : undefined,
+        currentUserId,
+        currentUserName,
+        items,
+        onProgress: (done, total) => setProgress({ done, total }),
+        onResultsChange: (next) => setResults(next),
+        onBatchCreated: (id) => setCreatedBatchId(id),
+      });
+      onCreated?.(outcome.batchId);
+    } finally {
+      setProcessing(false);
     }
-
-    // Concurrency runner
-    let cursor = 0;
-    const workers: Promise<void>[] = [];
-    for (let w = 0; w < Math.min(OCR_CONCURRENCY, items.length); w++) {
-      workers.push((async function next() {
-        while (cursor < items.length) {
-          const idx = cursor++;
-          await processOne(idx);
-        }
-      })());
-    }
-    await Promise.all(workers);
-
-    // 4. Actualizar batch con stats finales
-    await setDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`), {
-      status: 'done',
-      stats: {
-        total: items.length,
-        confirmed: aggregated.confirmed,
-        review: aggregated.review,
-        notFound: aggregated.notFound,
-        manual: items.filter(i => i.kind === 'manual').length,
-      },
-    }, { merge: true });
-
-    setProcessing(false);
-    onCreated?.(batchId);
   }, [items, name, periodFrom, periodTo, accountIds, businessId, currentUserId, currentUserName, onCreated]);
 
   // ── Render ─────────────────────────────────────────────────────────────────

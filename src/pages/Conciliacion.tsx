@@ -12,14 +12,15 @@ import {
   type DraftAbono,
   type RankedMatch,
 } from '../utils/bankReconciliation';
-import { extractReceipt, extractReceiptsBatch, hashFile, type BatchItem } from '../utils/receiptOcr';
+import { extractReceipt, hashFile } from '../utils/receiptOcr';
+import { processReceiptBatch, type ImageBatchItem } from '../utils/processReceiptBatch';
 import { isVerifiable, resolveVerificationStatus } from '../utils/movementHelpers';
 import AccountChips, { type AccountChipData } from '../components/conciliacion/AccountChips';
 import AbonoForm from '../components/conciliacion/AbonoForm';
 import LiveMatchList from '../components/conciliacion/LiveMatchList';
 import BankUploadModal from '../components/conciliacion/BankUploadModal';
 import ReceiptDropZone from '../components/conciliacion/ReceiptDropZone';
-import BatchReviewModal from '../components/conciliacion/BatchReviewModal';
+import BatchNamePromptModal from '../components/conciliacion/BatchNamePromptModal';
 import ManualVerificationTab from '../components/conciliacion/ManualVerificationTab';
 import ReconciliationReport, {
   type SessionAbono,
@@ -95,7 +96,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [showReceiptBatch, setShowReceiptBatch] = useState(false);
   const [batches, setBatches] = useState<ReconciliationBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
-  const [batchItems, setBatchItems] = useState<BatchItem[] | null>(null);
+  const [pendingBatchFiles, setPendingBatchFiles] = useState<File[] | null>(null);
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
 
@@ -444,45 +445,43 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     }
   };
 
-  const handleDropBatch = async (files: File[]) => {
+  // Multi-drop → pide nombre y crea un ReconciliationBatch (mismo flujo que la pestaña Lotes).
+  const handleDropBatch = (files: File[]) => {
+    setPendingBatchFiles(files);
+  };
+
+  const handleConfirmBatchName = async (name: string) => {
+    const files = pendingBatchFiles || [];
+    if (!files.length) {
+      setPendingBatchFiles(null);
+      return;
+    }
+    setPendingBatchFiles(null);
     try {
       setOcrBusy(true);
       setOcrProgress({ done: 0, total: files.length });
-      const items = await extractReceiptsBatch(files, (done, total) => setOcrProgress({ done, total }));
-      for (const it of items) {
-        if (!it.error) processedHashesRef.current.set(it.imageHash, 'batch');
-      }
-      setBatchItems(items);
+      const items: ImageBatchItem[] = files.map((f, i) => ({
+        id: `img_${Date.now().toString(36)}_${i}`,
+        kind: 'image',
+        file: f,
+      }));
+      const outcome = await processReceiptBatch({
+        db,
+        businessId,
+        name,
+        currentUserId,
+        currentUserName,
+        items,
+        onProgress: (done, total) => setOcrProgress({ done, total }),
+      });
+      toast.success(`Lote "${name}" procesado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
+      setView('lotes');
+      setSelectedBatchId(outcome.batchId);
     } catch (err: any) {
-      toast.error('Batch OCR falló: ' + (err?.message || String(err)));
+      toast.error('Error procesando lote: ' + (err?.message || String(err)));
     } finally {
       setOcrBusy(false);
       setOcrProgress(null);
-    }
-  };
-
-  const handleBatchConfirm = async (confirmed: Array<{ abono: DraftAbono; matchRowId: string | null }>) => {
-    try {
-      for (const { abono, matchRowId } of confirmed) {
-        const matches = findMatches(abono, pool);
-        const status = classifyAbono(abono, matches, matchRowId || undefined);
-        const matchAccountAlias = matchRowId ? pool.find((r) => r.rowId === matchRowId)?.accountAlias : undefined;
-        const id = abono.id || makeId();
-        const abonoDoc: SessionAbono = {
-          ...abono,
-          id,
-          status,
-          matchRowId,
-          matchAccountAlias,
-        };
-        const ref = doc(db, 'businesses', businessId, 'bankStatements', monthKey, 'abonos', id);
-        await setDoc(ref, abonoDoc);
-        await autoVerifyLinkedMovement(abonoDoc);
-      }
-      setBatchItems(null);
-      toast.success(`${confirmed.length} abono${confirmed.length !== 1 ? 's' : ''} agregado${confirmed.length !== 1 ? 's' : ''}`);
-    } catch (err: any) {
-      toast.error('Error guardando abonos: ' + (err?.message || String(err)));
     }
   };
 
@@ -731,13 +730,12 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
         />
       )}
 
-      {batchItems && (
-        <BatchReviewModal
-          items={batchItems}
-          pool={pool}
-          existingAbonos={abonos}
-          onClose={() => setBatchItems(null)}
-          onConfirm={handleBatchConfirm}
+      {pendingBatchFiles && pendingBatchFiles.length > 0 && (
+        <BatchNamePromptModal
+          files={pendingBatchFiles}
+          defaultName={`Lote ${new Date().toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })} ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: false })}`}
+          onCancel={() => setPendingBatchFiles(null)}
+          onConfirm={handleConfirmBatchName}
         />
       )}
 
