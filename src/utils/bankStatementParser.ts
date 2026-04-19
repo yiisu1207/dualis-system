@@ -152,9 +152,17 @@ async function parseExcel(buffer: ArrayBuffer): Promise<string[][]> {
 // Por eso buscamos en cualquier parte y filtramos los headers de página por separado.
 const DATE_ANYWHERE_RE = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/;
 
+// Ancla alternativa: "DD <ref alfanumérica de 6+>" al inicio de la línea.
+// Usada en EdeC Banesco mensual donde la columna "DIA" es solo el día (02, 05, ...)
+// y el período (mes/año) vive en el header del PDF.
+const DAY_REF_ANCHOR_RE = /^\s*\d{1,2}\s+[A-Z0-9]{6,}\b/i;
+
 // Headers de página que también contienen fechas (deben ser ignorados):
 const PERIOD_HEADER_RE = /\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4}/;
 const ACCOUNT_NUM_HEADER_RE = /\*{2,}\d{3,}/;
+
+// Regex para extraer mes+año del período (ej. "Período: 01-2026" o "Periodo: 04/2025").
+const PERIOD_MM_YYYY_RE = /per[ií]odo:?\s*(\d{1,2})\s*[-/]\s*(\d{4})/i;
 
 
 /**
@@ -215,7 +223,9 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
       if (/BDVenl[ií]nea/i.test(lineText)) continue;
       if (/^Hist[oó]rico de movimientos$/i.test(lineText)) continue;
       if (/Banco Universal.*RIF/i.test(lineText)) continue;
-      if (/DETALLE DE MOVIMIENTOS/i.test(lineText)) continue;
+      // Filtrar "DETALLE DE MOVIMIENTOS" solo si está aislado (sin headers de columna pegados).
+      // En Banesco EdeC el título y el header pueden venir en la misma línea Y.
+      if (/^DETALLE DE MOVIMIENTOS(\s*\(continuaci[oó]n\))?\s*$/i.test(lineText.trim())) continue;
       if (/^Estado de cuenta/i.test(lineText)) continue;
       if (/^Cliente\s/i.test(lineText)) continue;
       if (/^Direcci[oó]n\s/i.test(lineText)) continue;
@@ -251,8 +261,10 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
       const isNumericOnly = letterCount === 0 && wordCount >= 2;
       if (isNumericOnly) continue;
 
-      // Detectar si es una fila de datos (contiene fecha en cualquier posición)
-      if (DATE_ANYWHERE_RE.test(lineText)) {
+      // Detectar si es una fila de datos:
+      //   (a) contiene fecha DD/MM/YYYY en cualquier posición, o
+      //   (b) empieza con "DD <ref larga>" (EdeC Banesco mensual con DIA-only).
+      if (DATE_ANYWHERE_RE.test(lineText) || DAY_REF_ANCHOR_RE.test(lineText)) {
         // Fila nueva — usar X del header como anclas si está disponible,
         // si no caer al clustering por gaps
         const cells = headerColumnXs
@@ -388,7 +400,11 @@ function findColumnIndex(headers: string[], aliases: string[]): number {
 
 // ——— Normalización ———
 
-function normalizeDate(raw: string, fmt: DateFormat): string | null {
+function normalizeDate(
+  raw: string,
+  fmt: DateFormat,
+  periodHint?: { month: string; year: string },
+): string | null {
   if (!raw) return null;
   const s = raw.trim();
   // Si ya viene ISO
@@ -396,7 +412,21 @@ function normalizeDate(raw: string, fmt: DateFormat): string | null {
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   // Formatos DD/MM/YYYY, MM/DD/YYYY, DD-MM-YYYY
   const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/.exec(s);
-  if (!m) return null;
+  if (!m) {
+    // Fallback: solo día (1-31). Requiere periodHint con mes/año del header.
+    const dayOnly = /^(\d{1,2})$/.exec(s);
+    if (dayOnly && periodHint) {
+      const day = dayOnly[1].padStart(2, '0');
+      if (+day >= 1 && +day <= 31) {
+        const iso = `${periodHint.year}-${periodHint.month}-${day}`;
+        const check = new Date(iso + 'T00:00:00Z');
+        if (!isNaN(check.getTime()) && check.toISOString().slice(0, 10) === iso) {
+          return iso;
+        }
+      }
+    }
+    return null;
+  }
   let a = m[1], b = m[2], y = m[3];
   if (y.length === 2) y = '20' + y;
   let day: string, month: string;
@@ -564,10 +594,23 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
   const includeDebits = !!opts.includeDebits;
   const rows: BankRow[] = [];
 
+  // Extraer período del rawText del PDF para resolver fechas DD-only (EdeC Banesco mensual).
+  let periodHint: { month: string; year: string } | undefined;
+  if (pdfRawText) {
+    const pm = PERIOD_MM_YYYY_RE.exec(pdfRawText);
+    if (pm) {
+      const month = pm[1].padStart(2, '0');
+      const year = pm[2];
+      if (+month >= 1 && +month <= 12) {
+        periodHint = { month, year };
+      }
+    }
+  }
+
   for (let i = 0; i < dataRows.length; i++) {
     const row = dataRows[i];
     const rawDate = row[dateIdx] || '';
-    const date = normalizeDate(rawDate, profile.dateFormat);
+    const date = normalizeDate(rawDate, profile.dateFormat, periodHint);
     if (!date) {
       warnings.push(`Fila ${i + headerIdx + 2}: fecha inválida "${rawDate}"`);
       continue;
