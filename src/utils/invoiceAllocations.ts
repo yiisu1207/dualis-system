@@ -2,7 +2,7 @@ import {
   Firestore,
   doc,
   getDoc,
-  writeBatch,
+  runTransaction,
 } from 'firebase/firestore';
 import { Movement, MovementType, InvoiceAllocation } from '../../types';
 
@@ -83,8 +83,12 @@ export function computeFifoAllocations(
  * - FACTURA: agrega una entrada al array `allocations[]`, recalcula `allocatedTotal`
  *   e `invoiceStatus`. Marca `pagado`/`pagadoAt` si queda en PAID para compat con código legacy.
  *
- * Idempotencia: si el ABONO ya tiene allocations registradas, se asume que fue aplicado
- * previamente y NO se duplica. Para re-aplicar, primero llamar `reverseAbonoAllocations`.
+ * Atomicidad: corre en `runTransaction` para que reads+writes sean consistentes
+ * aún bajo concurrencia (dos usuarios aplicando pagos al mismo set de facturas).
+ *
+ * Idempotencia: si el ABONO ya tiene allocations con este abonoMovementId registradas,
+ * la operación es un no-op. En cada FACTURA se filtran duplicados por abonoMovementId
+ * antes de agregar, evitando doble conteo por re-edición sin reverse previo.
  */
 export async function applyAbonoAllocations(
   db: Firestore,
@@ -93,7 +97,6 @@ export async function applyAbonoAllocations(
   allocations: Array<{ invoiceId: string; invoiceRef?: string; amount: number }>,
 ): Promise<void> {
   const allocatedAt = new Date().toISOString();
-  const batch = writeBatch(db);
 
   const allocatedTotal = allocations.reduce((s, a) => s + a.amount, 0);
   const overpaymentUSD = Math.max(0, abonoAmountUSD - allocatedTotal);
@@ -106,44 +109,62 @@ export async function applyAbonoAllocations(
     abonoMovementId,
   }));
 
-  // 1) ABONO: grabar allocations + totales
-  batch.update(doc(db, 'movements', abonoMovementId), {
-    allocations: fullAllocations,
-    allocatedTotal: Number(allocatedTotal.toFixed(2)),
-    overpaymentUSD: Number(overpaymentUSD.toFixed(2)),
-  });
+  const abonoRef = doc(db, 'movements', abonoMovementId);
+  const invoiceRefs = fullAllocations.map((a) => doc(db, 'movements', a.invoiceId));
 
-  // 2) Para cada factura: leer current state, agregar allocation, recalcular status
-  for (const alloc of fullAllocations) {
-    const invRef = doc(db, 'movements', alloc.invoiceId);
-    const invSnap = await getDoc(invRef);
-    if (!invSnap.exists()) continue;
+  await runTransaction(db, async (tx) => {
+    const abonoSnap = await tx.get(abonoRef);
+    const abonoExisting = abonoSnap.exists()
+      ? ((abonoSnap.data() as Movement).allocations as InvoiceAllocation[] | undefined) ?? []
+      : [];
+    const alreadyApplied =
+      abonoExisting.length > 0 &&
+      abonoExisting.every((a) => a.abonoMovementId === abonoMovementId) &&
+      abonoExisting.length === fullAllocations.length &&
+      abonoExisting.every((a, i) =>
+        a.invoiceId === fullAllocations[i].invoiceId &&
+        Math.abs(a.amount - fullAllocations[i].amount) < 0.005
+      );
+    if (alreadyApplied) return;
 
-    const inv = invSnap.data() as Movement;
-    const original = inv.amountInUSD ?? 0;
-    const existing: InvoiceAllocation[] = Array.isArray(inv.allocations) ? inv.allocations : [];
-    const nextAllocations = [...existing, alloc];
-    const nextAllocatedTotal = nextAllocations.reduce((s, x) => s + x.amount, 0);
-    const nextStatus = recomputeInvoiceStatus({
-      amountInUSD: original,
-      allocatedTotal: nextAllocatedTotal,
+    const invoiceSnaps = await Promise.all(invoiceRefs.map((r) => tx.get(r)));
+
+    tx.update(abonoRef, {
+      allocations: fullAllocations,
+      allocatedTotal: Number(allocatedTotal.toFixed(2)),
+      overpaymentUSD: Number(overpaymentUSD.toFixed(2)),
     });
 
-    const update: Record<string, any> = {
-      allocations: nextAllocations,
-      allocatedTotal: Number(nextAllocatedTotal.toFixed(2)),
-      invoiceStatus: nextStatus,
-    };
-    if (nextStatus === 'PAID') {
-      update.pagado = true;
-      update.pagadoAt = allocatedAt;
-    } else {
-      update.pagado = false;
-    }
-    batch.update(invRef, update);
-  }
+    for (let i = 0; i < fullAllocations.length; i++) {
+      const alloc = fullAllocations[i];
+      const invSnap = invoiceSnaps[i];
+      if (!invSnap.exists()) continue;
 
-  await batch.commit();
+      const inv = invSnap.data() as Movement;
+      const original = inv.amountInUSD ?? 0;
+      const existing: InvoiceAllocation[] = Array.isArray(inv.allocations) ? inv.allocations : [];
+      const deduped = existing.filter((a) => a.abonoMovementId !== abonoMovementId);
+      const nextAllocations = [...deduped, alloc];
+      const nextAllocatedTotal = nextAllocations.reduce((s, x) => s + x.amount, 0);
+      const nextStatus = recomputeInvoiceStatus({
+        amountInUSD: original,
+        allocatedTotal: nextAllocatedTotal,
+      });
+
+      const update: Record<string, any> = {
+        allocations: nextAllocations,
+        allocatedTotal: Number(nextAllocatedTotal.toFixed(2)),
+        invoiceStatus: nextStatus,
+      };
+      if (nextStatus === 'PAID') {
+        update.pagado = true;
+        update.pagadoAt = allocatedAt;
+      } else {
+        update.pagado = false;
+      }
+      tx.update(invoiceRefs[i], update);
+    }
+  });
 }
 
 /**
@@ -155,47 +176,54 @@ export async function reverseAbonoAllocations(
   abonoMovementId: string,
 ): Promise<void> {
   const abonoRef = doc(db, 'movements', abonoMovementId);
-  const abonoSnap = await getDoc(abonoRef);
-  if (!abonoSnap.exists()) return;
 
-  const abono = abonoSnap.data() as Movement;
+  // Leemos fuera de la transacción para saber qué facturas tocar.
+  // La re-lectura dentro de la tx garantiza la atomicidad del rollback.
+  const abonoSnapOuter = await getDoc(abonoRef);
+  if (!abonoSnapOuter.exists()) return;
+  const abono = abonoSnapOuter.data() as Movement;
   const allocs: InvoiceAllocation[] = Array.isArray(abono.allocations) ? abono.allocations : [];
   if (allocs.length === 0) return;
 
-  const batch = writeBatch(db);
-
-  // 1) Limpiar el ABONO
-  batch.update(abonoRef, {
-    allocations: [],
-    allocatedTotal: 0,
-    overpaymentUSD: 0,
-  });
-
-  // 2) Para cada factura, quitar las allocations que referencian este abono
   const invoiceIds = [...new Set(allocs.map((a) => a.invoiceId))];
-  for (const invoiceId of invoiceIds) {
-    const invRef = doc(db, 'movements', invoiceId);
-    const invSnap = await getDoc(invRef);
-    if (!invSnap.exists()) continue;
+  const invoiceRefs = invoiceIds.map((id) => doc(db, 'movements', id));
 
-    const inv = invSnap.data() as Movement;
-    const existing: InvoiceAllocation[] = Array.isArray(inv.allocations) ? inv.allocations : [];
-    const nextAllocations = existing.filter((a) => a.abonoMovementId !== abonoMovementId);
-    const nextAllocatedTotal = nextAllocations.reduce((s, x) => s + x.amount, 0);
-    const nextStatus = recomputeInvoiceStatus({
-      amountInUSD: inv.amountInUSD ?? 0,
-      allocatedTotal: nextAllocatedTotal,
+  await runTransaction(db, async (tx) => {
+    const abonoSnap = await tx.get(abonoRef);
+    if (!abonoSnap.exists()) return;
+    const abonoCurrent = abonoSnap.data() as Movement;
+    const currentAllocs: InvoiceAllocation[] = Array.isArray(abonoCurrent.allocations)
+      ? abonoCurrent.allocations
+      : [];
+    if (currentAllocs.length === 0) return;
+
+    const invoiceSnaps = await Promise.all(invoiceRefs.map((r) => tx.get(r)));
+
+    tx.update(abonoRef, {
+      allocations: [],
+      allocatedTotal: 0,
+      overpaymentUSD: 0,
     });
 
-    const update: Record<string, any> = {
-      allocations: nextAllocations,
-      allocatedTotal: Number(nextAllocatedTotal.toFixed(2)),
-      invoiceStatus: nextStatus,
-      pagado: nextStatus === 'PAID',
-    };
-    if (nextStatus !== 'PAID') update.pagadoAt = null;
-    batch.update(invRef, update);
-  }
-
-  await batch.commit();
+    for (let i = 0; i < invoiceRefs.length; i++) {
+      const invSnap = invoiceSnaps[i];
+      if (!invSnap.exists()) continue;
+      const inv = invSnap.data() as Movement;
+      const existing: InvoiceAllocation[] = Array.isArray(inv.allocations) ? inv.allocations : [];
+      const nextAllocations = existing.filter((a) => a.abonoMovementId !== abonoMovementId);
+      const nextAllocatedTotal = nextAllocations.reduce((s, x) => s + x.amount, 0);
+      const nextStatus = recomputeInvoiceStatus({
+        amountInUSD: inv.amountInUSD ?? 0,
+        allocatedTotal: nextAllocatedTotal,
+      });
+      const update: Record<string, any> = {
+        allocations: nextAllocations,
+        allocatedTotal: Number(nextAllocatedTotal.toFixed(2)),
+        invoiceStatus: nextStatus,
+        pagado: nextStatus === 'PAID',
+      };
+      if (nextStatus !== 'PAID') update.pagadoAt = null;
+      tx.update(invoiceRefs[i], update);
+    }
+  });
 }

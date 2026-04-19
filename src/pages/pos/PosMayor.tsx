@@ -161,8 +161,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ subtotalUsd, taxUsd, discou
   const [mixTransfer, setMixTransfer] = useState('');
 
   // ── IGTF ──────────────────────────────────────────────────────────────────
+  // En método mixto, IGTF aplica SOLO sobre la porción de efectivo USD.
   const igtfApplies  = igtfEnabled && IGTF_METHODS.has(method);
-  const igtfAmount   = igtfApplies ? parseFloat((totalUsd * (igtfRate / 100)).toFixed(2)) : 0;
+  const igtfBaseUsd  = method === 'mixto' ? Math.min(totalUsd, parseFloat(mixCash || '0')) : totalUsd;
+  const igtfAmount   = igtfApplies ? parseFloat((igtfBaseUsd * (igtfRate / 100)).toFixed(2)) : 0;
   const grandUsd     = totalUsd + igtfAmount;
   const grandBs      = totalBs  + igtfAmount * rateValue;
 

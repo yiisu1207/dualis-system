@@ -12,12 +12,20 @@ import './index.css'; // 👈 ¡ESTA ES LA LÍNEA QUE TE FALTABA!
 // Se dispara sin await para no bloquear el first paint.
 void initSentry();
 
-// Apply saved UI preferences on boot
+// Apply saved UI preferences on boot — sync, before render, to avoid FOUC
 try {
   const savedFont = localStorage.getItem('dualis_font_size');
   if (savedFont) document.documentElement.setAttribute('data-font', savedFont);
   const savedDensity = localStorage.getItem('dualis_density');
   if (savedDensity) document.documentElement.setAttribute('data-density', savedDensity);
+  const savedTheme = localStorage.getItem('dualis_theme');
+  const isDark = savedTheme !== 'light';
+  if (isDark) {
+    document.documentElement.classList.add('dark');
+    document.documentElement.style.colorScheme = 'dark';
+  } else {
+    document.documentElement.style.colorScheme = 'light';
+  }
 } catch {}
 
 const container = document.getElementById('root');

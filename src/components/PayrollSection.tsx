@@ -133,6 +133,10 @@ const PayrollSection: React.FC<PayrollSectionProps> = ({
       newAdvance.currency === PaymentCurrency.BS
         ? parseFloat(newAdvance.rateOverride) || payrollRate
         : 1;
+    if (newAdvance.currency === PaymentCurrency.BS && (!Number.isFinite(rate) || rate <= 0)) {
+      warning('Define una tasa de nómina válida antes de registrar el adelanto.');
+      return;
+    }
     const amountInUSD =
       newAdvance.currency === PaymentCurrency.BS ? originalAmount / rate : originalAmount;
 

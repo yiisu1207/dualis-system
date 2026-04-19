@@ -191,7 +191,11 @@ export default function LibroVentasSection() {
     // Avg rate from valid sales with known rate
     const withRate = valid.filter(m => m.rateUsed && m.rateUsed > 0);
     const avgRate = withRate.length > 0 ? withRate.reduce((s, m) => s + (m.rateUsed || 0), 0) / withRate.length : 0;
-    const totalBs = totalUsd * avgRate;
+    // Sumar por-row (respeta rate real de cada venta) en vez de totalUsd * avgRate,
+    // que colapsa cuando las tasas fluctúan dentro del período.
+    const totalBs = valid.reduce((s, m) => {
+      return s + (m.originalAmount || ((m.amountInUSD || 0) * (m.rateUsed || 0)));
+    }, 0);
     return { totalUsd, totalSubtotal, totalIva, totalIgtf, totalDiscount, count, anuladas, avgRate, totalBs };
   }, [filtered]);
 
@@ -211,6 +215,10 @@ export default function LibroVentasSection() {
   // ── Export CSV ──────────────────────────────────────────────────────────
   const exportCSV = () => {
     const headers = ['Fecha', 'Hora', 'Ref. Interna', 'Cliente', 'Método', 'Subtotal USD', 'IVA USD (ref.)', 'IGTF USD (ref.)', 'Descuento USD', 'Total USD', 'Total Bs', 'Tasa', 'Vendedor', 'Caja', 'Estado'];
+    const escapeCsv = (v: unknown): string => {
+      const s = String(v ?? '');
+      return /[,"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
     const rows = filtered.map(m => {
       const bsTotal = m.originalAmount || (m.amountInUSD && m.rateUsed ? m.amountInUSD * m.rateUsed : 0);
       return [
@@ -229,9 +237,9 @@ export default function LibroVentasSection() {
         m.vendedorNombre || '',
         m.cajaId || '',
         m.anulada ? 'ANULADA' : 'VÁLIDA',
-      ].join(',');
+      ].map(escapeCsv).join(',');
     });
-    const csv = [headers.join(','), ...rows].join('\n');
+    const csv = [headers.map(escapeCsv).join(','), ...rows].join('\r\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

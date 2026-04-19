@@ -100,19 +100,25 @@ export default function RecepcionModal({
 
   const canSubmit = supplierId && lines.length > 0 && lines.every(l => l.qty > 0 && l.costPerUnit > 0);
 
+  const [errorMsg, setErrorMsg] = useState('');
+
   const handleSubmit = async () => {
     if (!canSubmit || saving) return;
     setSaving(true);
-    try {
-      const provNombre = selectedSupplier?.contacto || selectedSupplier?.rif || '';
+    setErrorMsg('');
+    const provNombre = selectedSupplier?.contacto || selectedSupplier?.rif || '';
+    const costChanges: { name: string; oldCost: number; newCost: number }[] = [];
+    const stockAdjusted: string[] = [];
 
-      // 1. Update stock + weighted avg cost for each product
-      const costChanges: { name: string; oldCost: number; newCost: number }[] = [];
+    try {
+      // 1. Update stock + weighted avg cost for each product.
+      // Si falla un ajuste, abortamos antes de crear el CxP (evita CxP sin stock).
       for (const line of lines) {
         const newCost = parseFloat(
           weightedAverageCost(line.oldStock, line.oldCost, line.qty, line.costPerUnit).toFixed(4)
         );
         await onAdjustStock(line.productId, line.qty, newCost, supplierId, provNombre, nroFactura, line.lote || undefined, line.fechaVencimiento || undefined);
+        stockAdjusted.push(line.productName);
         if (Math.abs(newCost - line.oldCost) >= 0.01) {
           costChanges.push({ name: line.productName, oldCost: line.oldCost, newCost });
         }
@@ -143,13 +149,21 @@ export default function RecepcionModal({
       } else {
         onClose();
       }
-      // Reset form (keep costSummary visible if present)
       setSupplierId('');
       setNroFactura('');
       setLines([]);
       setAutoCxP(true);
     } catch (err) {
       console.error('Error en recepción:', err);
+      const stockDone = stockAdjusted.length;
+      const total = lines.length;
+      setErrorMsg(
+        stockDone > 0 && stockDone < total
+          ? `Ajuste parcial: ${stockDone}/${total} productos actualizados; revise inventario.`
+          : stockDone === total
+            ? 'Stock ajustado pero falló la factura CxP. Registrala manualmente.'
+            : 'No se pudo procesar la recepción. Intenta de nuevo.'
+      );
     } finally {
       setSaving(false);
     }
@@ -429,6 +443,13 @@ export default function RecepcionModal({
                 Entendido
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Error banner */}
+        {errorMsg && (
+          <div className="px-6 py-3 bg-rose-50 dark:bg-rose-500/10 border-t border-rose-200 dark:border-rose-500/20">
+            <p className="text-xs font-bold text-rose-700 dark:text-rose-300">{errorMsg}</p>
           </div>
         )}
 
