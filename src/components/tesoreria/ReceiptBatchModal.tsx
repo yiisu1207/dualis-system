@@ -280,6 +280,17 @@ function Step1Metadata({
 function Step2Items({ items, addImageFiles, removeItem, fileRef, manualOpen, setManualOpen, accounts, setItems }: any) {
   const imageCount = items.filter((i: BatchItemDraft) => i.kind === 'image').length;
   const manualCount = items.filter((i: BatchItemDraft) => i.kind === 'manual').length;
+  const [dragActive, setDragActive] = useState(false);
+  const atCapacity = items.length >= MAX_ITEMS;
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    if (atCapacity) return;
+    const dropped = Array.from(e.dataTransfer.files || []).filter((f: File) => /^image\/(png|jpe?g|webp)$/i.test(f.type));
+    if (dropped.length) addImageFiles(dropped);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -288,15 +299,27 @@ function Step2Items({ items, addImageFiles, removeItem, fileRef, manualOpen, set
         </div>
         <button
           onClick={() => setManualOpen(true)}
-          disabled={items.length >= MAX_ITEMS}
+          disabled={atCapacity}
           className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 disabled:opacity-40"
         >
           <Plus size={12} /> Agregar manual sin imagen
         </button>
       </div>
 
-      <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-6 text-center">
-        <Upload size={28} className="mx-auto text-slate-400 mb-2" />
+      <div
+        onDragEnter={(e) => { e.preventDefault(); if (!atCapacity) setDragActive(true); }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+        onDrop={onDrop}
+        className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
+          atCapacity
+            ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 opacity-60'
+            : dragActive
+              ? 'border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
+              : 'border-slate-300 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-500'
+        }`}
+      >
+        <Upload size={28} className={`mx-auto mb-2 ${dragActive ? 'text-indigo-500' : 'text-slate-400'}`} />
         <input
           ref={fileRef}
           type="file"
@@ -305,15 +328,18 @@ function Step2Items({ items, addImageFiles, removeItem, fileRef, manualOpen, set
           className="hidden"
           onChange={(e) => addImageFiles(e.target.files || [])}
         />
+        <div className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">
+          {dragActive ? 'Suelta las imágenes aquí' : 'Arrastra capturas aquí'}
+        </div>
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          disabled={items.length >= MAX_ITEMS}
+          disabled={atCapacity}
           className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-40"
         >
-          Seleccionar capturas
+          o haz clic para seleccionar
         </button>
-        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">PNG/JPG/WEBP · máx 5 MB c/u</p>
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">PNG/JPG/WEBP · máx 5 MB c/u · hasta {MAX_ITEMS} en total</p>
       </div>
 
       {items.length > 0 && (
