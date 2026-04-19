@@ -260,9 +260,9 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{
       if (/BDVenl[ií]nea/i.test(lineText)) continue;
       if (/^Hist[oó]rico de movimientos$/i.test(lineText)) continue;
       if (/Banco Universal.*RIF/i.test(lineText)) continue;
-      // Filtrar "DETALLE DE MOVIMIENTOS" solo si está aislado (sin headers de columna pegados).
-      // En Banesco EdeC el título y el header pueden venir en la misma línea Y.
-      if (/^DETALLE DE MOVIMIENTOS(\s*\(continuaci[oó]n\))?\s*$/i.test(lineText.trim())) continue;
+      // "DETALLE DE MOVIMIENTOS" puede venir aislado o duplicado por las 2 columnas
+      // del layout Banesco mensual. Filtramos cualquier repetición sin trailing data.
+      if (/^(DETALLE\s+DE\s+MOVIMIENTOS\s*(\(continuaci[oó]n\))?\s*)+$/i.test(lineText.trim())) continue;
       if (/^Estado de cuenta/i.test(lineText)) continue;
       if (/^Cliente\s/i.test(lineText)) continue;
       if (/^Direcci[oó]n\s/i.test(lineText)) continue;
@@ -271,6 +271,24 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{
       // Filas que solo traen el período (DD/MM/YYYY - DD/MM/YYYY) o el nro de cuenta enmascarado
       if (PERIOD_HEADER_RE.test(lineText)) continue;
       if (ACCOUNT_NUM_HEADER_RE.test(lineText)) continue;
+
+      // Metadata Banesco EdeC mensual — silent skip de cabecera del cliente y
+      // tablas de resumen (CHEQUES, RESUMEN DE SALDOS, totales por categoría,
+      // saldos Inicial/Final/Promedio, RIF, nombre del titular, ciudad, etc.).
+      // Todos estos regex tienen ancla $ al final: si la línea trae además una
+      // fila embebida ("... 02 53655440408 TRANS,CTAS ..."), NO matcheará y
+      // caerá a la rama de embedded extraction más abajo.
+      const trimmedLine = lineText.trim();
+      if (/^CHEQUES?\s*$/i.test(trimmedLine)) continue;
+      if (/^CHEQUE\s+DIA\s+MONTO(\s+CHEQUE\s+DIA\s+MONTO)?\s*$/i.test(trimmedLine)) continue;
+      if (/^RESUMEN\s+DE\s+(SALDOS|MOVIMIENTOS)\s*$/i.test(trimmedLine)) continue;
+      if (/^Concepto\s+Cantidad\s+Monto\s+Total\s*$/i.test(trimmedLine)) continue;
+      if (/^(Cheques\s+Pagados|Otros\s+(D[eé]bitos|Cr[eé]ditos)|Dep[oó]sitos)\s+\d+\s+[\d.,]+\s*$/i.test(trimmedLine)) continue;
+      if (/^(Inicial|Final|Promedio)\s+[\d.,]+\s*$/i.test(trimmedLine)) continue;
+      if (/^RIF:/i.test(trimmedLine)) continue;
+      if (/SALDO\s+MES\s+ANTERIOR/i.test(trimmedLine)) continue;
+      // Nombre del titular o ciudad en mayúsculas (HOJEIJ HASSAN, PUERTO LA CRUZ)
+      if (/^[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{1,28}$/.test(trimmedLine)) continue;
 
       // Detectar si es una fila de header.
       // Incluye 'dia', 'ref', 'cargo', 'abono' para EdeC Banesco mensual
