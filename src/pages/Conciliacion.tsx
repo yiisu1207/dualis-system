@@ -630,13 +630,13 @@ const BatchList: React.FC<BatchListProps> = ({
 }) => {
   const [accountQuery, setAccountQuery] = useState('');
   const filteredAccountChips = useMemo(() => {
-    const q = accountQuery.trim().toLowerCase();
-    if (!q) return accountChips;
-    return accountChips.filter(c =>
-      (c.accountAlias || '').toLowerCase().includes(q) ||
-      (c.accountLabel || '').toLowerCase().includes(q) ||
-      (c.bankName || '').toLowerCase().includes(q),
-    );
+    const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const tokens = norm(accountQuery).split(/\s+/).filter(Boolean);
+    if (!tokens.length) return accountChips;
+    return accountChips.filter(c => {
+      const hay = norm([c.accountAlias, c.accountLabel, c.bankName].filter(Boolean).join(' '));
+      return tokens.every(t => hay.includes(t));
+    });
   }, [accountChips, accountQuery]);
 
   const kpis = useMemo(() => {
