@@ -248,12 +248,16 @@ export default function BatchReviewPanel({
         }
         const reason = `Esta referencia ya fue conciliada por ${ex.claimedByName || ex.claimedByUid} el ${new Date(ex.claimedAt).toLocaleString()}`;
         setError(reason);
-        const remaining = (entry.candidateMatches || []).filter(c => c.rowId !== cand.rowId);
+        // Choque definitivo (no es zombie del propio abono ni claim huérfano
+        // recuperable) → archivar como duplicado lógico enlazando al original.
         await updateAbono(entry, {
-          candidateMatches: remaining,
-          reviewReason: remaining.length
-            ? `Candidato anterior ya conciliado por ${ex.claimedByName || ex.claimedByUid}. Quedan ${remaining.length} candidato(s).`
-            : `Sin candidatos vivos. El último intento chocó con: ${reason}`,
+          status: 'duplicado',
+          matchRowId: null,
+          candidateMatches: [],
+          reviewReason: reason,
+          duplicateOfAbonoId: ex.abonoId,
+          duplicateOfBatchId: ex.batchId,
+          duplicateOfMonthKey: ex.monthKey,
         });
         return;
       }
@@ -276,6 +280,20 @@ export default function BatchReviewPanel({
     setBusyId(entry.id);
     try {
       await updateAbono(entry, { status: 'no_encontrado', matchRowId: null });
+    } finally { setBusyId(null); }
+  };
+
+  // Para abonos viejos que quedaron en revisar tras chocar con un claim ajeno
+  // (típico antes del fix automático): permite archivarlos manualmente.
+  const handleArchiveDuplicate = async (entry: AbonoEntry) => {
+    setBusyId(entry.id);
+    try {
+      await updateAbono(entry, {
+        status: 'duplicado',
+        matchRowId: null,
+        candidateMatches: [],
+        reviewReason: 'Archivado manualmente como duplicado.',
+      });
     } finally { setBusyId(null); }
   };
 
@@ -388,6 +406,7 @@ export default function BatchReviewPanel({
             onConfirm={(c) => handleConfirmCandidate(a, c)}
             onRejectAll={() => handleRejectAll(a)}
             onRebuscar={() => handleRebuscar(a)}
+            onArchiveDuplicate={() => handleArchiveDuplicate(a)}
           />
         ))}
         {!revisar.length && <Empty msg="No hay items por revisar." />}
@@ -540,9 +559,10 @@ interface ReviewCardProps {
   onConfirm: (c: SessionAbonoCandidate) => void;
   onRejectAll: () => void;
   onRebuscar: () => void;
+  onArchiveDuplicate: () => void;
 }
 
-const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejectAll, onRebuscar }) => {
+const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejectAll, onRebuscar, onArchiveDuplicate }) => {
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-900/40">
       <div className="flex gap-4">
@@ -610,6 +630,9 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejec
       <div className="flex items-center justify-end gap-3 mt-3">
         <button onClick={onRebuscar} disabled={busy} className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1 disabled:opacity-40">
           <RefreshCw size={12} /> Re-buscar
+        </button>
+        <button onClick={onArchiveDuplicate} disabled={busy} className="text-sm text-violet-600 hover:text-violet-700 inline-flex items-center gap-1 disabled:opacity-40" title="Mover a Duplicados archivados">
+          <Copy size={12} /> Archivar como duplicado
         </button>
         <button onClick={onRejectAll} disabled={busy} className="text-sm text-rose-600 hover:text-rose-700 disabled:opacity-40">
           Rechazar todos

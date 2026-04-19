@@ -284,6 +284,9 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
       let matchBankName: string | undefined;
       let matchMonthKey: string | undefined;
       let reviewReason: string | undefined;
+      let duplicateOfAbonoId: string | undefined;
+      let duplicateOfBatchId: string | undefined;
+      let duplicateOfMonthKey: string | undefined;
 
       // CRÍTICO: el abonoId que se reclama y el que se persiste deben ser EL MISMO.
       // Antes generábamos uno random aquí y otro distinto al guardar el abono → la
@@ -317,9 +320,16 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
           matchBankName = top.row.bankName;
           matchMonthKey = top.row.monthKey;
         } else {
-          status = matches.length > 0 ? 'revisar' : 'no_encontrado';
+          // Choque de claim = duplicado lógico: mismo banco + ref + monto ya
+          // fue conciliado por OTRO abono. Archivar como 'duplicado' enlazando
+          // al abono original (no dejar en revisar — ese estado es para
+          // ambigüedad humana, no para colisiones determinísticas).
           const ex = claim.existing;
-          reviewReason = `La referencia top ya fue conciliada por ${ex.claimedByName || ex.claimedByUid}.`;
+          status = 'duplicado';
+          reviewReason = `Mismo banco + referencia + monto ya conciliado por ${ex.claimedByName || ex.claimedByUid} el ${new Date(ex.claimedAt).toLocaleString()}.`;
+          duplicateOfAbonoId = ex.abonoId;
+          duplicateOfBatchId = ex.batchId;
+          duplicateOfMonthKey = ex.monthKey;
         }
       } else if (matches.length > 0) {
         status = 'revisar';
@@ -345,6 +355,9 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
         ocrRaw,
         businessId,
         reviewReason,
+        duplicateOfAbonoId,
+        duplicateOfBatchId,
+        duplicateOfMonthKey,
       };
       await setDoc(
         doc(db, `businesses/${businessId}/bankStatements/${abonoMonthKey}/abonos/${abonoId}`),
@@ -353,6 +366,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
 
       if (status === 'confirmado') aggregated.confirmed += 1;
       else if (status === 'revisar') aggregated.review += 1;
+      else if (status === 'duplicado') aggregated.duplicates += 1;
       else aggregated.notFound += 1;
 
       updateResult(idx, { status: 'done', abono: sessionAbono });
