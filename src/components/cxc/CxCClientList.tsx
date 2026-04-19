@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Search, Plus, Users, AlertTriangle, CheckCircle, Clock, ShieldCheck, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
+import { Search, Plus, AlertTriangle, CheckCircle, Clock, ShieldCheck, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
 import type { Customer, Movement, CustomRate, ExchangeRates, PendingMovement } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
 import {
@@ -263,34 +263,25 @@ export function CxCClientList({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-4 pt-4 pb-3 space-y-3 border-b border-slate-100 dark:border-white/[0.06]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users size={14} className="text-indigo-400" />
-            <h2 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-widest">Clientes</h2>
-            <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-white/[0.06] text-[9px] font-black text-slate-400 dark:text-white/30">
-              {counts.all}
-            </span>
-          </div>
-          {onCreateNew && (
-            <button
-              onClick={onCreateNew}
-              className="h-7 w-7 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center hover:bg-indigo-500/20 transition-all"
-            >
-              <Plus size={14} />
-            </button>
-          )}
-        </div>
-
+      {/* Header — título duplicado con topbar eliminado; búsqueda + [+] en una sola fila */}
+      <div className="px-4 pt-3 pb-3 space-y-3 border-b border-slate-100 dark:border-white/[0.06]">
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-white/20" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por nombre, cedula, RIF..."
-            className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] text-xs font-bold text-slate-700 dark:text-white/70 placeholder:text-slate-300 dark:placeholder:text-white/15 outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
+            placeholder={counts.all > 0 ? `Buscar entre ${counts.all} ${counts.all === 1 ? 'cliente' : 'clientes'}...` : 'Buscar por nombre, cédula, RIF...'}
+            className={`w-full pl-9 ${onCreateNew ? 'pr-11' : 'pr-3'} py-2 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] text-xs font-bold text-slate-700 dark:text-white/70 placeholder:text-slate-300 dark:placeholder:text-white/15 outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all`}
           />
+          {onCreateNew && (
+            <button
+              onClick={onCreateNew}
+              title="Nuevo cliente"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center hover:bg-indigo-500/20 transition-all"
+            >
+              <Plus size={14} />
+            </button>
+          )}
         </div>
 
         {/* Stats agregadas del set filtrado */}
