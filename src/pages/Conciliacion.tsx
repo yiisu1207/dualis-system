@@ -24,6 +24,8 @@ import {
   Camera,
   Plus,
   Trash2,
+  Search,
+  X,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import type { BankRow } from '../utils/bankReconciliation';
@@ -327,8 +329,8 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     setPendingBatchFiles(files);
   };
 
-  const handleConfirmBatchName = async (name: string) => {
-    const files = pendingBatchFiles || [];
+  const handleConfirmBatchName = async (name: string, modalFiles: File[]) => {
+    const files = modalFiles && modalFiles.length ? modalFiles : (pendingBatchFiles || []);
     if (!files.length) {
       setPendingBatchFiles(null);
       return;
@@ -626,6 +628,17 @@ const BatchList: React.FC<BatchListProps> = ({
   batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
   onDeleteAccount, onViewAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch,
 }) => {
+  const [accountQuery, setAccountQuery] = useState('');
+  const filteredAccountChips = useMemo(() => {
+    const q = accountQuery.trim().toLowerCase();
+    if (!q) return accountChips;
+    return accountChips.filter(c =>
+      (c.accountAlias || '').toLowerCase().includes(q) ||
+      (c.accountLabel || '').toLowerCase().includes(q) ||
+      (c.bankName || '').toLowerCase().includes(q),
+    );
+  }, [accountChips, accountQuery]);
+
   const kpis = useMemo(() => {
     let total = 0, confirmed = 0, review = 0, notFound = 0;
     let stalledNotFound = 0;
@@ -720,24 +733,51 @@ const BatchList: React.FC<BatchListProps> = ({
 
       {/* Cuentas bancarias cargadas — strip compacto, no es tab separada */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-            <Landmark size={13} /> Cuentas bancarias cargadas ({accountChips.length})
+            <Landmark size={13} /> Cuentas bancarias cargadas (
+            {accountQuery.trim() ? `${filteredAccountChips.length}/${accountChips.length}` : accountChips.length}
+            )
           </div>
-          {canEdit && (
-            <button
-              onClick={onAddSingleAccount}
-              className="text-[11px] px-2 py-1 rounded text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 inline-flex items-center gap-1"
-            >
-              <Plus size={11} /> Agregar cuenta (sola)
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {accountChips.length > 0 && (
+              <div className="relative">
+                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={accountQuery}
+                  onChange={(e) => setAccountQuery(e.target.value)}
+                  placeholder="Buscar cuenta o banco…"
+                  className="pl-7 pr-7 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-400 w-56"
+                />
+                {accountQuery && (
+                  <button
+                    onClick={() => setAccountQuery('')}
+                    title="Limpiar"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            )}
+            {canEdit && (
+              <button
+                onClick={onAddSingleAccount}
+                className="text-[11px] px-2 py-1 rounded text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 inline-flex items-center gap-1"
+              >
+                <Plus size={11} /> Agregar cuenta (sola)
+              </button>
+            )}
+          </div>
         </div>
         {accountChips.length === 0 ? (
           <div className="text-xs text-slate-400 py-2">Sin cuentas aún. Usa "Subir EdeC" para cargar varias a la vez.</div>
+        ) : filteredAccountChips.length === 0 ? (
+          <div className="text-xs text-slate-400 py-2">Ninguna cuenta coincide con "{accountQuery}".</div>
         ) : (
           <AccountChips
-            accounts={accountChips}
+            accounts={filteredAccountChips}
             onAdd={canEdit ? onAddSingleAccount : undefined}
             onDelete={onDeleteAccount}
             onSelect={onViewAccount}
