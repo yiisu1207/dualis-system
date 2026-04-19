@@ -256,6 +256,77 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
                   </ul>
                 </details>
               )}
+
+              {(result.debugRejectedLines?.length || result.debugAcceptedLines?.length) && (
+                <details className="text-xs bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg p-3">
+                  <summary className="cursor-pointer font-medium text-slate-700 dark:text-slate-200">
+                    🔬 Debug PDF: {result.debugAcceptedLines?.length ?? 0} líneas aceptadas · {result.debugRejectedLines?.length ?? 0} rechazadas
+                    <span className="ml-2 text-slate-500">(comparte si pides ayuda)</span>
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex items-center gap-3 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cur = localStorage.getItem('bankParserDebug') === '1';
+                          if (cur) {
+                            localStorage.removeItem('bankParserDebug');
+                            alert('Debug console DESACTIVADO. Re-sube el PDF para ver el efecto.');
+                          } else {
+                            localStorage.setItem('bankParserDebug', '1');
+                            alert('Debug console ACTIVADO. Abre DevTools (F12) → Console y re-sube el PDF.');
+                          }
+                        }}
+                        className="px-2 py-1 bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700"
+                      >
+                        Toggle console.log debug
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const lines: string[] = [];
+                          lines.push(`# RECHAZADAS (${result.debugRejectedLines?.length ?? 0})`);
+                          for (const r of result.debugRejectedLines ?? []) {
+                            lines.push(`p${r.page} y${r.y} [${r.reason}]\t${r.text}`);
+                          }
+                          lines.push('');
+                          lines.push(`# ACEPTADAS (${result.debugAcceptedLines?.length ?? 0})`);
+                          for (const a of result.debugAcceptedLines ?? []) {
+                            lines.push(`p${a.page} y${a.y} [${a.reason}]\t${a.text}`);
+                          }
+                          navigator.clipboard.writeText(lines.join('\n'));
+                          alert('Dump copiado al portapapeles. Pégalo en el chat.');
+                        }}
+                        className="px-2 py-1 bg-slate-700 text-white rounded font-medium hover:bg-slate-800"
+                      >
+                        Copiar dump al portapapeles
+                      </button>
+                    </div>
+
+                    {result.debugRejectedLines && result.debugRejectedLines.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase text-rose-600 mb-1">
+                          ❌ Rechazadas ({result.debugRejectedLines.length})
+                        </p>
+                        <pre className="bg-white dark:bg-slate-950 border border-rose-200 dark:border-rose-900 rounded p-2 overflow-x-auto max-h-60 text-[10px] font-mono text-slate-700 dark:text-slate-300">
+{result.debugRejectedLines.slice(0, 200).map(r => `p${r.page} y${r.y} [${r.reason}]\n  ${r.text}`).join('\n')}
+                        </pre>
+                      </div>
+                    )}
+
+                    {result.debugAcceptedLines && result.debugAcceptedLines.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase text-emerald-600 mb-1">
+                          ✓ Aceptadas ({result.debugAcceptedLines.length})
+                        </p>
+                        <pre className="bg-white dark:bg-slate-950 border border-emerald-200 dark:border-emerald-900 rounded p-2 overflow-x-auto max-h-60 text-[10px] font-mono text-slate-700 dark:text-slate-300">
+{result.debugAcceptedLines.slice(0, 200).map(a => `p${a.page} y${a.y} [${a.reason}]\n  ${a.text}`).join('\n')}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )}
             </div>
           )}
 

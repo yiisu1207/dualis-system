@@ -16,6 +16,13 @@ import type { BankRow, OperationType } from './bankReconciliation';
 // Worker de pdf.js — bundled local por Vite para evitar 404 de CDN y "fake worker".
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
+export interface RejectedPdfLine {
+  page: number;
+  y: number;
+  text: string;
+  reason: string;
+}
+
 export interface ParseResult {
   rows: BankRow[];
   detectedProfile?: BankStatementProfile;
@@ -27,6 +34,10 @@ export interface ParseResult {
   debugRawRows?: string[][];
   /** Índice del header detectado dentro de debugRawRows (-1 si no se detectó). */
   debugHeaderIdx?: number;
+  /** Líneas del PDF que fueron descartadas (no header, no data row, no continuación válida) con razón. */
+  debugRejectedLines?: RejectedPdfLine[];
+  /** Líneas del PDF que sí fueron aceptadas como data row (para auditoría) con razón. */
+  debugAcceptedLines?: RejectedPdfLine[];
 }
 
 export interface ParseOpts {
@@ -177,10 +188,17 @@ const PERIOD_MM_YYYY_RE = /per[ií]odo:?\s*(\d{1,2})\s*[-/]\s*(\d{4})/i;
  * columnas por posición X. Las filas que empiezan con fecha son filas nuevas;
  * las que no, son continuaciones (se concatenan al concepto de la fila anterior).
  */
-async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawText: string }> {
+async function parsePDF(buffer: ArrayBuffer): Promise<{
+  rows: string[][];
+  rawText: string;
+  rejected: RejectedPdfLine[];
+  accepted: RejectedPdfLine[];
+}> {
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const allRows: string[][] = [];
   const rawTextParts: string[] = [];
+  const rejected: RejectedPdfLine[] = [];
+  const accepted: RejectedPdfLine[] = [];
 
   // Cuando detectamos un header, guardamos los X de cada columna para usarlos
   // de "snap" en las filas de datos siguientes — más preciso que clustering por gaps.
@@ -283,12 +301,16 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
       const wordCount = lineText.split(/\s+/).filter(Boolean).length;
       const letterCount = (lineText.match(/[a-záéíóúüñ]/gi) || []).length;
       const isNumericOnly = letterCount === 0 && wordCount >= 2;
-      if (isNumericOnly) continue;
+      if (isNumericOnly) {
+        rejected.push({ page: p, y, text: lineText, reason: 'numeric-only (saldos/totales entre páginas)' });
+        continue;
+      }
 
       // Detectar si es una fila de datos:
       //   (a) contiene fecha DD/MM/YYYY en cualquier posición, o
       //   (b) empieza con "DD <ref larga>" (EdeC Banesco mensual con DIA-only).
       if (DATE_ANYWHERE_RE.test(lineText) || DAY_REF_ANCHOR_RE.test(lineText)) {
+        accepted.push({ page: p, y, text: lineText, reason: 'data-row (fecha o DD+ref)' });
         if (splitX !== null && headerColumnXs && headerColumnXsRight) {
           // Layout 2-col: partir items por splitX y emitir hasta 2 sub-filas.
           const leftItems = items.filter(i => i.x < splitX!);
@@ -326,6 +348,7 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
           /,\d{2}/.test(trimmed) &&
           trimmed.length > 30;
         if (looksLikeDataRowMissingDay) {
+          accepted.push({ page: p, y, text: lineText, reason: 'data-row sin día (recuperada por fallback lastDay)' });
           if (splitX !== null && headerColumnXs && headerColumnXsRight) {
             const leftItems = items.filter(i => i.x < splitX!);
             const rightItems = items.filter(i => i.x >= splitX!);
@@ -351,25 +374,54 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
 
         // Línea continuación normal — solo aplicar si es un token corto/conocido.
         // Rechazar líneas largas (son casi seguro metadata de página, no wrap).
-        if (trimmed.length > 40) continue;
+        if (trimmed.length > 40) {
+          rejected.push({ page: p, y, text: lineText, reason: `descartada: length ${trimmed.length} > 40 y no matchea patrón de data row` });
+          continue;
+        }
         if (allRows.length > 0) {
           const prev = allRows[allRows.length - 1];
           if (/^(cr[eé]dito|d[eé]bito|inicial)$/i.test(trimmed)) {
             if (prev.length >= 4) {
               prev[3] = (prev[3] + ' ' + trimmed).trim();
+              accepted.push({ page: p, y, text: lineText, reason: 'continuación: token CR/DB/INICIAL pegado a fila previa' });
+            } else {
+              rejected.push({ page: p, y, text: lineText, reason: 'token CR/DB/INICIAL pero fila previa < 4 cols' });
             }
           } else if (/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ\s]+$/.test(trimmed) && trimmed.length < 30) {
             // Nombre propio corto (ej. nombre de cliente), posible continuación real
             if (prev.length >= 2) {
               prev[1] = (prev[1] + ' ' + trimmed).trim();
+              accepted.push({ page: p, y, text: lineText, reason: 'continuación: nombre propio pegado a fila previa' });
+            } else {
+              rejected.push({ page: p, y, text: lineText, reason: 'nombre propio corto pero fila previa < 2 cols' });
             }
+          } else {
+            rejected.push({ page: p, y, text: lineText, reason: 'no matchea: ni data-row ni continuación conocida' });
           }
+        } else {
+          rejected.push({ page: p, y, text: lineText, reason: 'no matchea ningún patrón y no hay fila previa' });
         }
       }
     }
   }
 
-  return { rows: allRows, rawText: rawTextParts.join(' ') };
+  // Console group cuando el operador activa debug con localStorage.bankParserDebug='1'.
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('bankParserDebug') === '1') {
+    console.group(`[bankParser] PDF → ${allRows.length} filas, ${rejected.length} rechazadas, ${accepted.length} aceptadas`);
+    if (rejected.length) {
+      console.group(`Rechazadas (${rejected.length})`);
+      for (const r of rejected) console.log(`p${r.page} y${r.y}: [${r.reason}]`, r.text);
+      console.groupEnd();
+    }
+    if (accepted.length) {
+      console.group(`Aceptadas (${accepted.length})`);
+      for (const a of accepted) console.log(`p${a.page} y${a.y}: [${a.reason}]`, a.text);
+      console.groupEnd();
+    }
+    console.groupEnd();
+  }
+
+  return { rows: allRows, rawText: rawTextParts.join(' '), rejected, accepted };
 }
 
 /**
@@ -606,6 +658,8 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
   let rawRows: string[][] = [];
   let pdfProfile: BankStatementProfile | undefined;
   let pdfRawText: string | undefined;
+  let pdfRejected: RejectedPdfLine[] | undefined;
+  let pdfAccepted: RejectedPdfLine[] | undefined;
 
   try {
     const name = file.name.toLowerCase();
@@ -614,6 +668,8 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
       const result = await parsePDF(buf);
       rawRows = result.rows;
       pdfRawText = result.rawText;
+      pdfRejected = result.rejected;
+      pdfAccepted = result.accepted;
       pdfProfile = detectProfileFromPdfText(result.rawText);
     } else if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
       const buf = await readFileAsBuffer(file);
@@ -634,6 +690,7 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
     return {
       rows: [], warnings: ['Archivo vacío'], needsManualMapping: true,
       rawText: pdfRawText, debugRawRows: rawRows, debugHeaderIdx: -1,
+      debugRejectedLines: pdfRejected, debugAcceptedLines: pdfAccepted,
     };
   }
 
@@ -644,6 +701,7 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
       warnings: ['No se detectó la fila de encabezados. Revisa el archivo o usa mapeo manual.'],
       needsManualMapping: true,
       rawText: pdfRawText, debugRawRows: rawRows, debugHeaderIdx: -1,
+      debugRejectedLines: pdfRejected, debugAcceptedLines: pdfAccepted,
     };
   }
 
@@ -784,6 +842,8 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
     rawText: pdfRawText,
     debugRawRows: rawRows,
     debugHeaderIdx: headerIdx,
+    debugRejectedLines: pdfRejected,
+    debugAcceptedLines: pdfAccepted,
   };
 }
 
