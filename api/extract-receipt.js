@@ -34,7 +34,7 @@ const EXTRACT_PROMPT = `Eres un extractor de datos de comprobantes bancarios ven
 REGLAS GENERALES:
 - amount: monto numérico en number (sin separadores de miles, punto decimal). Ej "1.234,56 Bs" → 1234.56. Ej "$45.00" → 45.
 - currency: "VES" si ves "Bs", "Bs.", "BsS", "Bolívares". "USD" si ves "$", "USD", "Dólares". Si ambos aparecen, prioriza el monto más prominente.
-- date: convierte SIEMPRE a "YYYY-MM-DD". "15/04/2026" → "2026-04-15". "15-04-2026" → "2026-04-15". "15 abr 2026" → "2026-04-15".
+- date: convierte SIEMPRE a "YYYY-MM-DD". "15/04/2026" → "2026-04-15". "15-04-2026" → "2026-04-15". "15 abr 2026" → "2026-04-15". "02 ENERO 2026 05:59:20 P. M." → "2026-01-02" (descarta hora). Meses en español: ENERO=01, FEBRERO=02, MARZO=03, ABRIL=04, MAYO=05, JUNIO=06, JULIO=07, AGOSTO=08, SEPTIEMBRE=09, OCTUBRE=10, NOVIEMBRE=11, DICIEMBRE=12.
 - reference: solo dígitos, sin espacios ni guiones. Ej "059 136 068 515" → "059136068515".
 - cedula: formato "V-12345678" o "J-123456789" (con guion).
 - phone: formato "0414-1234567" (con guion, 11 dígitos totales).
@@ -122,6 +122,21 @@ FORMATOS POR BANCO (dónde buscar cada dato):
 - Header: "Comprobante de pago" / "Transferencia exitosa".
 - "Nº de referencia" o "Ref:" → reference.
 - Cuentas con prefijo 0191.
+
+**Bancrecer (app móvil — "OPERACIÓN EN PROCESO" / "OPERACIÓN EXITOSA")**:
+- Header: logo rojo cursivo "Bancrecer" + ícono grande (naranja/verde según estado) + texto "OPERACIÓN EN PROCESO" o "OPERACIÓN EXITOSA".
+- Fecha textual debajo del header: "DD MES YYYY HH:MM:SS A. M./P. M." (ej "02 ENERO 2026 05:59:20 P. M." → "2026-01-02"). Mes en español en mayúsculas.
+- Monto grande centrado: "Bs. XX.XXX,XX" (ej "Bs. 50.000,00" → 50000). SIEMPRE VES.
+- "**REFERENCIA**" → reference (8 dígitos típicamente, ej "08859621").
+- "**CUENTA ORIGEN**" → cuenta enmascarada "0168 \*\*\*\* XXXX" → originBank = "BANCRECER" (prefijo 0168).
+- "**BENEFICIARIO**" → nombre del RECEPTOR (razón social si es empresa, ej "BOUTIQUE LOS ANGELES CA"). NO es senderName.
+- "**DOCUMENTO**" → cedula/RIF del receptor (ej "J-304039727" o "V-12345678"). Úsalo como cedula.
+- "**CTA. DESTINO**" → cuenta destino 20 dígitos (ej "01020418600000333395"). Prefijo define destinationBank (ver tabla, ej 0102 = BDV).
+- "**BANCO**" → nombre textual del banco destino (ej "BANCO DE VENEZUELA" → destinationBank = "BDV").
+- "**CONCEPTO**" → notes (ej "TRANSF. - J304039727").
+- senderName: NO aparece en este layout → null.
+- operationType = "transferencia".
+- Nota: "OPERACIÓN EN PROCESO" es válido (transferencia interbancaria Bancrecer tarda en acreditar). Trátalo como comprobante válido — el match se confirma cuando el EdeC del receptor lo refleje.
 
 **Banplus (web — "Operación Aprobada")**:
 - Header: "Transferencias | Otros Bancos" (amarillo/naranja) + "Operación Aprobada" (azul).
