@@ -685,19 +685,16 @@ const PosContent = () => {
     return () => unsub();
   }, [empresa_id]);
 
-  // Load products + clients
+  // Productos — listener reactivo. El stock baja en vivo tras cada venta en cualquier caja.
   useEffect(() => {
     if (!empresa_id) return;
-    const loadData = async () => {
-      try {
-        const qp = query(collection(db, `businesses/${empresa_id}/products`));
-        const snap = await getDocs(qp);
-        setProducts(snap.docs
-          .filter(d => d.data().status !== 'pending_review')
-          .map(d => {
+    const qp = query(collection(db, `businesses/${empresa_id}/products`));
+    const unsub = onSnapshot(qp, snap => {
+      setProducts(snap.docs
+        .filter(d => d.data().status !== 'pending_review')
+        .map(d => {
           const data = d.data();
           const mayorPrice = Number(data.precioMayor || data.wholesalePrice || 0);
-          // Merge legacy fields into preciosCuenta
           const pc: Record<string, number> = data.preciosCuenta || {};
           if (data.precioBCV && !pc.BCV) pc.BCV = Number(data.precioBCV);
           if (data.precioGrupo && !pc.GRUPO) pc.GRUPO = Number(data.precioGrupo);
@@ -723,12 +720,14 @@ const PosContent = () => {
             pricesByTier: data.pricesByTier || undefined,
           };
         }));
-
-      } catch { setError('Error cargando datos'); }
-      finally { setLoading(false); }
-    };
-    loadData();
-  }, [empresa_id]);
+      setLoading(false);
+    }, err => {
+      console.error('[pos mayor] productos listener', err);
+      setError('Error cargando datos');
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [empresa_id, selectedAlmacenId]);
 
   // ── Clientes en vivo ───────────────────────────────────────────
   // onSnapshot para que los clientes creados desde CxC (o cualquier

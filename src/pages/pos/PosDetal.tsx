@@ -9,7 +9,7 @@ import { useCart, CartProvider, DiscountType, CartItem, effectiveLinePrice, effe
 import { useRates } from '../../context/RatesContext';
 import {
   collection, getDocs, query, where, addDoc, doc, updateDoc,
-  increment, getDoc, runTransaction,
+  increment, getDoc, runTransaction, onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
@@ -629,16 +629,14 @@ const PosContent = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresa_id]);
 
-  // Load products + clients
+  // Productos — listener reactivo. El stock baja en vivo tras cada venta en cualquier caja.
   useEffect(() => {
     if (!empresa_id) return;
-    const loadData = async () => {
-      try {
-        const qp = query(collection(db, `businesses/${empresa_id}/products`));
-        const snap = await getDocs(qp);
-        setProducts(snap.docs
-          .filter(d => d.data().status !== 'pending_review')
-          .map(d => {
+    const qp = query(collection(db, `businesses/${empresa_id}/products`));
+    const unsub = onSnapshot(qp, snap => {
+      setProducts(snap.docs
+        .filter(d => d.data().status !== 'pending_review')
+        .map(d => {
           const data = d.data();
           const stockByAlmacen: Record<string, number> = data.stockByAlmacen || {};
           const almacenStock = stockByAlmacen[selectedAlmacenId] ?? Number(data.stock || 0);
@@ -658,20 +656,23 @@ const PosContent = () => {
             pricesByTier: data.pricesByTier || undefined,
           };
         }));
+      setLoading(false);
+    }, err => {
+      console.error('[pos detal] productos listener', err);
+      setError('Error cargando datos');
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [empresa_id, selectedAlmacenId]);
 
-      } catch { setError('Error cargando datos'); }
-      finally { setLoading(false); }
-    };
-    loadData();
-  }, [empresa_id]);
-
-  // ── Clientes — one-time load (reduce Firestore reads) ───────────
+  // Clientes — listener reactivo (aparecen en vivo al crearse en Deudores/CxC).
   useEffect(() => {
     if (!empresa_id) return;
     const qc = query(collection(db, 'customers'), where('businessId', '==', empresa_id));
-    getDocs(qc).then(snap => {
+    const unsub = onSnapshot(qc, snap => {
       setClients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }).catch(() => {});
+    }, err => console.error('[pos detal] clientes listener', err));
+    return () => unsub();
   }, [empresa_id]);
 
   const filteredClients = useMemo(() => {
