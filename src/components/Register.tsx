@@ -96,7 +96,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
     slug: '',
   });
   const [slugStatus, setSlugStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
-  const slugTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  const slugTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [showPass,  setShowPass]  = useState(false);
   const [terms,     setTerms]     = useState(false);
   const [loading,   setLoading]   = useState(false);
@@ -307,7 +307,7 @@ export default function Register({ inviteToken, inviteData }: RegisterProps = {}
             if (result.ok) generatedSlug = form.slug;
           }
           if (!generatedSlug) {
-            const autoName = form.businessName || form.fullName || form.displayName || 'mi-negocio';
+            const autoName = form.businessName || form.fullName || 'mi-negocio';
             generatedSlug = await generateAutoSlug(autoName, bid);
           }
         } catch (e) {

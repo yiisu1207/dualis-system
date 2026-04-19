@@ -92,7 +92,7 @@ interface SubAddOns { extraUsers:number; extraProducts:number; extraSucursales:n
 interface SubPromo   { code:string; discountPct:number; months:number; description:string; appliedAt?:string; appliedBy?:string; }
 interface SubHistory { action:string; plan?:string; paymentMethod?:string; paymentRef?:string; amountUsd?:number; promo?:SubPromo; date:string; adminEmail:string; note?:string; }
 interface PendingPayment { plan:string; months:number; amountUsd:number; payMethod:string; reference:string; note?:string; submittedAt?:any; submittedBy?:string; }
-interface Subscription { plan:string; status:string; trialEndsAt?:any; currentPeriodEnd?:any; addOns?:SubAddOns; promo?:SubPromo; history?:SubHistory[]; paymentMethod?:string; paymentRef?:string; lastPaymentAt?:string; amountUsd?:number; pendingPayment?:PendingPayment; }
+interface Subscription { plan?:string; status?:string; trialEndsAt?:any; currentPeriodEnd?:any; addOns?:SubAddOns; promo?:SubPromo; history?:SubHistory[]; paymentMethod?:string; paymentRef?:string; lastPaymentAt?:string; amountUsd?:number; pendingPayment?:PendingPayment; }
 interface BizRecord { id:string; companyName?:string; ownerEmail?:string; ownerName?:string; ownerCedula?:string; ownerPhone?:string; ownerId?:string; createdAt?:any; subscription?:Subscription; }
 
 // ─── Top-level panel sections ──────────────────────────────────────────────

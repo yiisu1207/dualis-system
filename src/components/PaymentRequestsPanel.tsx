@@ -423,8 +423,8 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
         createdAt: new Date().toISOString(),
       };
       const docRef = await addDoc(collection(db, `businesses/${businessId}/paymentRequests`), payload);
-      setRequests(prev => [{ id: docRef.id, ...payload }, ...prev]);
-      setNewReq({ customerId: '', customerName: '', accountType: AccountType.BCV, amount: '', metodoPago: 'Transferencia', referencia: '', nota: '' });
+      setRequests(prev => [{ id: docRef.id, ...payload } as PortalReq, ...prev]);
+      setNewReq({ customerId: '', customerName: '', accountType: AccountType.BCV as any, amount: '', metodoPago: 'Transferencia', referencia: '', nota: '' });
       setShowNewForm(false);
       setCustomerSearch('');
       showToast('Solicitud de abono enviada');
@@ -532,7 +532,7 @@ const PaymentRequestsPanel: React.FC<PaymentRequestsPanelProps> = ({
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Cuenta</label>
               <div className="flex gap-1 bg-slate-100 dark:bg-white/[0.06] rounded-xl p-1 border border-slate-200 dark:border-white/[0.08]">
                 {([AccountType.BCV, AccountType.GRUPO, AccountType.DIVISA]).map(acct => (
-                  <button key={acct} onClick={() => setNewReq(p => ({ ...p, accountType: acct }))}
+                  <button key={acct} onClick={() => setNewReq(p => ({ ...p, accountType: acct as any }))}
                     className={`flex-1 px-2 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all text-center ${newReq.accountType === acct ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}>
                     {acct}
                   </button>

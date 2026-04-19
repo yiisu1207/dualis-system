@@ -71,7 +71,16 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
   const [detailRangeTo, setDetailRangeTo] = useState('');
 
   // Transaction State
-  const [movData, setMovData] = useState({
+  const [movData, setMovData] = useState<{
+    date: string;
+    amount: string;
+    concept: string;
+    type: MovementType;
+    expenseCategory: string;
+    invoiceImage: string;
+    accountType: AccountType;
+    rate: string;
+  }>({
     date: new Date().toISOString().split('T')[0],
     amount: '',
     concept: '',

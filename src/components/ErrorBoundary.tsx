@@ -29,13 +29,7 @@ interface State {
  *   2. Escribe a Firestore errorLogs/{id} con stack + contexto
  *   3. Permite al usuario copiar el error al portapapeles para reportarlo
  */
-// React 19 sin @types/react en este repo — declaramos los miembros de instancia
-// que `Component<Props, State>` normalmente expone, para que TS los resuelva.
 export default class ErrorBoundary extends Component<Props, State> {
-  declare props: Props;
-  declare state: State;
-  declare setState: (s: Partial<State> | ((prev: State) => Partial<State>)) => void;
-
   constructor(props: Props) {
     super(props);
     this.state = {

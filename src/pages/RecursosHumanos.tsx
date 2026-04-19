@@ -70,6 +70,7 @@ interface Loan {
   totalInstallments: number; paidInstallments: number;
   installmentAmount: number; reason: string;
   status: 'ACTIVO'|'PAGADO'; createdAt: any;
+  description?: string;
 }
 interface TimeEntry {
   id: string; employeeId: string; employeeName: string;
@@ -82,6 +83,7 @@ interface TimeEntry {
   status: 'PENDIENTE' | 'APLICADO';
   registeredBy?: string; registeredByName?: string;
   createdAt: any;
+  note?: string;
 }
 interface Abono {
   id: string; employeeId: string; employeeName: string;
@@ -89,6 +91,7 @@ interface Abono {
   concept: string; date: string; status: 'PENDIENTE'|'APLICADO'|'CORREGIDO';
   registeredBy?: string; registeredByName?: string; createdAt: any;
   correctedFrom?: string; originalAmount?: number; correctionNote?: string;
+  reason?: string;
 }
 interface Bonus {
   id: string;
@@ -154,6 +157,7 @@ interface CorteRecord {
   voucherCount: number;
   deferredCount: number;
   vouchers: CorteVoucherDetail[];
+  period?: string;
 }
 type SubTab = 'directory'|'vouchers'|'nomina'|'tasas'|'historial';
 
@@ -3205,7 +3209,7 @@ export default function RecursosHumanos() {
                                 setBonusForm({name:b.name,amount:String(b.amount),currency:b.currency,frequency:b.frequency});
                               }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-white/[0.08] rounded-lg text-slate-400 hover:text-indigo-500"><Pencil size={14}/></button>
                               <button type="button" onClick={async()=>{
-                                if(!confirm('¿Eliminar este bono?')) return;
+                                if(!window.confirm('¿Eliminar este bono?')) return;
                                 try { await deleteDoc(doc(db,`businesses/${bid}/bonuses`,b.id)); toast.success('Bono eliminado'); }
                                 catch { toast.error('Error al eliminar'); }
                               }} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-500"><Trash2 size={14}/></button>

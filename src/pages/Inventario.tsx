@@ -3634,7 +3634,7 @@ export default function Inventario() {
         bcvRate={rates.tasaBCV}
         customRates={customRates}
         businessId={tenantId || ''}
-        currentUserId={userProfile?.id || ''}
+        currentUserId={userProfile?.uid || ''}
         currentUserName={userProfile?.fullName || 'Admin'}
         onSaveMovement={async (data) => {
           // Canonical path: root `movements` collection filtered by businessId
@@ -3643,8 +3643,8 @@ export default function Inventario() {
           await addDoc(collection(db, 'movements'), {
             ...data,
             businessId: tenantId,
-            ownerId: userProfile?.id,
-            vendedorId: userProfile?.id,
+            ownerId: userProfile?.uid,
+            vendedorId: userProfile?.uid,
             vendedorNombre: userProfile?.fullName || 'Admin',
             createdAt: new Date().toISOString(),
           });

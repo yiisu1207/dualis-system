@@ -222,7 +222,7 @@ export default function AdminPosManager() {
   }, [terminals, rates]);
 
   const filteredTerminals = useMemo(() => {
-    let list = terminals.filter(t => t.tipo === activeTab && activeTab !== 'historial');
+    let list = terminals.filter(t => activeTab !== 'historial' && t.tipo === activeTab);
     if (isCajero && assignedCajaId) {
       list = list.filter(t => t.id === assignedCajaId);
     }

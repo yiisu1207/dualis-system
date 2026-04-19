@@ -118,8 +118,8 @@ const DespachoCompletoModal: React.FC<DespachoModalProps> = ({ nde, businessId, 
     setPhotoUploading(true);
     setError('');
     try {
-      const url = await uploadToCloudinary(file, 'dualis_payments');
-      setPhotoUrl(url);
+      const result = await uploadToCloudinary(file, 'dualis_payments');
+      setPhotoUrl(result.secure_url);
     } catch (err) {
       console.error(err);
       setError('No se pudo subir la foto');

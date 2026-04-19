@@ -14,6 +14,7 @@ export interface AuditVoucher {
   status: 'PENDIENTE' | 'DESCONTADO' | 'CORREGIDO';
   correctedFrom?: string;
   createdAt: any;
+  reason?: string;
 }
 
 export interface AuditEmployee {

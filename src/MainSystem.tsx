@@ -1401,7 +1401,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               <Estadisticas businessId={businessId} movements={movements} inventoryItems={inventoryItems as any} customers={customers as any} />
             )}
             {activeTab === 'transferencias' && (
-              <TransferenciasPanel businessId={businessId} />
+              <TransferenciasPanel />
             )}
             {activeTab === 'tesoreria' && (
               !canView('tesoreria') ? <NoAccess /> :

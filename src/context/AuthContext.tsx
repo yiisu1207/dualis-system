@@ -24,6 +24,7 @@ interface UserProfile {
   status?: 'ACTIVE' | 'PENDING' | string;
   uiVersion?: 'classic' | 'editorial';
   assignedCajaId?: string;  // caja asignada para rol 'ventas'
+  pin?: string;
 }
 
 // Creamos el contexto

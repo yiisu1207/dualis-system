@@ -124,7 +124,7 @@ const METHOD_ICONS: Record<PaymentMethod, React.ReactNode> = {
 
 // Payment periods — synced via Firestore (businessConfigs.paymentPeriods)
 // Falls back to classic hardcoded periods if not configured
-interface PaymentPeriodCfg { days: number; label: string; discountPercent: number; }
+interface PaymentPeriodCfg { days: number; label: string; discountPercent: number; mode?: 'fictitious' | 'real'; }
 const DEFAULT_PERIODS: PaymentPeriodCfg[] = [
   { days: 0,  label: 'Contado',   discountPercent: 0 },
   { days: 15, label: 'Crédito 15d', discountPercent: 2 },

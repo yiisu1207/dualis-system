@@ -116,13 +116,13 @@ const HelpTooltip: React.FC<HelpTooltipProps> = ({
 
   const clonedChild =
     asChild && React.isValidElement(children)
-      ? React.cloneElement(children as React.ReactElement<React.HTMLAttributes<HTMLElement>>, {
-          ref: triggerRef as any,
+      ? React.cloneElement(children as React.ReactElement<any>, {
+          ref: triggerRef,
           onMouseEnter: show,
           onMouseLeave: hide,
           onFocus: show,
           onBlur: hide,
-        })
+        } as any)
       : null;
 
   return (
