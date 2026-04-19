@@ -36,10 +36,13 @@ export default function OfflineBanner() {
       if (!err) return;
       const code = err.code || '';
       const msg = err.message || '';
-      if (code.includes('resource-exhausted') || msg.includes('quota')) {
+      // Match estricto en code; en message exigimos contexto de Firestore para
+      // evitar falsos positivos por palabras sueltas en stacks ajenos.
+      const isFsErr = msg.includes('FirebaseError') || code.startsWith('firestore/') || code.startsWith('functions/');
+      if (code === 'resource-exhausted' || (isFsErr && msg.toLowerCase().includes('quota'))) {
         setQuotaError(true);
       }
-      if (code.includes('permission-denied') || msg.includes('permission')) {
+      if (code === 'permission-denied' || (isFsErr && /missing or insufficient permissions/i.test(msg))) {
         setPermissionError(true);
       }
     };

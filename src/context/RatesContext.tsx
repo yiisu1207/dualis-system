@@ -98,6 +98,20 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // updateRates disparaba otro snapshot → otro fetch → loop.
   const autoUpdateAttemptedForDayRef = useRef<string | null>(null);
 
+  // A25: si la pestaña queda abierta cruzando medianoche, reset el flag
+  // para que la próxima interacción dispare un re-fetch del BCV del día nuevo.
+  useEffect(() => {
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setHours(24, 0, 5, 0); // 5 segundos después de medianoche local
+    const ms = tomorrow.getTime() - now.getTime();
+    const handle = setTimeout(() => {
+      autoUpdateAttemptedForDayRef.current = null;
+      setUsingStaleRate(true);
+    }, ms);
+    return () => clearTimeout(handle);
+  }, []);
+
   const fetchBCVRate = async (): Promise<number | null> => {
     const result = await fetchBCVFromSources();
     setLastFetchAttempt(new Date().toISOString());

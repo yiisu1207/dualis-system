@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -52,16 +52,31 @@ const ICON_STYLES: Record<ToastType, string> = {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const counter = useRef(0);
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: string) => {
+    const t = timersRef.current.get(id);
+    if (t) { clearTimeout(t); timersRef.current.delete(id); }
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
   const add = useCallback((message: string, type: ToastType, opts?: ToastOptions) => {
     const id = `t${++counter.current}`;
     setToasts(prev => [...prev.slice(-2), { id, type, message }]);
-    setTimeout(() => dismiss(id), opts?.duration ?? 4500);
-  }, [dismiss]);
+    const handle = setTimeout(() => {
+      timersRef.current.delete(id);
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, opts?.duration ?? 4500);
+    timersRef.current.set(id, handle);
+  }, []);
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((h) => clearTimeout(h));
+      timers.clear();
+    };
+  }, []);
 
   const success = useCallback((msg: string, opts?: ToastOptions) => add(msg, 'success', opts), [add]);
   const error = useCallback((msg: string, opts?: ToastOptions) => add(msg, 'error', opts), [add]);

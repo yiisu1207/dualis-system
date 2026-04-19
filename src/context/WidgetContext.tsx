@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 type WidgetKey =
   | 'calculator'
@@ -66,37 +66,28 @@ export const WidgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     localStorage.setItem(STORAGE_KEY, JSON.stringify(widgets));
   }, [widgets]);
 
-  const manager = useMemo<WidgetManager>(() => {
-    const updateWidget = (key: WidgetKey, patch: Partial<WidgetState>) => {
-      setWidgets((prev) => ({
-        ...prev,
-        [key]: { ...prev[key], ...patch },
-      }));
-    };
+  const updateWidget = useCallback((key: WidgetKey, patch: Partial<WidgetState>) => {
+    setWidgets((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  }, []);
 
-    return {
-      widgets,
-      unreadCounts,
-      openWidget: (key) => updateWidget(key, { isOpen: true, isMinimized: false }),
-      toggleWidget: (key) =>
-        updateWidget(key, {
-          isOpen: !widgets[key].isOpen,
-          isMinimized: false,
-        }),
-      closeWidget: (key) => updateWidget(key, { isOpen: false, isMinimized: false }),
-      setMinimized: (key, minimized) => updateWidget(key, { isMinimized: minimized }),
-      setPosition: (key, position) => updateWidget(key, { position }),
-      setUnreadCount: (key, count) =>
-        setUnreadCounts((prev) =>
-          prev[key] === count
-            ? prev
-            : {
-                ...prev,
-                [key]: count,
-              }
-        ),
-    };
-  }, [widgets, unreadCounts]);
+  const openWidget = useCallback((key: WidgetKey) => updateWidget(key, { isOpen: true, isMinimized: false }), [updateWidget]);
+  const closeWidget = useCallback((key: WidgetKey) => updateWidget(key, { isOpen: false, isMinimized: false }), [updateWidget]);
+  const setMinimized = useCallback((key: WidgetKey, minimized: boolean) => updateWidget(key, { isMinimized: minimized }), [updateWidget]);
+  const setPosition = useCallback((key: WidgetKey, position: WidgetPosition) => updateWidget(key, { position }), [updateWidget]);
+  const toggleWidget = useCallback((key: WidgetKey) => {
+    setWidgets((prev) => ({
+      ...prev,
+      [key]: { ...prev[key], isOpen: !prev[key].isOpen, isMinimized: false },
+    }));
+  }, []);
+  const setUnreadCount = useCallback((key: WidgetKey, count: number) => {
+    setUnreadCounts((prev) => (prev[key] === count ? prev : { ...prev, [key]: count }));
+  }, []);
+
+  const manager = useMemo<WidgetManager>(
+    () => ({ widgets, unreadCounts, openWidget, toggleWidget, closeWidget, setMinimized, setPosition, setUnreadCount }),
+    [widgets, unreadCounts, openWidget, toggleWidget, closeWidget, setMinimized, setPosition, setUnreadCount]
+  );
 
   return <WidgetContext.Provider value={manager}>{children}</WidgetContext.Provider>;
 };
