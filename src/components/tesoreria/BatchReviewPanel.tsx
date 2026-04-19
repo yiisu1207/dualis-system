@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronRight, RefreshCw,
-  Loader2, Image as ImageIcon, ArrowLeft, Download, Plus, ExternalLink,
+  Loader2, Image as ImageIcon, ArrowLeft, Download, Plus, ExternalLink, Copy,
 } from 'lucide-react';
 import {
   collection, doc, onSnapshot, query, where, setDoc, getDoc, getDocs, collectionGroup, updateDoc,
@@ -37,8 +37,8 @@ export default function BatchReviewPanel({
   const [loading, setLoading] = useState(true);
   const [pool, setPool] = useState<PooledRow[]>([]);
   const [poolLoading, setPoolLoading] = useState(false);
-  const [openSection, setOpenSection] = useState<{ confirmed: boolean; review: boolean; notFound: boolean }>({
-    confirmed: false, review: true, notFound: true,
+  const [openSection, setOpenSection] = useState<{ confirmed: boolean; review: boolean; notFound: boolean; duplicates: boolean }>({
+    confirmed: false, review: true, notFound: true, duplicates: false,
   });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +112,7 @@ export default function BatchReviewPanel({
   const confirmados = useMemo(() => abonos.filter(a => a.status === 'confirmado'), [abonos]);
   const revisar = useMemo(() => abonos.filter(a => a.status === 'revisar'), [abonos]);
   const noEncontrado = useMemo(() => abonos.filter(a => a.status === 'no_encontrado'), [abonos]);
+  const duplicados = useMemo(() => abonos.filter(a => a.status === 'duplicado'), [abonos]);
 
   // Si se vino desde "Ver lote" de una fila usada del EdeC, abre la sección
   // correspondiente y scrollea al abono resaltado.
@@ -123,6 +124,7 @@ export default function BatchReviewPanel({
       confirmed: target.status === 'confirmado' ? true : s.confirmed,
       review: target.status === 'revisar' ? true : s.review,
       notFound: target.status === 'no_encontrado' ? true : s.notFound,
+      duplicates: target.status === 'duplicado' ? true : s.duplicates,
     }));
     const t = setTimeout(() => {
       if (highlightRef.current) highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -136,28 +138,30 @@ export default function BatchReviewPanel({
   useEffect(() => {
     if (!batch || loading) return;
     if (!abonos.length && (batch.stats?.total ?? 0) === 0) return;
-    const manual = abonos.filter(a => !a.receiptUrl).length;
+    const manual = abonos.filter(a => !a.receiptUrl && a.status !== 'duplicado').length;
     const nextStats = {
       total: abonos.length,
       confirmed: confirmados.length,
       review: revisar.length,
       notFound: noEncontrado.length,
       manual,
+      duplicates: duplicados.length,
     };
-    const prev = batch.stats || { total: 0, confirmed: 0, review: 0, notFound: 0, manual: 0 };
+    const prev = batch.stats || { total: 0, confirmed: 0, review: 0, notFound: 0, manual: 0, duplicates: 0 };
     const same = (
       prev.total === nextStats.total &&
       prev.confirmed === nextStats.confirmed &&
       prev.review === nextStats.review &&
       prev.notFound === nextStats.notFound &&
-      prev.manual === nextStats.manual
+      prev.manual === nextStats.manual &&
+      (prev.duplicates ?? 0) === nextStats.duplicates
     );
     if (same) return;
     const ref = doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`);
     updateDoc(ref, { stats: nextStats }).catch(err => {
       console.warn('[BatchReview] stats sync failed', err);
     });
-  }, [abonos, confirmados.length, revisar.length, noEncontrado.length, batch, loading, businessId, batchId]);
+  }, [abonos, confirmados.length, revisar.length, noEncontrado.length, duplicados.length, batch, loading, businessId, batchId]);
 
   const updateAbono = async (entry: AbonoEntry, patch: Partial<SessionAbono>) => {
     const ref = doc(db, `businesses/${businessId}/bankStatements/${entry.monthKey}/abonos/${entry.id}`);
@@ -352,10 +356,11 @@ export default function BatchReviewPanel({
           </div>
           <span className={`text-xs px-2 py-0.5 rounded ${batch.status === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{batch.status}</span>
         </div>
-        <div className="grid grid-cols-4 gap-2 mt-3 text-center text-xs">
+        <div className="grid grid-cols-5 gap-2 mt-3 text-center text-xs">
           <Stat color="emerald" label="Confirmados" value={confirmados.length} />
           <Stat color="amber" label="Revisar" value={revisar.length} />
           <Stat color="rose" label="No encontrado" value={noEncontrado.length} />
+          <Stat color="violet" label="Duplicados" value={duplicados.length} />
           <Stat color="slate" label="Total" value={abonos.length} />
         </div>
       </div>
@@ -404,6 +409,25 @@ export default function BatchReviewPanel({
           />
         ))}
         {!noEncontrado.length && <Empty msg="Sin items sin match." />}
+      </Section>
+
+      {/* Sección Duplicados archivados */}
+      <Section
+        title="Duplicados archivados"
+        count={duplicados.length}
+        color="violet"
+        icon={<Copy size={16} />}
+        open={openSection.duplicates}
+        onToggle={() => setOpenSection(s => ({ ...s, duplicates: !s.duplicates }))}
+      >
+        {duplicados.map(a => (
+          <DuplicateCard
+            key={a.id}
+            entry={a}
+            onOpenOriginal={onOpenAccountRow ? undefined : undefined}
+          />
+        ))}
+        {!duplicados.length && <Empty msg="No hay capturas duplicadas en este lote." />}
       </Section>
 
       {/* Sección Confirmados */}
@@ -475,6 +499,7 @@ function Section({ title, count, color, icon, open, onToggle, children }: any) {
     emerald: 'border-emerald-200 dark:border-emerald-700/50',
     amber: 'border-amber-200 dark:border-amber-700/50',
     rose: 'border-rose-200 dark:border-rose-700/50',
+    violet: 'border-violet-200 dark:border-violet-700/50',
   };
   return (
     <div className={`bg-white dark:bg-slate-800 border ${cls[color] || 'border-slate-200 dark:border-slate-700'} rounded-xl overflow-hidden`}>
@@ -494,6 +519,7 @@ function Stat({ color, label, value }: { color: string; label: string; value: nu
     emerald: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
     amber: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
     rose: 'bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300',
+    violet: 'bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300',
     slate: 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300',
   };
   return (
@@ -609,6 +635,34 @@ const NotFoundCard: React.FC<NotFoundCardProps> = ({ entry, busy, onRebuscar }) 
       <button onClick={onRebuscar} disabled={busy} className="text-sm px-3 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded hover:bg-white dark:hover:bg-slate-800 inline-flex items-center gap-1.5 disabled:opacity-40">
         <RefreshCw size={14} /> Re-buscar
       </button>
+    </div>
+  );
+};
+
+interface DuplicateCardProps {
+  entry: AbonoEntry;
+  onOpenOriginal?: () => void;
+}
+
+const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry }) => {
+  return (
+    <div className="border border-violet-200 dark:border-violet-700/50 rounded-lg p-4 bg-violet-50/40 dark:bg-violet-900/10 flex items-start gap-3">
+      <Copy size={18} className="text-violet-500 flex-shrink-0 mt-0.5" />
+      <div className="flex-1 text-sm">
+        <div className="text-slate-700 dark:text-slate-200">
+          Captura archivada como duplicado.
+        </div>
+        <div className="text-slate-500 dark:text-slate-400 mt-1">
+          {entry.note || 'La misma imagen ya existe en otro abono del negocio.'}
+        </div>
+        {entry.duplicateOfAbonoId && (
+          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 font-mono">
+            Original: <span className="text-violet-700 dark:text-violet-300">{entry.duplicateOfAbonoId}</span>
+            {entry.duplicateOfBatchId && <> · lote {entry.duplicateOfBatchId}</>}
+            {entry.duplicateOfMonthKey && <> · período {entry.duplicateOfMonthKey}</>}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

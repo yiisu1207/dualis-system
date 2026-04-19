@@ -847,6 +847,7 @@ export interface ReconciliationBatchStats {
   review: number;        // medium/low, requieren humano
   notFound: number;
   manual: number;        // entradas sin imagen
+  duplicates?: number;   // capturas archivadas por hash repetido (no procesadas)
 }
 
 export interface ReconciliationBatch {

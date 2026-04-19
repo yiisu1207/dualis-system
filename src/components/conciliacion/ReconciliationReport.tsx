@@ -3,7 +3,7 @@ import { Download, Landmark, CheckCircle2, AlertTriangle, XCircle, Eye } from 'l
 import type { BankRow, DraftAbono } from '../../utils/bankReconciliation';
 import type { SessionAbonoCandidate } from '../../../types';
 
-export type AbonoStatus = 'confirmado' | 'revisar' | 'no_encontrado';
+export type AbonoStatus = 'confirmado' | 'revisar' | 'no_encontrado' | 'duplicado';
 
 export interface SessionAbono extends DraftAbono {
   id: string;
@@ -20,6 +20,10 @@ export interface SessionAbono extends DraftAbono {
   ocrRaw?: any;                // ExtractedReceipt original (debug/edición)
   /** Por qué quedó en "revisar" o "no_encontrado" — visible en la card de revisión. */
   reviewReason?: string;
+  /** Si es 'duplicado', apunta al abono original cuya captura ya estaba registrada. */
+  duplicateOfAbonoId?: string;
+  duplicateOfBatchId?: string;
+  duplicateOfMonthKey?: string;
 }
 
 interface ReconciliationReportProps {

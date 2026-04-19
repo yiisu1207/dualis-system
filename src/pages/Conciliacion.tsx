@@ -805,6 +805,7 @@ const BatchList: React.FC<BatchListProps> = ({
                 <th className="text-center px-4 py-2">Confirmados</th>
                 <th className="text-center px-4 py-2">Revisar</th>
                 <th className="text-center px-4 py-2">Sin match</th>
+                <th className="text-center px-4 py-2">Dup.</th>
                 <th className="text-left px-4 py-2">Creado</th>
                 <th className="text-center px-4 py-2">Estado</th>
                 <th className="text-right px-4 py-2"></th>
@@ -821,6 +822,7 @@ const BatchList: React.FC<BatchListProps> = ({
                   <td className="px-4 py-2 text-center font-mono text-emerald-600">{b.stats?.confirmed ?? 0}</td>
                   <td className="px-4 py-2 text-center font-mono text-amber-600">{b.stats?.review ?? 0}</td>
                   <td className="px-4 py-2 text-center font-mono text-rose-600">{b.stats?.notFound ?? 0}</td>
+                  <td className="px-4 py-2 text-center font-mono text-violet-600">{b.stats?.duplicates ?? 0}</td>
                   <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
                     {b.createdAt ? new Date(b.createdAt).toLocaleDateString() : '—'}
                     <div className="text-[10px] text-slate-400">{b.createdByName || '—'}</div>

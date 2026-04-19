@@ -4,7 +4,9 @@
 // - reclama referencias atómicamente vía claimReference (anti-reuso)
 // - actualiza el batch con stats finales
 
-import { doc, setDoc, type Firestore } from 'firebase/firestore';
+import {
+  doc, setDoc, getDocs, collectionGroup, query, where, limit, type Firestore,
+} from 'firebase/firestore';
 import { uploadToCloudinary } from './cloudinary';
 import { extractReceipt, hashFile, type ExtractedReceipt } from './receiptOcr';
 import { findMatches, type DraftAbono, type RankedMatch, type OperationType } from './bankReconciliation';
@@ -60,7 +62,7 @@ export interface ProcessBatchOpts {
 export interface ProcessBatchOutcome {
   batchId: string;
   results: ProcessingResult[];
-  stats: { total: number; confirmed: number; review: number; notFound: number; manual: number };
+  stats: { total: number; confirmed: number; review: number; notFound: number; manual: number; duplicates: number };
 }
 
 function newId(prefix: string): string {
@@ -69,6 +71,39 @@ function newId(prefix: string): string {
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Busca un abono existente en el mismo negocio con el mismo receiptHash.
+// Si lo encuentra, retornamos sus identificadores para enlazar el duplicado al original.
+// Usa collectionGroup('abonos') porque las capturas viven en bankStatements/{monthKey}/abonos.
+async function findDuplicateAbono(
+  db: Firestore,
+  businessId: string,
+  receiptHash: string,
+): Promise<{ abonoId: string; batchId?: string; monthKey: string } | null> {
+  try {
+    const q = query(
+      collectionGroup(db, 'abonos'),
+      where('businessId', '==', businessId),
+      where('receiptHash', '==', receiptHash),
+      limit(1),
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    const d = snap.docs[0];
+    const data = d.data() as any;
+    // path: businesses/{bid}/bankStatements/{monthKey}/abonos/{abonoId}
+    const segs = d.ref.path.split('/');
+    const monthKey = segs[segs.length - 3] || todayISO().slice(0, 7);
+    return {
+      abonoId: data.id || d.id,
+      batchId: data.batchId,
+      monthKey,
+    };
+  } catch (e) {
+    console.warn('[findDuplicateAbono] query falló, continuando sin chequeo de dup', e);
+    return null;
+  }
 }
 
 export function topCandidatesSnapshot(matches: RankedMatch[]): SessionAbonoCandidate[] {
@@ -156,7 +191,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
   onResultsChange?.(results);
 
   let done = 0;
-  const aggregated = { confirmed: 0, review: 0, notFound: 0 };
+  const aggregated = { confirmed: 0, review: 0, notFound: 0, duplicates: 0 };
 
   const updateResult = (idx: number, patch: Partial<ProcessingResult>) => {
     results[idx] = { ...results[idx], ...patch };
@@ -174,13 +209,43 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
       let ocrRaw: ExtractedReceipt | undefined;
 
       if (draft.kind === 'image') {
-        const [ocr, hash, uploaded] = await Promise.all([
+        // 1) Hash primero (rápido, todo en cliente) para detectar duplicados antes de gastar OCR.
+        receiptHash = await hashFile(draft.file);
+        const dup = await findDuplicateAbono(db, businessId, receiptHash);
+        if (dup) {
+          // Archivar como duplicado: referencia al original, sin OCR ni match.
+          const dupAbonoId = newId('ab');
+          const dupMonth = todayISO().slice(0, 7);
+          const dupAbono: SessionAbono & { businessId: string } = {
+            id: dupAbonoId,
+            status: 'duplicado',
+            amount: 0,
+            date: todayISO(),
+            batchId,
+            businessId,
+            matchRowId: null,
+            candidateMatches: [],
+            receiptHash,
+            duplicateOfAbonoId: dup.abonoId,
+            duplicateOfBatchId: dup.batchId,
+            duplicateOfMonthKey: dup.monthKey,
+            note: `Duplicado de captura ya registrada (abono ${dup.abonoId}). Archivado para revisión manual.`,
+            reviewReason: `La misma imagen ya fue procesada anteriormente (mismo hash SHA-256).`,
+          };
+          await setDoc(
+            doc(db, `businesses/${businessId}/bankStatements/${dupMonth}/abonos/${dupAbonoId}`),
+            stripUndefined(dupAbono),
+          );
+          aggregated.duplicates += 1;
+          updateResult(idx, { status: 'done', abono: dupAbono });
+          return;
+        }
+        // 2) No es duplicado: corre OCR y upload en paralelo.
+        const [ocr, uploaded] = await Promise.all([
           extractReceipt(draft.file),
-          hashFile(draft.file),
           uploadToCloudinary(draft.file, 'dualis_payments').catch(() => undefined),
         ]);
         ocrRaw = ocr;
-        receiptHash = hash;
         receiptUrl = uploaded?.secure_url;
         abonoBase = {
           amount: ocr.amount || 0,
@@ -348,6 +413,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
     review: aggregated.review,
     notFound: aggregated.notFound,
     manual: items.filter(i => i.kind === 'manual').length,
+    duplicates: aggregated.duplicates,
   };
   await setDoc(
     doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`),
