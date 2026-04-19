@@ -84,6 +84,7 @@ export function topCandidatesSnapshot(matches: RankedMatch[]): SessionAbonoCandi
     rowAmount: m.row.amount,
     rowRef: m.row.reference,
     rowDescription: m.row.description,
+    reasons: m.reasons,
   }));
 }
 
@@ -217,6 +218,13 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
       let matchBankAccountId: string | undefined;
       let matchBankName: string | undefined;
       let matchMonthKey: string | undefined;
+      let reviewReason: string | undefined;
+
+      // CRÍTICO: el abonoId que se reclama y el que se persiste deben ser EL MISMO.
+      // Antes generábamos uno random aquí y otro distinto al guardar el abono → la
+      // entrada en usedReferences quedaba huérfana (apuntaba a un abonoId inexistente)
+      // y bloqueaba para siempre la confirmación manual del candidato.
+      const abonoId = newId('ab');
 
       // Auto-claim cuando el top candidate es exact/high. Usa bankAccountId si está
       // presente, si no cae a accountAlias (el EdeC puede no estar mapeado a una
@@ -229,14 +237,14 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
           accountAlias: top.row.accountAlias,
           reference: top.row.reference,
           amount: top.row.amount,
-          abonoId: newId('ab'),
+          abonoId,
           batchId,
           bankRowId: top.row.rowId,
           monthKey: top.row.monthKey,
           claimedByUid: currentUserId,
           claimedByName: currentUserName,
         });
-        if (claim.ok) {
+        if (claim.ok === true) {
           status = 'confirmado';
           matchRowId = top.row.rowId;
           matchAccountAlias = top.row.accountAlias;
@@ -245,12 +253,16 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
           matchMonthKey = top.row.monthKey;
         } else {
           status = matches.length > 0 ? 'revisar' : 'no_encontrado';
+          const ex = claim.existing;
+          reviewReason = `La referencia top ya fue conciliada por ${ex.claimedByName || ex.claimedByUid}.`;
         }
       } else if (matches.length > 0) {
         status = 'revisar';
+        reviewReason = `${matches.length} candidato(s). Top: ${top.confidence} (score ${top.score}). Confianza insuficiente para auto-confirmar.`;
+      } else {
+        reviewReason = 'No se encontraron filas en el pool que coincidan con monto y fecha (±3 días).';
       }
 
-      const abonoId = newId('ab');
       const abonoMonthKey = matchMonthKey || abonoBase.date.slice(0, 7);
       const sessionAbono: SessionAbono & { businessId: string } = {
         ...abonoBase,
@@ -267,6 +279,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
         receiptHash,
         ocrRaw,
         businessId,
+        reviewReason,
       };
       await setDoc(
         doc(db, `businesses/${businessId}/bankStatements/${abonoMonthKey}/abonos/${abonoId}`),

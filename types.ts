@@ -906,4 +906,6 @@ export interface SessionAbonoCandidate {
   rowAmount: number;
   rowRef?: string;
   rowDescription?: string;
+  /** Motivos del scoring ("monto exacto", "fecha ±1d", "ref últimos 7"...) — para mostrar en la card de revisión. */
+  reasons?: string[];
 }

@@ -4,7 +4,7 @@ import {
   Loader2, Image as ImageIcon, ArrowLeft, Download, Plus, ExternalLink,
 } from 'lucide-react';
 import {
-  collection, doc, onSnapshot, query, where, setDoc, getDocs, collectionGroup, updateDoc,
+  collection, doc, onSnapshot, query, where, setDoc, getDoc, getDocs, collectionGroup, updateDoc,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { findMatches, type DraftAbono } from '../../utils/bankReconciliation';
@@ -187,10 +187,69 @@ export default function BatchReviewPanel({
       });
       if (claim.ok === false) {
         const ex = claim.existing;
-        setError(`Esta referencia ya fue conciliada por ${ex.claimedByName || ex.claimedByUid} el ${new Date(ex.claimedAt).toLocaleString()}`);
-        // Remover del top-3 local del abono
+        // Zombie claim recovery directo: si la entrada existente es del propio abono.
+        if (ex.abonoId === entry.id) {
+          await updateAbono(entry, {
+            status: 'confirmado',
+            matchRowId: cand.rowId,
+            matchAccountAlias: cand.accountAlias,
+            matchBankAccountId: cand.bankAccountId,
+            matchBankName: cand.bankName,
+            matchMonthKey: cand.monthKey,
+          });
+          return;
+        }
+        // Steal orphan claim: si la entrada apunta a un abono que NO existe o que
+        // NO está confirmado (típicamente quedó del bug viejo donde processReceiptBatch
+        // generaba abonoIds distintos para claim vs. abono persistido), apropiarse
+        // del fingerprint y completar el confirm.
+        let canSteal = false;
+        if (ex.monthKey && ex.abonoId) {
+          try {
+            const origRef = doc(db, `businesses/${businessId}/bankStatements/${ex.monthKey}/abonos/${ex.abonoId}`);
+            const origSnap = await getDoc(origRef);
+            if (!origSnap.exists()) {
+              canSteal = true;
+            } else {
+              const origStatus = (origSnap.data() as any)?.status;
+              if (origStatus !== 'confirmado') canSteal = true;
+            }
+          } catch {
+            // Si no podemos verificar, no robamos — fail safe.
+          }
+        }
+        if (canSteal) {
+          // setDoc con merge sobrescribe abonoId/monthKey/batchId del usedReferences
+          // — el fingerprint sigue siendo el mismo (cuenta+ref+monto), solo cambia
+          // a quién pertenece la conciliación.
+          const fpRef = doc(db, `businesses/${businessId}/usedReferences/${ex.fingerprint}`);
+          await setDoc(fpRef, stripUndefined({
+            abonoId: entry.id,
+            batchId,
+            bankRowId: cand.rowId,
+            monthKey: cand.monthKey,
+            claimedAt: new Date().toISOString(),
+            claimedByUid: currentUserId,
+            claimedByName: currentUserName,
+          }), { merge: true });
+          await updateAbono(entry, {
+            status: 'confirmado',
+            matchRowId: cand.rowId,
+            matchAccountAlias: cand.accountAlias,
+            matchBankAccountId: cand.bankAccountId,
+            matchBankName: cand.bankName,
+            matchMonthKey: cand.monthKey,
+          });
+          return;
+        }
+        const reason = `Esta referencia ya fue conciliada por ${ex.claimedByName || ex.claimedByUid} el ${new Date(ex.claimedAt).toLocaleString()}`;
+        setError(reason);
+        const remaining = (entry.candidateMatches || []).filter(c => c.rowId !== cand.rowId);
         await updateAbono(entry, {
-          candidateMatches: (entry.candidateMatches || []).filter(c => c.rowId !== cand.rowId),
+          candidateMatches: remaining,
+          reviewReason: remaining.length
+            ? `Candidato anterior ya conciliado por ${ex.claimedByName || ex.claimedByUid}. Quedan ${remaining.length} candidato(s).`
+            : `Sin candidatos vivos. El último intento chocó con: ${reason}`,
         });
         return;
       }
@@ -228,7 +287,10 @@ export default function BatchReviewPanel({
       const matches = findMatches(draft, p);
       const candidateMatches: SessionAbonoCandidate[] = topCandidatesSnapshot(matches);
       const newStatus = candidateMatches.length ? 'revisar' : 'no_encontrado';
-      await updateAbono(entry, { candidateMatches, status: newStatus as any });
+      const reviewReason = candidateMatches.length
+        ? `${candidateMatches.length} candidato(s). Top: ${candidateMatches[0].confidence} (score ${candidateMatches[0].score}).`
+        : 'No se encontraron filas en el pool actual que coincidan con monto y fecha (±3 días).';
+      await updateAbono(entry, { candidateMatches, status: newStatus as any, reviewReason });
     } finally { setBusyId(null); }
   };
 
@@ -478,27 +540,40 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejec
         </div>
       </div>
 
+      {entry.reviewReason && (
+        <div className="mt-2 px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-[11px] text-amber-800 dark:text-amber-200">
+          <span className="font-medium">Razón:</span> {entry.reviewReason}
+        </div>
+      )}
+
       <div className="mt-2 space-y-1">
         <div className="text-[11px] font-medium text-slate-600 dark:text-slate-300">Candidatos top-3:</div>
         {(entry.candidateMatches || []).map((c, i) => (
-          <div key={i} className="flex items-center justify-between gap-2 px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs">
-            <div className="flex-1 truncate">
-              <span className="text-slate-500 dark:text-slate-400">{c.bankName || c.accountAlias}</span>
-              <span className="mx-1 text-slate-400">·</span>
-              <span className="text-slate-700 dark:text-slate-200">{c.rowDate}</span>
-              <span className="mx-1 text-slate-400">·</span>
-              <span className="font-mono text-slate-700 dark:text-slate-200">${c.rowAmount.toFixed(2)}</span>
-              <span className="mx-1 text-slate-400">·</span>
-              <span className="font-mono text-slate-500">{c.rowRef || '—'}</span>
-              <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${badgeColor(c.confidence)}`}>{c.confidence} {c.score}</span>
+          <div key={i} className="px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex-1 truncate">
+                <span className="text-slate-500 dark:text-slate-400">{c.bankName || c.accountAlias}</span>
+                <span className="mx-1 text-slate-400">·</span>
+                <span className="text-slate-700 dark:text-slate-200">{c.rowDate}</span>
+                <span className="mx-1 text-slate-400">·</span>
+                <span className="font-mono text-slate-700 dark:text-slate-200">${c.rowAmount.toFixed(2)}</span>
+                <span className="mx-1 text-slate-400">·</span>
+                <span className="font-mono text-slate-500">{c.rowRef || '—'}</span>
+                <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${badgeColor(c.confidence)}`}>{c.confidence} {c.score}</span>
+              </div>
+              <button
+                onClick={() => onConfirm(c)}
+                disabled={busy}
+                className="px-2 py-1 bg-emerald-600 text-white rounded text-[11px] hover:bg-emerald-700 disabled:opacity-40"
+              >
+                {busy ? <Loader2 size={10} className="animate-spin" /> : 'Confirmar'}
+              </button>
             </div>
-            <button
-              onClick={() => onConfirm(c)}
-              disabled={busy}
-              className="px-2 py-1 bg-emerald-600 text-white rounded text-[11px] hover:bg-emerald-700 disabled:opacity-40"
-            >
-              {busy ? <Loader2 size={10} className="animate-spin" /> : 'Confirmar'}
-            </button>
+            {c.reasons && c.reasons.length > 0 && (
+              <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                {c.reasons.join(' · ')}
+              </div>
+            )}
           </div>
         ))}
         {!(entry.candidateMatches || []).length && (

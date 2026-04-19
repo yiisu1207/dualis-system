@@ -114,6 +114,7 @@ export async function rematchOrphanAbonos(
     await setDoc(d.ref, stripUndefined({
       status: 'revisar',
       candidateMatches,
+      reviewReason: `Rematch tras nuevo EdeC: ${candidateMatches.length} candidato(s). Top: ${top.confidence} (score ${top.score}).`,
     }), { merge: true });
     result.movedToReview++;
   }

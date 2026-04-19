@@ -18,6 +18,8 @@ export interface SessionAbono extends DraftAbono {
   receiptUrl?: string;         // URL Cloudinary/Storage de la captura
   receiptHash?: string;        // SHA-256 del archivo (dedupe upload)
   ocrRaw?: any;                // ExtractedReceipt original (debug/edición)
+  /** Por qué quedó en "revisar" o "no_encontrado" — visible en la card de revisión. */
+  reviewReason?: string;
 }
 
 interface ReconciliationReportProps {
