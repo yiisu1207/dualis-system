@@ -210,6 +210,20 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{
   let splitX: number | null = null;
   let headerPushed = false;
 
+  // Trackeo del último saldo visto en filas aceptadas. Usado para discriminar
+  // cargo vs abono en filas "embebidas" (ver rama length>40 más abajo) cuando
+  // pdfjs agrupó por Y la metadata del cliente con la primera fila del detalle.
+  let lastSaldoSeen: number | null = null;
+  const updateLastSaldoFromCells = (cells: string[]) => {
+    if (!cells.length) return;
+    for (let k = cells.length - 1; k >= 0; k--) {
+      const v = (cells[k] || '').trim();
+      if (!v) continue;
+      const n = normalizeAmount(v, ',');
+      if (n != null) { lastSaldoSeen = n; return; }
+    }
+  };
+
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
@@ -323,7 +337,9 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{
             if (!subItems.length) continue;
             const subText = subItems.map(i => i.text).join(' ');
             if (DATE_ANYWHERE_RE.test(subText) || DAY_REF_ANCHOR_RE.test(subText)) {
-              allRows.push(splitByHeaderColumns(subItems, subHeaderXs));
+              const newCells = splitByHeaderColumns(subItems, subHeaderXs);
+              allRows.push(newCells);
+              updateLastSaldoFromCells(newCells);
             }
           }
         } else {
@@ -333,6 +349,7 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{
             ? splitByHeaderColumns(items, headerColumnXs)
             : splitPdfRowByClusters(items);
           allRows.push(cells);
+          updateLastSaldoFromCells(cells);
         }
       } else {
         const trimmed = lineText.trim();
@@ -360,7 +377,9 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{
               if (!subItems.length) continue;
               const subText = subItems.map(i => i.text).join(' ').trim();
               if (/^\d{6,}\s+\S/.test(subText) && /,\d{2}/.test(subText)) {
-                allRows.push(splitByHeaderColumns(subItems, subHeaderXs));
+                const newCells = splitByHeaderColumns(subItems, subHeaderXs);
+                allRows.push(newCells);
+                updateLastSaldoFromCells(newCells);
               }
             }
           } else {
@@ -368,6 +387,7 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{
               ? splitByHeaderColumns(items, headerColumnXs)
               : splitPdfRowByClusters(items);
             allRows.push(cells);
+            updateLastSaldoFromCells(cells);
           }
           continue;
         }
@@ -375,6 +395,49 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{
         // Línea continuación normal — solo aplicar si es un token corto/conocido.
         // Rechazar líneas largas (son casi seguro metadata de página, no wrap).
         if (trimmed.length > 40) {
+          // Caso especial: línea larga donde pdfjs agrupó por Y la metadata del
+          // cliente/resumen del PDF (lado izquierdo) con la PRIMERA fila del
+          // detalle de movimientos (lado derecho). El patrón al final es:
+          //   "... DD <ref(6+)> <concepto> <monto>,DD <saldo>,DD"
+          // p.ej "RESUMEN DE MOVIMIENTOS ... 02 53655440408 TRANS,CTAS. A TERCEROS BANESCO 15.000,00 171.382,91"
+          // Extraemos esa sub-fila y la sintetizamos como data row real.
+          if (headerColumnXs && headerColumnXs.length >= 6) {
+            const re = /(?:^|\s)(\d{1,2})\s+(\d{6,})\s+(.+?)\s+(-?[\d.]+,\d{2})\s+(-?[\d.]+,\d{2})\s*$/;
+            const m = re.exec(trimmed);
+            if (m) {
+              const [, day, ref, concept, amountStr, saldoStr] = m;
+              const newSaldo = normalizeAmount(saldoStr, ',');
+              const amount = normalizeAmount(amountStr, ',');
+              // Decidir cargo (col 3) vs abono (col 4) por comparación de saldos.
+              // Si no tenemos saldo previo, fallback a heurística por concepto:
+              // conceptos típicos de cargo en Banesco contienen estas marcas.
+              let isCredit: boolean;
+              if (newSaldo != null && lastSaldoSeen != null && amount != null) {
+                isCredit = newSaldo > lastSaldoSeen;
+              } else {
+                isCredit = !/\b(COM,|SERV\s*MTTO|POS\/NATIVA|TDB\s*CAPIT|DOMICILIAC|EMISION\s+DE\s+ESTADO|DIGITEL|MOVISTAR|MOVILNET|PAGO\s+MOVIL\s+CCE)\b/i.test(concept);
+              }
+              const synthItems: { x: number; text: string }[] = [
+                { x: headerColumnXs[0], text: day },
+                { x: headerColumnXs[1], text: ref },
+                { x: headerColumnXs[2], text: concept },
+              ];
+              if (isCredit) {
+                synthItems.push({ x: headerColumnXs[4], text: amountStr });
+              } else {
+                synthItems.push({ x: headerColumnXs[3], text: amountStr });
+              }
+              synthItems.push({ x: headerColumnXs[5], text: saldoStr });
+              const cells = splitByHeaderColumns(synthItems, headerColumnXs);
+              allRows.push(cells);
+              updateLastSaldoFromCells(cells);
+              accepted.push({
+                page: p, y, text: lineText,
+                reason: `data-row embebido al final de línea larga (${isCredit ? 'abono' : 'cargo'} por ${newSaldo != null && lastSaldoSeen != null ? 'comparación de saldos' : 'heurística por concepto'})`,
+              });
+              continue;
+            }
+          }
           rejected.push({ page: p, y, text: lineText, reason: `descartada: length ${trimmed.length} > 40 y no matchea patrón de data row` });
           continue;
         }
