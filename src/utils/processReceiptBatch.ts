@@ -71,7 +71,7 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function topCandidatesSnapshot(matches: RankedMatch[]): SessionAbonoCandidate[] {
+export function topCandidatesSnapshot(matches: RankedMatch[]): SessionAbonoCandidate[] {
   return matches.slice(0, 3).map(m => ({
     rowId: m.row.rowId,
     bankAccountId: m.row.bankAccountId,
@@ -89,7 +89,7 @@ function topCandidatesSnapshot(matches: RankedMatch[]): SessionAbonoCandidate[] 
 
 // Recursivo: Firestore rechaza cualquier `undefined` anidado (p.ej. dentro de
 // ocrRaw o candidateMatches). Limpia objetos planos y arrays; deja null/Date/primitivos intactos.
-function stripUndefined(obj: any): any {
+export function stripUndefined(obj: any): any {
   if (obj === undefined) return undefined;
   if (obj === null) return null;
   if (Array.isArray(obj)) {

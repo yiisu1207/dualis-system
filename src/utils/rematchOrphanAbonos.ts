@@ -5,12 +5,12 @@
 // - Si sigue sin candidatos → queda como 'no_encontrado'
 
 import {
-  collectionGroup, getDocs, query, updateDoc, where, type Firestore,
+  collectionGroup, getDocs, setDoc, type Firestore,
 } from 'firebase/firestore';
 import { loadGlobalPool } from './globalBankPool';
 import { findMatches, type DraftAbono } from './bankReconciliation';
 import { claimReference } from './reconciliationGuards';
-import type { SessionAbonoCandidate } from '../../types';
+import { topCandidatesSnapshot, stripUndefined } from './processReceiptBatch';
 
 export interface RematchResult {
   scanned: number;
@@ -30,14 +30,13 @@ export async function rematchOrphanAbonos(
     scanned: 0, confirmed: 0, movedToReview: 0, stillOrphan: 0, errors: [],
   };
 
-  const q = query(
-    collectionGroup(db, 'abonos'),
-    where('status', '==', 'no_encontrado'),
-  );
-  const snap = await getDocs(q);
+  // Filtrar en memoria — el collectionGroup + where('status') exige índice
+  // composite que no aporta valor (ya filtramos por path). Más simple sin él.
+  const snap = await getDocs(collectionGroup(db, 'abonos'));
   const orphans = snap.docs.filter(d => {
     const segs = d.ref.path.split('/');
-    return segs[0] === 'businesses' && segs[1] === businessId;
+    if (segs[0] !== 'businesses' || segs[1] !== businessId) return false;
+    return (d.data() as any)?.status === 'no_encontrado';
   });
   if (orphans.length === 0) return result;
 
@@ -70,22 +69,7 @@ export async function rematchOrphanAbonos(
     }
 
     const top = matches[0];
-    const candidateMatches: SessionAbonoCandidate[] = matches.slice(0, 3).map(m => {
-      const c: SessionAbonoCandidate = {
-        rowId: m.row.rowId,
-        accountAlias: m.row.accountAlias,
-        score: m.score,
-        confidence: m.confidence,
-        rowDate: m.row.date,
-        rowAmount: m.row.amount,
-      };
-      if (m.row.bankAccountId) c.bankAccountId = m.row.bankAccountId;
-      if (m.row.bankName) c.bankName = m.row.bankName;
-      if (m.row.monthKey) c.monthKey = m.row.monthKey;
-      if (m.row.reference) c.rowRef = m.row.reference;
-      if (m.row.description) c.rowDescription = m.row.description;
-      return c;
-    });
+    const candidateMatches = topCandidatesSnapshot(matches);
 
     const topIdentity = top.row.bankAccountId || top.row.accountAlias;
     const canAutoConfirm =
@@ -109,15 +93,15 @@ export async function rematchOrphanAbonos(
           claimedByName: currentUserName,
         });
         if (claim.ok) {
-          await updateDoc(d.ref, {
+          await setDoc(d.ref, stripUndefined({
             status: 'confirmado',
             matchRowId: top.row.rowId,
             matchAccountAlias: top.row.accountAlias,
-            matchBankAccountId: top.row.bankAccountId ?? null,
-            matchBankName: top.row.bankName ?? null,
-            matchMonthKey: top.row.monthKey ?? null,
+            matchBankAccountId: top.row.bankAccountId,
+            matchBankName: top.row.bankName,
+            matchMonthKey: top.row.monthKey,
             candidateMatches,
-          });
+          }), { merge: true });
           result.confirmed++;
           continue;
         }
@@ -127,10 +111,10 @@ export async function rematchOrphanAbonos(
       }
     }
 
-    await updateDoc(d.ref, {
+    await setDoc(d.ref, stripUndefined({
       status: 'revisar',
       candidateMatches,
-    });
+    }), { merge: true });
     result.movedToReview++;
   }
 

@@ -10,6 +10,7 @@ import { db } from '../../firebase/config';
 import { findMatches, type DraftAbono } from '../../utils/bankReconciliation';
 import { loadGlobalPool, type PooledRow } from '../../utils/globalBankPool';
 import { claimReference } from '../../utils/reconciliationGuards';
+import { topCandidatesSnapshot, stripUndefined } from '../../utils/processReceiptBatch';
 import type { ReconciliationBatch, SessionAbonoCandidate } from '../../../types';
 import type { SessionAbono } from '../conciliacion/ReconciliationReport';
 import { exportBatchCSV } from '../../utils/batchExports';
@@ -160,9 +161,7 @@ export default function BatchReviewPanel({
 
   const updateAbono = async (entry: AbonoEntry, patch: Partial<SessionAbono>) => {
     const ref = doc(db, `businesses/${businessId}/bankStatements/${entry.monthKey}/abonos/${entry.id}`);
-    const clean: Record<string, any> = {};
-    for (const [k, v] of Object.entries(patch)) if (v !== undefined) clean[k] = v;
-    await setDoc(ref, clean, { merge: true });
+    await setDoc(ref, stripUndefined(patch), { merge: true });
   };
 
   const handleConfirmCandidate = async (entry: AbonoEntry, cand: SessionAbonoCandidate) => {
@@ -227,11 +226,7 @@ export default function BatchReviewPanel({
         operationType: entry.operationType,
       };
       const matches = findMatches(draft, p);
-      const candidateMatches: SessionAbonoCandidate[] = matches.slice(0, 3).map(m => ({
-        rowId: m.row.rowId, bankAccountId: m.row.bankAccountId, accountAlias: m.row.accountAlias,
-        bankName: m.row.bankName, monthKey: m.row.monthKey, score: m.score, confidence: m.confidence,
-        rowDate: m.row.date, rowAmount: m.row.amount, rowRef: m.row.reference, rowDescription: m.row.description,
-      }));
+      const candidateMatches: SessionAbonoCandidate[] = topCandidatesSnapshot(matches);
       const newStatus = candidateMatches.length ? 'revisar' : 'no_encontrado';
       await updateAbono(entry, { candidateMatches, status: newStatus as any });
     } finally { setBusyId(null); }
