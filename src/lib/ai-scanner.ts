@@ -1,9 +1,16 @@
 // Client helper for the Vercel Serverless proxy at /api/scanner.
+import { auth } from '../firebase/config';
 
 async function callProxy(payload: Record<string, any>) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No autenticado');
+  const token = await user.getIdToken();
   const res = await fetch('/api/scanner', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify(payload),
   });
 

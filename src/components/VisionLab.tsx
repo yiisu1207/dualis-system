@@ -38,6 +38,7 @@ import {
   Legend,
 } from 'recharts';
 import { Movement, InventoryItem, ExchangeRates, Customer } from '../../types';
+import { auth } from '../firebase/config';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -379,9 +380,13 @@ Responde con datos concretos y recomendaciones accionables para una PYME venezol
     setInsightsError(null);
     try {
       const prompt = buildPrompt();
+      const token = await auth.currentUser?.getIdToken();
       const res = await fetch('/api/assistant', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           prompt,
           system: 'Eres un analista financiero experto. Responde ÚNICAMENTE con el formato solicitado: FORTALEZAS, RIESGOS, COMPRAR, EVITAR, PRONOSTICO.',

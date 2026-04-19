@@ -16,6 +16,7 @@ interface PortalContextType {
   businessLogo: string;
   brandColor: string;
   currencySymbol: string;
+  portalTokenId: string;
 }
 
 const PortalContext = createContext<PortalContextType | null>(null);
@@ -74,6 +75,7 @@ export default function PortalGuard() {
           setBusinessLogo(session.businessLogo || '');
           setBrandColor(session.brandColor || '');
           setCurrencySymbol(session.currencySymbol || '$');
+          setTokenDocId(session.tokenDocId || '');
           setTokenData({
             customerId: session.customerId,
             customerName: session.customerName,
@@ -259,6 +261,7 @@ export default function PortalGuard() {
           businessLogo,
           brandColor,
           currencySymbol,
+          tokenDocId,
           expiresAt: Date.now() + 24 * 60 * 60 * 1000,
         })
       );
@@ -637,6 +640,7 @@ export default function PortalGuard() {
         businessLogo,
         brandColor,
         currencySymbol,
+        portalTokenId: tokenDocId,
       }}
     >
       <PortalLayout>

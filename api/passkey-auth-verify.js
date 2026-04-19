@@ -32,7 +32,13 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Challenge not found' });
     }
 
-    const expectedChallenge = challengeDoc.data().challenge;
+    const challengeData = challengeDoc.data();
+    if (challengeData.expiresAt && Date.parse(challengeData.expiresAt) < Date.now()) {
+      await db.collection('passkeyChallenges').doc(challengeId).delete().catch(() => {});
+      return res.status(400).json({ error: 'Challenge expired' });
+    }
+
+    const expectedChallenge = challengeData.challenge;
     const credentialId = assertionResponse.id;
 
     const credDoc = await db.collection('passkeys').doc(credentialId).get();

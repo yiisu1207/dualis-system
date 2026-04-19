@@ -1,7 +1,21 @@
 // Vercel Serverless Function: /api/scanner
 // Proxy for Gemini (text + vision). Reads API key from process.env.GOOGLE_API_KEY.
 
+const { getAuth } = require('./_firebaseAdmin');
+
 const MODEL = 'gemini-1.5-flash';
+const RATE_LIMIT_PER_MINUTE = 30;
+const rateLimitMap = new Map();
+
+function checkRateLimit(uid) {
+  const now = Date.now();
+  const windowStart = now - 60 * 1000;
+  const timestamps = (rateLimitMap.get(uid) || []).filter((t) => t > windowStart);
+  if (timestamps.length >= RATE_LIMIT_PER_MINUTE) return false;
+  timestamps.push(now);
+  rateLimitMap.set(uid, timestamps);
+  return true;
+}
 
 const fetchFn = globalThis.fetch
   ? (...args) => globalThis.fetch(...args)
@@ -11,7 +25,7 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
     return res.status(204).end();
   }
 
@@ -26,6 +40,19 @@ module.exports = async (req, res) => {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: 'Google API key not configured in environment.' });
+  }
+
+  // Auth: exige idToken válido para bloquear anónimos gastando cuotas Gemini.
+  const bearer = req.headers.authorization?.replace('Bearer ', '') || '';
+  if (!bearer) return res.status(401).json({ error: 'Missing token' });
+  let decoded;
+  try {
+    decoded = await getAuth().verifyIdToken(bearer);
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  if (!checkRateLimit(decoded.uid)) {
+    return res.status(429).json({ error: `Rate limit: ${RATE_LIMIT_PER_MINUTE} req/min` });
   }
 
   const { text, image, imageMimeType, images, mode, target } = req.body || {};

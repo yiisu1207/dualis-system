@@ -37,7 +37,7 @@ import { buildReferenceFingerprint as buildFingerprint } from '../utils/referenc
 const CUSTOM_COLORS = ['violet', 'emerald', 'amber'] as const;
 
 export default function PortalAbonoForm() {
-  const { businessId, customerId, customerName, businessName, currencySymbol } = usePortal();
+  const { businessId, customerId, customerName, businessName, currencySymbol, portalTokenId } = usePortal();
   const { movements, portalPayments, loading, balances, rates } = usePortalData(businessId, customerId);
 
   // ── Bank accounts del negocio ──────────────────────────────────────────────
@@ -364,10 +364,11 @@ export default function PortalAbonoForm() {
         if (allocations.length === 0) allocations = undefined;
       }
 
-      const payment: Omit<PortalPayment, 'id'> = {
+      const payment: Omit<PortalPayment, 'id'> & { portalTokenId: string } = {
         businessId,
         customerId,
         customerName,
+        portalTokenId,
         invoiceIds: Array.from(selectedInvoices),
         accountType,
         amount: amt,

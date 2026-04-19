@@ -7,9 +7,15 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Super admin — acceso global de operaciones (email del panel ctrl-9x7b)
+    // Super admin — acceso global de operaciones (email del panel ctrl-9x7b).
+    // Nota: mantenemos el email hardcoded como fallback para no romper acceso
+    // durante la migración. Nuevos super admins deberían usar custom claim
+    // `super_admin: true` via Firebase Admin SDK.
     function isSuperAdmin() {
-      return request.auth != null && request.auth.token.email == 'yisus_xd77@hotmail.com';
+      return request.auth != null && (
+        request.auth.token.super_admin == true ||
+        request.auth.token.email == 'yisus_xd77@hotmail.com'
+      );
     }
 
     // Ops monitor — usuario anónimo con token válido
@@ -222,9 +228,16 @@ service cloud.firestore {
       }
 
       // Pagos enviados desde el Portal de Clientes
+      // Endurecido: el create público debe referenciar un portalAccess token válido y activo,
+      // con customerId consistente, y el businessId del payload debe coincidir con {bid}.
       match /portalPayments/{payId} {
-        // Público: clientes crean pagos (validación por token en app)
-        allow create: if true;
+        allow create: if
+          request.resource.data.businessId == bid &&
+          request.resource.data.portalTokenId is string &&
+          request.resource.data.customerId is string &&
+          exists(/databases/$(database)/documents/businesses/$(bid)/portalAccess/$(request.resource.data.portalTokenId)) &&
+          get(/databases/$(database)/documents/businesses/$(bid)/portalAccess/$(request.resource.data.portalTokenId)).data.active == true &&
+          get(/databases/$(database)/documents/businesses/$(bid)/portalAccess/$(request.resource.data.portalTokenId)).data.customerId == request.resource.data.customerId;
         // Miembros pueden leer; admin puede aprobar/rechazar
         allow read: if isMember(bid);
         allow update: if isAdmin(bid);
@@ -334,9 +347,15 @@ service cloud.firestore {
       allow read, update, delete: if isSuperAdmin() || isOpsUser();
     }
 
-    // CLIENTES — root collection, cualquier usuario autenticado del negocio
+    // CLIENTES — root collection scoped por businessId
+    // Bug histórico: la regla anterior permitía cualquier user auth → fuga cross-tenant.
+    // Ahora cada operación valida que el doc pertenezca al business del usuario.
     match /customers/{docId} {
-      allow read, create, update, delete: if request.auth != null;
+      allow read, delete: if isOpsUser() || isSuperAdmin();
+      allow read: if isSignedIn() && belongsToMe(resource.data);
+      allow create: if isSignedIn() && belongsToMe(request.resource.data);
+      allow update: if isSignedIn() && belongsToMe(resource.data);
+      allow delete: if isSignedIn() && belongsToMe(resource.data) && (myRole() == 'admin' || myRole() == 'owner');
     }
 
     // COLECCIONES OPERATIVAS EN RAÍZ

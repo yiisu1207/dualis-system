@@ -35,7 +35,13 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Challenge not found' });
     }
 
-    const expectedChallenge = challengeDoc.data().challenge;
+    const challengeData = challengeDoc.data();
+    if (challengeData.expiresAt && Date.parse(challengeData.expiresAt) < Date.now()) {
+      await db.collection('passkeyChallenges').doc(`${decoded.uid}_reg`).delete().catch(() => {});
+      return res.status(400).json({ error: 'Challenge expired' });
+    }
+
+    const expectedChallenge = challengeData.challenge;
 
     const verification = await verifyRegistrationResponse({
       response: attestationResponse,

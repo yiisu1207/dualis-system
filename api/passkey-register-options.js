@@ -45,10 +45,12 @@ module.exports = async (req, res) => {
       excludeCredentials,
     });
 
+    const now = Date.now();
     await db.collection('passkeyChallenges').doc(`${decoded.uid}_reg`).set({
       challenge: options.challenge,
       type: 'registration',
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + 5 * 60 * 1000).toISOString(),
     });
 
     return res.json({ options });

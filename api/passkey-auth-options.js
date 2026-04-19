@@ -22,10 +22,12 @@ module.exports = async (req, res) => {
     });
 
     const challengeId = crypto.randomUUID();
+    const now = Date.now();
     await db.collection('passkeyChallenges').doc(challengeId).set({
       challenge: options.challenge,
       type: 'authentication',
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + 5 * 60 * 1000).toISOString(),
     });
 
     return res.json({ options, challengeId });

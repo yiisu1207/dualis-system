@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AccountType, MovementType, Customer, ExchangeRates, PaymentCurrency } from '../../types';
 import Autocomplete from './Autocomplete';
 import { useToast } from '../context/ToastContext';
+import { auth } from '../firebase/config';
 
 interface MovementPanelProps {
   title: string;
@@ -83,9 +84,13 @@ const MovementPanel: React.FC<MovementPanelProps> = ({
     setIsSuggesting(true);
     try {
       const prompt = `Sugiere una descripción profesional de máximo 4 palabras para una venta de ropa de $${amount}. Devuelve solo el texto.`;
+      const token = await auth.currentUser?.getIdToken();
       const response = await fetch('/api/assistant', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ prompt }),
       });
       if (!response.ok) throw new Error('Proxy de IA no disponible');
