@@ -313,9 +313,44 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
           allRows.push(cells);
         }
       } else {
-        // Línea continuación — solo aplicar si es un token corto/conocido.
-        // Rechazar líneas largas (son casi seguro metadata de página, no wrap).
         const trimmed = lineText.trim();
+
+        // Caso especial: línea que parece data row pero sin día explícito al inicio.
+        // Ocurre en EdeC Banesco mensual cuando pdfjs separa el ítem del día (DD)
+        // en una Y ligeramente distinta del resto, p.ej:
+        //   "03590009829 TRANS,CTAS 866.320,00 658.692,03"
+        // La empujamos como data row con DIA vacío — parseBankStatement aplica el
+        // fallback de lastDay y le asigna el día del grupo previo.
+        const looksLikeDataRowMissingDay =
+          /^\d{6,}\s+\S/.test(trimmed) &&
+          /,\d{2}/.test(trimmed) &&
+          trimmed.length > 30;
+        if (looksLikeDataRowMissingDay) {
+          if (splitX !== null && headerColumnXs && headerColumnXsRight) {
+            const leftItems = items.filter(i => i.x < splitX!);
+            const rightItems = items.filter(i => i.x >= splitX!);
+            const subs: Array<[{ x: number; text: string }[], number[]]> = [
+              [leftItems, headerColumnXs],
+              [rightItems, headerColumnXsRight],
+            ];
+            for (const [subItems, subHeaderXs] of subs) {
+              if (!subItems.length) continue;
+              const subText = subItems.map(i => i.text).join(' ').trim();
+              if (/^\d{6,}\s+\S/.test(subText) && /,\d{2}/.test(subText)) {
+                allRows.push(splitByHeaderColumns(subItems, subHeaderXs));
+              }
+            }
+          } else {
+            const cells = headerColumnXs
+              ? splitByHeaderColumns(items, headerColumnXs)
+              : splitPdfRowByClusters(items);
+            allRows.push(cells);
+          }
+          continue;
+        }
+
+        // Línea continuación normal — solo aplicar si es un token corto/conocido.
+        // Rechazar líneas largas (son casi seguro metadata de página, no wrap).
         if (trimmed.length > 40) continue;
         if (allRows.length > 0) {
           const prev = allRows[allRows.length - 1];
