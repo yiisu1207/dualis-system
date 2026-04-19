@@ -453,6 +453,17 @@ const PosContent = () => {
   const [clients, setClients] = useState<any[]>([]);
   const [consumidorFinal, setConsumidorFinal] = useState(false);
 
+  // Abono rápido a CxC (monto acumulado — las facturas individuales vendrán después)
+  const [customerBalance, setCustomerBalance] = useState<number | null>(null);
+  const [showAbonoForm, setShowAbonoForm] = useState(false);
+  const [abonoAmount, setAbonoAmount] = useState('');
+  const [abonoMethod, setAbonoMethod] = useState<Exclude<PaymentMethod, 'mixto'>>('efectivo_usd');
+  const [abonoReference, setAbonoReference] = useState('');
+  const [abonoDate, setAbonoDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [abonoNote, setAbonoNote] = useState('');
+  const [submittingAbono, setSubmittingAbono] = useState(false);
+  const [abonoFeedback, setAbonoFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+
   // Fiscal config (read from localStorage, set by Configuración → Fiscal/POS)
   const [fiscalConfig] = useState(() => ({
     igtfEnabled: localStorage.getItem('fiscal_igtf_enabled') !== 'false',
@@ -674,6 +685,46 @@ const PosContent = () => {
     }, err => console.error('[pos detal] clientes listener', err));
     return () => unsub();
   }, [empresa_id]);
+
+  // Saldo pendiente del cliente seleccionado — sum(FACTURAS sin pagar) − sum(ABONOS).
+  // Se recalcula en vivo cuando se crea un abono desde el POS o una factura desde Mayor/CxC.
+  useEffect(() => {
+    if (!customer?.id || !empresa_id) {
+      setCustomerBalance(null);
+      return;
+    }
+    const movQ = query(
+      collection(db, 'movements'),
+      where('businessId', '==', empresa_id),
+      where('entityId', '==', customer.id),
+    );
+    const unsub = onSnapshot(movQ, snap => {
+      let total = 0;
+      snap.docs.forEach(d => {
+        const m: any = d.data();
+        if (m.anulada) return;
+        if (m.movementType === 'FACTURA' && !m.pagado) {
+          total += Number(m.amountInUSD || m.amount || 0);
+        } else if (m.movementType === 'ABONO') {
+          total -= Number(m.amountInUSD || m.amount || 0);
+        }
+      });
+      setCustomerBalance(total);
+    }, err => {
+      console.error('[pos detal] balance listener', err);
+      setCustomerBalance(null);
+    });
+    return () => unsub();
+  }, [customer, empresa_id]);
+
+  // Al cambiar de cliente, reset del form de abono
+  useEffect(() => {
+    setShowAbonoForm(false);
+    setAbonoAmount('');
+    setAbonoReference('');
+    setAbonoNote('');
+    setAbonoFeedback(null);
+  }, [customer?.id]);
 
   const filteredClients = useMemo(() => {
     const term = clientQuery.toLowerCase();
@@ -1139,6 +1190,55 @@ const PosContent = () => {
   const cajeroLabel = terminalInfo?.cajeroNombre || userProfile?.fullName || 'Vendedor';
   const terminalLabel = terminalInfo?.nombre || cajaId || 'PRINCIPAL';
 
+  const handleAbonoSubmit = async () => {
+    if (!customer?.id) return;
+    const amountNum = parseFloat(abonoAmount.replace(',', '.'));
+    if (!isFinite(amountNum) || amountNum <= 0) {
+      setAbonoFeedback({ ok: false, msg: 'Monto inválido' });
+      return;
+    }
+    setSubmittingAbono(true);
+    setAbonoFeedback(null);
+    try {
+      const now = new Date();
+      const isoDate = now.toISOString();
+      const entityLabel = customer.fullName || customer.nombre || 'Cliente';
+      const payload: any = {
+        businessId: empresa_id,
+        entityId: customer.id,
+        entityName: entityLabel,
+        movementType: 'ABONO',
+        amount: amountNum,
+        amountInUSD: amountNum,
+        currency: 'USD',
+        accountType: customer.defaultAccountType || 'BCV',
+        date: abonoDate,
+        createdAt: isoDate,
+        concept: `Abono desde POS Detal — ${entityLabel}${abonoNote ? ` (${abonoNote})` : ''}`,
+        metodoPago: METHOD_LABELS[abonoMethod],
+        referencia: abonoReference.trim() || null,
+        cajaId: cajaId || 'principal',
+        cajaName: terminalLabel,
+        vendedorId: userProfile?.uid || 'sistema',
+        vendedorNombre: userProfile?.fullName || 'Vendedor',
+        origen: 'pos_detal_abono',
+      };
+      if (abonoMethod === 'efectivo_usd') payload.bankAccountId = 'efectivo_usd_default';
+      await addDoc(collection(db, 'movements'), payload);
+      setAbonoFeedback({ ok: true, msg: `Abono de $${amountNum.toFixed(2)} registrado` });
+      setAbonoAmount('');
+      setAbonoReference('');
+      setAbonoNote('');
+      setShowAbonoForm(false);
+      setTimeout(() => setAbonoFeedback(null), 4000);
+    } catch (err: any) {
+      console.error('[pos detal] abono fail', err);
+      setAbonoFeedback({ ok: false, msg: `Error: ${err?.message || 'no se pudo registrar'}` });
+    } finally {
+      setSubmittingAbono(false);
+    }
+  };
+
   // Token validation: block access without valid kiosk token
   if (tokenValid === null) {
     return (
@@ -1602,6 +1702,134 @@ const PosContent = () => {
                     className="text-[9px] font-black uppercase text-rose-400 hover:text-rose-600 shrink-0">
                     Cambiar
                   </button>
+                </div>
+              )}
+
+              {/* Saldo pendiente + abono rápido — visible solo cuando hay cliente seleccionado */}
+              {customer && customerBalance !== null && (
+                <div className={`rounded-xl p-3 border shadow-sm ${
+                  customerBalance > 0.01
+                    ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30'
+                    : customerBalance < -0.01
+                      ? 'bg-sky-50 dark:bg-sky-500/10 border-sky-200 dark:border-sky-500/30'
+                      : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30'
+                }`}>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-white/50">
+                        {customerBalance > 0.01 ? 'Debe' : customerBalance < -0.01 ? 'Crédito a favor' : 'Al día'}
+                      </p>
+                      <p className={`text-lg font-black ${
+                        customerBalance > 0.01
+                          ? 'text-rose-600 dark:text-rose-300'
+                          : customerBalance < -0.01
+                            ? 'text-sky-600 dark:text-sky-300'
+                            : 'text-emerald-600 dark:text-emerald-300'
+                      }`}>
+                        ${Math.abs(customerBalance).toFixed(2)}
+                      </p>
+                    </div>
+                    {!showAbonoForm && (
+                      <button
+                        onClick={() => { setShowAbonoForm(true); setAbonoFeedback(null); }}
+                        className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow"
+                      >
+                        <Banknote size={12} /> Abonar
+                      </button>
+                    )}
+                  </div>
+
+                  {showAbonoForm && (
+                    <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-white/10">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-500 dark:text-white/50 mb-1">Monto USD</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={abonoAmount}
+                            onChange={e => setAbonoAmount(e.target.value)}
+                            placeholder="0.00"
+                            className="w-full px-2 py-1.5 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-500 dark:text-white/50 mb-1">Fecha</label>
+                          <input
+                            type="date"
+                            value={abonoDate}
+                            onChange={e => setAbonoDate(e.target.value)}
+                            className="w-full px-2 py-1.5 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-slate-500 dark:text-white/50 mb-1">Método</label>
+                        <select
+                          value={abonoMethod}
+                          onChange={e => setAbonoMethod(e.target.value as Exclude<PaymentMethod, 'mixto'>)}
+                          className="w-full px-2 py-1.5 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                        >
+                          <option value="efectivo_usd">Efectivo USD</option>
+                          <option value="efectivo_bs">Efectivo Bs</option>
+                          <option value="transferencia">Transferencia</option>
+                          <option value="pago_movil">Pago Móvil</option>
+                          <option value="punto">Punto de Venta</option>
+                        </select>
+                      </div>
+                      {(abonoMethod === 'transferencia' || abonoMethod === 'pago_movil' || abonoMethod === 'punto') && (
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-500 dark:text-white/50 mb-1">Referencia</label>
+                          <input
+                            type="text"
+                            value={abonoReference}
+                            onChange={e => setAbonoReference(e.target.value)}
+                            placeholder="Número de ref"
+                            className="w-full px-2 py-1.5 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-slate-500 dark:text-white/50 mb-1">Nota (opcional)</label>
+                        <input
+                          type="text"
+                          value={abonoNote}
+                          onChange={e => setAbonoNote(e.target.value)}
+                          placeholder="Ej: pago parcial factura vieja"
+                          className="w-full px-2 py-1.5 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => { setShowAbonoForm(false); setAbonoFeedback(null); }}
+                          disabled={submittingAbono}
+                          className="flex-1 px-2 py-2 rounded-md bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-white/70 text-[10px] font-black uppercase tracking-wider hover:bg-slate-300 dark:hover:bg-white/20 disabled:opacity-50"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAbonoSubmit}
+                          disabled={submittingAbono || !abonoAmount}
+                          className="flex-[2] px-2 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1 disabled:opacity-50"
+                        >
+                          {submittingAbono ? 'Registrando...' : (<><CheckCircle2 size={12} /> Registrar abono</>)}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {abonoFeedback && (
+                    <div className={`mt-2 text-[10px] font-bold px-2 py-1.5 rounded-md ${
+                      abonoFeedback.ok
+                        ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200'
+                        : 'bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-200'
+                    }`}>
+                      {abonoFeedback.msg}
+                    </div>
+                  )}
                 </div>
               )}
 
