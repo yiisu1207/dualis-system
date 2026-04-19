@@ -54,7 +54,7 @@ export interface RankedMatch {
 }
 
 export interface FindMatchesOpts {
-  dateToleranceDays?: number; // default 1
+  dateToleranceDays?: number; // default 3 — cubre weekends/feriados VE y cruce de mes
 }
 
 const onlyDigits = (s: string | undefined | null): string =>
@@ -115,7 +115,7 @@ export function findMatches(
   pool: BankRow[],
   opts: FindMatchesOpts = {},
 ): RankedMatch[] {
-  const dateTol = opts.dateToleranceDays ?? 1;
+  const dateTol = opts.dateToleranceDays ?? 3;
   if (!Number.isFinite(abono.amount) || !abono.date) return [];
 
   const cedulaDigits = onlyDigits(abono.cedula);
