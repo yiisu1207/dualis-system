@@ -185,6 +185,11 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
   // Cuando detectamos un header, guardamos los X de cada columna para usarlos
   // de "snap" en las filas de datos siguientes — más preciso que clustering por gaps.
   let headerColumnXs: number[] | null = null;
+  // Layout de 2 columnas (EdeC Banesco mensual páginas de continuación).
+  // Cuando el header contiene 2 "DIA", guardamos anclas para cada bloque y un X
+  // de división. Cada fila de datos se divide en 2 sub-filas (izquierda / derecha).
+  let headerColumnXsRight: number[] | null = null;
+  let splitX: number | null = null;
   let headerPushed = false;
 
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -245,13 +250,28 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
         .filter(k => lNorm.includes(k)).length >= 3;
 
       if (isHeader) {
-        // Reconstruir header como columnas separadas por posición X
+        // Reconstruir header como columnas separadas por posición X.
         const sortedItems = [...items].sort((a, b) => a.x - b.x);
-        headerColumnXs = sortedItems.map(i => i.x);
+
+        // Detectar layout 2-col: si aparece "DIA" (o "Día") 2+ veces, es 2 columnas.
+        const diaItems = sortedItems.filter(i => /^\s*d[ií]a\s*$/i.test(i.text));
+        if (diaItems.length >= 2) {
+          splitX = diaItems[1].x - 5; // buffer pequeño
+          headerColumnXs = sortedItems.filter(i => i.x < splitX!).map(i => i.x);
+          headerColumnXsRight = sortedItems.filter(i => i.x >= splitX!).map(i => i.x);
+        } else {
+          splitX = null;
+          headerColumnXs = sortedItems.map(i => i.x);
+          headerColumnXsRight = null;
+        }
+
         // Solo pushear el primer header — los siguientes son repeticiones por página
         // y contaminan dataRows con "fecha inválida: 'Fecha'".
         if (!headerPushed) {
-          const headerCells = sortedItems.map(i => i.text.trim()).filter(Boolean);
+          const headerSource = splitX !== null
+            ? sortedItems.filter(i => i.x < splitX!)
+            : sortedItems;
+          const headerCells = headerSource.map(i => i.text.trim()).filter(Boolean);
           allRows.push(headerCells);
           headerPushed = true;
         }
@@ -269,12 +289,29 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
       //   (a) contiene fecha DD/MM/YYYY en cualquier posición, o
       //   (b) empieza con "DD <ref larga>" (EdeC Banesco mensual con DIA-only).
       if (DATE_ANYWHERE_RE.test(lineText) || DAY_REF_ANCHOR_RE.test(lineText)) {
-        // Fila nueva — usar X del header como anclas si está disponible,
-        // si no caer al clustering por gaps
-        const cells = headerColumnXs
-          ? splitByHeaderColumns(items, headerColumnXs)
-          : splitPdfRowByClusters(items);
-        allRows.push(cells);
+        if (splitX !== null && headerColumnXs && headerColumnXsRight) {
+          // Layout 2-col: partir items por splitX y emitir hasta 2 sub-filas.
+          const leftItems = items.filter(i => i.x < splitX!);
+          const rightItems = items.filter(i => i.x >= splitX!);
+          const subs: Array<[{ x: number; text: string }[], number[]]> = [
+            [leftItems, headerColumnXs],
+            [rightItems, headerColumnXsRight],
+          ];
+          for (const [subItems, subHeaderXs] of subs) {
+            if (!subItems.length) continue;
+            const subText = subItems.map(i => i.text).join(' ');
+            if (DATE_ANYWHERE_RE.test(subText) || DAY_REF_ANCHOR_RE.test(subText)) {
+              allRows.push(splitByHeaderColumns(subItems, subHeaderXs));
+            }
+          }
+        } else {
+          // Fila nueva — usar X del header como anclas si está disponible,
+          // si no caer al clustering por gaps
+          const cells = headerColumnXs
+            ? splitByHeaderColumns(items, headerColumnXs)
+            : splitPdfRowByClusters(items);
+          allRows.push(cells);
+        }
       } else {
         // Línea continuación — solo aplicar si es un token corto/conocido.
         // Rechazar líneas largas (son casi seguro metadata de página, no wrap).
