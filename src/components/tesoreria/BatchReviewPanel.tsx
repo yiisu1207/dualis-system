@@ -416,14 +416,14 @@ export default function BatchReviewPanel({
         onToggle={() => setOpenSection(s => ({ ...s, confirmed: !s.confirmed }))}
       >
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-sm">
             <thead className="text-slate-500">
               <tr>
-                <th className="text-left py-1">Fecha</th>
-                <th className="text-left py-1">Monto</th>
-                <th className="text-left py-1">Ref</th>
-                <th className="text-left py-1">Cliente</th>
-                <th className="text-left py-1">Cuenta matched</th>
+                <th className="text-left py-2">Fecha</th>
+                <th className="text-left py-2">Monto</th>
+                <th className="text-left py-2">Ref</th>
+                <th className="text-left py-2">Cliente</th>
+                <th className="text-left py-2">Cuenta matched</th>
               </tr>
             </thead>
             <tbody>
@@ -438,11 +438,11 @@ export default function BatchReviewPanel({
                       isHl ? 'bg-amber-100 dark:bg-amber-900/30' : ''
                     }`}
                   >
-                    <td className="py-1">{a.date}</td>
-                    <td className="py-1 font-mono">${a.amount.toFixed(2)}</td>
-                    <td className="py-1 font-mono">{a.reference || '—'}</td>
-                    <td className="py-1 truncate max-w-[150px]">{a.clientName || a.cedula || '—'}</td>
-                    <td className="py-1 text-slate-600 dark:text-slate-300">
+                    <td className="py-2">{a.date}</td>
+                    <td className="py-2 font-mono">${a.amount.toFixed(2)}</td>
+                    <td className="py-2 font-mono">{a.reference || '—'}</td>
+                    <td className="py-2 truncate max-w-[200px]">{a.clientName || a.cedula || '—'}</td>
+                    <td className="py-2 text-slate-600 dark:text-slate-300">
                       {canJump ? (
                         <button
                           type="button"
@@ -450,7 +450,7 @@ export default function BatchReviewPanel({
                           className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-300 hover:underline"
                           title="Ver fila en el EdeC"
                         >
-                          {a.matchBankName || a.matchAccountAlias} <ExternalLink size={10} />
+                          {a.matchBankName || a.matchAccountAlias} <ExternalLink size={12} />
                         </button>
                       ) : (
                         a.matchBankName || a.matchAccountAlias || '—'
@@ -518,19 +518,19 @@ interface ReviewCardProps {
 
 const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejectAll, onRebuscar }) => {
   return (
-    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 bg-slate-50 dark:bg-slate-900/40">
-      <div className="flex gap-3">
+    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-900/40">
+      <div className="flex gap-4">
         {entry.receiptUrl ? (
           <a href={entry.receiptUrl} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
-            <img src={entry.receiptUrl} alt="receipt" className="w-16 h-16 object-cover rounded border border-slate-200 dark:border-slate-700" />
+            <img src={entry.receiptUrl} alt="receipt" className="w-24 h-24 object-cover rounded border border-slate-200 dark:border-slate-700" />
           </a>
         ) : (
-          <div className="w-16 h-16 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-            <ImageIcon size={20} className="text-slate-400" />
+          <div className="w-24 h-24 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+            <ImageIcon size={28} className="text-slate-400" />
           </div>
         )}
-        <div className="flex-1 text-xs">
-          <div className="grid grid-cols-3 gap-2">
+        <div className="flex-1 text-sm">
+          <div className="grid grid-cols-3 gap-3">
             <div><span className="text-slate-400">Monto:</span> <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">${entry.amount.toFixed(2)}</span></div>
             <div><span className="text-slate-400">Ref:</span> <span className="font-mono text-slate-700 dark:text-slate-200">{entry.reference || '—'}</span></div>
             <div><span className="text-slate-400">Fecha:</span> <span className="text-slate-700 dark:text-slate-200">{entry.date}</span></div>
@@ -541,15 +541,15 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejec
       </div>
 
       {entry.reviewReason && (
-        <div className="mt-2 px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-[11px] text-amber-800 dark:text-amber-200">
+        <div className="mt-3 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-sm text-amber-800 dark:text-amber-200">
           <span className="font-medium">Razón:</span> {entry.reviewReason}
         </div>
       )}
 
-      <div className="mt-2 space-y-1">
-        <div className="text-[11px] font-medium text-slate-600 dark:text-slate-300">Candidatos top-3:</div>
+      <div className="mt-3 space-y-1.5">
+        <div className="text-sm font-medium text-slate-600 dark:text-slate-300">Candidatos top-3:</div>
         {(entry.candidateMatches || []).map((c, i) => (
-          <div key={i} className="px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs">
+          <div key={i} className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-sm">
             <div className="flex items-center justify-between gap-2">
               <div className="flex-1 truncate">
                 <span className="text-slate-500 dark:text-slate-400">{c.bankName || c.accountAlias}</span>
@@ -559,33 +559,33 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejec
                 <span className="font-mono text-slate-700 dark:text-slate-200">${c.rowAmount.toFixed(2)}</span>
                 <span className="mx-1 text-slate-400">·</span>
                 <span className="font-mono text-slate-500">{c.rowRef || '—'}</span>
-                <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${badgeColor(c.confidence)}`}>{c.confidence} {c.score}</span>
+                <span className={`ml-2 px-2 py-0.5 rounded text-xs ${badgeColor(c.confidence)}`}>{c.confidence} {c.score}</span>
               </div>
               <button
                 onClick={() => onConfirm(c)}
                 disabled={busy}
-                className="px-2 py-1 bg-emerald-600 text-white rounded text-[11px] hover:bg-emerald-700 disabled:opacity-40"
+                className="px-3 py-1.5 bg-emerald-600 text-white rounded text-sm hover:bg-emerald-700 disabled:opacity-40"
               >
-                {busy ? <Loader2 size={10} className="animate-spin" /> : 'Confirmar'}
+                {busy ? <Loader2 size={12} className="animate-spin" /> : 'Confirmar'}
               </button>
             </div>
             {c.reasons && c.reasons.length > 0 && (
-              <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+              <div className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
                 {c.reasons.join(' · ')}
               </div>
             )}
           </div>
         ))}
         {!(entry.candidateMatches || []).length && (
-          <div className="text-[11px] text-slate-400">Sin candidatos vivos. Re-busca o rechaza.</div>
+          <div className="text-sm text-slate-400">Sin candidatos vivos. Re-busca o rechaza.</div>
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-2 mt-2">
-        <button onClick={onRebuscar} disabled={busy} className="text-[11px] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1 disabled:opacity-40">
-          <RefreshCw size={10} /> Re-buscar
+      <div className="flex items-center justify-end gap-3 mt-3">
+        <button onClick={onRebuscar} disabled={busy} className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1 disabled:opacity-40">
+          <RefreshCw size={12} /> Re-buscar
         </button>
-        <button onClick={onRejectAll} disabled={busy} className="text-[11px] text-rose-600 hover:text-rose-700 disabled:opacity-40">
+        <button onClick={onRejectAll} disabled={busy} className="text-sm text-rose-600 hover:text-rose-700 disabled:opacity-40">
           Rechazar todos
         </button>
       </div>
@@ -601,13 +601,13 @@ interface NotFoundCardProps {
 
 const NotFoundCard: React.FC<NotFoundCardProps> = ({ entry, busy, onRebuscar }) => {
   return (
-    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 bg-rose-50/30 dark:bg-rose-900/10 flex items-center justify-between">
-      <div className="text-xs">
+    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-rose-50/30 dark:bg-rose-900/10 flex items-center justify-between gap-3">
+      <div className="text-sm">
         <div className="font-mono text-slate-700 dark:text-slate-200">${entry.amount.toFixed(2)} · Ref {entry.reference || '—'} · {entry.date}</div>
-        <div className="text-slate-500 dark:text-slate-400">{entry.clientName || entry.cedula || 'Sin datos del cliente'}</div>
+        <div className="text-slate-500 dark:text-slate-400 mt-0.5">{entry.clientName || entry.cedula || 'Sin datos del cliente'}</div>
       </div>
-      <button onClick={onRebuscar} disabled={busy} className="text-xs px-3 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded hover:bg-white dark:hover:bg-slate-800 inline-flex items-center gap-1 disabled:opacity-40">
-        <RefreshCw size={12} /> Re-buscar
+      <button onClick={onRebuscar} disabled={busy} className="text-sm px-3 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded hover:bg-white dark:hover:bg-slate-800 inline-flex items-center gap-1.5 disabled:opacity-40">
+        <RefreshCw size={14} /> Re-buscar
       </button>
     </div>
   );
