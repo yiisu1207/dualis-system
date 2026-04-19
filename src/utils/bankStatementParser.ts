@@ -356,6 +356,16 @@ function splitByHeaderColumns(
     }
     cells[bestIdx] = cells[bestIdx] ? `${cells[bestIdx]} ${it.text}` : it.text;
   }
+  // Fallback EdeC Banesco mensual: si la celda DIA (col 0) quedó vacía
+  // pero la siguiente empieza con "DD <ref de 6+>", mover el día.
+  // Pasa cuando el ítem del día cae más cerca de REF que de DIA por X.
+  if (!cells[0] && cells[1]) {
+    const m = /^(\d{1,2})\s+([A-Z0-9]{6,}.*)$/i.exec(cells[1].trim());
+    if (m && +m[1] >= 1 && +m[1] <= 31) {
+      cells[0] = m[1];
+      cells[1] = m[2];
+    }
+  }
   return cells.map(c => c.trim());
 }
 
@@ -648,14 +658,26 @@ export async function parseBankStatement(file: File, opts: ParseOpts): Promise<P
     }
   }
 
+  // Banesco mensual imprime la columna DIA una sola vez por grupo de mismo día.
+  // Las filas siguientes con DIA vacío heredan el último día visto (replicando la
+  // convención visual del EdeC).
+  let lastDay: string | null = null;
+
   for (let i = 0; i < dataRows.length; i++) {
     const row = dataRows[i];
     const rawDate = row[dateIdx] || '';
-    const date = normalizeDate(rawDate, profile.dateFormat, periodHint);
+    let date = normalizeDate(rawDate, profile.dateFormat, periodHint);
+    if (!date && !rawDate && lastDay && periodHint) {
+      // Fallback: celda DIA vacía → usar el último día parseado en el período.
+      date = normalizeDate(lastDay, profile.dateFormat, periodHint);
+    }
     if (!date) {
       warnings.push(`Fila ${i + headerIdx + 2}: fecha inválida "${rawDate}"`);
       continue;
     }
+    // Capturar el día (DD) del date ISO para heredarlo en filas siguientes.
+    const dayMatch = /-(\d{2})$/.exec(date);
+    if (dayMatch) lastDay = dayMatch[1];
 
     let amount: number | null = null;
     if (creditIx >= 0 || debitIdx >= 0) {
