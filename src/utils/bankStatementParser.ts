@@ -235,9 +235,13 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{ rows: string[][]; rawTex
       if (PERIOD_HEADER_RE.test(lineText)) continue;
       if (ACCOUNT_NUM_HEADER_RE.test(lineText)) continue;
 
-      // Detectar si es una fila de header
+      // Detectar si es una fila de header.
+      // Incluye 'dia', 'ref', 'cargo', 'abono' para EdeC Banesco mensual
+      // ("DIA REF. CONCEPTO CARGOS ABONOS SALDOS") que no tiene 'fecha'/'referencia'.
+      // Guarda: si la línea empieza con DD/MM/YYYY o "DD <ref>", es dato, no header.
       const lNorm = norm(lineText);
-      const isHeader = ['fecha', 'concepto', 'monto', 'saldo', 'referencia', 'operacion', 'descripcion', 'debito', 'credito', 'mov']
+      const startsLikeDataRow = DATE_ANYWHERE_RE.test(lineText) || DAY_REF_ANCHOR_RE.test(lineText);
+      const isHeader = !startsLikeDataRow && ['fecha', 'concepto', 'monto', 'saldo', 'referencia', 'operacion', 'descripcion', 'debito', 'credito', 'mov', 'dia', 'ref', 'cargo', 'abono']
         .filter(k => lNorm.includes(k)).length >= 3;
 
       if (isHeader) {
