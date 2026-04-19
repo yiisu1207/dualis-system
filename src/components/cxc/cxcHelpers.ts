@@ -182,9 +182,9 @@ export function calculateAgingBuckets(
     const amount = invoiceRemainingUSD(inv, rates, mode);
     if (amount <= 0.009) return;
 
-    if (daysOld <= 30) buckets.current += amount;
-    else if (daysOld <= 60) buckets.d31_60 += amount;
-    else if (daysOld <= 90) buckets.d61_90 += amount;
+    if (daysOld < 31) buckets.current += amount;
+    else if (daysOld < 61) buckets.d31_60 += amount;
+    else if (daysOld < 91) buckets.d61_90 += amount;
     else buckets.d90plus += amount;
   });
 

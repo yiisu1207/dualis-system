@@ -265,12 +265,24 @@ const FAQS = [
 
 function ContactForm() {
   const [form, setForm]       = useState({ name: '', company: '', phone: '', needs: '' });
+  const [honeypot, setHoneypot] = useState('');
+  const formMountedAtRef = React.useRef(Date.now());
   const [sending, setSending] = useState(false);
   const [sent, setSent]       = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.phone) return;
+    // Honeypot: si el campo oculto trae texto, lo llenó un bot.
+    if (honeypot.trim().length > 0) {
+      setSent(true); // fake-success para no dar señal
+      return;
+    }
+    // Anti-spam temporal: bots típicamente envían en <1500ms desde el mount.
+    if (Date.now() - formMountedAtRef.current < 1500) {
+      setSent(true);
+      return;
+    }
     setSending(true);
     try {
       await addDoc(collection(db, 'contactRequests'), { ...form, createdAt: serverTimestamp() });
@@ -305,6 +317,17 @@ function ContactForm() {
 
   return (
     <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* Honeypot — invisible para humanos, los bots lo llenan */}
+      <input
+        type="text"
+        name="website"
+        value={honeypot}
+        onChange={(e) => setHoneypot(e.target.value)}
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+        style={{ position: 'absolute', left: '-10000px', width: '1px', height: '1px', opacity: 0 }}
+      />
       {[
         { key: 'name',    label: 'Tu nombre*',       placeholder: 'Juan Garcia',        span: false },
         { key: 'company', label: 'Empresa',           placeholder: 'Distribuidora XYZ',  span: false },

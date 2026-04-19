@@ -178,11 +178,11 @@ const fetchFn = globalThis.fetch
   ? (...args) => globalThis.fetch(...args)
   : (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
+const { applyCors } = require('./_cors');
+
 module.exports = async (req, res) => {
+  applyCors(req, res, 'POST,OPTIONS');
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
     return res.status(204).end();
   }
   if (req.method !== 'POST') {

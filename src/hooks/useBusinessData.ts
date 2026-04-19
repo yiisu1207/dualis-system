@@ -25,16 +25,21 @@ export function useBusinessData(businessId: string): BusinessData {
   useEffect(() => {
     if (!businessId) return;
 
+    // Guard: si businessId cambia mientras una snapshot callback está in-flight,
+    // descartamos el setState para no contaminar con datos del bid anterior.
+    let cancelled = false;
+    const safeSet = <T,>(setter: (v: T) => void, val: T) => { if (!cancelled) setter(val); };
+
     const unsubs: (() => void)[] = [];
 
     const qCust = query(collection(db, 'customers'), where('businessId', '==', businessId));
     unsubs.push(onSnapshot(qCust, snap =>
-      setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
+      safeSet(setCustomers, snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
     ));
 
     const qSupp = query(collection(db, 'suppliers'), where('businessId', '==', businessId));
     unsubs.push(onSnapshot(qSupp, snap =>
-      setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
+      safeSet(setSuppliers, snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
     ));
 
     const qMov = query(
@@ -44,7 +49,7 @@ export function useBusinessData(businessId: string): BusinessData {
       limit(300)
     );
     unsubs.push(onSnapshot(qMov, snap =>
-      setMovements(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
+      safeSet(setMovements, snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
     ));
 
     const qEmp = query(
@@ -53,7 +58,7 @@ export function useBusinessData(businessId: string): BusinessData {
     unsubs.push(onSnapshot(qEmp, snap => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
       docs.sort((a: any, b: any) => (a.fullName || a.name || '').localeCompare(b.fullName || b.name || ''));
-      setEmployees(docs);
+      safeSet(setEmployees, docs);
     }));
 
     const qAdv = query(
@@ -61,7 +66,7 @@ export function useBusinessData(businessId: string): BusinessData {
       orderBy('date', 'desc')
     );
     unsubs.push(onSnapshot(qAdv, snap =>
-      setAdvances(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
+      safeSet(setAdvances, snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
     ));
 
     const qHist = query(
@@ -70,17 +75,20 @@ export function useBusinessData(businessId: string): BusinessData {
       limit(24)
     );
     unsubs.push(onSnapshot(qHist, snap =>
-      setPayrollHistory(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
+      safeSet(setPayrollHistory, snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
     ));
 
     const qInv = query(
       collection(db, `businesses/${businessId}/products`)
     );
     unsubs.push(onSnapshot(qInv, snap =>
-      setInventoryItems(snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
+      safeSet(setInventoryItems, snap.docs.map(d => ({ id: d.id, ...d.data() } as any)))
     ));
 
-    return () => unsubs.forEach(u => u());
+    return () => {
+      cancelled = true;
+      unsubs.forEach(u => u());
+    };
   }, [businessId]);
 
   return { customers, suppliers, movements, employees, advances, payrollHistory, inventoryItems };

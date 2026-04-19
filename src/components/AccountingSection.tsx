@@ -951,6 +951,9 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       (a, b) => new Date(a.createdAt || a.date).getTime() - new Date(b.createdAt || b.date).getTime()
     );
     const chrono = buildChronoData(sorted);
+    const escHtml = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+    ));
     const wrapper = document.createElement('div');
     wrapper.style.position = 'fixed';
     wrapper.style.left = '-10000px';
@@ -965,7 +968,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     header.style.gap = '12px';
     header.style.marginBottom = '12px';
 
-    if (config.companyLogo) {
+    if (config.companyLogo && /^(https?:|data:image\/)/i.test(config.companyLogo)) {
       const img = document.createElement('img');
       img.src = config.companyLogo;
       img.style.width = '56px';
@@ -978,17 +981,17 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     const info = document.createElement('div');
     info.innerHTML = `
       <div style="font-weight: 800; font-size: 16px; color: #111827;">${
-        config.companyName || 'Empresa'
+        escHtml(config.companyName || 'Empresa')
       }</div>
       <div style="font-size: 12px; color: #6b7280;">Estado de Cuenta: ${
-        selectedEntityId || 'Entidad'
+        escHtml(selectedEntityId || 'Entidad')
       }</div>
       <div style="font-size: 12px; color: #6b7280;">Cuenta: ${
-        account === 'ALL' ? 'Global' : account
+        escHtml(account === 'ALL' ? 'Global' : account)
       }</div>
-      <div style="font-size: 12px; color: #6b7280;">Rango: ${resolveRangeLabel(
+      <div style="font-size: 12px; color: #6b7280;">Rango: ${escHtml(resolveRangeLabel(
         detailRangeFilter
-      )}</div>
+      ))}</div>
     `;
     header.appendChild(info);
     wrapper.appendChild(header);
@@ -997,12 +1000,12 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       .map((m) => {
         const refText =
           m.movementType === MovementType.ABONO
-            ? `Ref: ${m.reference || 'N/A'} (Tasa: ${Number(m.rateUsed || 1).toFixed(2)})`
+            ? `Ref: ${escHtml(m.reference || 'N/A')} (Tasa: ${Number(m.rateUsed || 1).toFixed(2)})`
             : '-';
         return `
           <tr>
-            <td>${formatDateTime((m as any).displayDate || m.date)}</td>
-            <td>${m.concept}</td>
+            <td>${escHtml(formatDateTime((m as any).displayDate || m.date))}</td>
+            <td>${escHtml(m.concept)}</td>
             <td>${refText}</td>
             <td style="text-align:right;">${m.debe > 0 ? m.debe.toFixed(2) : '-'}</td>
             <td style="text-align:right;">${m.haber > 0 ? m.haber.toFixed(2) : '-'}</td>
@@ -1089,16 +1092,24 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
     wrapper.style.padding = '20px';
     wrapper.style.width = '520px';
 
+    const escHtml = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+    ));
+    const safeLogoUrl = (() => {
+      const url = config.companyLogo || '';
+      return /^(https?:|data:image\/)/i.test(url) ? url : '';
+    })();
+
     wrapper.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         ${
-          config.companyLogo
-            ? `<img src="${config.companyLogo}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;" />`
+          safeLogoUrl
+            ? `<img src="${escHtml(safeLogoUrl)}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;" />`
             : ''
         }
         <div>
           <div style="font-weight:800;font-size:16px;color:#0f172a;">${
-            config.companyName || 'Empresa'
+            escHtml(config.companyName || 'Empresa')
           }</div>
           <div style="font-size:12px;color:#64748b;">Estado de Cuenta</div>
         </div>
@@ -1106,14 +1117,14 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
       <div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px;">
         <div style="font-weight:700;font-size:12px;color:#475569;margin-bottom:6px;">Entidad</div>
         <div style="font-weight:800;font-size:16px;color:#0f172a;">${
-          selectedEntityId
+          escHtml(selectedEntityId)
         }</div>
         <div style="font-size:11px;color:#64748b;">Cuenta: ${
-          account === 'ALL' ? 'Global' : account
+          escHtml(account === 'ALL' ? 'Global' : account)
         }</div>
-        <div style="font-size:11px;color:#64748b;">Rango: ${resolveRangeLabel(
+        <div style="font-size:11px;color:#64748b;">Rango: ${escHtml(resolveRangeLabel(
           detailRangeFilter
-        )}</div>
+        ))}</div>
         <div style="display:flex;gap:12px;margin-top:12px;">
           <div style="flex:1;background:#f8fafc;border-radius:10px;padding:8px;">
             <div style="font-size:10px;color:#64748b;">Saldo</div>

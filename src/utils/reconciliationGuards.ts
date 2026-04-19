@@ -33,9 +33,16 @@ export async function claimReference(
   businessId: string,
   payload: ClaimReferencePayload,
 ): Promise<ClaimResult> {
-  const identity = payload.bankAccountId || payload.accountAlias;
+  const identity = (payload.bankAccountId || payload.accountAlias || '').trim();
   if (!identity) {
-    throw new Error('claimReference: se requiere bankAccountId o accountAlias');
+    throw new Error('claimReference: se requiere bankAccountId o accountAlias no vacío');
+  }
+  const refTrim = (payload.reference || '').trim();
+  if (!refTrim) {
+    throw new Error('claimReference: se requiere reference no vacía');
+  }
+  if (!Number.isFinite(payload.amount) || payload.amount <= 0) {
+    throw new Error('claimReference: amount inválido');
   }
   const fingerprint = await buildReferenceFingerprint(
     identity,
@@ -56,7 +63,7 @@ export async function claimReference(
     }
     const record: UsedReference = {
       fingerprint,
-      bankAccountId: payload.bankAccountId || payload.accountAlias || '',
+      bankAccountId: identity,
       reference: payload.reference.trim(),
       amount: Number(payload.amount.toFixed(2)),
       claimedAt: new Date().toISOString(),

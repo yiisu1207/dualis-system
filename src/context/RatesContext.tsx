@@ -136,7 +136,8 @@ export const RatesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     getDoc(docRef).then(async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const currentBCV = Number(data.tasaBCV || 36.5);
+        const rawBCV = Number(data.tasaBCV);
+        const currentBCV = Number.isFinite(rawBCV) && rawBCV > 0 ? rawBCV : 36.5;
         const lastUpd = data.updatedAt || '';
 
         const grupoVal = Number(data.tasaGrupo || 42.0);

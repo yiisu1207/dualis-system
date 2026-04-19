@@ -62,10 +62,34 @@ const DataImporter: React.FC<DataImporterProps> = ({
 
   if (!open) return null;
 
+  // Parser CSV con soporte de campos entre comillas (RFC 4180 simplificado)
+  const parseCsvLine = (raw: string): string[] => {
+    const out: string[] = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (raw[i + 1] === '"') { cur += '"'; i++; }
+          else { inQuotes = false; }
+        } else { cur += ch; }
+      } else {
+        if (ch === ',') { out.push(cur); cur = ''; }
+        else if (ch === '"' && cur.length === 0) { inQuotes = true; }
+        else { cur += ch; }
+      }
+    }
+    out.push(cur);
+    return out.map((c) => c.trim());
+  };
+
   const handleProcess = () => {
     try {
-      const lines = rawCsv
-        .split('\n')
+      // Strip BOM si presente
+      const stripped = rawCsv.replace(/^\uFEFF/, '');
+      const lines = stripped
+        .split(/\r?\n/)
         .map((l) => l.trim())
         .filter((l) => l.length > 0);
 
@@ -81,7 +105,7 @@ const DataImporter: React.FC<DataImporterProps> = ({
           : lines;
 
       const rows: ParsedRow[] = dataLines.map((line) => {
-        const [name = '', cedula = '', telefono = ''] = line.split(',').map((p) => p.trim());
+        const [name = '', cedula = '', telefono = ''] = parseCsvLine(line);
         return { name, cedula, telefono };
       });
 
@@ -150,7 +174,7 @@ const DataImporter: React.FC<DataImporterProps> = ({
 
   const splitPasteLine = (line: string) => {
     if (line.includes('\t')) return line.split('\t').map((c) => c.trim());
-    if (line.includes(',')) return line.split(',').map((c) => c.trim());
+    if (line.includes(',')) return parseCsvLine(line);
     return line.split(/\s{2,}/).map((c) => c.trim());
   };
 

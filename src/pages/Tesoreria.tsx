@@ -102,7 +102,7 @@ export default function Tesoreria({ businessId, businessName = 'Mi Negocio', cur
   useEffect(() => {
     if (!businessId || loading) return;
     const hasEfectivo = accounts.some(a => a.accountType === 'efectivo');
-    if (!hasEfectivo && accounts.length >= 0) {
+    if (!hasEfectivo) {
       // Crear con id determinístico para que el POS pueda inyectarlo
       const id = 'efectivo_usd_default';
       setDoc(doc(db, `businesses/${businessId}/bankAccounts`, id), {

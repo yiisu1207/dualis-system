@@ -322,11 +322,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       0
     );
     const preTotalUsd = subtotalUsd + taxUsd;
+    const safeDiscount = Number.isFinite(discountValue) && discountValue > 0 ? discountValue : 0;
     const discountUsd =
       discountType === 'percent'
-        ? parseFloat((preTotalUsd * (discountValue / 100)).toFixed(2))
+        ? parseFloat((preTotalUsd * (Math.min(safeDiscount, 100) / 100)).toFixed(2))
         : discountType === 'fixed'
-        ? Math.min(discountValue, preTotalUsd)
+        ? Math.min(safeDiscount, preTotalUsd)
         : 0;
     const totalUsd = Math.max(0, preTotalUsd - discountUsd);
     const totalBs = totalUsd * rateValue;

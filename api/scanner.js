@@ -2,6 +2,7 @@
 // Proxy for Gemini (text + vision). Reads API key from process.env.GOOGLE_API_KEY.
 
 const { getAuth } = require('./_firebaseAdmin');
+const { applyCors } = require('./_cors');
 
 const MODEL = 'gemini-1.5-flash';
 const RATE_LIMIT_PER_MINUTE = 30;
@@ -22,10 +23,8 @@ const fetchFn = globalThis.fetch
   : (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 module.exports = async (req, res) => {
+  applyCors(req, res, 'POST,OPTIONS,GET');
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
     return res.status(204).end();
   }
 
