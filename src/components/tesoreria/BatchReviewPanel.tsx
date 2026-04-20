@@ -11,8 +11,12 @@ import { db } from '../../firebase/config';
 import { findMatches, type DraftAbono } from '../../utils/bankReconciliation';
 import { loadGlobalPool, type PooledRow } from '../../utils/globalBankPool';
 import { claimReference } from '../../utils/reconciliationGuards';
-import { topCandidatesSnapshot, stripUndefined, appendImagesToBatch } from '../../utils/processReceiptBatch';
-import type { ReconciliationBatch, SessionAbonoCandidate } from '../../../types';
+import {
+  topCandidatesSnapshot, stripUndefined, appendImagesToBatch,
+  processReceiptBatch, type ManualBatchItem,
+} from '../../utils/processReceiptBatch';
+import type { ReconciliationBatch, SessionAbonoCandidate, BusinessBankAccount } from '../../../types';
+import ManualBatchEntryModal, { type ManualAccountOption } from '../conciliacion/ManualBatchEntryModal';
 import type { SessionAbono } from '../conciliacion/ReconciliationReport';
 import { exportBatchCSV } from '../../utils/batchExports';
 
@@ -48,6 +52,8 @@ export default function BatchReviewPanel({
   const [itemQuery, setItemQuery] = useState('');
   const [appending, setAppending] = useState<{ done: number; total: number } | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [showManualAppend, setShowManualAppend] = useState(false);
+  const [businessAccounts, setBusinessAccounts] = useState<BusinessBankAccount[]>([]);
 
   // Cargar batch
   useEffect(() => {
@@ -58,6 +64,51 @@ export default function BatchReviewPanel({
     });
     return () => unsub();
   }, [businessId, batchId]);
+
+  useEffect(() => {
+    if (!businessId) return;
+    const unsub = onSnapshot(
+      collection(db, `businesses/${businessId}/bankAccounts`),
+      (snap) => {
+        const list: BusinessBankAccount[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        setBusinessAccounts(list.filter(a => a.enabled !== false));
+      },
+    );
+    return () => unsub();
+  }, [businessId]);
+
+  const manualAccountOptions = useMemo<ManualAccountOption[]>(
+    () => businessAccounts.map(a => ({
+      id: a.id,
+      label: a.accountNumber ? `${a.accountType} · ${a.accountNumber}` : a.id,
+      bankName: a.bankName,
+    })),
+    [businessAccounts],
+  );
+
+  const handleAppendManual = useCallback(async (_name: string, item: ManualBatchItem) => {
+    if (!batch) return;
+    setShowManualAppend(false);
+    setError(null);
+    setAppending({ done: 0, total: 1 });
+    try {
+      await processReceiptBatch({
+        db,
+        businessId,
+        name: batch.name,
+        currentUserId,
+        currentUserName,
+        items: [item],
+        existingBatch: batch,
+        onProgress: (done, total) => setAppending({ done, total }),
+      });
+      setPool([]);
+    } catch (e: any) {
+      setError('Error agregando manual al lote: ' + (e?.message || String(e)));
+    } finally {
+      setAppending(null);
+    }
+  }, [batch, businessId, currentUserId, currentUserName]);
 
   // Cargar abonos del batch (collectionGroup query)
   // Skip si el batch existe pero stats.total === 0 (lote vacío — sin OCR exitoso)
@@ -328,7 +379,7 @@ export default function BatchReviewPanel({
   };
 
   const handleDeleteAbono = async (entry: AbonoEntry) => {
-    if (!confirm(`¿Eliminar esta captura del lote?\n\n${entry.clientName || entry.reference || '$' + entry.amount.toFixed(2)}\n\nSi estaba confirmada, la referencia quedará liberada para re-uso.`)) return;
+    if (!confirm(`¿Eliminar esta captura del lote?\n\n${entry.clientName || entry.reference || 'Bs ' + entry.amount.toFixed(2)}\n\nSi estaba confirmada, la referencia quedará liberada para re-uso.`)) return;
     setBusyId(entry.id);
     try {
       // Si estaba confirmada, liberar el claim en usedReferences buscando por abonoId.
@@ -573,7 +624,7 @@ export default function BatchReviewPanel({
               Agregando capturas al lote {appending.done}/{appending.total}…
             </div>
           ) : (
-            <div className="flex items-center justify-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+            <div className="flex items-center justify-center gap-2 text-xs text-slate-600 dark:text-slate-300 flex-wrap">
               <Upload size={12} className="text-slate-400" />
               <span>Arrastra capturas faltantes aquí para agregarlas a este lote</span>
               <label className="inline-block">
@@ -587,6 +638,14 @@ export default function BatchReviewPanel({
                 <span className="text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline">o haz clic</span>
               </label>
               <span className="text-slate-400">· máx 20, 5MB c/u</span>
+              <span className="text-slate-300 dark:text-slate-600">|</span>
+              <button
+                type="button"
+                onClick={() => setShowManualAppend(true)}
+                className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline"
+              >
+                <Plus size={12} /> Agregar manual sin imagen
+              </button>
             </div>
           )}
         </div>
@@ -710,7 +769,7 @@ export default function BatchReviewPanel({
                       )}
                     </td>
                     <td className="py-2">{a.date}</td>
-                    <td className="py-2 font-mono">${a.amount.toFixed(2)}</td>
+                    <td className="py-2 font-mono">Bs {a.amount.toFixed(2)}</td>
                     <td className="py-2 font-mono">{a.reference || '—'}</td>
                     <td className="py-2 truncate max-w-[200px]">{a.clientName || a.cedula || '—'}</td>
                     <td className="py-2 text-slate-600 dark:text-slate-300">
@@ -745,6 +804,17 @@ export default function BatchReviewPanel({
         </div>
         {!confirmados.length && <Empty msg="Aún no hay confirmados." />}
       </Section>
+
+      {showManualAppend && batch && (
+        <ManualBatchEntryModal
+          accounts={manualAccountOptions}
+          fixedName={batch.name}
+          title="Agregar manual al lote"
+          subtitle="Sin captura — cuenta, ref, monto y fecha a mano. Pasa por el mismo matcher."
+          onCancel={() => setShowManualAppend(false)}
+          onConfirm={handleAppendManual}
+        />
+      )}
     </div>
   );
 }
@@ -816,7 +886,7 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejec
         )}
         <div className="flex-1 text-sm">
           <div className="grid grid-cols-3 gap-3">
-            <div><span className="text-slate-400">Monto:</span> <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">${entry.amount.toFixed(2)}</span></div>
+            <div><span className="text-slate-400">Monto:</span> <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">Bs {entry.amount.toFixed(2)}</span></div>
             <div><span className="text-slate-400">Ref:</span> <span className="font-mono text-slate-700 dark:text-slate-200">{entry.reference || '—'}</span></div>
             <div><span className="text-slate-400">Fecha:</span> <span className="text-slate-700 dark:text-slate-200">{entry.date}</span></div>
             {entry.cedula && <div><span className="text-slate-400">Céd:</span> <span className="text-slate-700 dark:text-slate-200">{entry.cedula}</span></div>}
@@ -841,7 +911,7 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejec
                 <span className="mx-1 text-slate-400">·</span>
                 <span className="text-slate-700 dark:text-slate-200">{c.rowDate}</span>
                 <span className="mx-1 text-slate-400">·</span>
-                <span className="font-mono text-slate-700 dark:text-slate-200">${c.rowAmount.toFixed(2)}</span>
+                <span className="font-mono text-slate-700 dark:text-slate-200">Bs {c.rowAmount.toFixed(2)}</span>
                 <span className="mx-1 text-slate-400">·</span>
                 <span className="font-mono text-slate-500">{c.rowRef || '—'}</span>
                 <span className={`ml-2 px-2 py-0.5 rounded text-xs ${badgeColor(c.confidence)}`}>{c.confidence} {c.score}</span>
@@ -908,7 +978,7 @@ const NotFoundCard: React.FC<NotFoundCardProps> = ({ entry, busy, onRebuscar, on
         )}
         <div className="flex-1 text-sm min-w-0">
           <div className="grid grid-cols-3 gap-3">
-            <div><span className="text-slate-400">Monto:</span> <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">${entry.amount.toFixed(2)}</span></div>
+            <div><span className="text-slate-400">Monto:</span> <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">Bs {entry.amount.toFixed(2)}</span></div>
             <div><span className="text-slate-400">Ref:</span> <span className="font-mono text-slate-700 dark:text-slate-200">{entry.reference || '—'}</span></div>
             <div><span className="text-slate-400">Fecha:</span> <span className="text-slate-700 dark:text-slate-200">{entry.date}</span></div>
             {entry.cedula && <div><span className="text-slate-400">Céd:</span> <span className="text-slate-700 dark:text-slate-200">{entry.cedula}</span></div>}
@@ -960,7 +1030,7 @@ const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry, busy, isCurrentBat
         )}
         <div className="flex-1 text-sm min-w-0">
           <div className="grid grid-cols-3 gap-3">
-            <div><span className="text-slate-400">Monto:</span> <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">${entry.amount.toFixed(2)}</span></div>
+            <div><span className="text-slate-400">Monto:</span> <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">Bs {entry.amount.toFixed(2)}</span></div>
             <div><span className="text-slate-400">Ref:</span> <span className="font-mono text-slate-700 dark:text-slate-200">{entry.reference || '—'}</span></div>
             <div><span className="text-slate-400">Fecha:</span> <span className="text-slate-700 dark:text-slate-200">{entry.date}</span></div>
             {entry.cedula && <div><span className="text-slate-400">Céd:</span> <span className="text-slate-700 dark:text-slate-200">{entry.cedula}</span></div>}

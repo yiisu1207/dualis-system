@@ -47,7 +47,7 @@ export default function AbonoForm({ value, onChange, onSubmit, onClear, selected
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Monto USD *</span>
+          <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Monto Bs *</span>
           <NumericFormat
             value={amountStr}
             onValueChange={(v) => {

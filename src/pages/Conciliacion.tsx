@@ -31,7 +31,15 @@ import {
 import { useToast } from '../context/ToastContext';
 import type { BankRow } from '../utils/bankReconciliation';
 import { rematchOrphanAbonos } from '../utils/rematchOrphanAbonos';
-import { processReceiptBatch, type ImageBatchItem } from '../utils/processReceiptBatch';
+import {
+  processReceiptBatch,
+  findExistingBatchByName,
+  deleteBatchCompletely,
+  type ImageBatchItem,
+  type ManualBatchItem,
+  type BatchItemDraft,
+} from '../utils/processReceiptBatch';
+import NameConflictModal from '../components/tesoreria/NameConflictModal';
 import { isVerifiable, resolveVerificationStatus } from '../utils/movementHelpers';
 import AccountChips, { type AccountChipData } from '../components/conciliacion/AccountChips';
 import AccountRowsModal from '../components/conciliacion/AccountRowsModal';
@@ -104,6 +112,14 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
+
+  const [nameConflict, setNameConflict] = useState<ReconciliationBatch | null>(null);
+  const [pendingProcess, setPendingProcess] = useState<{
+    kind: 'images' | 'manual';
+    name: string;
+    items: BatchItemDraft[];
+  } | null>(null);
+  const [replacingConflict, setReplacingConflict] = useState(false);
 
   useEffect(() => {
     if (!businessId) return;
@@ -332,21 +348,10 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     setPendingBatchFiles(files);
   };
 
-  const handleConfirmBatchName = async (name: string, modalFiles: File[]) => {
-    const files = modalFiles && modalFiles.length ? modalFiles : (pendingBatchFiles || []);
-    if (!files.length) {
-      setPendingBatchFiles(null);
-      return;
-    }
-    setPendingBatchFiles(null);
+  const runImagesProcessing = async (name: string, items: ImageBatchItem[], existingBatch?: ReconciliationBatch) => {
     try {
       setOcrBusy(true);
-      setOcrProgress({ done: 0, total: files.length });
-      const items: ImageBatchItem[] = files.map((f, i) => ({
-        id: `img_${Date.now().toString(36)}_${i}`,
-        kind: 'image',
-        file: f,
-      }));
+      setOcrProgress({ done: 0, total: items.length });
       const errorRef: { current: string | null } = { current: null };
       const outcome = await processReceiptBatch({
         db,
@@ -355,6 +360,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
         currentUserId,
         currentUserName,
         items,
+        existingBatch,
         onProgress: (done, total) => setOcrProgress({ done, total }),
         onResultsChange: (results) => {
           const errored = results.find(r => r.status === 'error' && r.errorMsg);
@@ -362,13 +368,14 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
         },
       });
       const lastError = errorRef.current;
+      const verb = existingBatch ? 'fusionado' : 'procesado';
       if (outcome.stats.notFound > 0 && outcome.stats.confirmed === 0 && outcome.stats.review === 0 && lastError) {
         toast.error(`OCR falló (${outcome.stats.notFound}/${outcome.stats.total}): ${lastError.slice(0, 400)}`, { duration: 12000 });
       } else if (lastError) {
         toast.error(`Hay items con error en el lote: ${lastError.slice(0, 400)}`, { duration: 10000 });
-        toast.success(`Lote "${name}" procesado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
+        toast.success(`Lote "${name}" ${verb} · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
       } else {
-        toast.success(`Lote "${name}" procesado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
+        toast.success(`Lote "${name}" ${verb} · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
       }
       setView('lotes');
       setSelectedBatchId(outcome.batchId);
@@ -377,6 +384,31 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     } finally {
       setOcrBusy(false);
       setOcrProgress(null);
+    }
+  };
+
+  const handleConfirmBatchName = async (name: string, modalFiles: File[]) => {
+    const files = modalFiles && modalFiles.length ? modalFiles : (pendingBatchFiles || []);
+    if (!files.length) {
+      setPendingBatchFiles(null);
+      return;
+    }
+    setPendingBatchFiles(null);
+    const items: ImageBatchItem[] = files.map((f, i) => ({
+      id: `img_${Date.now().toString(36)}_${i}`,
+      kind: 'image',
+      file: f,
+    }));
+    try {
+      const existing = await findExistingBatchByName(db, businessId, name);
+      if (existing) {
+        setPendingProcess({ kind: 'images', name, items });
+        setNameConflict(existing);
+        return;
+      }
+      await runImagesProcessing(name, items);
+    } catch (err: any) {
+      toast.error('Error preparando lote: ' + (err?.message || String(err)));
     }
   };
 
@@ -390,21 +422,22 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     [accounts],
   );
 
-  const handleConfirmManualEntry = async (name: string, item: import('../utils/processReceiptBatch').ManualBatchItem) => {
-    setShowManualEntry(false);
+  const runManualProcessing = async (name: string, items: ManualBatchItem[], existingBatch?: ReconciliationBatch) => {
     try {
       setOcrBusy(true);
-      setOcrProgress({ done: 0, total: 1 });
+      setOcrProgress({ done: 0, total: items.length });
       const outcome = await processReceiptBatch({
         db,
         businessId,
         name,
         currentUserId,
         currentUserName,
-        items: [item],
+        items,
+        existingBatch,
         onProgress: (done, total) => setOcrProgress({ done, total }),
       });
-      toast.success(`Lote "${name}" creado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
+      const verb = existingBatch ? 'fusionado' : 'creado';
+      toast.success(`Lote "${name}" ${verb} · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
       setView('lotes');
       setSelectedBatchId(outcome.batchId);
     } catch (err: any) {
@@ -413,6 +446,60 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
       setOcrBusy(false);
       setOcrProgress(null);
     }
+  };
+
+  const handleConfirmManualEntry = async (name: string, item: ManualBatchItem) => {
+    setShowManualEntry(false);
+    try {
+      const existing = await findExistingBatchByName(db, businessId, name);
+      if (existing) {
+        setPendingProcess({ kind: 'manual', name, items: [item] });
+        setNameConflict(existing);
+        return;
+      }
+      await runManualProcessing(name, [item]);
+    } catch (err: any) {
+      toast.error('Error preparando lote: ' + (err?.message || String(err)));
+    }
+  };
+
+  const handleConflictMerge = async () => {
+    const existing = nameConflict;
+    const pending = pendingProcess;
+    if (!existing || !pending) return;
+    setNameConflict(null);
+    setPendingProcess(null);
+    if (pending.kind === 'images') {
+      await runImagesProcessing(pending.name, pending.items as ImageBatchItem[], existing);
+    } else {
+      await runManualProcessing(pending.name, pending.items as ManualBatchItem[], existing);
+    }
+  };
+
+  const handleConflictReplace = async () => {
+    const existing = nameConflict;
+    const pending = pendingProcess;
+    if (!existing || !pending) return;
+    setReplacingConflict(true);
+    try {
+      await deleteBatchCompletely(db, businessId, existing.id);
+      setNameConflict(null);
+      setPendingProcess(null);
+      if (pending.kind === 'images') {
+        await runImagesProcessing(pending.name, pending.items as ImageBatchItem[]);
+      } else {
+        await runManualProcessing(pending.name, pending.items as ManualBatchItem[]);
+      }
+    } catch (err: any) {
+      toast.error('Error reemplazando lote: ' + (err?.message || String(err)));
+    } finally {
+      setReplacingConflict(false);
+    }
+  };
+
+  const handleConflictCancel = () => {
+    setNameConflict(null);
+    setPendingProcess(null);
   };
 
   const handleDeleteBatch = async (batch: ReconciliationBatch) => {
@@ -620,6 +707,17 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             setView('lotes');
             setSelectedBatchId(batchId);
           }}
+        />
+      )}
+
+      {nameConflict && pendingProcess && (
+        <NameConflictModal
+          existing={nameConflict}
+          newItemsCount={pendingProcess.items.length}
+          replacing={replacingConflict}
+          onMerge={handleConflictMerge}
+          onReplace={handleConflictReplace}
+          onCancel={handleConflictCancel}
         />
       )}
 

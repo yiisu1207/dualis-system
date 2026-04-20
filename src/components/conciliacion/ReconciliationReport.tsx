@@ -266,7 +266,7 @@ function TableAbonos({ list, pool, onExport, onEdit, onDelete }: {
             return (
               <tr key={a.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                 <td className="py-2">{a.date}</td>
-                <td className="py-2 font-mono">${a.amount.toFixed(2)}</td>
+                <td className="py-2 font-mono">Bs {a.amount.toFixed(2)}</td>
                 <td className="py-2">{a.clientName || <span className="text-slate-400 dark:text-slate-500">—</span>}</td>
                 <td className="py-2 font-mono text-xs text-slate-600 dark:text-slate-300">{a.reference || '—'}</td>
                 <td className="py-2 text-xs text-slate-500 dark:text-slate-400">{a.operationType || '—'}</td>
@@ -328,7 +328,7 @@ function TableBankRows({ rows, onExport }: { rows: BankRow[]; onExport: () => vo
                 </span>
               </td>
               <td className="py-2">{r.date}</td>
-              <td className="py-2 font-mono">${r.amount.toFixed(2)}</td>
+              <td className="py-2 font-mono">Bs {r.amount.toFixed(2)}</td>
               <td className="py-2 font-mono text-xs text-slate-600 dark:text-slate-300">{r.reference || '—'}</td>
               <td className="py-2 text-xs text-slate-600 dark:text-slate-300 truncate max-w-md" title={r.description || ''}>{r.description || ''}</td>
             </tr>

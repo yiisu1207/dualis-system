@@ -161,7 +161,7 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
                   className="w-32 mt-1 px-3 py-1.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 rounded text-sm"
                 />
                 <span className="text-xs text-slate-500 dark:text-slate-400 ml-2">
-                  0% = exacto (±$0.01). Usa 0.5% solo para cuentas Bs con redondeos de tasa.
+                  0% = exacto (±Bs 0,01). Usa 0.5% solo si esperas redondeos de tasa.
                 </span>
               </label>
               <label className="flex items-center gap-2 text-sm">
@@ -237,7 +237,7 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
                     {result.rows.slice(0, 10).map(r => (
                       <tr key={r.rowId} className="border-t border-slate-200 dark:border-slate-700">
                         <td className="py-1">{r.date}</td>
-                        <td className="py-1 font-mono">${r.amount.toFixed(2)}</td>
+                        <td className="py-1 font-mono">Bs {r.amount.toFixed(2)}</td>
                         <td className="py-1 font-mono text-slate-500 dark:text-slate-400">{r.reference || '—'}</td>
                         <td className="py-1 text-slate-600 dark:text-slate-300 truncate max-w-xs">{r.description || ''}</td>
                       </tr>

@@ -12,6 +12,9 @@ interface ManualBatchEntryModalProps {
   accounts: ManualAccountOption[];
   onCancel: () => void;
   onConfirm: (name: string, item: ManualBatchItem) => void;
+  fixedName?: string;           // si se setea, el modal oculta el campo de nombre y lo usa fijo
+  title?: string;
+  subtitle?: string;
 }
 
 const todayISO = () => {
@@ -19,8 +22,8 @@ const todayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-export default function ManualBatchEntryModal({ accounts, onCancel, onConfirm }: ManualBatchEntryModalProps) {
-  const [name, setName] = useState('');
+export default function ManualBatchEntryModal({ accounts, onCancel, onConfirm, fixedName, title, subtitle }: ManualBatchEntryModalProps) {
+  const [name, setName] = useState(fixedName ?? '');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(todayISO());
   const [reference, setReference] = useState('');
@@ -35,7 +38,7 @@ export default function ManualBatchEntryModal({ accounts, onCancel, onConfirm }:
     firstRef.current?.focus();
   }, []);
 
-  const trimmed = name.trim();
+  const trimmed = (fixedName ?? name).trim();
   const validName = trimmed.length >= 3 && trimmed.length <= 40;
   const amt = parseFloat(amount);
   const validAmount = Number.isFinite(amt) && amt > 0;
@@ -65,30 +68,37 @@ export default function ManualBatchEntryModal({ accounts, onCancel, onConfirm }:
       <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
         <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Pago sin captura</h2>
-            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Crea un lote con un abono manual — mismas reglas que auto, tú ingresas los datos</div>
+            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">{title || 'Pago sin captura'}</h2>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle || 'Crea un lote con un abono manual — mismas reglas que auto, tú ingresas los datos'}</div>
           </div>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"><X size={18} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
 
-          <label className="block text-xs">
-            <span className="text-slate-600 dark:text-slate-300">Nombre del lote *</span>
-            <input
-              ref={firstRef}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ej: Pago Pedro sin recibo"
-              maxLength={40}
-              className="w-full mt-1 px-2 py-1.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded text-sm"
-            />
-            <div className="text-[10px] text-slate-400 mt-0.5">3–40 caracteres</div>
-          </label>
+          {!fixedName && (
+            <label className="block text-xs">
+              <span className="text-slate-600 dark:text-slate-300">Nombre del lote *</span>
+              <input
+                ref={firstRef}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Ej: Pago Pedro sin recibo"
+                maxLength={40}
+                className="w-full mt-1 px-2 py-1.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded text-sm"
+              />
+              <div className="text-[10px] text-slate-400 mt-0.5">3–40 caracteres</div>
+            </label>
+          )}
+          {fixedName && (
+            <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded px-2 py-1.5">
+              Agregando al lote <span className="font-semibold text-slate-700 dark:text-slate-200">{fixedName}</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3 text-xs">
             <label>
-              <span className="text-slate-600 dark:text-slate-300">Monto USD *</span>
+              <span className="text-slate-600 dark:text-slate-300">Monto Bs *</span>
               <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00"
                 className="w-full mt-1 px-2 py-1.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded font-mono" />
             </label>
@@ -139,7 +149,7 @@ export default function ManualBatchEntryModal({ accounts, onCancel, onConfirm }:
             className="px-4 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-40 inline-flex items-center gap-1.5"
           >
             {submitting && <Loader2 size={12} className="animate-spin" />}
-            Crear lote y procesar
+            {fixedName ? 'Agregar al lote' : 'Crear lote y procesar'}
           </button>
         </div>
       </div>
