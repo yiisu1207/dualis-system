@@ -69,13 +69,22 @@ const daysBetween = (a: string, b: string): number => {
 
 const last = (s: string, n: number): string => s.length >= n ? s.slice(-n) : s;
 
-/** Fuzzy ref match — compara últimos 8/7 dígitos exactos. Muestra los dígitos matcheados en reason. */
+/** Fuzzy ref match — compara últimos 8/7 dígitos exactos o substring.
+ *  Substring cubre bancos que agregan prefijo/sufijo a la ref en el EdeC
+ *  (ej. BDV agrega un "0" final → la ref de la captura es subcadena de la fila).
+ */
 function fuzzyRefScore(abonoRef?: string, rowRef?: string): { points: number; reason: string } | null {
   const a = onlyDigits(abonoRef);
   const r = onlyDigits(rowRef);
   if (!a || !r) return null;
   // Ref completa idéntica
   if (a === r) return { points: 30, reason: `ref exacta (${a})` };
+  // Substring — la parte corta está contenida en la larga (≥7 dígitos para evitar
+  // colisiones espurias con números cortos tipo cédula o teléfono).
+  const [shorter, longer] = a.length <= r.length ? [a, r] : [r, a];
+  if (shorter.length >= 7 && longer.includes(shorter)) {
+    return { points: 28, reason: `ref contenida (${shorter} en ${longer})` };
+  }
   // Últimos 8 dígitos
   if (a.length >= 8 && r.length >= 8 && last(a, 8) === last(r, 8)) {
     const matched = last(a, 8);
@@ -143,6 +152,8 @@ export function findMatches(
     const refDigitsR = onlyDigits(row.reference);
     const refFuzzyMatch = refDigitsA.length >= 7 && refDigitsR.length >= 7 && (
       refDigitsA === refDigitsR ||
+      refDigitsA.includes(refDigitsR) ||
+      refDigitsR.includes(refDigitsA) ||
       refDigitsA.slice(-8) === refDigitsR.slice(-8) ||
       refDigitsA.slice(-7) === refDigitsR.slice(-7)
     );

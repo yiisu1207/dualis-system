@@ -69,6 +69,20 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Serializador FIFO. Encadena las llamadas `fn` en orden: el phase match+claim
+ *  se ejecuta uno a la vez aunque haya múltiples workers de OCR en paralelo.
+ *  Esto evita que dos capturas con igual monto+fecha elijan la misma fila del
+ *  EdeC antes de que el primer claim se commitée.
+ */
+function makeSerializer() {
+  let chain: Promise<unknown> = Promise.resolve();
+  return <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = chain.then(fn, fn);
+    chain = next.then(() => undefined, () => undefined);
+    return next;
+  };
+}
+
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -192,6 +206,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
 
   let done = 0;
   const aggregated = { confirmed: 0, review: 0, notFound: 0, duplicates: 0 };
+  const serializeClaim = makeSerializer();
 
   const updateResult = (idx: number, patch: Partial<ProcessingResult>) => {
     results[idx] = { ...results[idx], ...patch };
@@ -273,20 +288,25 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
         ? pool.filter(p => p.bankAccountId === draft.bankAccountId)
         : pool;
 
-      const matches = findMatches(abonoBase, filteredPool);
-      const candidateMatches = topCandidatesSnapshot(matches);
-      const top = matches[0];
-
-      let status: AbonoStatus = 'no_encontrado';
-      let matchRowId: string | null = null;
-      let matchAccountAlias: string | undefined;
-      let matchBankAccountId: string | undefined;
-      let matchBankName: string | undefined;
-      let matchMonthKey: string | undefined;
-      let reviewReason: string | undefined;
-      let duplicateOfAbonoId: string | undefined;
-      let duplicateOfBatchId: string | undefined;
-      let duplicateOfMonthKey: string | undefined;
+      // Usamos holder object para evitar que TS narrowee los tipos por el
+      // valor inicial (las asignaciones viven en un closure async).
+      const state: {
+        status: AbonoStatus;
+        matchRowId: string | null;
+        matchAccountAlias?: string;
+        matchBankAccountId?: string;
+        matchBankName?: string;
+        matchMonthKey?: string;
+        reviewReason?: string;
+        duplicateOfAbonoId?: string;
+        duplicateOfBatchId?: string;
+        duplicateOfMonthKey?: string;
+        candidateMatches: SessionAbonoCandidate[];
+      } = {
+        status: 'no_encontrado',
+        matchRowId: null,
+        candidateMatches: [],
+      };
 
       // CRÍTICO: el abonoId que se reclama y el que se persiste deben ser EL MISMO.
       // Antes generábamos uno random aquí y otro distinto al guardar el abono → la
@@ -294,49 +314,59 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
       // y bloqueaba para siempre la confirmación manual del candidato.
       const abonoId = newId('ab');
 
-      // Auto-claim cuando el top candidate es exact/high. Usa bankAccountId si está
-      // presente, si no cae a accountAlias (el EdeC puede no estar mapeado a una
-      // BusinessBankAccount aún — no queremos bloquear por eso).
-      const topIdentity = top?.row.bankAccountId || top?.row.accountAlias;
-      if (top && (top.confidence === 'exact' || top.confidence === 'high')
-          && topIdentity && top.row.reference && abonoBase.reference) {
-        const claim = await claimReference(db, businessId, {
-          bankAccountId: top.row.bankAccountId,
-          accountAlias: top.row.accountAlias,
-          reference: top.row.reference,
-          amount: top.row.amount,
-          abonoId,
-          batchId,
-          bankRowId: top.row.rowId,
-          monthKey: top.row.monthKey,
-          claimedByUid: currentUserId,
-          claimedByName: currentUserName,
-        });
-        if (claim.ok === true) {
-          status = 'confirmado';
-          matchRowId = top.row.rowId;
-          matchAccountAlias = top.row.accountAlias;
-          matchBankAccountId = top.row.bankAccountId;
-          matchBankName = top.row.bankName;
-          matchMonthKey = top.row.monthKey;
+      // Phase match+claim serializado entre workers para evitar que dos capturas
+      // con igual monto+fecha elijan la misma fila del EdeC antes de que el
+      // primer claim se commitée. Al ganar el claim, se marca la fila como
+      // `isUsed` en el pool compartido → workers siguientes la saltan.
+      await serializeClaim(async () => {
+        const matches = findMatches(abonoBase, filteredPool);
+        state.candidateMatches = topCandidatesSnapshot(matches);
+        const top = matches[0];
+        const topIdentity = top?.row.bankAccountId || top?.row.accountAlias;
+        if (top && (top.confidence === 'exact' || top.confidence === 'high')
+            && topIdentity && top.row.reference && abonoBase.reference) {
+          const claim = await claimReference(db, businessId, {
+            bankAccountId: top.row.bankAccountId,
+            accountAlias: top.row.accountAlias,
+            reference: top.row.reference,
+            amount: top.row.amount,
+            abonoId,
+            batchId,
+            bankRowId: top.row.rowId,
+            monthKey: top.row.monthKey,
+            claimedByUid: currentUserId,
+            claimedByName: currentUserName,
+          });
+          if (claim.ok === true) {
+            state.status = 'confirmado';
+            state.matchRowId = top.row.rowId;
+            state.matchAccountAlias = top.row.accountAlias;
+            state.matchBankAccountId = top.row.bankAccountId;
+            state.matchBankName = top.row.bankName;
+            state.matchMonthKey = top.row.monthKey;
+            top.row.isUsed = true;
+          } else {
+            const ex = claim.existing;
+            state.status = 'duplicado';
+            state.reviewReason = `Mismo banco + referencia + monto ya conciliado por ${ex.claimedByName || ex.claimedByUid} el ${new Date(ex.claimedAt).toLocaleString()}.`;
+            state.duplicateOfAbonoId = ex.abonoId;
+            state.duplicateOfBatchId = ex.batchId;
+            state.duplicateOfMonthKey = ex.monthKey;
+            top.row.isUsed = true;
+          }
+        } else if (matches.length > 0) {
+          state.status = 'revisar';
+          state.reviewReason = `${matches.length} candidato(s). Top: ${top.confidence} (score ${top.score}). Confianza insuficiente para auto-confirmar.`;
         } else {
-          // Choque de claim = duplicado lógico: mismo banco + ref + monto ya
-          // fue conciliado por OTRO abono. Archivar como 'duplicado' enlazando
-          // al abono original (no dejar en revisar — ese estado es para
-          // ambigüedad humana, no para colisiones determinísticas).
-          const ex = claim.existing;
-          status = 'duplicado';
-          reviewReason = `Mismo banco + referencia + monto ya conciliado por ${ex.claimedByName || ex.claimedByUid} el ${new Date(ex.claimedAt).toLocaleString()}.`;
-          duplicateOfAbonoId = ex.abonoId;
-          duplicateOfBatchId = ex.batchId;
-          duplicateOfMonthKey = ex.monthKey;
+          state.reviewReason = 'No se encontraron filas en el pool que coincidan con monto y fecha (±3 días).';
         }
-      } else if (matches.length > 0) {
-        status = 'revisar';
-        reviewReason = `${matches.length} candidato(s). Top: ${top.confidence} (score ${top.score}). Confianza insuficiente para auto-confirmar.`;
-      } else {
-        reviewReason = 'No se encontraron filas en el pool que coincidan con monto y fecha (±3 días).';
-      }
+      });
+
+      const {
+        status, matchRowId, matchAccountAlias, matchBankAccountId, matchBankName,
+        matchMonthKey, reviewReason, duplicateOfAbonoId, duplicateOfBatchId,
+        duplicateOfMonthKey, candidateMatches,
+      } = state;
 
       const abonoMonthKey = matchMonthKey || abonoBase.date.slice(0, 7);
       const sessionAbono: SessionAbono & { businessId: string } = {
@@ -461,6 +491,7 @@ export async function appendImagesToBatch(opts: {
   });
 
   let done = 0;
+  const serializeClaim = makeSerializer();
 
   async function processOne(file: File): Promise<void> {
     try {
@@ -508,58 +539,76 @@ export async function appendImagesToBatch(opts: {
         receiptUrl,
       };
 
-      const matches = findMatches(abonoBase, pool);
-      const candidateMatches = topCandidatesSnapshot(matches);
-      const top = matches[0];
-
-      let status: AbonoStatus = 'no_encontrado';
-      let matchRowId: string | null = null;
-      let matchAccountAlias: string | undefined;
-      let matchBankAccountId: string | undefined;
-      let matchBankName: string | undefined;
-      let matchMonthKey: string | undefined;
-      let reviewReason: string | undefined;
-      let duplicateOfAbonoId: string | undefined;
-      let duplicateOfBatchId: string | undefined;
-      let duplicateOfMonthKey: string | undefined;
+      const state: {
+        status: AbonoStatus;
+        matchRowId: string | null;
+        matchAccountAlias?: string;
+        matchBankAccountId?: string;
+        matchBankName?: string;
+        matchMonthKey?: string;
+        reviewReason?: string;
+        duplicateOfAbonoId?: string;
+        duplicateOfBatchId?: string;
+        duplicateOfMonthKey?: string;
+        candidateMatches: SessionAbonoCandidate[];
+      } = {
+        status: 'no_encontrado',
+        matchRowId: null,
+        candidateMatches: [],
+      };
 
       const abonoId = newId('ab');
-      const topIdentity = top?.row.bankAccountId || top?.row.accountAlias;
-      if (top && (top.confidence === 'exact' || top.confidence === 'high')
-          && topIdentity && top.row.reference && abonoBase.reference) {
-        const claim = await claimReference(db, businessId, {
-          bankAccountId: top.row.bankAccountId,
-          accountAlias: top.row.accountAlias,
-          reference: top.row.reference,
-          amount: top.row.amount,
-          abonoId,
-          batchId: batch.id,
-          bankRowId: top.row.rowId,
-          monthKey: top.row.monthKey,
-          claimedByUid: currentUserId,
-          claimedByName: currentUserName,
-        });
-        if (claim.ok === true) {
-          status = 'confirmado';
-          matchRowId = top.row.rowId;
-          matchAccountAlias = top.row.accountAlias;
-          matchBankAccountId = top.row.bankAccountId;
-          matchBankName = top.row.bankName;
-          matchMonthKey = top.row.monthKey;
+
+      // Phase match+claim serializado para anti-carrera (ver processReceiptBatch).
+      await serializeClaim(async () => {
+        const matches = findMatches(abonoBase, pool);
+        state.candidateMatches = topCandidatesSnapshot(matches);
+        const top = matches[0];
+        const topIdentity = top?.row.bankAccountId || top?.row.accountAlias;
+        if (top && (top.confidence === 'exact' || top.confidence === 'high')
+            && topIdentity && top.row.reference && abonoBase.reference) {
+          const claim = await claimReference(db, businessId, {
+            bankAccountId: top.row.bankAccountId,
+            accountAlias: top.row.accountAlias,
+            reference: top.row.reference,
+            amount: top.row.amount,
+            abonoId,
+            batchId: batch.id,
+            bankRowId: top.row.rowId,
+            monthKey: top.row.monthKey,
+            claimedByUid: currentUserId,
+            claimedByName: currentUserName,
+          });
+          if (claim.ok === true) {
+            state.status = 'confirmado';
+            state.matchRowId = top.row.rowId;
+            state.matchAccountAlias = top.row.accountAlias;
+            state.matchBankAccountId = top.row.bankAccountId;
+            state.matchBankName = top.row.bankName;
+            state.matchMonthKey = top.row.monthKey;
+            top.row.isUsed = true;
+          } else {
+            const ex = claim.existing;
+            state.status = 'duplicado';
+            state.reviewReason = `Mismo banco + referencia + monto ya conciliado por ${ex.claimedByName || ex.claimedByUid} el ${new Date(ex.claimedAt).toLocaleString()}.`;
+            state.duplicateOfAbonoId = ex.abonoId;
+            state.duplicateOfBatchId = ex.batchId;
+            state.duplicateOfMonthKey = ex.monthKey;
+            top.row.isUsed = true;
+          }
+        } else if (matches.length > 0) {
+          state.status = 'revisar';
+          state.reviewReason = `${matches.length} candidato(s). Top: ${top.confidence} (score ${top.score}). Confianza insuficiente para auto-confirmar.`;
         } else {
-          const ex = claim.existing;
-          status = 'duplicado';
-          reviewReason = `Mismo banco + referencia + monto ya conciliado por ${ex.claimedByName || ex.claimedByUid} el ${new Date(ex.claimedAt).toLocaleString()}.`;
-          duplicateOfAbonoId = ex.abonoId;
-          duplicateOfBatchId = ex.batchId;
-          duplicateOfMonthKey = ex.monthKey;
+          state.reviewReason = 'No se encontraron filas en el pool que coincidan con monto y fecha (±3 días).';
         }
-      } else if (matches.length > 0) {
-        status = 'revisar';
-        reviewReason = `${matches.length} candidato(s). Top: ${top.confidence} (score ${top.score}). Confianza insuficiente para auto-confirmar.`;
-      } else {
-        reviewReason = 'No se encontraron filas en el pool que coincidan con monto y fecha (±3 días).';
-      }
+      });
+
+      const {
+        status, matchRowId, matchAccountAlias, matchBankAccountId, matchBankName,
+        matchMonthKey, reviewReason, duplicateOfAbonoId, duplicateOfBatchId,
+        duplicateOfMonthKey, candidateMatches,
+      } = state;
 
       const abonoMonthKey = matchMonthKey || abonoBase.date.slice(0, 7);
       const sessionAbono: SessionAbono & { businessId: string } = {
