@@ -26,16 +26,20 @@ import {
   Search,
   X,
   Download,
+  Loader2,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import type { BankRow } from '../utils/bankReconciliation';
 import { rematchOrphanAbonos } from '../utils/rematchOrphanAbonos';
+import { processReceiptBatch, type ImageBatchItem } from '../utils/processReceiptBatch';
 import { isVerifiable, resolveVerificationStatus } from '../utils/movementHelpers';
 import AccountChips, { type AccountChipData } from '../components/conciliacion/AccountChips';
 import AccountRowsModal from '../components/conciliacion/AccountRowsModal';
 import BankUploadModal from '../components/conciliacion/BankUploadModal';
 import ManualVerificationTab from '../components/conciliacion/ManualVerificationTab';
 import ConciliacionPdfExportModal from '../components/conciliacion/ConciliacionPdfExportModal';
+import ReceiptDropZone from '../components/conciliacion/ReceiptDropZone';
+import BatchNamePromptModal from '../components/conciliacion/BatchNamePromptModal';
 import MultiBankUploadModal from '../components/tesoreria/MultiBankUploadModal';
 import ReceiptBatchModal from '../components/tesoreria/ReceiptBatchModal';
 import BatchReviewPanel from '../components/tesoreria/BatchReviewPanel';
@@ -95,6 +99,9 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [viewingAccountAlias, setViewingAccountAlias] = useState<string | null>(null);
   const [viewingAccountHighlightRowId, setViewingAccountHighlightRowId] = useState<string | null>(null);
   const [highlightAbonoInBatch, setHighlightAbonoInBatch] = useState<string | null>(null);
+  const [pendingBatchFiles, setPendingBatchFiles] = useState<File[] | null>(null);
+  const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
 
   useEffect(() => {
     if (!businessId) return;
@@ -319,6 +326,57 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     toast.success(`Cuenta "${acc.accountLabel}" eliminada`);
   };
 
+  const handleDropBatch = (files: File[]) => {
+    setPendingBatchFiles(files);
+  };
+
+  const handleConfirmBatchName = async (name: string, modalFiles: File[]) => {
+    const files = modalFiles && modalFiles.length ? modalFiles : (pendingBatchFiles || []);
+    if (!files.length) {
+      setPendingBatchFiles(null);
+      return;
+    }
+    setPendingBatchFiles(null);
+    try {
+      setOcrBusy(true);
+      setOcrProgress({ done: 0, total: files.length });
+      const items: ImageBatchItem[] = files.map((f, i) => ({
+        id: `img_${Date.now().toString(36)}_${i}`,
+        kind: 'image',
+        file: f,
+      }));
+      let lastError: string | null = null;
+      const outcome = await processReceiptBatch({
+        db,
+        businessId,
+        name,
+        currentUserId,
+        currentUserName,
+        items,
+        onProgress: (done, total) => setOcrProgress({ done, total }),
+        onResultsChange: (results) => {
+          const errored = results.find(r => r.status === 'error' && r.errorMsg);
+          if (errored?.errorMsg) lastError = errored.errorMsg;
+        },
+      });
+      if (outcome.stats.notFound > 0 && outcome.stats.confirmed === 0 && outcome.stats.review === 0 && lastError) {
+        toast.error(`OCR falló (${outcome.stats.notFound}/${outcome.stats.total}): ${lastError.slice(0, 400)}`, { duration: 12000 });
+      } else if (lastError) {
+        toast.error(`Hay items con error en el lote: ${lastError.slice(0, 400)}`, { duration: 10000 });
+        toast.success(`Lote "${name}" procesado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
+      } else {
+        toast.success(`Lote "${name}" procesado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
+      }
+      setView('lotes');
+      setSelectedBatchId(outcome.batchId);
+    } catch (err: any) {
+      toast.error('Error procesando lote: ' + (err?.message || String(err)));
+    } finally {
+      setOcrBusy(false);
+      setOcrProgress(null);
+    }
+  };
+
   const handleDeleteBatch = async (batch: ReconciliationBatch) => {
     if (!confirm(`¿Eliminar el lote "${batch.name}" y todos sus abonos? Esta acción no se puede deshacer.`)) return;
     try {
@@ -466,6 +524,9 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             onViewAccount={setViewingAccountAlias}
             onDelete={handleDeleteBatch}
             canEdit={canEdit}
+            ocrBusy={ocrBusy}
+            ocrProgress={ocrProgress}
+            onDropBatch={handleDropBatch}
           />
         )}
       </div>
@@ -486,6 +547,14 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           existingAliases={existingAliases}
           onClose={() => setShowMultiUpload(false)}
           onDone={() => setShowMultiUpload(false)}
+        />
+      )}
+
+      {pendingBatchFiles && pendingBatchFiles.length > 0 && (
+        <BatchNamePromptModal
+          files={pendingBatchFiles}
+          onCancel={() => setPendingBatchFiles(null)}
+          onConfirm={handleConfirmBatchName}
         />
       )}
 
@@ -550,11 +619,14 @@ interface BatchListProps {
   onViewAccount?: (alias: string) => void;
   onDelete: (batch: ReconciliationBatch) => void;
   canEdit: boolean;
+  ocrBusy: boolean;
+  ocrProgress: { done: number; total: number } | null;
+  onDropBatch: (files: File[]) => void;
 }
 
 const BatchList: React.FC<BatchListProps> = ({
   batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
-  onDeleteAccount, onViewAccount, onDelete, canEdit,
+  onDeleteAccount, onViewAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch,
 }) => {
   const [accountQuery, setAccountQuery] = useState('');
   const filteredAccountChips = useMemo(() => {
@@ -640,7 +712,23 @@ const BatchList: React.FC<BatchListProps> = ({
             <Upload size={14} /> Subir EdeC
           </button>
           <div className="flex-1" />
+          {ocrBusy && ocrProgress && (
+            <div className="text-xs text-slate-500 dark:text-slate-400 inline-flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin" />
+              Procesando {ocrProgress.done}/{ocrProgress.total}…
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Quick drop zone para crear un lote directo desde drag-drop */}
+      {canEdit && (
+        <ReceiptDropZone
+          disabled={ocrBusy}
+          progress={ocrProgress}
+          onDropSingle={(file) => onDropBatch([file])}
+          onDropBatch={onDropBatch}
+        />
       )}
 
       {/* Cuentas bancarias cargadas — strip compacto, no es tab separada */}
