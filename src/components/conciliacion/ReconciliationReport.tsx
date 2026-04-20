@@ -13,6 +13,7 @@ export interface SessionAbono extends DraftAbono {
   matchBankAccountId?: string; // id del BusinessBankAccount conciliado (para fingerprint)
   matchBankName?: string;      // denormalized para display
   matchMonthKey?: string;      // YYYY-MM del EdeC matched (para join contra usedReferences)
+  matchRowDate?: string;       // fecha ISO (YYYY-MM-DD) de la fila del EdeC matched
   batchId?: string;            // id del ReconciliationBatch al que pertenece
   candidateMatches?: SessionAbonoCandidate[];  // top-3 snapshot
   receiptUrl?: string;         // URL Cloudinary/Storage de la captura

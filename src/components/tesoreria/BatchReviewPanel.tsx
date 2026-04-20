@@ -13,7 +13,7 @@ import { loadGlobalPool, type PooledRow } from '../../utils/globalBankPool';
 import { claimReference } from '../../utils/reconciliationGuards';
 import {
   topCandidatesSnapshot, stripUndefined, appendImagesToBatch,
-  processReceiptBatch, deriveBatchPeriod, type ManualBatchItem,
+  processReceiptBatch, deriveBatchPeriod, getStatementRowDate, type ManualBatchItem,
 } from '../../utils/processReceiptBatch';
 import type { ReconciliationBatch, SessionAbonoCandidate, BusinessBankAccount } from '../../../types';
 import ManualBatchEntryModal, { type ManualAccountOption } from '../conciliacion/ManualBatchEntryModal';
@@ -237,10 +237,12 @@ export default function BatchReviewPanel({
       prev.manual === nextStats.manual &&
       (prev.duplicates ?? 0) === nextStats.duplicates
     );
-    // Auto-deriva período desde fechas de abonos. Se sobrescribe siempre: el
-    // período del batch refleja las fechas reales de los pagos (no el filtro
-    // del wizard), para que el PDF pueda cortar por mes.
-    const derivedPeriod = deriveBatchPeriod(abonos.map(a => a.date || ''));
+    // Auto-deriva período desde las fechas de las filas del EdeC conciliadas
+    // (matchRowDate). El período refleja el rango real del estado de cuenta,
+    // no las fechas de los recibos/capturas.
+    const derivedPeriod = deriveBatchPeriod(
+      abonos.map(a => getStatementRowDate(a) || '').filter(Boolean),
+    );
     const periodSame = (
       (batch.periodFrom || '') === (derivedPeriod.periodFrom || '') &&
       (batch.periodTo || '') === (derivedPeriod.periodTo || '')
@@ -296,6 +298,7 @@ export default function BatchReviewPanel({
             matchBankAccountId: cand.bankAccountId,
             matchBankName: cand.bankName,
             matchMonthKey: cand.monthKey,
+            matchRowDate: cand.rowDate,
           });
           return;
         }
@@ -339,6 +342,7 @@ export default function BatchReviewPanel({
             matchBankAccountId: cand.bankAccountId,
             matchBankName: cand.bankName,
             matchMonthKey: cand.monthKey,
+            matchRowDate: cand.rowDate,
           });
           return;
         }
@@ -364,6 +368,7 @@ export default function BatchReviewPanel({
         matchBankAccountId: cand.bankAccountId,
         matchBankName: cand.bankName,
         matchMonthKey: cand.monthKey,
+        matchRowDate: cand.rowDate,
       });
     } catch (e: any) {
       setError(e?.message || String(e));

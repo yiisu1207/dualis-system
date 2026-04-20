@@ -305,6 +305,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
         matchBankAccountId?: string;
         matchBankName?: string;
         matchMonthKey?: string;
+        matchRowDate?: string;
         reviewReason?: string;
         duplicateOfAbonoId?: string;
         duplicateOfBatchId?: string;
@@ -352,6 +353,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
             state.matchBankAccountId = top.row.bankAccountId;
             state.matchBankName = top.row.bankName;
             state.matchMonthKey = top.row.monthKey;
+            state.matchRowDate = top.row.date;
             top.row.isUsed = true;
           } else {
             const ex = claim.existing;
@@ -372,7 +374,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
 
       const {
         status, matchRowId, matchAccountAlias, matchBankAccountId, matchBankName,
-        matchMonthKey, reviewReason, duplicateOfAbonoId, duplicateOfBatchId,
+        matchMonthKey, matchRowDate, reviewReason, duplicateOfAbonoId, duplicateOfBatchId,
         duplicateOfMonthKey, candidateMatches,
       } = state;
 
@@ -386,6 +388,7 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
         matchBankAccountId,
         matchBankName,
         matchMonthKey,
+        matchRowDate,
         batchId,
         candidateMatches,
         receiptUrl,
@@ -468,12 +471,15 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
     manual: items.filter(i => i.kind === 'manual').length,
     duplicates: aggregated.duplicates,
   };
-  // Auto-deriva período desde fechas de abonos procesados (ignora OCR vacío)
-  const derivedDates: string[] = [];
+  // Auto-deriva período desde fechas de las filas del EdeC conciliadas (no del OCR
+  // de los recibos). Solo abonos 'confirmado' con matchRowDate aportan.
+  const statementDates: string[] = [];
   for (const r of results) {
-    if (r.abono?.date) derivedDates.push(r.abono.date);
+    if (!r.abono) continue;
+    const rowDate = getStatementRowDate(r.abono);
+    if (rowDate) statementDates.push(rowDate);
   }
-  const derivedPeriod = deriveBatchPeriod(derivedDates);
+  const derivedPeriod = deriveBatchPeriod(statementDates);
   if (isAppendMode) {
     await setDoc(
       doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`),
@@ -631,6 +637,7 @@ export async function appendImagesToBatch(opts: {
         matchBankAccountId?: string;
         matchBankName?: string;
         matchMonthKey?: string;
+        matchRowDate?: string;
         reviewReason?: string;
         duplicateOfAbonoId?: string;
         duplicateOfBatchId?: string;
@@ -671,6 +678,7 @@ export async function appendImagesToBatch(opts: {
             state.matchBankAccountId = top.row.bankAccountId;
             state.matchBankName = top.row.bankName;
             state.matchMonthKey = top.row.monthKey;
+            state.matchRowDate = top.row.date;
             top.row.isUsed = true;
           } else {
             const ex = claim.existing;
@@ -691,7 +699,7 @@ export async function appendImagesToBatch(opts: {
 
       const {
         status, matchRowId, matchAccountAlias, matchBankAccountId, matchBankName,
-        matchMonthKey, reviewReason, duplicateOfAbonoId, duplicateOfBatchId,
+        matchMonthKey, matchRowDate, reviewReason, duplicateOfAbonoId, duplicateOfBatchId,
         duplicateOfMonthKey, candidateMatches,
       } = state;
 
@@ -705,6 +713,7 @@ export async function appendImagesToBatch(opts: {
         matchBankAccountId,
         matchBankName,
         matchMonthKey,
+        matchRowDate,
         batchId: batch.id,
         candidateMatches,
         receiptUrl,
@@ -788,7 +797,7 @@ export function findDuplicateBatchGroups(
   return out;
 }
 
-/** Deriva periodFrom/periodTo (ISO YYYY-MM-DD) desde una lista de fechas de abonos.
+/** Deriva periodFrom/periodTo (ISO YYYY-MM-DD) desde una lista de fechas.
  *  Ignora strings vacíos / inválidos. Retorna {} si no hay fechas válidas. */
 export function deriveBatchPeriod(dates: string[]): { periodFrom?: string; periodTo?: string } {
   const valid = dates
@@ -799,7 +808,23 @@ export function deriveBatchPeriod(dates: string[]): { periodFrom?: string; perio
   return { periodFrom: valid[0], periodTo: valid[valid.length - 1] };
 }
 
-/** Recomputa stats + período derivado de un batch leyendo todos sus abonos. */
+/** Extrae la fecha de la fila del EdeC conciliada para un abono.
+ *  Prioriza matchRowDate (persisted), luego candidateMatches[rowId==matchRowId].rowDate.
+ *  Retorna undefined si el abono no tiene match (revisar/no_encontrado/duplicado). */
+export function getStatementRowDate(abono: SessionAbono): string | undefined {
+  if (abono.status !== 'confirmado') return undefined;
+  const direct = (abono as any).matchRowDate;
+  if (typeof direct === 'string' && /^\d{4}-\d{2}-\d{2}/.test(direct)) return direct.slice(0, 10);
+  if (abono.matchRowId && abono.candidateMatches?.length) {
+    const hit = abono.candidateMatches.find(c => c.rowId === abono.matchRowId);
+    if (hit?.rowDate && /^\d{4}-\d{2}-\d{2}/.test(hit.rowDate)) return hit.rowDate.slice(0, 10);
+  }
+  return undefined;
+}
+
+/** Recomputa stats + período derivado de un batch leyendo todos sus abonos.
+ *  Período se deriva de las fechas de las filas del EdeC conciliadas (matchRowDate),
+ *  no de las fechas de los recibos/capturas. Si no hay matches, el período queda vacío. */
 async function recomputeBatchStats(
   db: Firestore,
   businessId: string,
@@ -807,7 +832,7 @@ async function recomputeBatchStats(
 ): Promise<{ stats: ReconciliationBatch['stats']; periodFrom?: string; periodTo?: string }> {
   const snap = await getDocs(query(collectionGroup(db, 'abonos'), where('batchId', '==', batchId)));
   let total = 0, confirmed = 0, review = 0, notFound = 0, manual = 0, duplicates = 0;
-  const dates: string[] = [];
+  const statementDates: string[] = [];
   snap.forEach(d => {
     const data = d.data() as SessionAbono;
     total += 1;
@@ -816,9 +841,10 @@ async function recomputeBatchStats(
     else if (data.status === 'no_encontrado') notFound += 1;
     else if (data.status === 'duplicado') duplicates += 1;
     if ((data as any).receiptUrl === undefined && !(data as any).receiptHash) manual += 1;
-    if (data.date) dates.push(data.date);
+    const rowDate = getStatementRowDate(data);
+    if (rowDate) statementDates.push(rowDate);
   });
-  const { periodFrom, periodTo } = deriveBatchPeriod(dates);
+  const { periodFrom, periodTo } = deriveBatchPeriod(statementDates);
   return {
     stats: { total, confirmed, review, notFound, manual, duplicates },
     periodFrom,
