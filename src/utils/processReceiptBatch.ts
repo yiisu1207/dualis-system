@@ -877,3 +877,32 @@ export async function mergeBatchGroup(
 
   return { movedAbonos, movedRefs };
 }
+
+/** Backfill one-shot: recorre los batches sin período persistido y deriva
+ *  periodFrom/periodTo desde las fechas reales de sus abonos. Idempotente,
+ *  saltea batches que ya tienen período. Retorna cuántos se actualizaron. */
+export async function backfillBatchPeriods(
+  db: Firestore,
+  businessId: string,
+  batches: ReconciliationBatch[],
+): Promise<{ updated: number; skipped: number }> {
+  const pending = batches.filter(b => !b.periodFrom || !b.periodTo);
+  let updated = 0;
+  let skipped = 0;
+  for (const b of pending) {
+    try {
+      const { periodFrom, periodTo } = await recomputeBatchStats(db, businessId, b.id);
+      if (!periodFrom || !periodTo) { skipped += 1; continue; }
+      await setDoc(
+        doc(db, `businesses/${businessId}/reconciliationBatches/${b.id}`),
+        { periodFrom, periodTo },
+        { merge: true },
+      );
+      updated += 1;
+    } catch (err) {
+      console.warn('[backfillBatchPeriods] error en batch', b.id, err);
+      skipped += 1;
+    }
+  }
+  return { updated, skipped };
+}

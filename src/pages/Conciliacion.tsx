@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   collection,
   collectionGroup,
@@ -38,6 +38,7 @@ import {
   findExistingBatchByName,
   deleteBatchCompletely,
   findDuplicateBatchGroups,
+  backfillBatchPeriods,
   type ImageBatchItem,
   type ManualBatchItem,
   type BatchItemDraft,
@@ -552,6 +553,27 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     }
     return n;
   }, [batches]);
+
+  // Backfill automático one-shot: cuando carga la lista de lotes, detecta los
+  // que no tienen periodFrom/To (legacy) y deriva de las fechas reales de sus
+  // abonos. Se ejecuta una sola vez por sesión para no martillar Firestore.
+  const didBackfillRef = useRef(false);
+  useEffect(() => {
+    if (!businessId || didBackfillRef.current || !batches.length) return;
+    const pending = batches.filter(b => !b.periodFrom || !b.periodTo);
+    if (!pending.length) return;
+    didBackfillRef.current = true;
+    (async () => {
+      try {
+        const res = await backfillBatchPeriods(db, businessId, pending);
+        if (res.updated > 0) {
+          toast.success(`Períodos actualizados en ${res.updated} lote${res.updated === 1 ? '' : 's'} desde fechas reales de pagos`);
+        }
+      } catch (err) {
+        console.warn('[Conciliacion] backfill periods failed', err);
+      }
+    })();
+  }, [businessId, batches, toast]);
 
   if (!businessId) {
     return <div className="p-6 text-slate-500 dark:text-slate-400">Cargando...</div>;
@@ -1134,9 +1156,7 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
                       ? (b.periodFrom === b.periodTo
                           ? b.periodFrom
                           : `${b.periodFrom} → ${b.periodTo}`)
-                      : b.createdAt
-                        ? <span className="italic text-slate-400">{new Date(b.createdAt).toLocaleDateString('es-VE', { month: 'short', year: 'numeric' })}</span>
-                        : '—'}
+                      : <span className="italic text-slate-400">—</span>}
                   </td>
                   <td className="px-2 sm:px-3 py-2 text-center font-mono">{b.stats?.total ?? 0}</td>
                   <td className="px-2 sm:px-3 py-2 text-center font-mono text-emerald-600">{b.stats?.confirmed ?? 0}</td>

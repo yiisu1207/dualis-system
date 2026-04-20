@@ -62,7 +62,6 @@ const fmtMonthLabel = (ym: string) => {
   return d.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
 };
 
-const fmtDate = (d: Date) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
 const fmtDateTime = (d: Date) => d.toLocaleString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 
 export default function ConciliacionPdfExportModal({ batches, accountChips, onClose }: ConciliacionPdfExportModalProps) {
@@ -218,7 +217,7 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
             if (opts.includeBatchPeriod) {
               const per = b.periodFrom && b.periodTo
                 ? (b.periodFrom === b.periodTo ? b.periodFrom : `${b.periodFrom} → ${b.periodTo}`)
-                : (b.createdAt ? new Date(b.createdAt).toLocaleDateString('es-VE', { month: 'short', year: 'numeric' }) : '—');
+                : '—';
               row.push(per);
             }
             row.push(

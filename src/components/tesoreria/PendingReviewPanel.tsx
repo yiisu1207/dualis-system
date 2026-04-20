@@ -3,7 +3,7 @@ import {
   AlertTriangle, XCircle, Copy, ChevronDown, ChevronRight,
   ExternalLink, Loader2, Search, X, Image as ImageIcon,
 } from 'lucide-react';
-import { collectionGroup, onSnapshot, query, where } from 'firebase/firestore';
+import { collectionGroup, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import type { ReconciliationBatch } from '../../../types';
 import type { SessionAbono } from '../conciliacion/ReconciliationReport';
@@ -20,6 +20,8 @@ interface PendingRow extends SessionAbono {
   monthKey: string;
 }
 
+const PENDING_STATUSES: ReadonlyArray<PendingStatus> = ['revisar', 'no_encontrado', 'duplicado'];
+
 export default function PendingReviewPanel({ businessId, batches, onOpenInBatch }: Props) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<PendingRow[]>([]);
@@ -31,41 +33,50 @@ export default function PendingReviewPanel({ businessId, batches, onOpenInBatch 
   });
   const [q, setQ] = useState('');
 
+  // Estrategia sin índice compuesto: una query por batchId (ya indexado en
+  // firestore.indexes.json) y filtrado de status client-side. Evita necesitar
+  // un índice compuesto businessId+status que tarda minutos en desplegarse.
+  const batchIds = useMemo(() => batches.map(b => b.id).filter(Boolean), [batches]);
+  const batchKey = useMemo(() => batchIds.join('|'), [batchIds]);
+
   useEffect(() => {
     if (!businessId) return;
+    let cancelled = false;
     setLoading(true);
-    const qRef = query(
-      collectionGroup(db, 'abonos'),
-      where('businessId', '==', businessId),
-      where('status', 'in', ['revisar', 'no_encontrado', 'duplicado']),
-    );
-    const unsub = onSnapshot(
-      qRef,
-      (snap) => {
+    setError(null);
+    (async () => {
+      try {
+        if (!batchIds.length) {
+          if (!cancelled) { setRows([]); setLoading(false); }
+          return;
+        }
+        const snaps = await Promise.all(
+          batchIds.map(id =>
+            getDocs(query(collectionGroup(db, 'abonos'), where('batchId', '==', id)))
+          ),
+        );
+        if (cancelled) return;
         const list: PendingRow[] = [];
-        snap.forEach(d => {
-          const data = d.data() as SessionAbono;
-          const monthKey = d.ref.parent.parent?.id || '';
-          list.push({ ...data, id: d.id, monthKey });
-        });
+        for (const snap of snaps) {
+          snap.forEach(d => {
+            const data = d.data() as SessionAbono;
+            if (!PENDING_STATUSES.includes(data.status as PendingStatus)) return;
+            const monthKey = d.ref.parent.parent?.id || '';
+            list.push({ ...data, id: d.id, monthKey });
+          });
+        }
         list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         setRows(list);
         setLoading(false);
-        setError(null);
-      },
-      (err) => {
-        const raw = err?.message || String(err);
+      } catch (err: any) {
+        if (cancelled) return;
         console.error('[PendingReview] query error', err);
-        if (/index is not ready yet|requires a COLLECTION_GROUP|failed-precondition/i.test(raw)) {
-          setError('Firestore está construyendo el índice (puede tardar 1–5 min tras el primer deploy). Recarga en un minuto.');
-        } else {
-          setError('Error cargando pendientes: ' + raw);
-        }
+        setError('Error cargando pendientes: ' + (err?.message || String(err)));
         setLoading(false);
-      },
-    );
-    return () => unsub();
-  }, [businessId]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [businessId, batchKey, batchIds]);
 
   const batchById = useMemo(() => {
     const m = new Map<string, ReconciliationBatch>();
