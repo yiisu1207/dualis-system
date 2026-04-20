@@ -633,6 +633,7 @@ export default function BatchReviewPanel({
           <table className="w-full text-sm">
             <thead className="text-slate-500">
               <tr>
+                <th className="text-left py-2 w-[60px]"></th>
                 <th className="text-left py-2">Fecha</th>
                 <th className="text-left py-2">Monto</th>
                 <th className="text-left py-2">Ref</th>
@@ -652,6 +653,17 @@ export default function BatchReviewPanel({
                       isHl ? 'bg-amber-100 dark:bg-amber-900/30' : ''
                     }`}
                   >
+                    <td className="py-2">
+                      {a.receiptUrl ? (
+                        <a href={a.receiptUrl} target="_blank" rel="noopener noreferrer" className="inline-block">
+                          <img src={a.receiptUrl} alt="receipt" className="w-12 h-12 object-cover rounded border border-slate-200 dark:border-slate-700" />
+                        </a>
+                      ) : (
+                        <div className="w-12 h-12 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center" title="Sin imagen (manual)">
+                          <ImageIcon size={16} className="text-slate-400" />
+                        </div>
+                      )}
+                    </td>
                     <td className="py-2">{a.date}</td>
                     <td className="py-2 font-mono">${a.amount.toFixed(2)}</td>
                     <td className="py-2 font-mono">{a.reference || '—'}</td>
@@ -873,27 +885,53 @@ interface DuplicateCardProps {
 }
 
 const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry, busy, onDelete }) => {
+  const reason = entry.reviewReason
+    || entry.note
+    || 'La referencia o la imagen ya existe en otro abono del negocio — se archivó para evitar doble conciliación.';
   return (
-    <div className="border border-violet-200 dark:border-violet-700/50 rounded-lg p-4 bg-violet-50/40 dark:bg-violet-900/10 flex items-start gap-3">
-      <Copy size={18} className="text-violet-500 flex-shrink-0 mt-0.5" />
-      <div className="flex-1 text-sm">
-        <div className="text-slate-700 dark:text-slate-200">
-          Captura archivada como duplicado.
-        </div>
-        <div className="text-slate-500 dark:text-slate-400 mt-1">
-          {entry.note || 'La misma imagen ya existe en otro abono del negocio.'}
-        </div>
-        {entry.duplicateOfAbonoId && (
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 font-mono">
-            Original: <span className="text-violet-700 dark:text-violet-300">{entry.duplicateOfAbonoId}</span>
-            {entry.duplicateOfBatchId && <> · lote {entry.duplicateOfBatchId}</>}
-            {entry.duplicateOfMonthKey && <> · período {entry.duplicateOfMonthKey}</>}
+    <div className="border border-violet-200 dark:border-violet-700/50 rounded-lg p-4 bg-violet-50/40 dark:bg-violet-900/10">
+      <div className="flex gap-4">
+        {entry.receiptUrl ? (
+          <a href={entry.receiptUrl} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
+            <img src={entry.receiptUrl} alt="receipt" className="w-24 h-24 object-cover rounded border border-slate-200 dark:border-slate-700" />
+          </a>
+        ) : (
+          <div className="w-24 h-24 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+            <ImageIcon size={28} className="text-slate-400" />
           </div>
         )}
+        <div className="flex-1 text-sm min-w-0">
+          <div className="grid grid-cols-3 gap-3">
+            <div><span className="text-slate-400">Monto:</span> <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">${entry.amount.toFixed(2)}</span></div>
+            <div><span className="text-slate-400">Ref:</span> <span className="font-mono text-slate-700 dark:text-slate-200">{entry.reference || '—'}</span></div>
+            <div><span className="text-slate-400">Fecha:</span> <span className="text-slate-700 dark:text-slate-200">{entry.date}</span></div>
+            {entry.cedula && <div><span className="text-slate-400">Céd:</span> <span className="text-slate-700 dark:text-slate-200">{entry.cedula}</span></div>}
+            {entry.clientName && <div className="col-span-2"><span className="text-slate-400">Nombre:</span> <span className="text-slate-700 dark:text-slate-200">{entry.clientName}</span></div>}
+          </div>
+        </div>
       </div>
-      <button onClick={onDelete} disabled={busy} className="text-xs text-rose-700 hover:text-rose-800 inline-flex items-center gap-1 disabled:opacity-40 flex-shrink-0" title="Eliminar captura del lote">
-        <Trash2 size={12} /> Eliminar
-      </button>
+
+      <div className="mt-3 px-3 py-2 bg-violet-100/60 dark:bg-violet-900/30 border border-violet-200 dark:border-violet-800 rounded text-sm text-violet-800 dark:text-violet-200 flex items-start gap-2">
+        <Copy size={14} className="flex-shrink-0 mt-0.5" />
+        <div>
+          <span className="font-medium">Por qué es duplicado:</span> {reason}
+        </div>
+      </div>
+
+      {(entry.duplicateOfAbonoId || entry.duplicateOfBatchId || entry.duplicateOfMonthKey) && (
+        <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 font-mono break-all">
+          Original:
+          {entry.duplicateOfAbonoId && <> abono <span className="text-violet-700 dark:text-violet-300">{entry.duplicateOfAbonoId}</span></>}
+          {entry.duplicateOfBatchId && <> · lote <span className="text-violet-700 dark:text-violet-300">{entry.duplicateOfBatchId}</span></>}
+          {entry.duplicateOfMonthKey && <> · período <span className="text-violet-700 dark:text-violet-300">{entry.duplicateOfMonthKey}</span></>}
+        </div>
+      )}
+
+      <div className="flex items-center justify-end gap-3 mt-3">
+        <button onClick={onDelete} disabled={busy} className="text-sm text-rose-700 hover:text-rose-800 inline-flex items-center gap-1 disabled:opacity-40" title="Eliminar captura del lote">
+          <Trash2 size={12} /> Eliminar
+        </button>
+      </div>
     </div>
   );
 };
