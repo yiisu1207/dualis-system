@@ -548,6 +548,10 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
               setViewingAccountAlias(alias);
               setViewingAccountHighlightRowId(rowId);
             }}
+            onOpenBatch={(bid, abonoId) => {
+              setSelectedBatchId(bid);
+              setHighlightAbonoInBatch(abonoId || null);
+            }}
             onBack={() => { setSelectedBatchId(null); setHighlightAbonoInBatch(null); }}
           />
         ) : (

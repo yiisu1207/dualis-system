@@ -23,6 +23,7 @@ interface BatchReviewPanelProps {
   currentUserName?: string;
   highlightAbonoId?: string;
   onOpenAccountRow?: (accountAlias: string, rowId: string) => void;
+  onOpenBatch?: (batchId: string, abonoId?: string) => void;
   onBack: () => void;
 }
 
@@ -31,7 +32,7 @@ interface AbonoEntry extends SessionAbono {
 }
 
 export default function BatchReviewPanel({
-  businessId, batchId, currentUserId, currentUserName, highlightAbonoId, onOpenAccountRow, onBack,
+  businessId, batchId, currentUserId, currentUserName, highlightAbonoId, onOpenAccountRow, onOpenBatch, onBack,
 }: BatchReviewPanelProps) {
   const [batch, setBatch] = useState<ReconciliationBatch | null>(null);
   const [abonos, setAbonos] = useState<AbonoEntry[]>([]);
@@ -614,6 +615,8 @@ export default function BatchReviewPanel({
             key={a.id}
             entry={a}
             busy={busyId === a.id}
+            isCurrentBatch={a.duplicateOfBatchId === batchId}
+            onOpenOriginal={onOpenBatch}
             onDelete={() => handleDeleteAbono(a)}
           />
         ))}
@@ -881,10 +884,12 @@ const NotFoundCard: React.FC<NotFoundCardProps> = ({ entry, busy, onRebuscar, on
 interface DuplicateCardProps {
   entry: AbonoEntry;
   busy: boolean;
+  isCurrentBatch?: boolean;
+  onOpenOriginal?: (batchId: string, abonoId?: string) => void;
   onDelete: () => void;
 }
 
-const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry, busy, onDelete }) => {
+const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry, busy, isCurrentBatch, onOpenOriginal, onDelete }) => {
   const reason = entry.reviewReason
     || entry.note
     || 'La referencia o la imagen ya existe en otro abono del negocio — se archivó para evitar doble conciliación.';
@@ -921,7 +926,22 @@ const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry, busy, onDelete }) 
       {(entry.duplicateOfAbonoId || entry.duplicateOfBatchId || entry.duplicateOfMonthKey) && (
         <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 font-mono break-all">
           Original:
-          {entry.duplicateOfAbonoId && <> abono <span className="text-violet-700 dark:text-violet-300">{entry.duplicateOfAbonoId}</span></>}
+          {entry.duplicateOfBatchId && onOpenOriginal && !isCurrentBatch ? (
+            <>
+              {' '}
+              <button
+                type="button"
+                onClick={() => onOpenOriginal(entry.duplicateOfBatchId!, entry.duplicateOfAbonoId || undefined)}
+                className="inline-flex items-center gap-1 text-violet-700 dark:text-violet-300 hover:underline"
+                title="Abrir lote original y resaltar abono"
+              >
+                abrir lote original <ExternalLink size={11} />
+              </button>
+            </>
+          ) : entry.duplicateOfBatchId && isCurrentBatch ? (
+            <> <span className="text-violet-700 dark:text-violet-300">(en este mismo lote)</span></>
+          ) : null}
+          {entry.duplicateOfAbonoId && <> · abono <span className="text-violet-700 dark:text-violet-300">{entry.duplicateOfAbonoId}</span></>}
           {entry.duplicateOfBatchId && <> · lote <span className="text-violet-700 dark:text-violet-300">{entry.duplicateOfBatchId}</span></>}
           {entry.duplicateOfMonthKey && <> · período <span className="text-violet-700 dark:text-violet-300">{entry.duplicateOfMonthKey}</span></>}
         </div>
