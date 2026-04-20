@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { X, Download, Loader2, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { drawDualisFooter } from '../../utils/dualisBranding';
 import type { ReconciliationBatch } from '../../../types';
 import type { AccountChipData } from './AccountChips';
 
@@ -185,7 +184,17 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
         }
       }
 
-      drawDualisFooter(doc, { tagline: 'Reporte de Conciliación · dualis.online' });
+      const pageCount = (doc.internal as any).getNumberOfPages();
+      const footerY = pageH - 18;
+      const footerText = `Generado ${fmtDateTime(generatedAt)}`;
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text(footerText, margin, footerY);
+        doc.text(`Página ${i} / ${pageCount}`, pageW - margin, footerY, { align: 'right' });
+      }
 
       const filename = `conciliacion_${generatedAt.toISOString().slice(0, 10)}.pdf`;
       doc.save(filename);

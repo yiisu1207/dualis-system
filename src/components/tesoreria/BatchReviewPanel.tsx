@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronRight, RefreshCw,
   Loader2, Image as ImageIcon, ArrowLeft, Download, Plus, ExternalLink, Copy,
-  Upload, Search, X,
+  Upload, Search, X, Trash2,
 } from 'lucide-react';
 import {
-  collection, doc, onSnapshot, query, where, setDoc, getDoc, getDocs, collectionGroup, updateDoc,
+  collection, doc, onSnapshot, query, where, setDoc, getDoc, getDocs, collectionGroup, updateDoc, deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { findMatches, type DraftAbono } from '../../utils/bankReconciliation';
@@ -326,6 +326,30 @@ export default function BatchReviewPanel({
     } finally { setBusyId(null); }
   };
 
+  const handleDeleteAbono = async (entry: AbonoEntry) => {
+    if (!confirm(`¿Eliminar esta captura del lote?\n\n${entry.clientName || entry.reference || '$' + entry.amount.toFixed(2)}\n\nSi estaba confirmada, la referencia quedará liberada para re-uso.`)) return;
+    setBusyId(entry.id);
+    try {
+      // Si estaba confirmada, liberar el claim en usedReferences buscando por abonoId.
+      if (entry.status === 'confirmado') {
+        try {
+          const refsQ = query(
+            collection(db, `businesses/${businessId}/usedReferences`),
+            where('abonoId', '==', entry.id),
+          );
+          const snap = await getDocs(refsQ);
+          await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+        } catch (err) {
+          console.warn('[BatchReview] no se pudo liberar usedReferences', err);
+        }
+      }
+      const ref = doc(db, `businesses/${businessId}/bankStatements/${entry.monthKey}/abonos/${entry.id}`);
+      await deleteDoc(ref);
+    } catch (e: any) {
+      setError('Error eliminando: ' + (e?.message || String(e)));
+    } finally { setBusyId(null); }
+  };
+
   const handleRebuscar = async (entry: AbonoEntry) => {
     setBusyId(entry.id);
     try {
@@ -551,6 +575,7 @@ export default function BatchReviewPanel({
             onRejectAll={() => handleRejectAll(a)}
             onRebuscar={() => handleRebuscar(a)}
             onArchiveDuplicate={() => handleArchiveDuplicate(a)}
+            onDelete={() => handleDeleteAbono(a)}
           />
         ))}
         {!revisar.length && <Empty msg="No hay items por revisar." />}
@@ -569,6 +594,7 @@ export default function BatchReviewPanel({
           <NotFoundCard
             key={a.id} entry={a} busy={busyId === a.id || poolLoading}
             onRebuscar={() => handleRebuscar(a)}
+            onDelete={() => handleDeleteAbono(a)}
           />
         ))}
         {!noEncontrado.length && <Empty msg="Sin items sin match." />}
@@ -587,7 +613,8 @@ export default function BatchReviewPanel({
           <DuplicateCard
             key={a.id}
             entry={a}
-            onOpenOriginal={onOpenAccountRow ? undefined : undefined}
+            busy={busyId === a.id}
+            onDelete={() => handleDeleteAbono(a)}
           />
         ))}
         {!duplicados.length && <Empty msg="No hay capturas duplicadas en este lote." />}
@@ -704,9 +731,10 @@ interface ReviewCardProps {
   onRejectAll: () => void;
   onRebuscar: () => void;
   onArchiveDuplicate: () => void;
+  onDelete: () => void;
 }
 
-const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejectAll, onRebuscar, onArchiveDuplicate }) => {
+const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejectAll, onRebuscar, onArchiveDuplicate, onDelete }) => {
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-900/40">
       <div className="flex gap-4">
@@ -771,7 +799,7 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejec
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-3 mt-3">
+      <div className="flex items-center justify-end gap-3 mt-3 flex-wrap">
         <button onClick={onRebuscar} disabled={busy} className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1 disabled:opacity-40">
           <RefreshCw size={12} /> Re-buscar
         </button>
@@ -780,6 +808,9 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ entry, busy, onConfirm, onRejec
         </button>
         <button onClick={onRejectAll} disabled={busy} className="text-sm text-rose-600 hover:text-rose-700 disabled:opacity-40">
           Rechazar todos
+        </button>
+        <button onClick={onDelete} disabled={busy} className="text-sm text-rose-700 hover:text-rose-800 inline-flex items-center gap-1 disabled:opacity-40" title="Eliminar captura del lote">
+          <Trash2 size={12} /> Eliminar
         </button>
       </div>
     </div>
@@ -790,28 +821,58 @@ interface NotFoundCardProps {
   entry: AbonoEntry;
   busy: boolean;
   onRebuscar: () => void;
+  onDelete: () => void;
 }
 
-const NotFoundCard: React.FC<NotFoundCardProps> = ({ entry, busy, onRebuscar }) => {
+const NotFoundCard: React.FC<NotFoundCardProps> = ({ entry, busy, onRebuscar, onDelete }) => {
+  const reason = entry.reviewReason
+    || 'No se encontraron filas en el pool actual que coincidan con monto y fecha (±3 días). Posibles causas: EdeC del banco aún no cargado, OCR interpretó mal algún dato, o la captura es de otro banco/cuenta.';
   return (
-    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-rose-50/30 dark:bg-rose-900/10 flex items-center justify-between gap-3">
-      <div className="text-sm">
-        <div className="font-mono text-slate-700 dark:text-slate-200">${entry.amount.toFixed(2)} · Ref {entry.reference || '—'} · {entry.date}</div>
-        <div className="text-slate-500 dark:text-slate-400 mt-0.5">{entry.clientName || entry.cedula || 'Sin datos del cliente'}</div>
+    <div className="border border-rose-200 dark:border-rose-700/50 rounded-lg p-4 bg-rose-50/40 dark:bg-rose-900/10">
+      <div className="flex gap-4">
+        {entry.receiptUrl ? (
+          <a href={entry.receiptUrl} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
+            <img src={entry.receiptUrl} alt="receipt" className="w-24 h-24 object-cover rounded border border-slate-200 dark:border-slate-700" />
+          </a>
+        ) : (
+          <div className="w-24 h-24 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+            <ImageIcon size={28} className="text-slate-400" />
+          </div>
+        )}
+        <div className="flex-1 text-sm min-w-0">
+          <div className="grid grid-cols-3 gap-3">
+            <div><span className="text-slate-400">Monto:</span> <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">${entry.amount.toFixed(2)}</span></div>
+            <div><span className="text-slate-400">Ref:</span> <span className="font-mono text-slate-700 dark:text-slate-200">{entry.reference || '—'}</span></div>
+            <div><span className="text-slate-400">Fecha:</span> <span className="text-slate-700 dark:text-slate-200">{entry.date}</span></div>
+            {entry.cedula && <div><span className="text-slate-400">Céd:</span> <span className="text-slate-700 dark:text-slate-200">{entry.cedula}</span></div>}
+            {entry.clientName && <div className="col-span-2"><span className="text-slate-400">Nombre:</span> <span className="text-slate-700 dark:text-slate-200">{entry.clientName}</span></div>}
+          </div>
+        </div>
       </div>
-      <button onClick={onRebuscar} disabled={busy} className="text-sm px-3 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded hover:bg-white dark:hover:bg-slate-800 inline-flex items-center gap-1.5 disabled:opacity-40">
-        <RefreshCw size={14} /> Re-buscar
-      </button>
+
+      <div className="mt-3 px-3 py-2 bg-rose-100/60 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded text-sm text-rose-800 dark:text-rose-200">
+        <span className="font-medium">Por qué no matchea:</span> {reason}
+      </div>
+
+      <div className="flex items-center justify-end gap-3 mt-3">
+        <button onClick={onRebuscar} disabled={busy} className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1 disabled:opacity-40">
+          <RefreshCw size={12} /> Re-buscar
+        </button>
+        <button onClick={onDelete} disabled={busy} className="text-sm text-rose-700 hover:text-rose-800 inline-flex items-center gap-1 disabled:opacity-40" title="Eliminar captura del lote">
+          <Trash2 size={12} /> Eliminar
+        </button>
+      </div>
     </div>
   );
 };
 
 interface DuplicateCardProps {
   entry: AbonoEntry;
-  onOpenOriginal?: () => void;
+  busy: boolean;
+  onDelete: () => void;
 }
 
-const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry }) => {
+const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry, busy, onDelete }) => {
   return (
     <div className="border border-violet-200 dark:border-violet-700/50 rounded-lg p-4 bg-violet-50/40 dark:bg-violet-900/10 flex items-start gap-3">
       <Copy size={18} className="text-violet-500 flex-shrink-0 mt-0.5" />
@@ -830,6 +891,9 @@ const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry }) => {
           </div>
         )}
       </div>
+      <button onClick={onDelete} disabled={busy} className="text-xs text-rose-700 hover:text-rose-800 inline-flex items-center gap-1 disabled:opacity-40 flex-shrink-0" title="Eliminar captura del lote">
+        <Trash2 size={12} /> Eliminar
+      </button>
     </div>
   );
 };
