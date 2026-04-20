@@ -19,6 +19,7 @@ interface FieldOptions {
   includeBatchCreator: boolean;
   includeBatchPeriod: boolean;
   onlyOpenBatches: boolean;
+  selectedMonths: string[];   // YYYY-MM; vacío = todos
   title: string;
 }
 
@@ -30,7 +31,35 @@ const DEFAULT_OPTS: FieldOptions = {
   includeBatchCreator: true,
   includeBatchPeriod: true,
   onlyOpenBatches: false,
+  selectedMonths: [],
   title: 'Reporte de Conciliación Bancaria',
+};
+
+// Meses YYYY-MM que toca un batch: los que caen entre periodFrom..periodTo,
+// o el mes de createdAt como fallback si no hay período.
+function batchMonths(b: ReconciliationBatch): string[] {
+  if (b.periodFrom && b.periodTo) {
+    const months = new Set<string>();
+    const [fy, fm] = b.periodFrom.slice(0, 7).split('-').map(Number);
+    const [ty, tm] = b.periodTo.slice(0, 7).split('-').map(Number);
+    let y = fy, m = fm;
+    while (y < ty || (y === ty && m <= tm)) {
+      months.add(`${y}-${String(m).padStart(2, '0')}`);
+      m += 1;
+      if (m > 12) { m = 1; y += 1; }
+      if (months.size > 120) break;
+    }
+    return Array.from(months);
+  }
+  if (b.createdAt) return [b.createdAt.slice(0, 7)];
+  return [];
+}
+
+const fmtMonthLabel = (ym: string) => {
+  const [y, m] = ym.split('-').map(Number);
+  if (!y || !m) return ym;
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
 };
 
 const fmtDate = (d: Date) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -40,16 +69,44 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
   const [opts, setOpts] = useState<FieldOptions>(DEFAULT_OPTS);
   const [busy, setBusy] = useState(false);
 
+  // Meses disponibles entre todos los lotes (derivados de período o createdAt)
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of batches) batchMonths(b).forEach(m => set.add(m));
+    return Array.from(set).sort().reverse();
+  }, [batches]);
+
+  // Aplica filtros globales: meses seleccionados + onlyOpenBatches
+  const filteredBatches = useMemo(() => {
+    return batches.filter(b => {
+      if (opts.selectedMonths.length) {
+        const months = batchMonths(b);
+        const hit = months.some(m => opts.selectedMonths.includes(m));
+        if (!hit) return false;
+      }
+      if (opts.onlyOpenBatches && (b.status === 'done' || b.status === 'archived')) return false;
+      return true;
+    });
+  }, [batches, opts.selectedMonths, opts.onlyOpenBatches]);
+
   const kpis = useMemo(() => {
     let total = 0, confirmed = 0, review = 0, notFound = 0, duplicates = 0;
-    for (const b of batches) {
+    for (const b of filteredBatches) {
       const s = b.stats || { total: 0, confirmed: 0, review: 0, notFound: 0, manual: 0 };
       total += s.total; confirmed += s.confirmed; review += s.review; notFound += s.notFound;
       duplicates += s.duplicates ?? 0;
     }
     const autoRatio = total > 0 ? Math.round((confirmed / total) * 100) : 0;
     return { total, confirmed, review, notFound, duplicates, autoRatio };
-  }, [batches]);
+  }, [filteredBatches]);
+
+  const toggleMonth = (m: string) =>
+    setOpts(o => ({
+      ...o,
+      selectedMonths: o.selectedMonths.includes(m)
+        ? o.selectedMonths.filter(x => x !== m)
+        : [...o.selectedMonths, m],
+    }));
 
   const update = <K extends keyof FieldOptions>(key: K, value: FieldOptions[K]) =>
     setOpts(o => ({ ...o, [key]: value }));
@@ -75,7 +132,10 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
       const generatedAt = new Date();
       doc.text(`Generado ${fmtDateTime(generatedAt)} · Estado actual del sistema`, margin, y);
       y += 8;
-      doc.text(`${batches.length} lote(s) registrado(s)`, margin, y);
+      const monthsHint = opts.selectedMonths.length
+        ? ` · meses: ${opts.selectedMonths.map(fmtMonthLabel).join(', ')}`
+        : '';
+      doc.text(`${filteredBatches.length} lote(s) incluido(s)${monthsHint}`, margin, y);
       y += 16;
 
       // KPIs
@@ -138,7 +198,7 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
 
       // Lotes
       if (opts.includeBatches) {
-        const rows = (opts.onlyOpenBatches ? batches.filter(b => b.status !== 'archived' && b.status !== 'done') : batches);
+        const rows = filteredBatches;
         if (rows.length > 0) {
           if (y > pageH - 140) { doc.addPage(); y = margin; }
           doc.setFont('helvetica', 'bold');
@@ -155,7 +215,12 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
 
           const body = rows.map(b => {
             const row: string[] = [b.name];
-            if (opts.includeBatchPeriod) row.push(b.periodFrom && b.periodTo ? `${b.periodFrom} → ${b.periodTo}` : '—');
+            if (opts.includeBatchPeriod) {
+              const per = b.periodFrom && b.periodTo
+                ? (b.periodFrom === b.periodTo ? b.periodFrom : `${b.periodFrom} → ${b.periodTo}`)
+                : (b.createdAt ? new Date(b.createdAt).toLocaleDateString('es-VE', { month: 'short', year: 'numeric' }) : '—');
+              row.push(per);
+            }
             row.push(
               String(b.stats?.total ?? 0),
               String(b.stats?.confirmed ?? 0),
@@ -288,8 +353,53 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
             />
           </Section>
 
+          {availableMonths.length > 0 && (
+            <Section label={`Meses disponibles (${opts.selectedMonths.length || 'todos'})`}>
+              <div className="flex items-center gap-2 mb-1">
+                <button
+                  type="button"
+                  onClick={() => update('selectedMonths', [])}
+                  className="text-[11px] px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => update('selectedMonths', [...availableMonths])}
+                  className="text-[11px] px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  Seleccionar todos
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                {availableMonths.map(m => {
+                  const active = opts.selectedMonths.includes(m);
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => toggleMonth(m)}
+                      className={`text-[11px] px-2 py-1 rounded border transition-colors ${
+                        active
+                          ? 'bg-indigo-600 border-indigo-600 text-white'
+                          : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {fmtMonthLabel(m)}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-slate-400 mt-1 italic">
+                {opts.selectedMonths.length
+                  ? `Filtrando ${filteredBatches.length} de ${batches.length} lote${batches.length === 1 ? '' : 's'}`
+                  : 'Sin selección = incluir todos los meses'}
+              </div>
+            </Section>
+          )}
+
           <div className="text-[11px] text-slate-400 dark:text-slate-500 italic">
-            El reporte captura el estado actual del sistema — incluye todos los lotes creados hasta hoy, sin cortar por mes.
+            El reporte captura el estado actual del sistema. El período de cada lote se deriva de las fechas reales de sus abonos.
           </div>
         </div>
 

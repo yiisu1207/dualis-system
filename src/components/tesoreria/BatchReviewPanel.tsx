@@ -13,7 +13,7 @@ import { loadGlobalPool, type PooledRow } from '../../utils/globalBankPool';
 import { claimReference } from '../../utils/reconciliationGuards';
 import {
   topCandidatesSnapshot, stripUndefined, appendImagesToBatch,
-  processReceiptBatch, type ManualBatchItem,
+  processReceiptBatch, deriveBatchPeriod, type ManualBatchItem,
 } from '../../utils/processReceiptBatch';
 import type { ReconciliationBatch, SessionAbonoCandidate, BusinessBankAccount } from '../../../types';
 import ManualBatchEntryModal, { type ManualAccountOption } from '../conciliacion/ManualBatchEntryModal';
@@ -229,7 +229,7 @@ export default function BatchReviewPanel({
       duplicates: allDuplicates,
     };
     const prev = batch.stats || { total: 0, confirmed: 0, review: 0, notFound: 0, manual: 0, duplicates: 0 };
-    const same = (
+    const statsSame = (
       prev.total === nextStats.total &&
       prev.confirmed === nextStats.confirmed &&
       prev.review === nextStats.review &&
@@ -237,10 +237,25 @@ export default function BatchReviewPanel({
       prev.manual === nextStats.manual &&
       (prev.duplicates ?? 0) === nextStats.duplicates
     );
-    if (same) return;
+    // Auto-deriva período desde fechas de abonos. Se sobrescribe siempre: el
+    // período del batch refleja las fechas reales de los pagos (no el filtro
+    // del wizard), para que el PDF pueda cortar por mes.
+    const derivedPeriod = deriveBatchPeriod(abonos.map(a => a.date || ''));
+    const periodSame = (
+      (batch.periodFrom || '') === (derivedPeriod.periodFrom || '') &&
+      (batch.periodTo || '') === (derivedPeriod.periodTo || '')
+    );
+    if (statsSame && periodSame) return;
     const ref = doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`);
-    updateDoc(ref, { stats: nextStats }).catch(err => {
-      console.warn('[BatchReview] stats sync failed', err);
+    const patch: Record<string, any> = {};
+    if (!statsSame) patch.stats = nextStats;
+    if (!periodSame && derivedPeriod.periodFrom && derivedPeriod.periodTo) {
+      patch.periodFrom = derivedPeriod.periodFrom;
+      patch.periodTo = derivedPeriod.periodTo;
+    }
+    if (!Object.keys(patch).length) return;
+    updateDoc(ref, patch).catch(err => {
+      console.warn('[BatchReview] stats/period sync failed', err);
     });
   }, [abonos, batch, loading, businessId, batchId]);
 

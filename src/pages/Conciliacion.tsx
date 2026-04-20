@@ -1130,7 +1130,13 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
                 <tr key={b.id} className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/30">
                   <td className="px-3 sm:px-4 py-2 font-medium text-slate-800 dark:text-slate-100 max-w-[180px] truncate">{b.name}</td>
                   <td className="px-3 sm:px-4 py-2 text-xs text-slate-600 dark:text-slate-300 hidden lg:table-cell whitespace-nowrap">
-                    {b.periodFrom && b.periodTo ? `${b.periodFrom} → ${b.periodTo}` : '—'}
+                    {b.periodFrom && b.periodTo
+                      ? (b.periodFrom === b.periodTo
+                          ? b.periodFrom
+                          : `${b.periodFrom} → ${b.periodTo}`)
+                      : b.createdAt
+                        ? <span className="italic text-slate-400">{new Date(b.createdAt).toLocaleDateString('es-VE', { month: 'short', year: 'numeric' })}</span>
+                        : '—'}
                   </td>
                   <td className="px-2 sm:px-3 py-2 text-center font-mono">{b.stats?.total ?? 0}</td>
                   <td className="px-2 sm:px-3 py-2 text-center font-mono text-emerald-600">{b.stats?.confirmed ?? 0}</td>

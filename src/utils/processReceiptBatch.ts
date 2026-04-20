@@ -468,6 +468,12 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
     manual: items.filter(i => i.kind === 'manual').length,
     duplicates: aggregated.duplicates,
   };
+  // Auto-deriva período desde fechas de abonos procesados (ignora OCR vacío)
+  const derivedDates: string[] = [];
+  for (const r of results) {
+    if (r.abono?.date) derivedDates.push(r.abono.date);
+  }
+  const derivedPeriod = deriveBatchPeriod(derivedDates);
   if (isAppendMode) {
     await setDoc(
       doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`),
@@ -477,7 +483,13 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
   } else {
     await setDoc(
       doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`),
-      { status: 'done', stats: finalStats },
+      stripUndefined({
+        status: 'done',
+        stats: finalStats,
+        // Respeta período manual del wizard; si no hay, usa el derivado.
+        periodFrom: periodFrom || derivedPeriod.periodFrom,
+        periodTo: periodTo || derivedPeriod.periodTo,
+      }),
       { merge: true },
     );
   }
@@ -776,14 +788,26 @@ export function findDuplicateBatchGroups(
   return out;
 }
 
-/** Recomputa stats de un batch leyendo todos sus abonos actuales. */
+/** Deriva periodFrom/periodTo (ISO YYYY-MM-DD) desde una lista de fechas de abonos.
+ *  Ignora strings vacíos / inválidos. Retorna {} si no hay fechas válidas. */
+export function deriveBatchPeriod(dates: string[]): { periodFrom?: string; periodTo?: string } {
+  const valid = dates
+    .map(d => (d || '').slice(0, 10))
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+  if (!valid.length) return {};
+  return { periodFrom: valid[0], periodTo: valid[valid.length - 1] };
+}
+
+/** Recomputa stats + período derivado de un batch leyendo todos sus abonos. */
 async function recomputeBatchStats(
   db: Firestore,
   businessId: string,
   batchId: string,
-): Promise<ReconciliationBatch['stats']> {
+): Promise<{ stats: ReconciliationBatch['stats']; periodFrom?: string; periodTo?: string }> {
   const snap = await getDocs(query(collectionGroup(db, 'abonos'), where('batchId', '==', batchId)));
   let total = 0, confirmed = 0, review = 0, notFound = 0, manual = 0, duplicates = 0;
+  const dates: string[] = [];
   snap.forEach(d => {
     const data = d.data() as SessionAbono;
     total += 1;
@@ -792,8 +816,14 @@ async function recomputeBatchStats(
     else if (data.status === 'no_encontrado') notFound += 1;
     else if (data.status === 'duplicado') duplicates += 1;
     if ((data as any).receiptUrl === undefined && !(data as any).receiptHash) manual += 1;
+    if (data.date) dates.push(data.date);
   });
-  return { total, confirmed, review, notFound, manual, duplicates };
+  const { periodFrom, periodTo } = deriveBatchPeriod(dates);
+  return {
+    stats: { total, confirmed, review, notFound, manual, duplicates },
+    periodFrom,
+    periodTo,
+  };
   // Nota: el campo "manual" aquí es aproximado (sin imagen ni hash); no afecta
   // lógica de negocio, solo UI en el header del batch.
 }
@@ -838,10 +868,10 @@ export async function mergeBatchGroup(
     await deleteDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${sourceId}`));
   }
 
-  const stats = await recomputeBatchStats(db, businessId, keeperId);
+  const { stats, periodFrom, periodTo } = await recomputeBatchStats(db, businessId, keeperId);
   await setDoc(
     doc(db, `businesses/${businessId}/reconciliationBatches/${keeperId}`),
-    { stats },
+    stripUndefined({ stats, periodFrom, periodTo }),
     { merge: true },
   );
 
