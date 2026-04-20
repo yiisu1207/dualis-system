@@ -353,8 +353,33 @@ export default function BatchReviewPanel({
 
   const handleRebuscar = async (entry: AbonoEntry) => {
     setBusyId(entry.id);
+    setError(null);
     try {
-      const p = await ensurePool();
+      // Si el abono estaba confirmado, liberar el claim en usedReferences antes
+      // de rebuscar — si no, la fila correcta seguiría marcada como USADA y el
+      // matcher la excluiría. Forzar recarga del pool local.
+      let needsPoolReload = false;
+      if (entry.status === 'confirmado') {
+        try {
+          const refsQ = query(
+            collection(db, `businesses/${businessId}/usedReferences`),
+            where('abonoId', '==', entry.id),
+          );
+          const snap = await getDocs(refsQ);
+          await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+          needsPoolReload = true;
+        } catch (err) {
+          console.warn('[BatchReview] no se pudo liberar usedReferences en rebuscar', err);
+        }
+      }
+      if (needsPoolReload) setPool([]);
+      const p = needsPoolReload
+        ? await loadGlobalPool(db, businessId, {
+            periodFrom: batch?.periodFrom, periodTo: batch?.periodTo,
+            accountIds: batch?.accountIds, excludeUsed: true,
+          })
+        : await ensurePool();
+      if (needsPoolReload) setPool(p);
       const draft: DraftAbono = {
         amount: entry.amount, date: entry.date, reference: entry.reference,
         cedula: entry.cedula, phone: entry.phone, clientName: entry.clientName,
@@ -366,7 +391,22 @@ export default function BatchReviewPanel({
       const reviewReason = candidateMatches.length
         ? `${candidateMatches.length} candidato(s). Top: ${candidateMatches[0].confidence} (score ${candidateMatches[0].score}).`
         : 'No se encontraron filas en el pool actual que coincidan con monto y fecha (±3 días).';
-      await updateAbono(entry, { candidateMatches, status: newStatus as any, reviewReason });
+      // Limpiar match/duplicate fields — el abono vuelve a estado "por revisar".
+      await updateAbono(entry, {
+        candidateMatches,
+        status: newStatus as any,
+        reviewReason,
+        matchRowId: null,
+        matchAccountAlias: undefined,
+        matchBankAccountId: undefined,
+        matchBankName: undefined,
+        matchMonthKey: undefined,
+        duplicateOfAbonoId: undefined,
+        duplicateOfBatchId: undefined,
+        duplicateOfMonthKey: undefined,
+      });
+    } catch (e: any) {
+      setError('Error re-buscando: ' + (e?.message || String(e)));
     } finally { setBusyId(null); }
   };
 
@@ -614,9 +654,10 @@ export default function BatchReviewPanel({
           <DuplicateCard
             key={a.id}
             entry={a}
-            busy={busyId === a.id}
+            busy={busyId === a.id || poolLoading}
             isCurrentBatch={a.duplicateOfBatchId === batchId}
             onOpenOriginal={onOpenBatch}
+            onRebuscar={() => handleRebuscar(a)}
             onDelete={() => handleDeleteAbono(a)}
           />
         ))}
@@ -642,6 +683,7 @@ export default function BatchReviewPanel({
                 <th className="text-left py-2">Ref</th>
                 <th className="text-left py-2">Cliente</th>
                 <th className="text-left py-2">Cuenta matched</th>
+                <th className="text-right py-2 w-[60px]"></th>
               </tr>
             </thead>
             <tbody>
@@ -684,6 +726,16 @@ export default function BatchReviewPanel({
                       ) : (
                         a.matchBankName || a.matchAccountAlias || '—'
                       )}
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        onClick={() => handleRebuscar(a)}
+                        disabled={busyId === a.id || poolLoading}
+                        className="text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1 disabled:opacity-40"
+                        title="Liberar claim y re-buscar candidatos"
+                      >
+                        <RefreshCw size={12} /> Re-buscar
+                      </button>
                     </td>
                   </tr>
                 );
@@ -886,10 +938,11 @@ interface DuplicateCardProps {
   busy: boolean;
   isCurrentBatch?: boolean;
   onOpenOriginal?: (batchId: string, abonoId?: string) => void;
+  onRebuscar: () => void;
   onDelete: () => void;
 }
 
-const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry, busy, isCurrentBatch, onOpenOriginal, onDelete }) => {
+const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry, busy, isCurrentBatch, onOpenOriginal, onRebuscar, onDelete }) => {
   const reason = entry.reviewReason
     || entry.note
     || 'La referencia o la imagen ya existe en otro abono del negocio — se archivó para evitar doble conciliación.';
@@ -948,6 +1001,9 @@ const DuplicateCard: React.FC<DuplicateCardProps> = ({ entry, busy, isCurrentBat
       )}
 
       <div className="flex items-center justify-end gap-3 mt-3">
+        <button onClick={onRebuscar} disabled={busy} className="text-sm text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1 disabled:opacity-40" title="Buscar candidatos en el pool actual">
+          <RefreshCw size={12} /> Re-buscar
+        </button>
         <button onClick={onDelete} disabled={busy} className="text-sm text-rose-700 hover:text-rose-800 inline-flex items-center gap-1 disabled:opacity-40" title="Eliminar captura del lote">
           <Trash2 size={12} /> Eliminar
         </button>
