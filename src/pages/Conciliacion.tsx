@@ -27,6 +27,7 @@ import {
   X,
   Download,
   Loader2,
+  Merge,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import type { BankRow } from '../utils/bankReconciliation';
@@ -35,11 +36,13 @@ import {
   processReceiptBatch,
   findExistingBatchByName,
   deleteBatchCompletely,
+  findDuplicateBatchGroups,
   type ImageBatchItem,
   type ManualBatchItem,
   type BatchItemDraft,
 } from '../utils/processReceiptBatch';
 import NameConflictModal from '../components/tesoreria/NameConflictModal';
+import DuplicateBatchesModal from '../components/tesoreria/DuplicateBatchesModal';
 import { isVerifiable, resolveVerificationStatus } from '../utils/movementHelpers';
 import AccountChips, { type AccountChipData } from '../components/conciliacion/AccountChips';
 import AccountRowsModal from '../components/conciliacion/AccountRowsModal';
@@ -643,6 +646,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           />
         ) : (
           <BatchList
+            businessId={businessId}
             batches={batches}
             accountChips={accountChips}
             onOpen={setSelectedBatchId}
@@ -758,6 +762,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
 
 // ── BatchList: lista de ReconciliationBatch con acciones ─────────────────
 interface BatchListProps {
+  businessId: string;
   batches: ReconciliationBatch[];
   accountChips: AccountChipData[];
   onOpen: (id: string) => void;
@@ -775,7 +780,7 @@ interface BatchListProps {
 }
 
 const BatchList: React.FC<BatchListProps> = ({
-  batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
+  businessId, batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
   onDeleteAccount, onViewAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch, onAddManual,
 }) => {
   const [accountQuery, setAccountQuery] = useState('');
@@ -949,6 +954,7 @@ const BatchList: React.FC<BatchListProps> = ({
 
       {/* Lista de lotes con buscador + paginación */}
       <BatchTable
+        businessId={businessId}
         batches={batches}
         accountChips={accountChips}
         onOpen={onOpen}
@@ -960,6 +966,7 @@ const BatchList: React.FC<BatchListProps> = ({
 };
 
 interface BatchTableProps {
+  businessId: string;
   batches: ReconciliationBatch[];
   accountChips: AccountChipData[];
   onOpen: (id: string) => void;
@@ -969,10 +976,14 @@ interface BatchTableProps {
 
 const PAGE_SIZE = 10;
 
-const BatchTable: React.FC<BatchTableProps> = ({ batches, accountChips, onOpen, onDelete, canEdit }) => {
+const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChips, onOpen, onDelete, canEdit }) => {
   const [batchQuery, setBatchQuery] = useState('');
   const [batchPage, setBatchPage] = useState(1);
   const [showPdfModal, setShowPdfModal] = useState(false);
+  const [showDupModal, setShowDupModal] = useState(false);
+  const toast = useToast();
+
+  const dupGroups = useMemo(() => findDuplicateBatchGroups(batches), [batches]);
 
   const filteredBatches = useMemo(() => {
     const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -1016,6 +1027,15 @@ const BatchTable: React.FC<BatchTableProps> = ({ batches, accountChips, onOpen, 
           <Layers size={13} /> Lotes ({batchQuery.trim() ? `${filteredBatches.length}/${batches.length}` : batches.length})
         </div>
         <div className="flex items-center gap-2">
+          {canEdit && dupGroups.length > 0 && (
+            <button
+              onClick={() => setShowDupModal(true)}
+              className="text-[11px] px-2 py-1 rounded border border-amber-300 dark:border-amber-600/50 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/30 inline-flex items-center gap-1"
+              title={`Hay ${dupGroups.length} grupo${dupGroups.length === 1 ? '' : 's'} de lotes con nombre repetido`}
+            >
+              <Merge size={12} /> Unificar duplicados ({dupGroups.length})
+            </button>
+          )}
           <button
             onClick={() => setShowPdfModal(true)}
             className="text-[11px] px-2 py-1 rounded border border-indigo-300 dark:border-indigo-600/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 inline-flex items-center gap-1"
@@ -1143,6 +1163,21 @@ const BatchTable: React.FC<BatchTableProps> = ({ batches, accountChips, onOpen, 
           batches={batches}
           accountChips={accountChips}
           onClose={() => setShowPdfModal(false)}
+        />
+      )}
+
+      {showDupModal && (
+        <DuplicateBatchesModal
+          db={db}
+          businessId={businessId}
+          batches={batches}
+          onClose={() => setShowDupModal(false)}
+          onDone={({ groups, movedAbonos, movedRefs, deletedBatches }) => {
+            setShowDupModal(false);
+            toast.success(
+              `Fusión completa · ${groups} grupo${groups === 1 ? '' : 's'} · ${movedAbonos} abono${movedAbonos === 1 ? '' : 's'} movido${movedAbonos === 1 ? '' : 's'} · ${movedRefs} ref${movedRefs === 1 ? '' : 's'} · ${deletedBatches} lote${deletedBatches === 1 ? '' : 's'} borrado${deletedBatches === 1 ? '' : 's'}`
+            );
+          }}
         />
       )}
     </div>

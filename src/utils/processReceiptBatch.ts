@@ -5,7 +5,7 @@
 // - actualiza el batch con stats finales
 
 import {
-  doc, setDoc, getDocs, collection, collectionGroup, deleteDoc, query, where, limit, type Firestore,
+  doc, setDoc, getDocs, collection, collectionGroup, deleteDoc, query, where, limit, writeBatch, type Firestore,
 } from 'firebase/firestore';
 import { uploadToCloudinary } from './cloudinary';
 import { extractReceipt, hashFile, type ExtractedReceipt } from './receiptOcr';
@@ -749,4 +749,101 @@ export async function appendImagesToBatch(opts: {
     })());
   }
   await Promise.all(workers);
+}
+
+/** Agrupa lotes con el mismo nombre (normalizado: trim + lowercase + unicode NFD).
+ *  Solo devuelve grupos con 2+ lotes. Útil para ofrecer unificación masiva de
+ *  duplicados que ya existían antes del check de colisión en la creación. */
+export function findDuplicateBatchGroups(
+  batches: ReconciliationBatch[],
+): Array<{ normalized: string; batches: ReconciliationBatch[] }> {
+  const norm = (s: string) =>
+    (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase();
+  const groups = new Map<string, ReconciliationBatch[]>();
+  for (const b of batches) {
+    const key = norm(b.name || '');
+    if (!key) continue;
+    const list = groups.get(key) ?? [];
+    list.push(b);
+    groups.set(key, list);
+  }
+  const out: Array<{ normalized: string; batches: ReconciliationBatch[] }> = [];
+  for (const [normalized, list] of groups.entries()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+    out.push({ normalized, batches: list });
+  }
+  return out;
+}
+
+/** Recomputa stats de un batch leyendo todos sus abonos actuales. */
+async function recomputeBatchStats(
+  db: Firestore,
+  businessId: string,
+  batchId: string,
+): Promise<ReconciliationBatch['stats']> {
+  const snap = await getDocs(query(collectionGroup(db, 'abonos'), where('batchId', '==', batchId)));
+  let total = 0, confirmed = 0, review = 0, notFound = 0, manual = 0, duplicates = 0;
+  snap.forEach(d => {
+    const data = d.data() as SessionAbono;
+    total += 1;
+    if (data.status === 'confirmado') confirmed += 1;
+    else if (data.status === 'revisar') review += 1;
+    else if (data.status === 'no_encontrado') notFound += 1;
+    else if (data.status === 'duplicado') duplicates += 1;
+    if ((data as any).receiptUrl === undefined && !(data as any).receiptHash) manual += 1;
+  });
+  return { total, confirmed, review, notFound, manual, duplicates };
+  // Nota: el campo "manual" aquí es aproximado (sin imagen ni hash); no afecta
+  // lógica de negocio, solo UI en el header del batch.
+}
+
+/** Fusiona N lotes en uno. Re-parenta abonos y usedReferences de los sources al
+ *  keeper, borra los sources, y recomputa stats del keeper. Idempotente si se
+ *  reintenta. */
+export async function mergeBatchGroup(
+  db: Firestore,
+  businessId: string,
+  keeperId: string,
+  sourceIds: string[],
+): Promise<{ movedAbonos: number; movedRefs: number }> {
+  let movedAbonos = 0;
+  let movedRefs = 0;
+  for (const sourceId of sourceIds) {
+    if (sourceId === keeperId) continue;
+
+    const abonosSnap = await getDocs(
+      query(collectionGroup(db, 'abonos'), where('batchId', '==', sourceId)),
+    );
+    for (let i = 0; i < abonosSnap.docs.length; i += 400) {
+      const wb = writeBatch(db);
+      abonosSnap.docs.slice(i, i + 400).forEach(d => wb.update(d.ref, { batchId: keeperId }));
+      await wb.commit();
+    }
+    movedAbonos += abonosSnap.docs.length;
+
+    const refsSnap = await getDocs(
+      query(
+        collection(db, `businesses/${businessId}/usedReferences`),
+        where('batchId', '==', sourceId),
+      ),
+    );
+    for (let i = 0; i < refsSnap.docs.length; i += 400) {
+      const wb = writeBatch(db);
+      refsSnap.docs.slice(i, i + 400).forEach(d => wb.update(d.ref, { batchId: keeperId }));
+      await wb.commit();
+    }
+    movedRefs += refsSnap.docs.length;
+
+    await deleteDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${sourceId}`));
+  }
+
+  const stats = await recomputeBatchStats(db, businessId, keeperId);
+  await setDoc(
+    doc(db, `businesses/${businessId}/reconciliationBatches/${keeperId}`),
+    { stats },
+    { merge: true },
+  );
+
+  return { movedAbonos, movedRefs };
 }
