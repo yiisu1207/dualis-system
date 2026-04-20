@@ -437,3 +437,194 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
 
   return { batchId, results, stats: finalStats };
 }
+
+// Añade capturas a un lote ya existente. Usa los mismos filtros (período + cuentas)
+// del batch para cargar el pool global. Los stats del batch se re-sincronizan
+// automáticamente vía el useEffect de BatchReviewPanel — no tocar aquí.
+export async function appendImagesToBatch(opts: {
+  db: Firestore;
+  businessId: string;
+  batch: ReconciliationBatch;
+  files: File[];
+  currentUserId: string;
+  currentUserName?: string;
+  onProgress?: (done: number, total: number) => void;
+}): Promise<void> {
+  const { db, businessId, batch, files, currentUserId, currentUserName, onProgress } = opts;
+  if (!files.length) return;
+
+  const pool = await loadGlobalPool(db, businessId, {
+    periodFrom: batch.periodFrom,
+    periodTo: batch.periodTo,
+    accountIds: batch.accountIds,
+    excludeUsed: true,
+  });
+
+  let done = 0;
+
+  async function processOne(file: File): Promise<void> {
+    try {
+      const receiptHash = await hashFile(file);
+      const dup = await findDuplicateAbono(db, businessId, receiptHash);
+      if (dup) {
+        const dupAbonoId = newId('ab');
+        const dupMonth = todayISO().slice(0, 7);
+        const dupAbono: SessionAbono & { businessId: string } = {
+          id: dupAbonoId,
+          status: 'duplicado',
+          amount: 0,
+          date: todayISO(),
+          batchId: batch.id,
+          businessId,
+          matchRowId: null,
+          candidateMatches: [],
+          receiptHash,
+          duplicateOfAbonoId: dup.abonoId,
+          duplicateOfBatchId: dup.batchId,
+          duplicateOfMonthKey: dup.monthKey,
+          note: `Duplicado de captura ya registrada (abono ${dup.abonoId}). Archivado para revisión manual.`,
+          reviewReason: `La misma imagen ya fue procesada anteriormente (mismo hash SHA-256).`,
+        };
+        await setDoc(
+          doc(db, `businesses/${businessId}/bankStatements/${dupMonth}/abonos/${dupAbonoId}`),
+          stripUndefined(dupAbono),
+        );
+        return;
+      }
+      const [ocr, uploaded] = await Promise.all([
+        extractReceipt(file),
+        uploadToCloudinary(file, 'dualis_payments').catch(() => undefined),
+      ]);
+      const receiptUrl = uploaded?.secure_url;
+      const abonoBase: DraftAbono = {
+        amount: ocr.amount || 0,
+        date: ocr.date || todayISO(),
+        reference: ocr.reference || undefined,
+        cedula: ocr.cedula || undefined,
+        phone: ocr.phone || undefined,
+        clientName: ocr.senderName || undefined,
+        operationType: (ocr.operationType && ocr.operationType !== 'otro' ? ocr.operationType : undefined) as Exclude<OperationType, 'otro'> | undefined,
+        note: ocr.notes || undefined,
+        receiptUrl,
+      };
+
+      const matches = findMatches(abonoBase, pool);
+      const candidateMatches = topCandidatesSnapshot(matches);
+      const top = matches[0];
+
+      let status: AbonoStatus = 'no_encontrado';
+      let matchRowId: string | null = null;
+      let matchAccountAlias: string | undefined;
+      let matchBankAccountId: string | undefined;
+      let matchBankName: string | undefined;
+      let matchMonthKey: string | undefined;
+      let reviewReason: string | undefined;
+      let duplicateOfAbonoId: string | undefined;
+      let duplicateOfBatchId: string | undefined;
+      let duplicateOfMonthKey: string | undefined;
+
+      const abonoId = newId('ab');
+      const topIdentity = top?.row.bankAccountId || top?.row.accountAlias;
+      if (top && (top.confidence === 'exact' || top.confidence === 'high')
+          && topIdentity && top.row.reference && abonoBase.reference) {
+        const claim = await claimReference(db, businessId, {
+          bankAccountId: top.row.bankAccountId,
+          accountAlias: top.row.accountAlias,
+          reference: top.row.reference,
+          amount: top.row.amount,
+          abonoId,
+          batchId: batch.id,
+          bankRowId: top.row.rowId,
+          monthKey: top.row.monthKey,
+          claimedByUid: currentUserId,
+          claimedByName: currentUserName,
+        });
+        if (claim.ok === true) {
+          status = 'confirmado';
+          matchRowId = top.row.rowId;
+          matchAccountAlias = top.row.accountAlias;
+          matchBankAccountId = top.row.bankAccountId;
+          matchBankName = top.row.bankName;
+          matchMonthKey = top.row.monthKey;
+        } else {
+          const ex = claim.existing;
+          status = 'duplicado';
+          reviewReason = `Mismo banco + referencia + monto ya conciliado por ${ex.claimedByName || ex.claimedByUid} el ${new Date(ex.claimedAt).toLocaleString()}.`;
+          duplicateOfAbonoId = ex.abonoId;
+          duplicateOfBatchId = ex.batchId;
+          duplicateOfMonthKey = ex.monthKey;
+        }
+      } else if (matches.length > 0) {
+        status = 'revisar';
+        reviewReason = `${matches.length} candidato(s). Top: ${top.confidence} (score ${top.score}). Confianza insuficiente para auto-confirmar.`;
+      } else {
+        reviewReason = 'No se encontraron filas en el pool que coincidan con monto y fecha (±3 días).';
+      }
+
+      const abonoMonthKey = matchMonthKey || abonoBase.date.slice(0, 7);
+      const sessionAbono: SessionAbono & { businessId: string } = {
+        ...abonoBase,
+        id: abonoId,
+        status,
+        matchRowId,
+        matchAccountAlias,
+        matchBankAccountId,
+        matchBankName,
+        matchMonthKey,
+        batchId: batch.id,
+        candidateMatches,
+        receiptUrl,
+        receiptHash,
+        ocrRaw: ocr,
+        businessId,
+        reviewReason,
+        duplicateOfAbonoId,
+        duplicateOfBatchId,
+        duplicateOfMonthKey,
+      };
+      await setDoc(
+        doc(db, `businesses/${businessId}/bankStatements/${abonoMonthKey}/abonos/${abonoId}`),
+        stripUndefined(sessionAbono),
+      );
+    } catch (e: any) {
+      const errMsg = e?.message || String(e);
+      try {
+        const fallbackId = newId('ab');
+        const fallbackMonth = todayISO().slice(0, 7);
+        const errorAbono: SessionAbono & { businessId: string; errorMsg: string } = {
+          id: fallbackId,
+          status: 'no_encontrado',
+          amount: 0,
+          date: todayISO(),
+          batchId: batch.id,
+          businessId,
+          matchRowId: null,
+          note: `⚠ Falló procesamiento (${file.name}): ${errMsg.slice(0, 200)}`,
+          errorMsg: errMsg.slice(0, 500),
+          candidateMatches: [],
+        };
+        await setDoc(
+          doc(db, `businesses/${businessId}/bankStatements/${fallbackMonth}/abonos/${fallbackId}`),
+          stripUndefined(errorAbono),
+        );
+      } catch (writeErr) {
+        console.warn('[appendImagesToBatch] no se pudo guardar abono de error', writeErr);
+      }
+    } finally {
+      done += 1;
+      onProgress?.(done, files.length);
+    }
+  }
+
+  let cursor = 0;
+  const workers: Promise<void>[] = [];
+  for (let w = 0; w < Math.min(OCR_CONCURRENCY, files.length); w++) {
+    workers.push((async function next() {
+      while (cursor < files.length) {
+        const idx = cursor++;
+        await processOne(files[idx]);
+      }
+    })());
+  }
+  await Promise.all(workers);
+}

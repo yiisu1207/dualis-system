@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronRight, RefreshCw,
   Loader2, Image as ImageIcon, ArrowLeft, Download, Plus, ExternalLink, Copy,
+  Upload, Search, X,
 } from 'lucide-react';
 import {
   collection, doc, onSnapshot, query, where, setDoc, getDoc, getDocs, collectionGroup, updateDoc,
@@ -10,7 +11,7 @@ import { db } from '../../firebase/config';
 import { findMatches, type DraftAbono } from '../../utils/bankReconciliation';
 import { loadGlobalPool, type PooledRow } from '../../utils/globalBankPool';
 import { claimReference } from '../../utils/reconciliationGuards';
-import { topCandidatesSnapshot, stripUndefined } from '../../utils/processReceiptBatch';
+import { topCandidatesSnapshot, stripUndefined, appendImagesToBatch } from '../../utils/processReceiptBatch';
 import type { ReconciliationBatch, SessionAbonoCandidate } from '../../../types';
 import type { SessionAbono } from '../conciliacion/ReconciliationReport';
 import { exportBatchCSV } from '../../utils/batchExports';
@@ -43,6 +44,9 @@ export default function BatchReviewPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const highlightRef = useRef<HTMLTableRowElement | null>(null);
+  const [itemQuery, setItemQuery] = useState('');
+  const [appending, setAppending] = useState<{ done: number; total: number } | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   // Cargar batch
   useEffect(() => {
@@ -109,10 +113,30 @@ export default function BatchReviewPanel({
     }
   };
 
-  const confirmados = useMemo(() => abonos.filter(a => a.status === 'confirmado'), [abonos]);
-  const revisar = useMemo(() => abonos.filter(a => a.status === 'revisar'), [abonos]);
-  const noEncontrado = useMemo(() => abonos.filter(a => a.status === 'no_encontrado'), [abonos]);
-  const duplicados = useMemo(() => abonos.filter(a => a.status === 'duplicado'), [abonos]);
+  const filteredAbonos = useMemo(() => {
+    const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const tokens = norm(itemQuery).split(/\s+/).filter(Boolean);
+    if (!tokens.length) return abonos;
+    return abonos.filter(a => {
+      const hay = norm([
+        a.reference || '',
+        a.clientName || '',
+        a.cedula || '',
+        a.phone || '',
+        a.date || '',
+        String(a.amount ?? ''),
+        a.matchAccountAlias || '',
+        a.matchBankName || '',
+        a.note || '',
+      ].join(' '));
+      return tokens.every(t => hay.includes(t));
+    });
+  }, [abonos, itemQuery]);
+
+  const confirmados = useMemo(() => filteredAbonos.filter(a => a.status === 'confirmado'), [filteredAbonos]);
+  const revisar = useMemo(() => filteredAbonos.filter(a => a.status === 'revisar'), [filteredAbonos]);
+  const noEncontrado = useMemo(() => filteredAbonos.filter(a => a.status === 'no_encontrado'), [filteredAbonos]);
+  const duplicados = useMemo(() => filteredAbonos.filter(a => a.status === 'duplicado'), [filteredAbonos]);
 
   // Si se vino desde "Ver lote" de una fila usada del EdeC, abre la sección
   // correspondiente y scrollea al abono resaltado.
@@ -135,17 +159,22 @@ export default function BatchReviewPanel({
   // Sincroniza batch.stats cuando cambian los abonos. Antes los contadores del batch
   // quedaban "congelados" al momento del procesamiento inicial: si confirmabas manualmente
   // un item "revisar", el detalle mostraba "3 confirmados" pero la lista seguía con "3 revisar".
+  // Nota: stats siempre refleja el set completo de abonos, nunca el filtrado del buscador.
   useEffect(() => {
     if (!batch || loading) return;
     if (!abonos.length && (batch.stats?.total ?? 0) === 0) return;
     const manual = abonos.filter(a => !a.receiptUrl && a.status !== 'duplicado').length;
+    const allConfirmed = abonos.filter(a => a.status === 'confirmado').length;
+    const allReview = abonos.filter(a => a.status === 'revisar').length;
+    const allNotFound = abonos.filter(a => a.status === 'no_encontrado').length;
+    const allDuplicates = abonos.filter(a => a.status === 'duplicado').length;
     const nextStats = {
       total: abonos.length,
-      confirmed: confirmados.length,
-      review: revisar.length,
-      notFound: noEncontrado.length,
+      confirmed: allConfirmed,
+      review: allReview,
+      notFound: allNotFound,
       manual,
-      duplicates: duplicados.length,
+      duplicates: allDuplicates,
     };
     const prev = batch.stats || { total: 0, confirmed: 0, review: 0, notFound: 0, manual: 0, duplicates: 0 };
     const same = (
@@ -161,7 +190,7 @@ export default function BatchReviewPanel({
     updateDoc(ref, { stats: nextStats }).catch(err => {
       console.warn('[BatchReview] stats sync failed', err);
     });
-  }, [abonos, confirmados.length, revisar.length, noEncontrado.length, duplicados.length, batch, loading, businessId, batchId]);
+  }, [abonos, batch, loading, businessId, batchId]);
 
   const updateAbono = async (entry: AbonoEntry, patch: Partial<SessionAbono>) => {
     const ref = doc(db, `businesses/${businessId}/bankStatements/${entry.monthKey}/abonos/${entry.id}`);
@@ -334,6 +363,56 @@ export default function BatchReviewPanel({
     exportBatchCSV(batch, abonos);
   };
 
+  const MAX_BYTES = 5 * 1024 * 1024;
+  const MAX_BATCH_ADD = 20;
+  const ACCEPTED = /^image\/(png|jpeg|jpg|webp)$/i;
+
+  const handleAppendFiles = useCallback(async (rawFiles: File[] | FileList) => {
+    if (!batch || appending) return;
+    const arr = Array.from(rawFiles || []);
+    const valid: File[] = [];
+    let rejected = 0;
+    for (const f of arr) {
+      if (!ACCEPTED.test(f.type) || f.size > MAX_BYTES) { rejected += 1; continue; }
+      valid.push(f);
+      if (valid.length >= MAX_BATCH_ADD) break;
+    }
+    if (!valid.length) {
+      setError(rejected ? `Archivos rechazados (solo PNG/JPG/WEBP ≤ 5MB).` : 'No hay archivos válidos.');
+      return;
+    }
+    setError(null);
+    setAppending({ done: 0, total: valid.length });
+    try {
+      await appendImagesToBatch({
+        db,
+        businessId,
+        batch,
+        files: valid,
+        currentUserId,
+        currentUserName,
+        onProgress: (done, total) => setAppending({ done, total }),
+      });
+      // Pool invalidada — forzar recarga en la próxima acción.
+      setPool([]);
+    } catch (e: any) {
+      setError('Error agregando capturas: ' + (e?.message || String(e)));
+    } finally {
+      setAppending(null);
+    }
+  }, [batch, appending, businessId, currentUserId, currentUserName]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    if (e.dataTransfer?.files?.length) handleAppendFiles(e.dataTransfer.files);
+  }, [handleAppendFiles]);
+
+  const onPickFiles = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.length) handleAppendFiles(e.target.files);
+    e.target.value = '';
+  }, [handleAppendFiles]);
+
   if (!batch) {
     return (
       <div className="p-8 text-center text-slate-500 dark:text-slate-400">
@@ -375,11 +454,76 @@ export default function BatchReviewPanel({
           <span className={`text-xs px-2 py-0.5 rounded ${batch.status === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{batch.status}</span>
         </div>
         <div className="grid grid-cols-5 gap-2 mt-3 text-center text-xs">
-          <Stat color="emerald" label="Confirmados" value={confirmados.length} />
-          <Stat color="amber" label="Revisar" value={revisar.length} />
-          <Stat color="rose" label="No encontrado" value={noEncontrado.length} />
-          <Stat color="violet" label="Duplicados" value={duplicados.length} />
+          <Stat color="emerald" label="Confirmados" value={abonos.filter(a => a.status === 'confirmado').length} />
+          <Stat color="amber" label="Revisar" value={abonos.filter(a => a.status === 'revisar').length} />
+          <Stat color="rose" label="No encontrado" value={abonos.filter(a => a.status === 'no_encontrado').length} />
+          <Stat color="violet" label="Duplicados" value={abonos.filter(a => a.status === 'duplicado').length} />
           <Stat color="slate" label="Total" value={abonos.length} />
+        </div>
+
+        {/* Buscador + DropZone para añadir capturas a este lote */}
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={itemQuery}
+              onChange={(e) => setItemQuery(e.target.value)}
+              placeholder="Buscar por monto, ref, cliente, cédula, fecha…"
+              className="w-full pl-7 pr-7 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-400"
+            />
+            {itemQuery && (
+              <button
+                onClick={() => setItemQuery('')}
+                title="Limpiar"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {itemQuery.trim() && (
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+              {filteredAbonos.length}/{abonos.length} coinciden
+            </div>
+          )}
+        </div>
+
+        <div
+          onDragEnter={(e) => { e.preventDefault(); if (!appending) setDragActive(true); }}
+          onDragOver={(e) => e.preventDefault()}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={onDrop}
+          className={`mt-3 rounded-lg border-2 border-dashed p-3 text-center transition-colors ${
+            appending
+              ? 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 opacity-70'
+              : dragActive
+                ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-400 dark:border-indigo-500'
+                : 'bg-slate-50/60 dark:bg-slate-900/40 border-slate-300 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-500'
+          }`}
+        >
+          {appending ? (
+            <div className="flex items-center justify-center gap-2 text-xs text-indigo-700 dark:text-indigo-300">
+              <Loader2 size={14} className="animate-spin" />
+              Agregando capturas al lote {appending.done}/{appending.total}…
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+              <Upload size={12} className="text-slate-400" />
+              <span>Arrastra capturas faltantes aquí para agregarlas a este lote</span>
+              <label className="inline-block">
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={onPickFiles}
+                />
+                <span className="text-indigo-600 dark:text-indigo-400 cursor-pointer hover:underline">o haz clic</span>
+              </label>
+              <span className="text-slate-400">· máx 20, 5MB c/u</span>
+            </div>
+          )}
         </div>
       </div>
 

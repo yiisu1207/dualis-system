@@ -16,7 +16,6 @@ import { db } from '../firebase/config';
 import { uploadToCloudinary } from '../utils/cloudinary';
 import {
   FileCheck,
-  Loader2,
   Landmark,
   ShieldCheck,
   Layers,
@@ -26,18 +25,17 @@ import {
   Trash2,
   Search,
   X,
+  Download,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import type { BankRow } from '../utils/bankReconciliation';
-import { processReceiptBatch, type ImageBatchItem } from '../utils/processReceiptBatch';
 import { rematchOrphanAbonos } from '../utils/rematchOrphanAbonos';
 import { isVerifiable, resolveVerificationStatus } from '../utils/movementHelpers';
 import AccountChips, { type AccountChipData } from '../components/conciliacion/AccountChips';
 import AccountRowsModal from '../components/conciliacion/AccountRowsModal';
 import BankUploadModal from '../components/conciliacion/BankUploadModal';
-import ReceiptDropZone from '../components/conciliacion/ReceiptDropZone';
-import BatchNamePromptModal from '../components/conciliacion/BatchNamePromptModal';
 import ManualVerificationTab from '../components/conciliacion/ManualVerificationTab';
+import ConciliacionPdfExportModal from '../components/conciliacion/ConciliacionPdfExportModal';
 import MultiBankUploadModal from '../components/tesoreria/MultiBankUploadModal';
 import ReceiptBatchModal from '../components/tesoreria/ReceiptBatchModal';
 import BatchReviewPanel from '../components/tesoreria/BatchReviewPanel';
@@ -94,9 +92,6 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [batches, setBatches] = useState<ReconciliationBatch[]>([]);
   const [usedRefs, setUsedRefs] = useState<UsedReference[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
-  const [pendingBatchFiles, setPendingBatchFiles] = useState<File[] | null>(null);
-  const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
-  const [ocrBusy, setOcrBusy] = useState(false);
   const [viewingAccountAlias, setViewingAccountAlias] = useState<string | null>(null);
   const [viewingAccountHighlightRowId, setViewingAccountHighlightRowId] = useState<string | null>(null);
   const [highlightAbonoInBatch, setHighlightAbonoInBatch] = useState<string | null>(null);
@@ -324,58 +319,6 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     toast.success(`Cuenta "${acc.accountLabel}" eliminada`);
   };
 
-  // Multi-drop → pide nombre y crea un ReconciliationBatch (mismo flujo que la pestaña Lotes).
-  const handleDropBatch = (files: File[]) => {
-    setPendingBatchFiles(files);
-  };
-
-  const handleConfirmBatchName = async (name: string, modalFiles: File[]) => {
-    const files = modalFiles && modalFiles.length ? modalFiles : (pendingBatchFiles || []);
-    if (!files.length) {
-      setPendingBatchFiles(null);
-      return;
-    }
-    setPendingBatchFiles(null);
-    try {
-      setOcrBusy(true);
-      setOcrProgress({ done: 0, total: files.length });
-      const items: ImageBatchItem[] = files.map((f, i) => ({
-        id: `img_${Date.now().toString(36)}_${i}`,
-        kind: 'image',
-        file: f,
-      }));
-      let lastError: string | null = null;
-      const outcome = await processReceiptBatch({
-        db,
-        businessId,
-        name,
-        currentUserId,
-        currentUserName,
-        items,
-        onProgress: (done, total) => setOcrProgress({ done, total }),
-        onResultsChange: (results) => {
-          const errored = results.find(r => r.status === 'error' && r.errorMsg);
-          if (errored?.errorMsg) lastError = errored.errorMsg;
-        },
-      });
-      if (outcome.stats.notFound > 0 && outcome.stats.confirmed === 0 && outcome.stats.review === 0 && lastError) {
-        toast.error(`OCR falló (${outcome.stats.notFound}/${outcome.stats.total}): ${lastError.slice(0, 400)}`, { duration: 12000 });
-      } else if (lastError) {
-        toast.error(`Hay items con error en el lote: ${lastError.slice(0, 400)}`, { duration: 10000 });
-        toast.success(`Lote "${name}" procesado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
-      } else {
-        toast.success(`Lote "${name}" procesado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
-      }
-      setView('lotes');
-      setSelectedBatchId(outcome.batchId);
-    } catch (err: any) {
-      toast.error('Error procesando lote: ' + (err?.message || String(err)));
-    } finally {
-      setOcrBusy(false);
-      setOcrProgress(null);
-    }
-  };
-
   const handleDeleteBatch = async (batch: ReconciliationBatch) => {
     if (!confirm(`¿Eliminar el lote "${batch.name}" y todos sus abonos? Esta acción no se puede deshacer.`)) return;
     try {
@@ -523,9 +466,6 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             onViewAccount={setViewingAccountAlias}
             onDelete={handleDeleteBatch}
             canEdit={canEdit}
-            ocrBusy={ocrBusy}
-            ocrProgress={ocrProgress}
-            onDropBatch={handleDropBatch}
           />
         )}
       </div>
@@ -535,15 +475,6 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           existingAliases={existingAliases}
           onClose={() => setShowUploadModal(false)}
           onConfirm={handleUploadAccount}
-        />
-      )}
-
-      {pendingBatchFiles && pendingBatchFiles.length > 0 && (
-        <BatchNamePromptModal
-          files={pendingBatchFiles}
-          defaultName={`Lote ${new Date().toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })} ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: false })}`}
-          onCancel={() => setPendingBatchFiles(null)}
-          onConfirm={handleConfirmBatchName}
         />
       )}
 
@@ -619,14 +550,11 @@ interface BatchListProps {
   onViewAccount?: (alias: string) => void;
   onDelete: (batch: ReconciliationBatch) => void;
   canEdit: boolean;
-  ocrBusy: boolean;
-  ocrProgress: { done: number; total: number } | null;
-  onDropBatch: (files: File[]) => void;
 }
 
 const BatchList: React.FC<BatchListProps> = ({
   batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
-  onDeleteAccount, onViewAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch,
+  onDeleteAccount, onViewAccount, onDelete, canEdit,
 }) => {
   const [accountQuery, setAccountQuery] = useState('');
   const filteredAccountChips = useMemo(() => {
@@ -712,23 +640,7 @@ const BatchList: React.FC<BatchListProps> = ({
             <Upload size={14} /> Subir EdeC
           </button>
           <div className="flex-1" />
-          {ocrBusy && ocrProgress && (
-            <div className="text-xs text-slate-500 dark:text-slate-400 inline-flex items-center gap-2">
-              <Loader2 size={12} className="animate-spin" />
-              Procesando {ocrProgress.done}/{ocrProgress.total}…
-            </div>
-          )}
         </div>
-      )}
-
-      {/* Quick drop zone para crear un lote directo desde drag-drop (sin abrir modal) */}
-      {canEdit && (
-        <ReceiptDropZone
-          disabled={ocrBusy}
-          progress={ocrProgress}
-          onDropSingle={(file) => onDropBatch([file])}
-          onDropBatch={onDropBatch}
-        />
       )}
 
       {/* Cuentas bancarias cargadas — strip compacto, no es tab separada */}
@@ -785,17 +697,108 @@ const BatchList: React.FC<BatchListProps> = ({
         )}
       </div>
 
-      {/* Lista de lotes */}
-      {batches.length === 0 ? (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 text-center">
-          <Layers size={32} className="mx-auto text-slate-400 dark:text-slate-500 mb-3" />
-          <div className="text-sm font-medium text-slate-700 dark:text-slate-200">Aún no hay lotes creados</div>
-          <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Crea un lote para procesar múltiples capturas de pago contra el pool global de estados de cuenta.
+      {/* Lista de lotes con buscador + paginación */}
+      <BatchTable
+        batches={batches}
+        accountChips={accountChips}
+        onOpen={onOpen}
+        onDelete={onDelete}
+        canEdit={canEdit}
+      />
+    </div>
+  );
+};
+
+interface BatchTableProps {
+  batches: ReconciliationBatch[];
+  accountChips: AccountChipData[];
+  onOpen: (id: string) => void;
+  onDelete: (batch: ReconciliationBatch) => void;
+  canEdit: boolean;
+}
+
+const PAGE_SIZE = 10;
+
+const BatchTable: React.FC<BatchTableProps> = ({ batches, accountChips, onOpen, onDelete, canEdit }) => {
+  const [batchQuery, setBatchQuery] = useState('');
+  const [batchPage, setBatchPage] = useState(1);
+  const [showPdfModal, setShowPdfModal] = useState(false);
+
+  const filteredBatches = useMemo(() => {
+    const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const tokens = norm(batchQuery).split(/\s+/).filter(Boolean);
+    if (!tokens.length) return batches;
+    return batches.filter(b => {
+      const hay = norm([
+        b.name,
+        b.createdByName || '',
+        b.periodFrom || '',
+        b.periodTo || '',
+        b.status || '',
+      ].join(' '));
+      return tokens.every(t => hay.includes(t));
+    });
+  }, [batches, batchQuery]);
+
+  useEffect(() => { setBatchPage(1); }, [batchQuery, batches.length]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE));
+  const safePage = Math.min(batchPage, totalPages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const pageItems = filteredBatches.slice(pageStart, pageStart + PAGE_SIZE);
+
+  if (batches.length === 0) {
+    return (
+      <div className="bg-white dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-12 text-center">
+        <Layers size={32} className="mx-auto text-slate-400 dark:text-slate-500 mb-3" />
+        <div className="text-sm font-medium text-slate-700 dark:text-slate-200">Aún no hay lotes creados</div>
+        <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          Crea un lote para procesar múltiples capturas de pago contra el pool global de estados de cuenta.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 flex-wrap p-3 border-b border-slate-100 dark:border-slate-700">
+        <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 inline-flex items-center gap-1.5">
+          <Layers size={13} /> Lotes ({batchQuery.trim() ? `${filteredBatches.length}/${batches.length}` : batches.length})
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowPdfModal(true)}
+            className="text-[11px] px-2 py-1 rounded border border-indigo-300 dark:border-indigo-600/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 inline-flex items-center gap-1"
+            title="Exportar PDF del estado actual de la conciliación"
+          >
+            <Download size={12} /> PDF
+          </button>
+          <div className="relative">
+            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={batchQuery}
+              onChange={(e) => setBatchQuery(e.target.value)}
+              placeholder="Buscar por nombre, creador, período…"
+              className="pl-7 pr-7 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-400 w-64"
+            />
+            {batchQuery && (
+              <button
+                onClick={() => setBatchQuery('')}
+                title="Limpiar"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
         </div>
+      </div>
+
+      {filteredBatches.length === 0 ? (
+        <div className="text-xs text-slate-400 py-8 text-center">Ningún lote coincide con "{batchQuery}".</div>
       ) : (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <>
           <table className="w-full text-sm">
             <thead className="bg-slate-50 dark:bg-slate-900/40 text-xs uppercase text-slate-500 dark:text-slate-400">
               <tr>
@@ -812,7 +815,7 @@ const BatchList: React.FC<BatchListProps> = ({
               </tr>
             </thead>
             <tbody>
-              {batches.map(b => (
+              {pageItems.map(b => (
                 <tr key={b.id} className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/30">
                   <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{b.name}</td>
                   <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-300">
@@ -857,7 +860,40 @@ const BatchList: React.FC<BatchListProps> = ({
               ))}
             </tbody>
           </table>
-        </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+              <div>
+                Mostrando <span className="font-semibold">{pageStart + 1}</span>–<span className="font-semibold">{Math.min(pageStart + PAGE_SIZE, filteredBatches.length)}</span> de <span className="font-semibold">{filteredBatches.length}</span>
+              </div>
+              <div className="inline-flex items-center gap-1">
+                <button
+                  onClick={() => setBatchPage(p => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  className="px-2 py-1 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  Anterior
+                </button>
+                <span className="px-2">Página {safePage} / {totalPages}</span>
+                <button
+                  onClick={() => setBatchPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  className="px-2 py-1 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {showPdfModal && (
+        <ConciliacionPdfExportModal
+          batches={batches}
+          accountChips={accountChips}
+          onClose={() => setShowPdfModal(false)}
+        />
       )}
     </div>
   );
