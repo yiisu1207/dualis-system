@@ -461,23 +461,30 @@ async function parsePDF(buffer: ArrayBuffer): Promise<{
         }
         if (allRows.length > 0) {
           const prev = allRows[allRows.length - 1];
-          if (/^(cr[eé]dito|d[eé]bito|inicial)$/i.test(trimmed)) {
+          if (/^(cr[eé]dito|d[eé]bito|inicial|deposito)$/i.test(trimmed)) {
             if (prev.length >= 4) {
               prev[3] = (prev[3] + ' ' + trimmed).trim();
               accepted.push({ page: p, y, text: lineText, reason: 'continuación: token CR/DB/INICIAL pegado a fila previa' });
             } else {
               rejected.push({ page: p, y, text: lineText, reason: 'token CR/DB/INICIAL pero fila previa < 4 cols' });
             }
-          } else if (/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ\s]+$/.test(trimmed) && trimmed.length < 30) {
-            // Nombre propio corto (ej. nombre de cliente), posible continuación real
-            if (prev.length >= 2) {
-              prev[1] = (prev[1] + ' ' + trimmed).trim();
-              accepted.push({ page: p, y, text: lineText, reason: 'continuación: nombre propio pegado a fila previa' });
-            } else {
-              rejected.push({ page: p, y, text: lineText, reason: 'nombre propio corto pero fila previa < 2 cols' });
-            }
           } else {
-            rejected.push({ page: p, y, text: lineText, reason: 'no matchea: ni data-row ni continuación conocida' });
+            // BDV Empresa: cada movimiento tiene una 2da línea con el beneficiario
+            // (nombre en mayúsculas o código+cédula) seguido del tipo de nota.
+            // Ej: "ALI CORRALES Crédito", "0168 V16998616 Crédito", "J050107557 LOTE 00393417 Débito".
+            const typeSuffix = /^(.+?)\s+(cr[eé]dito|d[eé]bito|inicial|deposito)$/i.exec(trimmed);
+            if (typeSuffix && prev.length >= 4 && trimmed.length < 60) {
+              const [, prefix, typeTok] = typeSuffix;
+              prev[1] = (prev[1] + ' ' + prefix).trim();
+              prev[3] = (prev[3] + ' ' + typeTok).trim();
+              accepted.push({ page: p, y, text: lineText, reason: 'continuación: <beneficiario> <tipo> pegada a fila previa' });
+            } else if (/^[A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑa-záéíóúñ0-9.\s]+$/.test(trimmed) && trimmed.length < 40 && prev.length >= 2) {
+              // Nombre propio o código (mayúsculas o título), posible continuación real
+              prev[1] = (prev[1] + ' ' + trimmed).trim();
+              accepted.push({ page: p, y, text: lineText, reason: 'continuación: nombre/código pegado a fila previa' });
+            } else {
+              rejected.push({ page: p, y, text: lineText, reason: 'no matchea: ni data-row ni continuación conocida' });
+            }
           }
         } else {
           rejected.push({ page: p, y, text: lineText, reason: 'no matchea ningún patrón y no hay fila previa' });
