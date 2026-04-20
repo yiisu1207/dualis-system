@@ -60,6 +60,28 @@ async function loadUsedReferencesIndex(
   return map;
 }
 
+/** Ejecuta `mapper` sobre `items` con un límite de concurrencia.
+ *  Evita ráfagas de 20+ getDocs() en paralelo que disparan 429 "Too Many Requests"
+ *  contra Firestore (ocurría en rematchOrphanAbonos tras subir un EdeC). */
+async function pMap<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T, idx: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await mapper(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 /** Lista todos los monthKeys disponibles bajo `bankStatements`. */
 async function listAvailableMonths(db: Firestore, businessId: string): Promise<string[]> {
   // bankStatements/{monthKey}/accounts/* — para listar monthKeys hay que listar la subcolección
@@ -105,10 +127,12 @@ export async function loadGlobalPool(
     ? monthKeysInRange(opts.periodFrom, opts.periodTo)
     : await listAvailableMonths(db, businessId);
 
-  // Cargar cuentas de cada monthKey en paralelo
-  const monthPayloads = await Promise.all(
-    months.map(async (mk) => ({ monthKey: mk, accounts: await loadAccountsForMonth(db, businessId, mk) })),
-  );
+  // Cargar cuentas de cada monthKey con concurrencia limitada — 24 meses en
+  // paralelo disparaban 429 en Firestore cuando el rematch corre post-save.
+  const monthPayloads = await pMap(months, 4, async (mk) => ({
+    monthKey: mk,
+    accounts: await loadAccountsForMonth(db, businessId, mk),
+  }));
 
   // Cargar índice de usedReferences una sola vez
   const usedIndex = await loadUsedReferencesIndex(db, businessId);
