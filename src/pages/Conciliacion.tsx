@@ -28,6 +28,7 @@ import {
   Download,
   Loader2,
   Merge,
+  AlertTriangle,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import type { BankRow } from '../utils/bankReconciliation';
@@ -55,6 +56,7 @@ import ManualBatchEntryModal, { type ManualAccountOption } from '../components/c
 import MultiBankUploadModal from '../components/tesoreria/MultiBankUploadModal';
 import ReceiptBatchModal from '../components/tesoreria/ReceiptBatchModal';
 import BatchReviewPanel from '../components/tesoreria/BatchReviewPanel';
+import PendingReviewPanel from '../components/tesoreria/PendingReviewPanel';
 import type { Movement, ReconciliationBatch, UsedReference } from '../../types';
 
 interface ConciliacionProps {
@@ -98,7 +100,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   // Única vista de conciliación. La antigua tab 'auto' escribía abonos sin
   // reclamar referencia atómicamente — se fusionó al flujo de lotes (un abono
   // individual ahora es un lote ad-hoc de 1 item).
-  const [view, setView] = useState<'lotes' | 'manual'>('lotes');
+  const [view, setView] = useState<'lotes' | 'manual' | 'revisar'>('lotes');
   const monthKey = currentMonthKey();
   const [accounts, setAccounts] = useState<BankStatementAccountDoc[]>([]);
 
@@ -542,20 +544,29 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     [movements]
   );
 
+  const pendingCount = useMemo(() => {
+    let n = 0;
+    for (const b of batches) {
+      const s = b.stats || { review: 0, notFound: 0, duplicates: 0 };
+      n += (s.review || 0) + (s.notFound || 0) + (s.duplicates || 0);
+    }
+    return n;
+  }, [batches]);
+
   if (!businessId) {
     return <div className="p-6 text-slate-500 dark:text-slate-400">Cargando...</div>;
   }
 
   return (
     <div className="bg-slate-50 dark:bg-slate-900">
-      <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-4">
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
               <FileCheck size={20} className="text-indigo-700 dark:text-indigo-300" />
             </div>
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Conciliación Bancaria</h1>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white truncate">Conciliación Bancaria</h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {view === 'lotes'
                   ? (
@@ -566,7 +577,9 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
                       )}
                     </>
                   )
-                  : `Verificación fila por fila · ${unverifiedCount} sin verificar`}
+                  : view === 'revisar'
+                    ? `${pendingCount} item${pendingCount !== 1 ? 's' : ''} pendiente${pendingCount !== 1 ? 's' : ''} cross-lote`
+                    : `Verificación fila por fila · ${unverifiedCount} sin verificar`}
               </p>
             </div>
           </div>
@@ -582,18 +595,18 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           )}
         </div>
 
-        {/* Tabs: Conciliación (lotes, principal) · Verificar movimientos (CxC/CxP) */}
-        <div className="inline-flex rounded-xl bg-slate-100 dark:bg-white/[0.04] p-1 gap-1">
+        {/* Tabs: Conciliación (lotes) · Revisar (pendientes cross-lote) · Verificar movimientos (CxC/CxP) */}
+        <div className="inline-flex flex-wrap rounded-xl bg-slate-100 dark:bg-white/[0.04] p-1 gap-1 max-w-full">
           <button
             type="button"
             onClick={() => { setView('lotes'); setSelectedBatchId(null); }}
-            className={`px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+            className={`px-3 sm:px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
               view === 'lotes'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm'
                 : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
             }`}
           >
-            <Layers size={12} /> Conciliación
+            <Layers size={12} /> <span className="hidden sm:inline">Conciliación</span><span className="sm:hidden">Lotes</span>
             {batches.length > 0 && (
               <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-indigo-500/20 text-indigo-600 dark:text-indigo-300">
                 {batches.length}
@@ -602,14 +615,31 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           </button>
           <button
             type="button"
+            onClick={() => { setView('revisar'); setSelectedBatchId(null); }}
+            className={`px-3 sm:px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+              view === 'revisar'
+                ? 'bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-300 shadow-sm'
+                : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
+            }`}
+            title="Pendientes por revisar cross-lote (revisar / sin match / duplicados)"
+          >
+            <AlertTriangle size={12} /> Revisar
+            {pendingCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-amber-500/20 text-amber-600 dark:text-amber-300">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             onClick={() => setView('manual')}
-            className={`px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+            className={`px-3 sm:px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
               view === 'manual'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 shadow-sm'
                 : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
             }`}
           >
-            <ShieldCheck size={12} /> Verificar movimientos
+            <ShieldCheck size={12} /> <span className="hidden sm:inline">Verificar movimientos</span><span className="sm:hidden">Verif.</span>
             {unverifiedCount > 0 && (
               <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-amber-500/20 text-amber-600 dark:text-amber-300">
                 {unverifiedCount}
@@ -624,6 +654,16 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             currentUserId={currentUserId}
             currentUserName={currentUserName}
             canVerify={effectiveCanVerify}
+          />
+        ) : view === 'revisar' ? (
+          <PendingReviewPanel
+            businessId={businessId}
+            batches={batches}
+            onOpenInBatch={(batchId, abonoId) => {
+              setView('lotes');
+              setHighlightAbonoInBatch(abonoId);
+              setSelectedBatchId(batchId);
+            }}
           />
         ) : selectedBatchId ? (
           <BatchReviewPanel
@@ -1069,49 +1109,50 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
         <div className="text-xs text-slate-400 py-8 text-center">Ningún lote coincide con "{batchQuery}".</div>
       ) : (
         <>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[720px]">
             <thead className="bg-slate-50 dark:bg-slate-900/40 text-xs uppercase text-slate-500 dark:text-slate-400">
               <tr>
-                <th className="text-left px-4 py-2">Nombre</th>
-                <th className="text-left px-4 py-2">Período</th>
-                <th className="text-center px-4 py-2">Total</th>
-                <th className="text-center px-4 py-2">Confirmados</th>
-                <th className="text-center px-4 py-2">Revisar</th>
-                <th className="text-center px-4 py-2">Sin match</th>
-                <th className="text-center px-4 py-2">Dup.</th>
-                <th className="text-left px-4 py-2">Creado</th>
-                <th className="text-center px-4 py-2">Estado</th>
-                <th className="text-right px-4 py-2"></th>
+                <th className="text-left px-3 sm:px-4 py-2">Nombre</th>
+                <th className="text-left px-3 sm:px-4 py-2 hidden lg:table-cell">Período</th>
+                <th className="text-center px-2 sm:px-3 py-2">Total</th>
+                <th className="text-center px-2 sm:px-3 py-2 whitespace-nowrap">Confirm.</th>
+                <th className="text-center px-2 sm:px-3 py-2">Revisar</th>
+                <th className="text-center px-2 sm:px-3 py-2 whitespace-nowrap">Sin&nbsp;match</th>
+                <th className="text-center px-2 sm:px-3 py-2 hidden md:table-cell">Dup.</th>
+                <th className="text-left px-3 sm:px-4 py-2 hidden md:table-cell">Creado</th>
+                <th className="text-center px-3 sm:px-4 py-2 hidden sm:table-cell">Estado</th>
+                <th className="text-right px-3 sm:px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {pageItems.map(b => (
                 <tr key={b.id} className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/30">
-                  <td className="px-4 py-2 font-medium text-slate-800 dark:text-slate-100">{b.name}</td>
-                  <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-300">
+                  <td className="px-3 sm:px-4 py-2 font-medium text-slate-800 dark:text-slate-100 max-w-[180px] truncate">{b.name}</td>
+                  <td className="px-3 sm:px-4 py-2 text-xs text-slate-600 dark:text-slate-300 hidden lg:table-cell whitespace-nowrap">
                     {b.periodFrom && b.periodTo ? `${b.periodFrom} → ${b.periodTo}` : '—'}
                   </td>
-                  <td className="px-4 py-2 text-center font-mono">{b.stats?.total ?? 0}</td>
-                  <td className="px-4 py-2 text-center font-mono text-emerald-600">{b.stats?.confirmed ?? 0}</td>
-                  <td className="px-4 py-2 text-center font-mono text-amber-600">{b.stats?.review ?? 0}</td>
-                  <td className="px-4 py-2 text-center font-mono text-rose-600">{b.stats?.notFound ?? 0}</td>
-                  <td className="px-4 py-2 text-center font-mono text-violet-600">{b.stats?.duplicates ?? 0}</td>
-                  <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono">{b.stats?.total ?? 0}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono text-emerald-600">{b.stats?.confirmed ?? 0}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono text-amber-600">{b.stats?.review ?? 0}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono text-rose-600">{b.stats?.notFound ?? 0}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono text-violet-600 hidden md:table-cell">{b.stats?.duplicates ?? 0}</td>
+                  <td className="px-3 sm:px-4 py-2 text-xs text-slate-500 dark:text-slate-400 hidden md:table-cell whitespace-nowrap">
                     {b.createdAt ? new Date(b.createdAt).toLocaleDateString() : '—'}
-                    <div className="text-[10px] text-slate-400">{b.createdByName || '—'}</div>
+                    <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{b.createdByName || '—'}</div>
                   </td>
-                  <td className="px-4 py-2 text-center">
+                  <td className="px-3 sm:px-4 py-2 text-center hidden sm:table-cell">
                     <span className={`text-[10px] px-2 py-0.5 rounded ${
                       b.status === 'done' ? 'bg-emerald-100 text-emerald-700' :
                       b.status === 'archived' ? 'bg-slate-100 text-slate-600' :
                       'bg-amber-100 text-amber-700'
                     }`}>{b.status}</span>
                   </td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="px-3 sm:px-4 py-2 text-right">
                     <div className="inline-flex items-center gap-1">
                       <button
                         onClick={() => onOpen(b.id)}
-                        className="text-xs px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                        className="text-xs px-2 sm:px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
                       >
                         Abrir
                       </button>
@@ -1130,6 +1171,7 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
               ))}
             </tbody>
           </table>
+          </div>
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
