@@ -1135,15 +1135,33 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
           <table className="w-full text-sm min-w-[720px]">
             <thead className="bg-slate-50 dark:bg-slate-900/40 text-xs uppercase text-slate-500 dark:text-slate-400">
               <tr>
-                <th className="text-left px-3 sm:px-4 py-2">Nombre</th>
-                <th className="text-left px-3 sm:px-4 py-2 hidden lg:table-cell">Período</th>
-                <th className="text-center px-2 sm:px-3 py-2">Total</th>
-                <th className="text-center px-2 sm:px-3 py-2 whitespace-nowrap">Confirm.</th>
-                <th className="text-center px-2 sm:px-3 py-2">Revisar</th>
-                <th className="text-center px-2 sm:px-3 py-2 whitespace-nowrap">Sin&nbsp;match</th>
-                <th className="text-center px-2 sm:px-3 py-2 hidden md:table-cell">Dup.</th>
-                <th className="text-left px-3 sm:px-4 py-2 hidden md:table-cell">Creado</th>
-                <th className="text-center px-3 sm:px-4 py-2 hidden sm:table-cell">Estado</th>
+                <th className="text-left px-3 sm:px-4 py-2" title="Etiqueta del lote (ej. 'Quincena 15-abr'). Se define al crear el lote y puede repetirse para fusionar lotes con el mismo nombre.">
+                  <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-slate-400">Nombre</span>
+                </th>
+                <th className="text-left px-3 sm:px-4 py-2 hidden lg:table-cell" title="Rango de fechas cubierto por las filas del estado de cuenta conciliadas en este lote. Se calcula automáticamente desde las fechas del EdeC, no de los recibos.">
+                  <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-slate-400">Período</span>
+                </th>
+                <th className="text-center px-2 sm:px-3 py-2" title="Cantidad total de pagos (capturas + manuales) cargados en el lote, sin importar su estado actual.">
+                  <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-slate-400">Total</span>
+                </th>
+                <th className="text-center px-2 sm:px-3 py-2 whitespace-nowrap" title="Pagos conciliados con una fila del estado de cuenta. Su referencia quedó 'quemada' y no puede reusarse.">
+                  <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-slate-400">Confirm.</span>
+                </th>
+                <th className="text-center px-2 sm:px-3 py-2" title="Pagos con candidatos pero confianza insuficiente para auto-confirmar. Requieren revisión humana: abrir el lote y elegir el candidato correcto o rechazar.">
+                  <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-slate-400">Revisar</span>
+                </th>
+                <th className="text-center px-2 sm:px-3 py-2 whitespace-nowrap" title="Pagos cuyo OCR extrajo datos pero ninguna fila del pool de estados de cuenta coincide (monto + fecha ±3 días). Suele indicar EdeC faltante o captura errónea.">
+                  <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-slate-400">Sin&nbsp;match</span>
+                </th>
+                <th className="text-center px-2 sm:px-3 py-2 hidden md:table-cell" title="Duplicados: la misma imagen ya fue procesada antes (mismo hash SHA-256) o alguien ya reclamó la referencia+monto en esa cuenta.">
+                  <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-slate-400">Dup.</span>
+                </th>
+                <th className="text-left px-3 sm:px-4 py-2 hidden md:table-cell" title="Fecha en que el lote fue creado y el usuario que lo creó.">
+                  <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-slate-400">Creado</span>
+                </th>
+                <th className="text-center px-3 sm:px-4 py-2 hidden sm:table-cell" title="Estado del lote: processing = OCR/match en curso; done = procesamiento finalizado; archived = marcado como cerrado.">
+                  <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-slate-400">Estado</span>
+                </th>
                 <th className="text-right px-3 sm:px-4 py-2"></th>
               </tr>
             </thead>

@@ -788,7 +788,9 @@ export default function BatchReviewPanel({
                         </div>
                       )}
                     </td>
-                    <td className="py-2">{a.date}</td>
+                    <td className="py-2" title={getStatementRowDate(a) && getStatementRowDate(a) !== a.date ? `Fecha del estado de cuenta. Recibo: ${a.date}` : undefined}>
+                      {getStatementRowDate(a) || a.date}
+                    </td>
                     <td className="py-2 font-mono">Bs {a.amount.toFixed(2)}</td>
                     <td className="py-2 font-mono">{a.reference || '—'}</td>
                     <td className="py-2 truncate max-w-[200px]">{a.clientName || a.cedula || '—'}</td>
