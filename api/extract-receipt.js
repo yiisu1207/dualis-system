@@ -7,10 +7,15 @@ const { getAuth, getDb } = require('./_firebaseAdmin');
 // Cadena de modelos: prueba en orden, cae al siguiente si 404/400 (modelo no disponible).
 // El ID del modelo activo en la API de Anthropic varía con el tiempo; este fallback
 // evita quedar rotos cuando un ID específico es retirado.
+// Cada modelo tiene su propio bucket TPM por organización (30k input tokens/min).
+// Bajo rate-limit, cambiar de modelo libera presión sin esperar. Haiku al final
+// porque tiene bucket propio muchísimo más permisivo y es suficiente para OCR
+// de un recibo bancario (una imagen, prompt estructurado, max 512 tokens out).
 const MODEL_CHAIN = [
   'claude-sonnet-4-6',
   'claude-sonnet-4-5',
   'claude-3-5-sonnet-latest',
+  'claude-haiku-4-5-20251001',
 ];
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -256,10 +261,13 @@ module.exports = async (req, res) => {
       lastStatus = attempt.status;
       lastErrText = await attempt.text().catch(() => '');
       console.error('[extract-receipt] modelo fallido', model, attempt.status, lastErrText.slice(0, 300));
-      // Solo cae al siguiente si es error de modelo (404 not_found, o 400 con "model")
+      // Fall-through: 404/400-model (modelo retirado), 429 (rate limit por bucket
+      // específico del modelo), 529 (overloaded). El siguiente modelo tiene otro
+      // bucket y probablemente responde. Cualquier otro error (401/403/500) corta.
       const isModelError = attempt.status === 404 ||
         (attempt.status === 400 && /model/i.test(lastErrText));
-      if (!isModelError) break;
+      const isTransient = attempt.status === 429 || attempt.status === 529;
+      if (!isModelError && !isTransient) break;
     }
 
     if (!anthropicRes) {
