@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { X, Upload, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { BANK_PROFILES, GENERIC_PROFILE, profileLabel, type BankStatementProfile } from '../../data/bankStatementFormats';
+import { BANK_PROFILES, GENERIC_PROFILE, profileLabel, profileId, findProfileById, type BankStatementProfile } from '../../data/bankStatementFormats';
 import { parseBankStatement, slugifyAlias, type ParseResult } from '../../utils/bankStatementParser';
 import type { BankRow } from '../../utils/bankReconciliation';
 
@@ -21,7 +21,9 @@ interface BankUploadModalProps {
 
 export default function BankUploadModal({ existingAliases, onClose, onConfirm }: BankUploadModalProps) {
   const [alias, setAlias] = useState('');
-  const [bankCode, setBankCode] = useState<string>('');
+  // Guardamos el profileId (banco + variante) en vez de solo bankCode, porque varios
+  // perfiles pueden compartir bankCode (ej. BDV Personal y BDV Empresa son ambos '0102').
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('');
   const [tolerancePct, setTolerancePct] = useState<string>('0');
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -32,7 +34,7 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
   const fileRef = useRef<HTMLInputElement>(null);
 
   const selectedProfile: BankStatementProfile | undefined =
-    bankCode ? BANK_PROFILES.find(p => p.bankCode === bankCode) : undefined;
+    selectedProfileId && selectedProfileId !== 'generico' ? findProfileById(selectedProfileId) : undefined;
 
   const slug = slugifyAlias(alias);
   const isDuplicate = !!slug && existingAliases.includes(slug);
@@ -45,8 +47,8 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
       const res = await parseBankStatement(f, {
         accountAlias: slug || 'pending',
         accountLabel: alias || f.name,
-        accountBankCode: bankCode || undefined,
-        profile: selectedProfile || (bankCode === 'generico' ? GENERIC_PROFILE : undefined),
+        accountBankCode: selectedProfile?.bankCode,
+        profile: selectedProfile || (selectedProfileId === 'generico' ? GENERIC_PROFILE : undefined),
         amountTolerancePct: parseFloat(tolerancePct) / 100 || 0,
         includeDebits,
       });
@@ -56,17 +58,17 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
     } finally {
       setParsing(false);
     }
-  }, [alias, slug, bankCode, selectedProfile, tolerancePct, includeDebits]);
+  }, [alias, slug, selectedProfileId, selectedProfile, tolerancePct, includeDebits]);
 
   const handleFile = useCallback((f: File | null) => {
     setFile(f);
     if (!f) return;
-    if (!bankCode) {
+    if (!selectedProfileId) {
       setError('Selecciona el banco antes de subir el archivo — así sabemos qué formato usar.');
       return;
     }
     doParse(f);
-  }, [doParse, bankCode]);
+  }, [doParse, selectedProfileId]);
 
   const handleConfirm = async () => {
     if (!file || !result || !alias.trim() || !result.rows.length) return;
@@ -79,8 +81,8 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
       await onConfirm({
         accountAlias: slug,
         accountLabel: alias.trim(),
-        bankCode: bankCode || profile?.bankCode,
-        bankName: profile?.bankName,
+        bankCode: selectedProfile?.bankCode ?? profile?.bankCode,
+        bankName: selectedProfile?.bankName ?? profile?.bankName,
         amountTolerancePct: parseFloat(tolerancePct) / 100 || 0,
         sourceFilename: file.name,
         rows: result.rows,
@@ -125,20 +127,20 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
             <label className="block">
               <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Banco *</span>
               <select
-                value={bankCode}
+                value={selectedProfileId}
                 onChange={(e) => {
-                  setBankCode(e.target.value);
+                  setSelectedProfileId(e.target.value);
                   if (file && e.target.value) doParse(file);
                 }}
-                className={`w-full mt-1 px-3 py-2 border ${bankCode ? 'border-slate-300 dark:border-slate-600' : 'border-amber-400 dark:border-amber-500'} dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 rounded-lg text-sm focus:outline-none focus:border-indigo-400`}
+                className={`w-full mt-1 px-3 py-2 border ${selectedProfileId ? 'border-slate-300 dark:border-slate-600' : 'border-amber-400 dark:border-amber-500'} dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 rounded-lg text-sm focus:outline-none focus:border-indigo-400`}
               >
                 <option value="" disabled>— Selecciona el banco —</option>
                 {BANK_PROFILES.map(p => (
-                  <option key={p.bankCode} value={p.bankCode}>{profileLabel(p)}</option>
+                  <option key={profileId(p)} value={profileId(p)}>{profileLabel(p)}</option>
                 ))}
                 <option value="generico">Genérico / Otro</option>
               </select>
-              {!bankCode && (
+              {!selectedProfileId && (
                 <span className="text-xs text-amber-600 dark:text-amber-400 mt-1 block">⚠ Requerido para parsear correctamente.</span>
               )}
             </label>
@@ -171,7 +173,7 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
             </div>
           </details>
 
-          <div className={`border-2 border-dashed ${bankCode ? 'border-slate-300 dark:border-slate-600' : 'border-slate-200 dark:border-slate-700 opacity-50'} rounded-xl p-8 text-center transition`}>
+          <div className={`border-2 border-dashed ${selectedProfileId ? 'border-slate-300 dark:border-slate-600' : 'border-slate-200 dark:border-slate-700 opacity-50'} rounded-xl p-8 text-center transition`}>
             <Upload size={32} className="mx-auto text-slate-400 dark:text-slate-500 mb-3" />
             <input
               ref={fileRef}
@@ -179,17 +181,17 @@ export default function BankUploadModal({ existingAliases, onClose, onConfirm }:
               accept=".csv,.xlsx,.xls,.pdf"
               onChange={(e) => handleFile(e.target.files?.[0] || null)}
               className="hidden"
-              disabled={!bankCode}
+              disabled={!selectedProfileId}
             />
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              disabled={!bankCode}
+              disabled={!selectedProfileId}
               className="px-4 py-2 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Seleccionar archivo CSV / Excel / PDF
             </button>
-            {!bankCode && (
+            {!selectedProfileId && (
               <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">Primero elige el banco arriba.</div>
             )}
             {file && (

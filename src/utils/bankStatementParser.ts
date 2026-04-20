@@ -576,12 +576,16 @@ function splitPdfRowByClusters(items: { x: number; text: string }[]): string[] {
 
 function detectProfileFromPdfText(rawText: string): BankStatementProfile | undefined {
   const t = norm(rawText);
+  // Best-match: gana el perfil con más keywords matched.
+  // Esto permite que variantes específicas (BDV Empresa con "bdvenlinea empresas",
+  // "historico de movimientos") superen a las genéricas (BDV Personal con solo "bdv").
+  let best: { profile: BankStatementProfile; hits: number } | null = null;
   for (const p of BANK_PROFILES) {
     if (!p.pdfDetectionKeywords?.length) continue;
     const hits = p.pdfDetectionKeywords.filter(k => t.includes(norm(k))).length;
-    if (hits >= 1) return p;
+    if (hits >= 1 && (!best || hits > best.hits)) best = { profile: p, hits };
   }
-  return undefined;
+  return best?.profile;
 }
 
 // ——— Detección de header ———
