@@ -54,7 +54,6 @@ import ConciliacionPdfExportModal from '../components/conciliacion/ConciliacionP
 import ReceiptDropZone from '../components/conciliacion/ReceiptDropZone';
 import BatchNamePromptModal from '../components/conciliacion/BatchNamePromptModal';
 import ManualBatchEntryModal, { type ManualAccountOption } from '../components/conciliacion/ManualBatchEntryModal';
-import MultiBankUploadModal from '../components/tesoreria/MultiBankUploadModal';
 import ReceiptBatchModal from '../components/tesoreria/ReceiptBatchModal';
 import BatchReviewPanel from '../components/tesoreria/BatchReviewPanel';
 import PendingReviewPanel from '../components/tesoreria/PendingReviewPanel';
@@ -106,7 +105,6 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [accounts, setAccounts] = useState<BankStatementAccountDoc[]>([]);
 
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showMultiUpload, setShowMultiUpload] = useState(false);
   const [showReceiptBatch, setShowReceiptBatch] = useState(false);
   const [batches, setBatches] = useState<ReconciliationBatch[]>([]);
   const [usedRefs, setUsedRefs] = useState<UsedReference[]>([]);
@@ -713,7 +711,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             accountChips={accountChips}
             onOpen={setSelectedBatchId}
             onNewBatch={() => setShowReceiptBatch(true)}
-            onUploadEdec={() => setShowMultiUpload(true)}
+            onUploadEdec={() => setShowUploadModal(true)}
             onAddSingleAccount={() => setShowUploadModal(true)}
             onDeleteAccount={canEdit ? handleDeleteAccount : undefined}
             onViewAccount={setViewingAccountAlias}
@@ -732,17 +730,6 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           existingAliases={existingAliases}
           onClose={() => setShowUploadModal(false)}
           onConfirm={handleUploadAccount}
-        />
-      )}
-
-      {showMultiUpload && (
-        <MultiBankUploadModal
-          businessId={businessId}
-          monthKey={monthKey}
-          uploadedByUid={currentUserId}
-          existingAliases={existingAliases}
-          onClose={() => setShowMultiUpload(false)}
-          onDone={() => setShowMultiUpload(false)}
         />
       )}
 
@@ -1001,7 +988,7 @@ const BatchList: React.FC<BatchListProps> = ({
           </div>
         </div>
         {accountChips.length === 0 ? (
-          <div className="text-xs text-slate-400 py-2">Sin cuentas aún. Usa "Subir EdeC" para cargar varias a la vez.</div>
+          <div className="text-xs text-slate-400 py-2">Sin cuentas aún. Usa "Subir EdeC" o "Agregar cuenta" para cargar una.</div>
         ) : filteredAccountChips.length === 0 ? (
           <div className="text-xs text-slate-400 py-2">Ninguna cuenta coincide con "{accountQuery}".</div>
         ) : (
