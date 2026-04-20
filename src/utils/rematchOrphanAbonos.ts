@@ -1,16 +1,20 @@
-// Re-evalúa abonos en estado 'no_encontrado' contra el pool global actual.
-// Se dispara después de cargar un nuevo EdeC para encontrar matches que antes no existían.
+// Re-evalúa abonos pendientes contra el pool global actual.
+// Se dispara después de cargar un nuevo EdeC, o manualmente desde el panel
+// "Pendientes" con el botón "Re-buscar global".
 // - Si el top candidato es exact/high → auto-confirma con claimReference atómico
 // - Si hay candidatos de menor confianza → pasa a 'revisar' con top-3 precalculado
-// - Si sigue sin candidatos → queda como 'no_encontrado'
+// - Si sigue sin candidatos → queda en su estado original ('no_encontrado')
 
 import {
-  collectionGroup, getDocs, setDoc, type Firestore,
+  collectionGroup, getDocs, query, setDoc, where, type Firestore,
+  type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { loadGlobalPool } from './globalBankPool';
 import { findMatches, type DraftAbono } from './bankReconciliation';
 import { claimReference } from './reconciliationGuards';
 import { topCandidatesSnapshot, stripUndefined } from './processReceiptBatch';
+
+export type RematchStatus = 'no_encontrado' | 'revisar';
 
 export interface RematchResult {
   scanned: number;
@@ -20,23 +24,47 @@ export interface RematchResult {
   errors: string[];
 }
 
+export interface RematchOptions {
+  /** Estados a re-evaluar. Default: ['no_encontrado']. El botón "Re-buscar global"
+   *  pasa ['no_encontrado', 'revisar'] para también recalcular los ya en revisión. */
+  statuses?: RematchStatus[];
+  /** Si se provee, solo se escanean abonos de esos lotes (mucho más eficiente
+   *  que el collectionGroup scan porque batchId está indexado en Firestore). */
+  batchIds?: string[];
+}
+
 export async function rematchOrphanAbonos(
   db: Firestore,
   businessId: string,
   currentUserId: string,
   currentUserName?: string,
+  options?: RematchOptions,
 ): Promise<RematchResult> {
+  const statuses = options?.statuses?.length ? options.statuses : (['no_encontrado'] as RematchStatus[]);
   const result: RematchResult = {
     scanned: 0, confirmed: 0, movedToReview: 0, stillOrphan: 0, errors: [],
   };
 
-  // Filtrar en memoria — el collectionGroup + where('status') exige índice
-  // composite que no aporta valor (ya filtramos por path). Más simple sin él.
-  const snap = await getDocs(collectionGroup(db, 'abonos'));
-  const orphans = snap.docs.filter(d => {
+  // Recolección de candidatos: si hay batchIds conocidos, usamos queries por
+  // batchId (indexado, barato). Si no, fallback a collectionGroup completo.
+  let docs: QueryDocumentSnapshot[];
+  if (options?.batchIds && options.batchIds.length > 0) {
+    const snaps = await Promise.all(
+      options.batchIds.map(id =>
+        getDocs(query(collectionGroup(db, 'abonos'), where('batchId', '==', id))),
+      ),
+    );
+    docs = snaps.flatMap(s => s.docs);
+  } else {
+    const snap = await getDocs(collectionGroup(db, 'abonos'));
+    docs = snap.docs;
+  }
+
+  const orphans = docs.filter(d => {
     const segs = d.ref.path.split('/');
     if (segs[0] !== 'businesses' || segs[1] !== businessId) return false;
-    return (d.data() as any)?.status === 'no_encontrado';
+    const status = (d.data() as any)?.status;
+    return statuses.includes(status);
   });
   if (orphans.length === 0) return result;
 

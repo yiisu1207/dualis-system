@@ -679,6 +679,9 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           <PendingReviewPanel
             businessId={businessId}
             batches={batches}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            canEdit={canEdit}
             onOpenInBatch={(batchId, abonoId) => {
               setView('lotes');
               setHighlightAbonoInBatch(abonoId);

@@ -1,16 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, XCircle, Copy, ChevronDown, ChevronRight,
-  ExternalLink, Loader2, Search, X, Image as ImageIcon,
+  ExternalLink, Loader2, Search, X, Image as ImageIcon, RefreshCw,
 } from 'lucide-react';
 import { collectionGroup, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import { useToast } from '../../context/ToastContext';
+import { rematchOrphanAbonos } from '../../utils/rematchOrphanAbonos';
 import type { ReconciliationBatch } from '../../../types';
 import type { SessionAbono } from '../conciliacion/ReconciliationReport';
 
 interface Props {
   businessId: string;
   batches: ReconciliationBatch[];
+  currentUserId: string;
+  currentUserName?: string;
+  canEdit?: boolean;
   onOpenInBatch: (batchId: string, abonoId: string) => void;
 }
 
@@ -22,7 +27,10 @@ interface PendingRow extends SessionAbono {
 
 const PENDING_STATUSES: ReadonlyArray<PendingStatus> = ['revisar', 'no_encontrado', 'duplicado'];
 
-export default function PendingReviewPanel({ businessId, batches, onOpenInBatch }: Props) {
+export default function PendingReviewPanel({
+  businessId, batches, currentUserId, currentUserName, canEdit, onOpenInBatch,
+}: Props) {
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<PendingRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +40,8 @@ export default function PendingReviewPanel({ businessId, batches, onOpenInBatch 
     duplicado: false,
   });
   const [q, setQ] = useState('');
+  const [researching, setResearching] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Estrategia sin índice compuesto: una query por batchId (ya indexado en
   // firestore.indexes.json) y filtrado de status client-side. Evita necesitar
@@ -76,7 +86,42 @@ export default function PendingReviewPanel({ businessId, batches, onOpenInBatch 
       }
     })();
     return () => { cancelled = true; };
-  }, [businessId, batchKey, batchIds]);
+  }, [businessId, batchKey, batchIds, reloadKey]);
+
+  const handleResearchAll = async () => {
+    if (researching) return;
+    if (!batchIds.length) {
+      toast.error('No hay lotes con abonos pendientes');
+      return;
+    }
+    setResearching(true);
+    try {
+      const res = await rematchOrphanAbonos(
+        db,
+        businessId,
+        currentUserId,
+        currentUserName,
+        { statuses: ['no_encontrado', 'revisar'], batchIds },
+      );
+      const parts: string[] = [];
+      if (res.confirmed > 0) parts.push(`${res.confirmed} auto-confirmad${res.confirmed === 1 ? 'o' : 'os'}`);
+      if (res.movedToReview > 0) parts.push(`${res.movedToReview} a revisar`);
+      if (res.stillOrphan > 0) parts.push(`${res.stillOrphan} sin match`);
+      if (res.scanned === 0) {
+        toast.info('No había pendientes que re-buscar');
+      } else if (res.confirmed === 0 && res.movedToReview === 0) {
+        toast.info(`Re-buscados ${res.scanned} abonos · sin cambios`);
+      } else {
+        toast.success(`Re-búsqueda: ${parts.join(' · ')} (de ${res.scanned})`);
+      }
+      setReloadKey(k => k + 1);
+    } catch (err: any) {
+      console.error('[PendingReview] research error', err);
+      toast.error('Error en re-búsqueda: ' + (err?.message || String(err)));
+    } finally {
+      setResearching(false);
+    }
+  };
 
   const batchById = useMemo(() => {
     const m = new Map<string, ReconciliationBatch>();
@@ -117,20 +162,40 @@ export default function PendingReviewPanel({ businessId, batches, onOpenInBatch 
               Vista global cross-lote — abonos en <span className="text-amber-600 dark:text-amber-300">revisar</span>, <span className="text-rose-600 dark:text-rose-300">sin match</span> o <span className="text-violet-600 dark:text-violet-300">duplicados</span>. Click en un item para abrir su lote.
             </div>
           </div>
-          <div className="relative">
-            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar por ref, cédula, cliente, lote…"
-              className="pl-7 pr-7 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-400 w-64"
-            />
-            {q && (
-              <button onClick={() => setQ('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                <X size={12} />
+          <div className="flex items-center gap-2">
+            {canEdit && (
+              <button
+                onClick={handleResearchAll}
+                disabled={researching || loading || !batchIds.length}
+                title="Re-evalúa todos los pendientes contra el pool actual: los que ahora tengan match exacto se auto-confirman y los 'revisar' se recalculan."
+                className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded border border-indigo-300 dark:border-indigo-600/50 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                {researching ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" /> Re-buscando…
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw size={12} /> Re-buscar global
+                  </>
+                )}
               </button>
             )}
+            <div className="relative">
+              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Buscar por ref, cédula, cliente, lote…"
+                className="pl-7 pr-7 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-400 w-64"
+              />
+              {q && (
+                <button onClick={() => setQ('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs">
