@@ -347,7 +347,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
         kind: 'image',
         file: f,
       }));
-      let lastError: string | null = null;
+      const errorRef: { current: string | null } = { current: null };
       const outcome = await processReceiptBatch({
         db,
         businessId,
@@ -358,9 +358,10 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
         onProgress: (done, total) => setOcrProgress({ done, total }),
         onResultsChange: (results) => {
           const errored = results.find(r => r.status === 'error' && r.errorMsg);
-          if (errored?.errorMsg) lastError = errored.errorMsg;
+          if (errored?.errorMsg) errorRef.current = errored.errorMsg;
         },
       });
+      const lastError = errorRef.current;
       if (outcome.stats.notFound > 0 && outcome.stats.confirmed === 0 && outcome.stats.review === 0 && lastError) {
         toast.error(`OCR falló (${outcome.stats.notFound}/${outcome.stats.total}): ${lastError.slice(0, 400)}`, { duration: 12000 });
       } else if (lastError) {
@@ -381,9 +382,11 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
 
   const manualAccountOptions = useMemo<ManualAccountOption[]>(
     () =>
-      accounts
-        .filter(a => !!a.bankAccountId)
-        .map(a => ({ id: a.bankAccountId!, label: a.accountLabel || a.accountAlias, bankName: a.bankName })),
+      accounts.map(a => ({
+        id: a.bankAccountId || a.accountAlias,
+        label: a.accountLabel || a.accountAlias,
+        bankName: a.bankName,
+      })),
     [accounts],
   );
 

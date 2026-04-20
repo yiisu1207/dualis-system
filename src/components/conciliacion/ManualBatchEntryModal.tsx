@@ -24,7 +24,7 @@ export default function ManualBatchEntryModal({ accounts, onCancel, onConfirm }:
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(todayISO());
   const [reference, setReference] = useState('');
-  const [bankAccountId, setBankAccountId] = useState(accounts[0]?.id || '');
+  const [bankAccountId, setBankAccountId] = useState('');
   const [cedula, setCedula] = useState('');
   const [clientName, setClientName] = useState('');
   const [note, setNote] = useState('');
@@ -41,8 +41,7 @@ export default function ManualBatchEntryModal({ accounts, onCancel, onConfirm }:
   const validAmount = Number.isFinite(amt) && amt > 0;
   const validRef = reference.trim().length > 0;
   const validDate = !!date;
-  const validAccount = !!bankAccountId;
-  const canSubmit = validName && validAmount && validRef && validDate && validAccount && !submitting;
+  const canSubmit = validName && validAmount && validRef && validDate && !submitting;
 
   const submit = () => {
     if (!canSubmit) return;
@@ -61,25 +60,18 @@ export default function ManualBatchEntryModal({ accounts, onCancel, onConfirm }:
     onConfirm(trimmed, item);
   };
 
-  const noAccounts = accounts.length === 0;
-
   return (
     <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
         <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
           <div>
             <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Pago sin captura</h2>
-            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Crea un lote con un abono manual (sin imagen)</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Crea un lote con un abono manual — mismas reglas que auto, tú ingresas los datos</div>
           </div>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"><X size={18} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-          {noAccounts && (
-            <div className="text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 text-amber-800 dark:text-amber-200 rounded p-2">
-              No hay cuentas bancarias con bankAccountId mapeado. Sube un EdeC con la cuenta asignada antes de agregar manuales.
-            </div>
-          )}
 
           <label className="block text-xs">
             <span className="text-slate-600 dark:text-slate-300">Nombre del lote *</span>
@@ -111,14 +103,15 @@ export default function ManualBatchEntryModal({ accounts, onCancel, onConfirm }:
                 className="w-full mt-1 px-2 py-1.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded font-mono" />
             </label>
             <label className="col-span-2">
-              <span className="text-slate-600 dark:text-slate-300">Cuenta destino *</span>
-              <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)} disabled={noAccounts}
-                className="w-full mt-1 px-2 py-1.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded disabled:opacity-50">
-                <option value="">— elegir —</option>
+              <span className="text-slate-600 dark:text-slate-300">Cuenta destino <span className="text-slate-400">(opcional)</span></span>
+              <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)}
+                className="w-full mt-1 px-2 py-1.5 border border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded">
+                <option value="">Cualquiera (buscar en todas)</option>
                 {accounts.map(a => (
                   <option key={a.id} value={a.id}>{a.bankName ? `${a.bankName} · ` : ''}{a.label}</option>
                 ))}
               </select>
+              <div className="text-[10px] text-slate-400 mt-0.5">Si no la sabes, déjalo en "cualquiera" y el motor busca en el pool completo igual que con captura.</div>
             </label>
             <label>
               <span className="text-slate-600 dark:text-slate-300">Cédula</span>
