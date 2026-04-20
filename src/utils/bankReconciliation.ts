@@ -134,9 +134,20 @@ export function findMatches(
     const amountDiff = Math.abs(row.amount - abono.amount);
     if (amountDiff > tolerance) continue;
 
-    // Filtro duro fecha
+    // Filtro duro fecha — con bypass cuando ref coincide (exacta o últimos 7/8 dígitos)
+    // + monto exacto. Señal fortísima aunque la fecha esté fuera del rango habitual;
+    // deja al humano decidir en "revisar". Bancos a veces usan refs largas con prefijos
+    // distintos (ej. abono "011910826191" vs EdeC "00010826191" → últimos 8 son iguales).
     const dDiff = daysBetween(row.date, abono.date);
-    if (dDiff > dateTol) continue;
+    const refDigitsA = onlyDigits(abono.reference);
+    const refDigitsR = onlyDigits(row.reference);
+    const refFuzzyMatch = refDigitsA.length >= 7 && refDigitsR.length >= 7 && (
+      refDigitsA === refDigitsR ||
+      refDigitsA.slice(-8) === refDigitsR.slice(-8) ||
+      refDigitsA.slice(-7) === refDigitsR.slice(-7)
+    );
+    const refBypass = refFuzzyMatch && amountDiff <= 0.01;
+    if (dDiff > dateTol && !refBypass) continue;
 
     // Scoring
     const reasons: string[] = [];
@@ -153,9 +164,14 @@ export function findMatches(
     if (dDiff === 0) {
       score += 25;
       reasons.push('fecha exacta');
-    } else {
+    } else if (dDiff <= dateTol) {
       score += 15;
       reasons.push(`fecha ±${dDiff}d`);
+    } else {
+      // Penalización creciente: -20 a los 30d, -40 a los 60d, tope -60
+      const penalty = Math.min(60, Math.ceil(dDiff / 30) * 20);
+      score -= penalty;
+      reasons.push(`fecha fuera de rango (${dDiff}d, -${penalty})`);
     }
 
     const ref = fuzzyRefScore(abono.reference, row.reference);
