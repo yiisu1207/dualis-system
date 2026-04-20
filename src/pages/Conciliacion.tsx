@@ -40,6 +40,7 @@ import ManualVerificationTab from '../components/conciliacion/ManualVerification
 import ConciliacionPdfExportModal from '../components/conciliacion/ConciliacionPdfExportModal';
 import ReceiptDropZone from '../components/conciliacion/ReceiptDropZone';
 import BatchNamePromptModal from '../components/conciliacion/BatchNamePromptModal';
+import ManualBatchEntryModal, { type ManualAccountOption } from '../components/conciliacion/ManualBatchEntryModal';
 import MultiBankUploadModal from '../components/tesoreria/MultiBankUploadModal';
 import ReceiptBatchModal from '../components/tesoreria/ReceiptBatchModal';
 import BatchReviewPanel from '../components/tesoreria/BatchReviewPanel';
@@ -100,6 +101,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [viewingAccountHighlightRowId, setViewingAccountHighlightRowId] = useState<string | null>(null);
   const [highlightAbonoInBatch, setHighlightAbonoInBatch] = useState<string | null>(null);
   const [pendingBatchFiles, setPendingBatchFiles] = useState<File[] | null>(null);
+  const [showManualEntry, setShowManualEntry] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
 
@@ -377,6 +379,39 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     }
   };
 
+  const manualAccountOptions = useMemo<ManualAccountOption[]>(
+    () =>
+      accounts
+        .filter(a => !!a.bankAccountId)
+        .map(a => ({ id: a.bankAccountId!, label: a.accountLabel || a.accountAlias, bankName: a.bankName })),
+    [accounts],
+  );
+
+  const handleConfirmManualEntry = async (name: string, item: import('../utils/processReceiptBatch').ManualBatchItem) => {
+    setShowManualEntry(false);
+    try {
+      setOcrBusy(true);
+      setOcrProgress({ done: 0, total: 1 });
+      const outcome = await processReceiptBatch({
+        db,
+        businessId,
+        name,
+        currentUserId,
+        currentUserName,
+        items: [item],
+        onProgress: (done, total) => setOcrProgress({ done, total }),
+      });
+      toast.success(`Lote "${name}" creado · ${outcome.stats.confirmed} auto · ${outcome.stats.review} a revisar · ${outcome.stats.notFound} sin match`);
+      setView('lotes');
+      setSelectedBatchId(outcome.batchId);
+    } catch (err: any) {
+      toast.error('Error creando lote manual: ' + (err?.message || String(err)));
+    } finally {
+      setOcrBusy(false);
+      setOcrProgress(null);
+    }
+  };
+
   const handleDeleteBatch = async (batch: ReconciliationBatch) => {
     if (!confirm(`¿Eliminar el lote "${batch.name}" y todos sus abonos? Esta acción no se puede deshacer.`)) return;
     try {
@@ -419,7 +454,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+    <div className="bg-slate-50 dark:bg-slate-900">
       <div className="max-w-[1600px] mx-auto px-4 py-6 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
@@ -527,6 +562,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             ocrBusy={ocrBusy}
             ocrProgress={ocrProgress}
             onDropBatch={handleDropBatch}
+            onAddManual={() => setShowManualEntry(true)}
           />
         )}
       </div>
@@ -555,6 +591,14 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
           files={pendingBatchFiles}
           onCancel={() => setPendingBatchFiles(null)}
           onConfirm={handleConfirmBatchName}
+        />
+      )}
+
+      {showManualEntry && (
+        <ManualBatchEntryModal
+          accounts={manualAccountOptions}
+          onCancel={() => setShowManualEntry(false)}
+          onConfirm={handleConfirmManualEntry}
         />
       )}
 
@@ -622,11 +666,12 @@ interface BatchListProps {
   ocrBusy: boolean;
   ocrProgress: { done: number; total: number } | null;
   onDropBatch: (files: File[]) => void;
+  onAddManual: () => void;
 }
 
 const BatchList: React.FC<BatchListProps> = ({
   batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
-  onDeleteAccount, onViewAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch,
+  onDeleteAccount, onViewAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch, onAddManual,
 }) => {
   const [accountQuery, setAccountQuery] = useState('');
   const filteredAccountChips = useMemo(() => {
@@ -721,14 +766,26 @@ const BatchList: React.FC<BatchListProps> = ({
         </div>
       )}
 
-      {/* Quick drop zone para crear un lote directo desde drag-drop */}
+      {/* Quick drop zone para crear un lote directo desde drag-drop + entrada manual */}
       {canEdit && (
-        <ReceiptDropZone
-          disabled={ocrBusy}
-          progress={ocrProgress}
-          onDropSingle={(file) => onDropBatch([file])}
-          onDropBatch={onDropBatch}
-        />
+        <div className="space-y-2">
+          <ReceiptDropZone
+            disabled={ocrBusy}
+            progress={ocrProgress}
+            onDropSingle={(file) => onDropBatch([file])}
+            onDropBatch={onDropBatch}
+          />
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={onAddManual}
+              disabled={ocrBusy}
+              className="inline-flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline disabled:opacity-40"
+            >
+              <Plus size={12} /> o agregar manual sin imagen
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Cuentas bancarias cargadas — strip compacto, no es tab separada */}
