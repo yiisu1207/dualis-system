@@ -5,7 +5,7 @@
 // - actualiza el batch con stats finales
 
 import {
-  doc, setDoc, getDocs, collectionGroup, query, where, limit, type Firestore,
+  doc, setDoc, getDocs, collection, collectionGroup, deleteDoc, query, where, limit, type Firestore,
 } from 'firebase/firestore';
 import { uploadToCloudinary } from './cloudinary';
 import { extractReceipt, hashFile, type ExtractedReceipt } from './receiptOcr';
@@ -54,6 +54,9 @@ export interface ProcessBatchOpts {
   currentUserId: string;
   currentUserName?: string;
   items: BatchItemDraft[];
+  /** Si se pasa, el batch no se crea — los abonos se agregan al lote existente.
+   *  Se usa desde el flujo "Fusionar" cuando el usuario elige reusar un nombre. */
+  existingBatch?: ReconciliationBatch;
   onProgress?: (done: number, total: number) => void;
   onResultsChange?: (results: ProcessingResult[]) => void;
   onBatchCreated?: (batchId: string) => void;
@@ -161,42 +164,47 @@ export function stripUndefined(obj: any): any {
 export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<ProcessBatchOutcome> {
   const {
     db, businessId, name, periodFrom, periodTo, accountIds,
-    currentUserId, currentUserName, items,
+    currentUserId, currentUserName, items, existingBatch,
     onProgress, onResultsChange, onBatchCreated,
   } = opts;
 
-  // 1. Crear batch en Firestore
-  const batchId = newId('batch');
-  const batchDoc: ReconciliationBatch = {
-    id: batchId,
-    businessId,
-    name: name.trim(),
-    periodFrom: periodFrom || undefined,
-    periodTo: periodTo || undefined,
-    accountIds: accountIds && accountIds.length ? accountIds : undefined,
-    createdAt: new Date().toISOString(),
-    createdBy: currentUserId,
-    createdByName: currentUserName,
-    status: 'processing',
-    stats: {
-      total: items.length,
-      confirmed: 0,
-      review: 0,
-      notFound: 0,
-      manual: items.filter(i => i.kind === 'manual').length,
-    },
-    source: items.every(i => i.kind === 'manual')
-      ? 'manual'
-      : items.every(i => i.kind === 'image') ? 'capturas' : 'mixed',
-  };
-  await setDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`), stripUndefined(batchDoc));
+  const isAppendMode = !!existingBatch;
+
+  // 1. Crear batch (o reusar el existente en modo append)
+  const batchId = existingBatch?.id ?? newId('batch');
+  if (!isAppendMode) {
+    const batchDoc: ReconciliationBatch = {
+      id: batchId,
+      businessId,
+      name: name.trim(),
+      periodFrom: periodFrom || undefined,
+      periodTo: periodTo || undefined,
+      accountIds: accountIds && accountIds.length ? accountIds : undefined,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUserId,
+      createdByName: currentUserName,
+      status: 'processing',
+      stats: {
+        total: items.length,
+        confirmed: 0,
+        review: 0,
+        notFound: 0,
+        manual: items.filter(i => i.kind === 'manual').length,
+      },
+      source: items.every(i => i.kind === 'manual')
+        ? 'manual'
+        : items.every(i => i.kind === 'image') ? 'capturas' : 'mixed',
+    };
+    await setDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`), stripUndefined(batchDoc));
+  }
   onBatchCreated?.(batchId);
 
-  // 2. Cargar pool global con filtros
+  // 2. Cargar pool global — en append mode usamos los filtros del lote existente
+  //    para que las nuevas capturas busquen contra el mismo ámbito que las originales.
   const pool: PooledRow[] = await loadGlobalPool(db, businessId, {
-    periodFrom: periodFrom || undefined,
-    periodTo: periodTo || undefined,
-    accountIds: accountIds && accountIds.length ? accountIds : undefined,
+    periodFrom: existingBatch?.periodFrom ?? (periodFrom || undefined),
+    periodTo: existingBatch?.periodTo ?? (periodTo || undefined),
+    accountIds: existingBatch?.accountIds ?? (accountIds && accountIds.length ? accountIds : undefined),
     excludeUsed: true,
   });
 
@@ -450,7 +458,8 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
   }
   await Promise.all(workers);
 
-  // 4. Actualizar batch con stats finales
+  // 4. Actualizar batch. En append mode solo marcamos status=done; los stats los
+  //    re-sincroniza BatchReviewPanel con el total real de abonos (nuevos + viejos).
   const finalStats = {
     total: items.length,
     confirmed: aggregated.confirmed,
@@ -459,13 +468,77 @@ export async function processReceiptBatch(opts: ProcessBatchOpts): Promise<Proce
     manual: items.filter(i => i.kind === 'manual').length,
     duplicates: aggregated.duplicates,
   };
-  await setDoc(
-    doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`),
-    { status: 'done', stats: finalStats },
-    { merge: true },
-  );
+  if (isAppendMode) {
+    await setDoc(
+      doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`),
+      { status: 'done' },
+      { merge: true },
+    );
+  } else {
+    await setDoc(
+      doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`),
+      { status: 'done', stats: finalStats },
+      { merge: true },
+    );
+  }
 
   return { batchId, results, stats: finalStats };
+}
+
+/**
+ * Busca un lote existente en el negocio con el mismo nombre (case-insensitive,
+ * trim). Útil para detectar colisiones al crear un lote nuevo y ofrecer
+ * Fusionar/Reemplazar. Devuelve el match más reciente si hay varios.
+ */
+export async function findExistingBatchByName(
+  db: Firestore,
+  businessId: string,
+  name: string,
+): Promise<ReconciliationBatch | null> {
+  const needle = name.trim().toLocaleLowerCase();
+  if (!needle) return null;
+  const snap = await getDocs(collection(db, `businesses/${businessId}/reconciliationBatches`));
+  const matches: ReconciliationBatch[] = [];
+  snap.forEach(d => {
+    const data = d.data() as any;
+    if ((data.name || '').trim().toLocaleLowerCase() === needle) {
+      matches.push({ id: d.id, ...data } as ReconciliationBatch);
+    }
+  });
+  if (!matches.length) return null;
+  matches.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  return matches[0];
+}
+
+/**
+ * Borra un lote completamente: sus abonos (via collectionGroup), los claims en
+ * usedReferences que lo referencien, y el doc del batch. Idempotente — si algo
+ * no existe, no pasa nada.
+ */
+export async function deleteBatchCompletely(
+  db: Firestore,
+  businessId: string,
+  batchId: string,
+): Promise<void> {
+  // 1) Borrar abonos
+  const abonosQ = query(collectionGroup(db, 'abonos'), where('batchId', '==', batchId));
+  const abonosSnap = await getDocs(abonosQ);
+  await Promise.all(abonosSnap.docs.map(d => deleteDoc(d.ref)));
+
+  // 2) Liberar claims en usedReferences (por batchId)
+  try {
+    const refsQ = query(
+      collection(db, `businesses/${businessId}/usedReferences`),
+      where('batchId', '==', batchId),
+    );
+    const refsSnap = await getDocs(refsQ);
+    await Promise.all(refsSnap.docs.map(d => deleteDoc(d.ref)));
+  } catch (err) {
+    console.warn('[deleteBatchCompletely] no se pudieron liberar claims', err);
+  }
+
+  // 3) Borrar el batch doc
+  await deleteDoc(doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`));
 }
 
 // Añade capturas a un lote ya existente. Usa los mismos filtros (período + cuentas)
