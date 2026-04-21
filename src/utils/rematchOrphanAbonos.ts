@@ -95,6 +95,16 @@ export async function rematchOrphanAbonos(
   });
   if (orphans.length === 0) return result;
 
+  // Recolectamos TODOS los batchIds tocados (no solo los de actions). Incluye
+  // orphans que quedan 'stillOrphan' sin transicionar: igual sus batch.stats
+  // pueden estar stale respecto a confirmaciones/rechazos manuales previos,
+  // y este es el momento natural para re-sincronizar.
+  const scannedBatchIds = new Set<string>();
+  for (const d of orphans) {
+    const bid = (d.data() as any)?.batchId;
+    if (typeof bid === 'string' && bid) scannedBatchIds.add(bid);
+  }
+
   const pool = await loadGlobalPool(db, businessId, { excludeUsed: true });
   if (pool.length === 0) return { ...result, stillOrphan: orphans.length };
 
@@ -252,13 +262,12 @@ export async function rematchOrphanAbonos(
     }
   }
 
-  // Fase 3: recomputar stats de los batches afectados. Sin esto el tab "Revisar N"
-  // y los KPIs de Conciliacion.tsx quedan stale — leen batch.stats congelado al
-  // procesamiento inicial en vez del estado real post-rematch, y muestran 46
-  // cuando en realidad hay 17.
-  const affectedBatchIds = Array.from(
-    new Set(actions.map(a => a.batchId).filter((x): x is string => !!x)),
-  );
+  // Fase 3: recomputar stats de todos los batches tocados (incluye los que
+  // no tuvieron cambios en este run — sus stats cacheados igual pueden estar
+  // stale por mutaciones manuales previas que no recomputaron). Sin esto
+  // el tab "Revisar N" y los KPIs de Conciliacion.tsx leen batch.stats
+  // congelado y muestran 46 cuando la realidad es 17.
+  const affectedBatchIds = Array.from(scannedBatchIds);
   for (const batchId of affectedBatchIds) {
     try {
       const { stats, periodFrom, periodTo } = await recomputeBatchStats(db, businessId, batchId);
