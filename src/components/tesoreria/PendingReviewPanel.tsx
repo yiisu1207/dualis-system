@@ -3,10 +3,11 @@ import {
   AlertTriangle, XCircle, Copy, ChevronDown, ChevronRight,
   ExternalLink, Loader2, Search, X, Image as ImageIcon, RefreshCw,
 } from 'lucide-react';
-import { collectionGroup, getDocs, query, where } from 'firebase/firestore';
+import { collectionGroup, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useToast } from '../../context/ToastContext';
 import { rematchOrphanAbonos } from '../../utils/rematchOrphanAbonos';
+import { recomputeBatchStats, stripUndefined } from '../../utils/processReceiptBatch';
 import type { ReconciliationBatch } from '../../../types';
 import type { SessionAbono } from '../conciliacion/ReconciliationReport';
 
@@ -103,6 +104,25 @@ export default function PendingReviewPanel({
         currentUserName,
         { statuses: ['no_encontrado', 'revisar'], batchIds },
       );
+
+      // Resync agresivo de stats de TODOS los lotes. rematch solo recomputa los
+      // batches de abonos que escaneó (status en 'no_encontrado'/'revisar'); si
+      // un batch tiene stats={review: N} congelado pero sus abonos ya son todos
+      // 'confirmado', rematch no lo tocaría nunca y el KPI seguiría stale. Esto
+      // es más caro (1 query collectionGroup por batch) pero sincroniza todo
+      // en O(lotes) y es lo que el usuario espera al pedir "Re-buscar global".
+      const resyncResults = await Promise.allSettled(
+        batchIds.map(async (bid) => {
+          const { stats, periodFrom, periodTo } = await recomputeBatchStats(db, businessId, bid);
+          await setDoc(
+            doc(db, `businesses/${businessId}/reconciliationBatches/${bid}`),
+            stripUndefined({ stats, periodFrom, periodTo }),
+            { merge: true },
+          );
+        }),
+      );
+      const resyncErrors = resyncResults.filter(r => r.status === 'rejected').length;
+      if (resyncErrors > 0) console.warn('[PendingReview] resync errors', resyncErrors);
       const parts: string[] = [];
       if (res.confirmed > 0) parts.push(`${res.confirmed} auto-confirmad${res.confirmed === 1 ? 'o' : 'os'}`);
       if (res.movedToReview > 0) parts.push(`${res.movedToReview} a revisar`);
