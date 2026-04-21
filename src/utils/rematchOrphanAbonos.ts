@@ -1,18 +1,34 @@
 // Re-evalúa abonos pendientes contra el pool global actual.
 // Se dispara después de cargar un nuevo EdeC, o manualmente desde el panel
 // "Pendientes" con el botón "Re-buscar global".
-// - Si el top candidato es exact/high → auto-confirma con claimReference atómico
+// - Si el top candidato es exact/high → auto-confirma escribiendo el claim
+//   directo en `usedReferences` (dentro de un writeBatch, no por transacción)
 // - Si hay candidatos de menor confianza → pasa a 'revisar' con top-3 precalculado
 // - Si sigue sin candidatos → queda en su estado original ('no_encontrado')
+//
+// IMPLEMENTACIÓN BATCH: la versión anterior llamaba `claimReference` (transacción
+// atómica) una vez por cada orphan. Con 50+ auto-confirmaciones eso saturaba la
+// cuota de Firestore y devolvía 429 "resource-exhausted" en cascada. Ahora:
+//  1. Calculamos TODAS las acciones en memoria (sin I/O extra).
+//  2. Deduplicamos fingerprints dentro del mismo run.
+//  3. Escribimos todo con `writeBatch` (hasta 400 writes/batch) — 1 RPC por batch
+//     en vez de 1 transacción × orphan.
+// La garantía atómica la reemplaza el filtro `excludeUsed: true` de
+// `loadGlobalPool`: los fingerprints que auto-confirmamos ya NO existen en
+// `usedReferences` al snapshot que leímos. Una colisión con otro operador
+// ejecutando rematch al mismo milisegundo es un edge case que aceptamos
+// (el último write gana). El flujo normal de confirmación single-item sí
+// sigue usando `claimReference` transaccional.
 
 import {
-  collectionGroup, getDocs, query, setDoc, where, type Firestore,
-  type QueryDocumentSnapshot,
+  collectionGroup, doc, getDocs, query, where, writeBatch, type Firestore,
+  type DocumentReference, type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { loadGlobalPool } from './globalBankPool';
 import { findMatches, type DraftAbono } from './bankReconciliation';
-import { claimReference } from './reconciliationGuards';
+import { buildReferenceFingerprint } from './referenceFingerprint';
 import { topCandidatesSnapshot, stripUndefined } from './processReceiptBatch';
+import type { UsedReference } from '../../types';
 
 export type RematchStatus = 'no_encontrado' | 'revisar';
 
@@ -31,6 +47,16 @@ export interface RematchOptions {
   /** Si se provee, solo se escanean abonos de esos lotes (mucho más eficiente
    *  que el collectionGroup scan porque batchId está indexado en Firestore). */
   batchIds?: string[];
+}
+
+interface PendingAction {
+  abonoRef: DocumentReference;
+  abonoUpdate: Record<string, any>;
+  claim?: {
+    ref: DocumentReference;
+    record: UsedReference;
+  };
+  kind: 'confirmed' | 'review';
 }
 
 export async function rematchOrphanAbonos(
@@ -71,6 +97,10 @@ export async function rematchOrphanAbonos(
   const pool = await loadGlobalPool(db, businessId, { excludeUsed: true });
   if (pool.length === 0) return { ...result, stillOrphan: orphans.length };
 
+  // Fase 1: calcular todas las acciones en memoria.
+  const actions: PendingAction[] = [];
+  const claimedFingerprints = new Set<string>(); // para dedup intra-run
+
   for (const d of orphans) {
     result.scanned++;
     const data = d.data() as any;
@@ -98,8 +128,7 @@ export async function rematchOrphanAbonos(
 
     const top = matches[0];
     const candidateMatches = topCandidatesSnapshot(matches);
-
-    const topIdentity = top.row.bankAccountId || top.row.accountAlias;
+    const topIdentity = top.row.bankAccountId || top.row.accountAlias || '';
     const canAutoConfirm =
       (top.confidence === 'exact' || top.confidence === 'high')
       && !!topIdentity
@@ -108,20 +137,40 @@ export async function rematchOrphanAbonos(
 
     if (canAutoConfirm) {
       try {
-        const claim = await claimReference(db, businessId, {
-          bankAccountId: top.row.bankAccountId,
-          accountAlias: top.row.accountAlias,
-          reference: top.row.reference!,
-          amount: top.row.amount,
+        const fp = await buildReferenceFingerprint(topIdentity, top.row.reference!, top.row.amount);
+        if (claimedFingerprints.has(fp)) {
+          // Otro orphan en este mismo run ya reclamó este fp → cae a revisión.
+          actions.push({
+            kind: 'review',
+            abonoRef: d.ref,
+            abonoUpdate: stripUndefined({
+              status: 'revisar',
+              candidateMatches,
+              reviewReason: `Rematch: fingerprint ya reclamado por otro abono del mismo run.`,
+            }),
+          });
+          continue;
+        }
+        claimedFingerprints.add(fp);
+
+        const usedRef = doc(db, `businesses/${businessId}/usedReferences/${fp}`);
+        const record: UsedReference = {
+          fingerprint: fp,
+          bankAccountId: topIdentity,
+          reference: top.row.reference!.trim(),
+          amount: Number(top.row.amount.toFixed(2)),
+          claimedAt: new Date().toISOString(),
+          claimedByUid: currentUserId,
+          claimedByName: currentUserName,
           abonoId: d.id,
           batchId: data.batchId,
           bankRowId: top.row.rowId,
           monthKey: top.row.monthKey,
-          claimedByUid: currentUserId,
-          claimedByName: currentUserName,
-        });
-        if (claim.ok) {
-          await setDoc(d.ref, stripUndefined({
+        };
+        actions.push({
+          kind: 'confirmed',
+          abonoRef: d.ref,
+          abonoUpdate: stripUndefined({
             status: 'confirmado',
             matchRowId: top.row.rowId,
             matchAccountAlias: top.row.accountAlias,
@@ -129,22 +178,52 @@ export async function rematchOrphanAbonos(
             matchBankName: top.row.bankName,
             matchMonthKey: top.row.monthKey,
             candidateMatches,
-          }), { merge: true });
-          result.confirmed++;
-          continue;
-        }
-        // already_used → cae al flujo de revisión
+          }),
+          claim: { ref: usedRef, record },
+        });
+        continue;
       } catch (e: any) {
         result.errors.push(`${d.id}: ${e?.message || String(e)}`);
+        // cae a review en caso de error inesperado
       }
     }
 
-    await setDoc(d.ref, stripUndefined({
-      status: 'revisar',
-      candidateMatches,
-      reviewReason: `Rematch tras nuevo EdeC: ${candidateMatches.length} candidato(s). Top: ${top.confidence} (score ${top.score}).`,
-    }), { merge: true });
-    result.movedToReview++;
+    actions.push({
+      kind: 'review',
+      abonoRef: d.ref,
+      abonoUpdate: stripUndefined({
+        status: 'revisar',
+        candidateMatches,
+        reviewReason: `Rematch tras nuevo EdeC: ${candidateMatches.length} candidato(s). Top: ${top.confidence} (score ${top.score}).`,
+      }),
+    });
+  }
+
+  // Fase 2: escribir todas las acciones en batches. Cada acción de 'confirmed'
+  // genera 2 writes (abono + usedReference), 'review' genera 1. Agrupamos en
+  // lotes de ~200 acciones (máx ~400 writes, bajo el límite de 500).
+  const CHUNK = 200;
+  for (let i = 0; i < actions.length; i += CHUNK) {
+    const chunk = actions.slice(i, i + CHUNK);
+    const wb = writeBatch(db);
+    for (const a of chunk) {
+      wb.set(a.abonoRef, a.abonoUpdate, { merge: true });
+      if (a.claim) {
+        // Limpieza de undefineds — writeBatch.set rechaza undefined.
+        const clean: Record<string, any> = {};
+        for (const [k, v] of Object.entries(a.claim.record)) if (v !== undefined) clean[k] = v;
+        wb.set(a.claim.ref, clean);
+      }
+    }
+    try {
+      await wb.commit();
+      for (const a of chunk) {
+        if (a.kind === 'confirmed') result.confirmed++;
+        else result.movedToReview++;
+      }
+    } catch (e: any) {
+      result.errors.push(`batch ${i / CHUNK}: ${e?.message || String(e)}`);
+    }
   }
 
   return result;
