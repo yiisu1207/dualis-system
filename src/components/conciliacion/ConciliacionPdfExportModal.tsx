@@ -179,15 +179,25 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, busi
       pdf.setFillColor(15, 23, 42);
       pdf.rect(0, 0, pageW, 32, 'F');
 
-      // Logo Dualis (anillos cyan+violeta) a la izquierda.
-      drawDualisLogo(pdf, 8, 9, 7);
+      // Logo Dualis (anillos cyan+violeta). Los anillos tienen offset interno
+      // (~r*0.65 a cada lado), así que el ancho visual real ≈ size * 1.4.
+      // Colocamos el centro en x=12 con size=7 → ocupa ~4..20mm. El texto de
+      // la empresa arranca en x=24 para no chocar.
+      drawDualisLogo(pdf, 12, 10, 7);
+
+      const textX = 24;
+      const rightColX = pageW - margin;
+      // Ancho disponible para el nombre (deja espacio al título de la derecha).
+      const leftColMaxW = pageW - textX - 80; // reserva ~80mm al bloque derecho
 
       // Nombre de la empresa en mayúsculas (el titular del documento).
       pdf.setTextColor(255, 255, 255);
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(15);
+      pdf.setFontSize(14);
       const bizName = (business.name || 'Empresa').toUpperCase();
-      pdf.text(bizName, margin, 13);
+      // splitTextToSize evita overflow horizontal si el nombre es largo.
+      const bizLines = pdf.splitTextToSize(bizName, leftColMaxW) as string[];
+      pdf.text(bizLines[0] || bizName, textX, 13);
 
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
@@ -195,20 +205,26 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, busi
       if (business.rif) infoParts.push(`RIF: ${business.rif}`);
       if (business.phone) infoParts.push(business.phone);
       if (business.email) infoParts.push(business.email);
-      if (infoParts.length) pdf.text(infoParts.join(' · '), margin, 19);
-      if (business.address) pdf.text(business.address, margin, 24);
+      if (infoParts.length) {
+        const infoLines = pdf.splitTextToSize(infoParts.join(' · '), leftColMaxW) as string[];
+        pdf.text(infoLines[0], textX, 19);
+      }
+      if (business.address) {
+        const addrLines = pdf.splitTextToSize(business.address, leftColMaxW) as string[];
+        pdf.text(addrLines[0], textX, 24);
+      }
 
       // Bloque derecho: título del reporte + metadatos.
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(10);
-      pdf.text(title, pageW - margin, 13, { align: 'right' });
+      pdf.text(title, rightColX, 13, { align: 'right' });
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(7.5);
-      pdf.text(`Emitido: ${fmtDateTime(generatedAt)}`, pageW - margin, 19, { align: 'right' });
+      pdf.text(`Emitido: ${fmtDateTime(generatedAt)}`, rightColX, 19, { align: 'right' });
       const monthsHint = opts.selectedMonths.length
         ? `Meses: ${opts.selectedMonths.map(fmtMonthLabel).join(', ')}`
         : `${filteredBatches.length} lote${filteredBatches.length === 1 ? '' : 's'} incluido${filteredBatches.length === 1 ? '' : 's'}`;
-      pdf.text(monthsHint, pageW - margin, 24, { align: 'right' });
+      pdf.text(monthsHint, rightColX, 24, { align: 'right' });
 
       // Banda cyan→violeta bajo el header para firmar visualmente el doc.
       drawGradientBarMm(pdf, 0, 32, pageW, 0.7);
@@ -308,9 +324,12 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, busi
           const body = rows.map(b => {
             const row: string[] = [b.name];
             if (opts.includeBatchPeriod) {
+              // Guión ASCII en vez de flecha unicode: helvetica de jsPDF no tiene
+              // glifo para → y termina rendereando los dígitos con tracking raro
+              // ("2 0 2 6 - 0 1 - 0 7"). Con "-" se ve limpio.
               const per = b.periodFrom && b.periodTo
-                ? (b.periodFrom === b.periodTo ? b.periodFrom : `${b.periodFrom} → ${b.periodTo}`)
-                : '—';
+                ? (b.periodFrom === b.periodTo ? b.periodFrom : `${b.periodFrom} a ${b.periodTo}`)
+                : '-';
               row.push(per);
             }
             row.push(
@@ -328,6 +347,16 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, busi
             return row;
           });
 
+          // Anchos fijos: damos espacio a Período (fechas largas) y a los
+          // contadores numéricos para que no colapsen con line-break raro.
+          const colStyles: Record<number, any> = { 0: { fontStyle: 'bold', cellWidth: 45 } };
+          let idx = 1;
+          if (opts.includeBatchPeriod) { colStyles[idx] = { cellWidth: 42, halign: 'center' }; idx++; }
+          // Total, Confirm., Revisar, Sin match, Dup.
+          for (let k = 0; k < 5; k++) { colStyles[idx] = { cellWidth: 15, halign: 'center' }; idx++; }
+          if (opts.includeBatchCreator) { colStyles[idx] = { cellWidth: 26 }; idx++; }
+          if (opts.includeBatchStatus) { colStyles[idx] = { cellWidth: 18, halign: 'center' }; idx++; }
+
           autoTable(pdf, {
             startY: y,
             margin: { left: margin, right: margin },
@@ -335,11 +364,9 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, busi
             body,
             theme: 'striped',
             styles: { fontSize: 7.5, cellPadding: 1.5, overflow: 'linebreak', textColor: [51, 65, 85] },
-            headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 7.5, fontStyle: 'bold' },
+            headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 7.5, fontStyle: 'bold', halign: 'center' },
             alternateRowStyles: { fillColor: [248, 250, 252] },
-            columnStyles: {
-              0: { fontStyle: 'bold' },
-            },
+            columnStyles: colStyles,
             didParseCell: (data) => {
               // Pintamos Confirm. verde, Revisar ámbar, Sin match rojo para lectura rápida.
               if (data.section !== 'body') return;
