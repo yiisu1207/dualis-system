@@ -21,13 +21,13 @@
 // sigue usando `claimReference` transaccional.
 
 import {
-  collectionGroup, doc, getDocs, query, where, writeBatch, type Firestore,
+  collectionGroup, doc, getDocs, query, setDoc, where, writeBatch, type Firestore,
   type DocumentReference, type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { loadGlobalPool } from './globalBankPool';
 import { findMatches, type DraftAbono } from './bankReconciliation';
 import { buildReferenceFingerprint } from './referenceFingerprint';
-import { topCandidatesSnapshot, stripUndefined } from './processReceiptBatch';
+import { topCandidatesSnapshot, stripUndefined, recomputeBatchStats } from './processReceiptBatch';
 import type { UsedReference } from '../../types';
 
 export type RematchStatus = 'no_encontrado' | 'revisar';
@@ -57,6 +57,7 @@ interface PendingAction {
     record: UsedReference;
   };
   kind: 'confirmed' | 'review';
+  batchId?: string;
 }
 
 export async function rematchOrphanAbonos(
@@ -149,6 +150,7 @@ export async function rematchOrphanAbonos(
           actions.push({
             kind: 'review',
             abonoRef: d.ref,
+            batchId: data.batchId,
             abonoUpdate: stripUndefined({
               status: 'revisar',
               candidateMatches,
@@ -176,6 +178,7 @@ export async function rematchOrphanAbonos(
         actions.push({
           kind: 'confirmed',
           abonoRef: d.ref,
+          batchId: data.batchId,
           abonoUpdate: stripUndefined({
             status: 'confirmado',
             matchRowId: top.row.rowId,
@@ -196,6 +199,7 @@ export async function rematchOrphanAbonos(
         actions.push({
           kind: 'review',
           abonoRef: d.ref,
+          batchId: data.batchId,
           abonoUpdate: stripUndefined({
             status: 'revisar',
             candidateMatches,
@@ -212,6 +216,7 @@ export async function rematchOrphanAbonos(
     actions.push({
       kind: 'review',
       abonoRef: d.ref,
+      batchId: data.batchId,
       abonoUpdate: stripUndefined({
         status: 'revisar',
         candidateMatches,
@@ -244,6 +249,26 @@ export async function rematchOrphanAbonos(
       }
     } catch (e: any) {
       result.errors.push(`batch ${i / CHUNK}: ${e?.message || String(e)}`);
+    }
+  }
+
+  // Fase 3: recomputar stats de los batches afectados. Sin esto el tab "Revisar N"
+  // y los KPIs de Conciliacion.tsx quedan stale — leen batch.stats congelado al
+  // procesamiento inicial en vez del estado real post-rematch, y muestran 46
+  // cuando en realidad hay 17.
+  const affectedBatchIds = Array.from(
+    new Set(actions.map(a => a.batchId).filter((x): x is string => !!x)),
+  );
+  for (const batchId of affectedBatchIds) {
+    try {
+      const { stats, periodFrom, periodTo } = await recomputeBatchStats(db, businessId, batchId);
+      await setDoc(
+        doc(db, `businesses/${businessId}/reconciliationBatches/${batchId}`),
+        stripUndefined({ stats, periodFrom, periodTo }),
+        { merge: true },
+      );
+    } catch (e: any) {
+      result.errors.push(`recompute ${batchId}: ${e?.message || String(e)}`);
     }
   }
 

@@ -825,7 +825,7 @@ export function getStatementRowDate(abono: SessionAbono): string | undefined {
 /** Recomputa stats + período derivado de un batch leyendo todos sus abonos.
  *  Período se deriva de las fechas de las filas del EdeC conciliadas (matchRowDate),
  *  no de las fechas de los recibos/capturas. Si no hay matches, el período queda vacío. */
-async function recomputeBatchStats(
+export async function recomputeBatchStats(
   db: Firestore,
   businessId: string,
   batchId: string,
