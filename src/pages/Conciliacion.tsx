@@ -1238,6 +1238,7 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
         <ConciliacionPdfExportModal
           batches={batches}
           accountChips={accountChips}
+          businessId={businessId}
           onClose={() => setShowPdfModal(false)}
         />
       )}

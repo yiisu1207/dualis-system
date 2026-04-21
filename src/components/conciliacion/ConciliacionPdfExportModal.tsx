@@ -1,14 +1,26 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, Download, Loader2, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
+import { drawDualisFooter, drawDualisLogo } from '../../utils/dualisBranding';
 import type { ReconciliationBatch } from '../../../types';
 import type { AccountChipData } from './AccountChips';
 
 interface ConciliacionPdfExportModalProps {
   batches: ReconciliationBatch[];
   accountChips?: AccountChipData[];
+  businessId: string;
   onClose: () => void;
+}
+
+interface BusinessInfo {
+  name?: string;
+  rif?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
 }
 
 interface FieldOptions {
@@ -64,9 +76,51 @@ const fmtMonthLabel = (ym: string) => {
 
 const fmtDateTime = (d: Date) => d.toLocaleString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 
-export default function ConciliacionPdfExportModal({ batches, accountChips, onClose }: ConciliacionPdfExportModalProps) {
+// Gradiente cyan→violeta (mismo patrón que dualisBranding pero público aquí
+// porque el footer está en esa lib y esto es para la banda del header).
+function drawGradientBarMm(pdf: any, x: number, y: number, width: number, height: number) {
+  const from: [number, number, number] = [34, 211, 238];
+  const to: [number, number, number] = [139, 92, 246];
+  const strips = 80;
+  const stripW = width / strips;
+  for (let i = 0; i < strips; i++) {
+    const t = i / (strips - 1);
+    const r = Math.round(from[0] + (to[0] - from[0]) * t);
+    const g = Math.round(from[1] + (to[1] - from[1]) * t);
+    const b = Math.round(from[2] + (to[2] - from[2]) * t);
+    pdf.setFillColor(r, g, b);
+    pdf.rect(x + i * stripW, y, stripW + 0.05, height, 'F');
+  }
+}
+
+export default function ConciliacionPdfExportModal({ batches, accountChips, businessId, onClose }: ConciliacionPdfExportModalProps) {
   const [opts, setOpts] = useState<FieldOptions>(DEFAULT_OPTS);
   const [busy, setBusy] = useState(false);
+  const [business, setBusiness] = useState<BusinessInfo>({});
+
+  // Cargamos info del negocio para estamparla en el header del PDF (mismo
+  // patrón que exportStatementFullPDF en clientStatementExports).
+  useEffect(() => {
+    if (!businessId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'businesses', businessId));
+        if (cancelled || !snap.exists()) return;
+        const data = snap.data() as any;
+        setBusiness({
+          name: data.name || data.businessName,
+          rif: data.rif || data.taxId,
+          phone: data.phone,
+          email: data.email,
+          address: data.address,
+        });
+      } catch (err) {
+        console.warn('[ConciliacionPdf] could not load business info', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [businessId]);
 
   // Meses disponibles entre todos los lotes (derivados de período o createdAt)
   const availableMonths = useMemo(() => {
@@ -113,66 +167,98 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
   const handleExport = async () => {
     setBusy(true);
     try {
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
-      const pageW = doc.internal.pageSize.getWidth();
-      const pageH = doc.internal.pageSize.getHeight();
-      const margin = 36;
-      let y = margin;
-
-      // Header
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.setTextColor(30, 41, 59);
-      doc.text(opts.title || 'Reporte de Conciliación Bancaria', margin, y);
-      y += 20;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139);
+      // Unidades en mm (mismo patrón que clientStatementExports / paymentReceiptPdf).
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 14;
       const generatedAt = new Date();
-      doc.text(`Generado ${fmtDateTime(generatedAt)} · Estado actual del sistema`, margin, y);
-      y += 8;
+      const title = opts.title || 'Reporte de Conciliación Bancaria';
+
+      // ── HEADER: banda slate-900 con logo + empresa + título ─────────────
+      pdf.setFillColor(15, 23, 42);
+      pdf.rect(0, 0, pageW, 32, 'F');
+
+      // Logo Dualis (anillos cyan+violeta) a la izquierda.
+      drawDualisLogo(pdf, 8, 9, 7);
+
+      // Nombre de la empresa en mayúsculas (el titular del documento).
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(15);
+      const bizName = (business.name || 'Empresa').toUpperCase();
+      pdf.text(bizName, margin, 13);
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      const infoParts: string[] = [];
+      if (business.rif) infoParts.push(`RIF: ${business.rif}`);
+      if (business.phone) infoParts.push(business.phone);
+      if (business.email) infoParts.push(business.email);
+      if (infoParts.length) pdf.text(infoParts.join(' · '), margin, 19);
+      if (business.address) pdf.text(business.address, margin, 24);
+
+      // Bloque derecho: título del reporte + metadatos.
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.text(title, pageW - margin, 13, { align: 'right' });
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+      pdf.text(`Emitido: ${fmtDateTime(generatedAt)}`, pageW - margin, 19, { align: 'right' });
       const monthsHint = opts.selectedMonths.length
-        ? ` · meses: ${opts.selectedMonths.map(fmtMonthLabel).join(', ')}`
-        : '';
-      doc.text(`${filteredBatches.length} lote(s) incluido(s)${monthsHint}`, margin, y);
-      y += 16;
+        ? `Meses: ${opts.selectedMonths.map(fmtMonthLabel).join(', ')}`
+        : `${filteredBatches.length} lote${filteredBatches.length === 1 ? '' : 's'} incluido${filteredBatches.length === 1 ? '' : 's'}`;
+      pdf.text(monthsHint, pageW - margin, 24, { align: 'right' });
 
-      // KPIs
+      // Banda cyan→violeta bajo el header para firmar visualmente el doc.
+      drawGradientBarMm(pdf, 0, 32, pageW, 0.7);
+
+      let y = 40;
+
+      // ── KPIs ────────────────────────────────────────────────────────────
       if (opts.includeKpis) {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.setTextColor(30, 41, 59);
-        doc.text('Resumen global', margin, y);
-        y += 12;
+        // Banner slate con los números clave (mismo estilo que drawBalanceBlock).
+        pdf.setFillColor(15, 23, 42);
+        pdf.roundedRect(margin, y, pageW - margin * 2, 20, 1.5, 1.5, 'F');
 
-        autoTable(doc, {
-          startY: y,
-          margin: { left: margin, right: margin },
-          head: [['Métrica', 'Valor']],
-          body: [
-            ['Auto-match %', `${kpis.autoRatio}%`],
-            ['Abonos confirmados', `${kpis.confirmed} / ${kpis.total}`],
-            ['Por revisar', String(kpis.review)],
-            ['Sin match', String(kpis.notFound)],
-            ['Duplicados', String(kpis.duplicates)],
-          ],
-          styles: { fontSize: 9, cellPadding: 4 },
-          headStyles: { fillColor: [79, 70, 229], textColor: 255 },
-          alternateRowStyles: { fillColor: [248, 250, 252] },
-        });
-        y = (doc as any).lastAutoTable.finalY + 16;
+        const labels = ['AUTO-MATCH', 'CONFIRMADOS', 'POR REVISAR', 'SIN MATCH', 'DUPLICADOS'];
+        const values = [
+          `${kpis.autoRatio}%`,
+          `${kpis.confirmed}/${kpis.total}`,
+          `${kpis.review}`,
+          `${kpis.notFound}`,
+          `${kpis.duplicates}`,
+        ];
+        const colW = (pageW - margin * 2) / labels.length;
+        for (let i = 0; i < labels.length; i++) {
+          const cx = margin + colW * i + colW / 2;
+          pdf.setTextColor(148, 163, 184);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(6.8);
+          pdf.text(labels[i], cx, y + 6, { align: 'center' });
+
+          // El valor KPI crítico (auto-match) en color de marca.
+          if (i === 0) pdf.setTextColor(34, 211, 238);
+          else if (i === 1) pdf.setTextColor(134, 239, 172);
+          else if (i === 2) pdf.setTextColor(251, 191, 36);
+          else if (i === 3) pdf.setTextColor(248, 113, 113);
+          else pdf.setTextColor(196, 181, 253);
+          pdf.setFontSize(12);
+          pdf.text(values[i], cx, y + 14, { align: 'center' });
+        }
+        y += 26;
       }
 
-      // Cuentas bancarias
+      // ── Cuentas bancarias ──────────────────────────────────────────────
       if (opts.includeAccounts && accountChips && accountChips.length > 0) {
-        if (y > pageH - 140) { doc.addPage(); y = margin; }
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.setTextColor(30, 41, 59);
-        doc.text('Cuentas bancarias cargadas', margin, y);
-        y += 12;
+        if (y > pageH - 50) { pdf.addPage(); y = margin; }
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(71, 85, 105);
+        pdf.text('CUENTAS BANCARIAS CARGADAS', margin, y);
+        y += 2;
 
-        autoTable(doc, {
+        autoTable(pdf, {
           startY: y,
           margin: { left: margin, right: margin },
           head: [['Alias', 'Banco', 'Filas', 'Usadas', '%']],
@@ -188,23 +274,30 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
               `${pct}%`,
             ];
           }),
-          styles: { fontSize: 8, cellPadding: 3 },
-          headStyles: { fillColor: [79, 70, 229], textColor: 255 },
+          theme: 'grid',
+          styles: { fontSize: 8, cellPadding: 1.5, textColor: [51, 65, 85] },
+          headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8, fontStyle: 'bold' },
           alternateRowStyles: { fillColor: [248, 250, 252] },
+          columnStyles: {
+            0: { fontStyle: 'bold' },
+            2: { halign: 'center' },
+            3: { halign: 'center' },
+            4: { halign: 'right', fontStyle: 'bold' },
+          },
         });
-        y = (doc as any).lastAutoTable.finalY + 16;
+        y = (pdf as any).lastAutoTable.finalY + 6;
       }
 
-      // Lotes
+      // ── Lotes ──────────────────────────────────────────────────────────
       if (opts.includeBatches) {
         const rows = filteredBatches;
         if (rows.length > 0) {
-          if (y > pageH - 140) { doc.addPage(); y = margin; }
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(11);
-          doc.setTextColor(30, 41, 59);
-          doc.text(`Lotes (${rows.length})`, margin, y);
-          y += 12;
+          if (y > pageH - 50) { pdf.addPage(); y = margin; }
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(9);
+          pdf.setTextColor(71, 85, 105);
+          pdf.text(`LOTES (${rows.length})`, margin, y);
+          y += 2;
 
           const head: string[] = ['Nombre'];
           if (opts.includeBatchPeriod) head.push('Período');
@@ -235,33 +328,40 @@ export default function ConciliacionPdfExportModal({ batches, accountChips, onCl
             return row;
           });
 
-          autoTable(doc, {
+          autoTable(pdf, {
             startY: y,
             margin: { left: margin, right: margin },
             head: [head],
             body,
-            styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
-            headStyles: { fillColor: [79, 70, 229], textColor: 255 },
+            theme: 'striped',
+            styles: { fontSize: 7.5, cellPadding: 1.5, overflow: 'linebreak', textColor: [51, 65, 85] },
+            headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 7.5, fontStyle: 'bold' },
             alternateRowStyles: { fillColor: [248, 250, 252] },
+            columnStyles: {
+              0: { fontStyle: 'bold' },
+            },
+            didParseCell: (data) => {
+              // Pintamos Confirm. verde, Revisar ámbar, Sin match rojo para lectura rápida.
+              if (data.section !== 'body') return;
+              const headerText = (data.table.head[0]?.cells?.[data.column.index]?.raw as string) || '';
+              const val = Number(data.cell.raw);
+              if (headerText === 'Confirm.' && val > 0) data.cell.styles.textColor = [5, 150, 105];
+              else if (headerText === 'Revisar' && val > 0) data.cell.styles.textColor = [217, 119, 6];
+              else if (headerText === 'Sin match' && val > 0) data.cell.styles.textColor = [225, 29, 72];
+              else if (headerText === 'Dup.' && val > 0) data.cell.styles.textColor = [147, 51, 234];
+            },
           });
-          y = (doc as any).lastAutoTable.finalY + 16;
+          y = (pdf as any).lastAutoTable.finalY + 6;
         }
       }
 
-      const pageCount = (doc.internal as any).getNumberOfPages();
-      const footerY = pageH - 18;
-      const footerText = `Generado ${fmtDateTime(generatedAt)}`;
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(148, 163, 184);
-        doc.text(footerText, margin, footerY);
-        doc.text(`Página ${i} / ${pageCount}`, pageW - margin, footerY, { align: 'right' });
-      }
+      // Footer oficial Dualis en TODAS las páginas (anillos + barra + marca).
+      drawDualisFooter(pdf, {
+        tagline: `${title} · dualis.online`,
+      });
 
       const filename = `conciliacion_${generatedAt.toISOString().slice(0, 10)}.pdf`;
-      doc.save(filename);
+      pdf.save(filename);
       onClose();
     } catch (err) {
       console.error('[ConciliacionPdf] export failed', err);
