@@ -110,10 +110,14 @@ export async function rematchOrphanAbonos(
       continue;
     }
 
+    // Coerción defensiva: Firestore puede devolver reference como number si el
+    // parser lo guardó así (BDV Empresa devolvía refs numéricas en algunos casos).
+    // `findMatches` y `buildReferenceFingerprint` asumen string → normalizamos acá.
+    const draftReference = data.reference == null ? undefined : String(data.reference).trim() || undefined;
     const draft: DraftAbono = {
       amount: data.amount,
       date: data.date,
-      reference: data.reference,
+      reference: draftReference,
       cedula: data.cedula,
       phone: data.phone,
       clientName: data.clientName,
@@ -129,15 +133,17 @@ export async function rematchOrphanAbonos(
     const top = matches[0];
     const candidateMatches = topCandidatesSnapshot(matches);
     const topIdentity = top.row.bankAccountId || top.row.accountAlias || '';
-    const canAutoConfirm =
-      (top.confidence === 'exact' || top.confidence === 'high')
-      && !!topIdentity
-      && !!top.row.reference
-      && !!draft.reference;
+    const topRowReference = top.row.reference == null ? undefined : String(top.row.reference).trim() || undefined;
+    const failures: string[] = [];
+    if (top.confidence !== 'exact' && top.confidence !== 'high') failures.push(`conf=${top.confidence}`);
+    if (!topIdentity) failures.push('sin bankAccountId ni accountAlias en fila');
+    if (!topRowReference) failures.push('fila sin ref');
+    if (!draftReference) failures.push('abono sin ref');
+    const canAutoConfirm = failures.length === 0;
 
     if (canAutoConfirm) {
       try {
-        const fp = await buildReferenceFingerprint(topIdentity, top.row.reference!, top.row.amount);
+        const fp = await buildReferenceFingerprint(topIdentity, topRowReference!, top.row.amount);
         if (claimedFingerprints.has(fp)) {
           // Otro orphan en este mismo run ya reclamó este fp → cae a revisión.
           actions.push({
@@ -157,7 +163,7 @@ export async function rematchOrphanAbonos(
         const record: UsedReference = {
           fingerprint: fp,
           bankAccountId: topIdentity,
-          reference: top.row.reference!.trim(),
+          reference: topRowReference!,
           amount: Number(top.row.amount.toFixed(2)),
           claimedAt: new Date().toISOString(),
           claimedByUid: currentUserId,
@@ -183,18 +189,33 @@ export async function rematchOrphanAbonos(
         });
         continue;
       } catch (e: any) {
-        result.errors.push(`${d.id}: ${e?.message || String(e)}`);
-        // cae a review en caso de error inesperado
+        const msg = e?.message || String(e);
+        result.errors.push(`${d.id}: ${msg}`);
+        console.warn('[rematchOrphanAbonos] fingerprint/auto-confirm falló', { abonoId: d.id, topIdentity, topRowReference, amount: top.row.amount, err: msg });
+        // cae a review — incluimos el error en la razón para diagnóstico.
+        actions.push({
+          kind: 'review',
+          abonoRef: d.ref,
+          abonoUpdate: stripUndefined({
+            status: 'revisar',
+            candidateMatches,
+            reviewReason: `Rematch: error al auto-confirmar exact/high (${msg}). Top: ${top.confidence} (score ${top.score}).`,
+          }),
+        });
+        continue;
       }
     }
 
+    // canAutoConfirm fue false — incluimos qué condición(es) falló(aron) en la razón
+    // para no tener que adivinar en el próximo run (ej. "sin bankAccountId ni alias").
+    const failReason = failures.length > 0 ? ` [bloqueo auto: ${failures.join(', ')}]` : '';
     actions.push({
       kind: 'review',
       abonoRef: d.ref,
       abonoUpdate: stripUndefined({
         status: 'revisar',
         candidateMatches,
-        reviewReason: `Rematch tras nuevo EdeC: ${candidateMatches.length} candidato(s). Top: ${top.confidence} (score ${top.score}).`,
+        reviewReason: `Rematch tras nuevo EdeC: ${candidateMatches.length} candidato(s). Top: ${top.confidence} (score ${top.score}).${failReason}`,
       }),
     });
   }
