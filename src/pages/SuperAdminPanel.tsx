@@ -24,7 +24,8 @@ import {
   limit as firestoreLimit, getCountFromServer, Timestamp,
 } from 'firebase/firestore';
 import { uploadToCloudinary } from '../utils/cloudinary';
-import { GoogleGenAI } from '@google/genai';
+// GoogleGenAI ya no se usa en el cliente: el chat del super admin proxy-ea a /api/assistant
+// (server-side) para no exponer GOOGLE_API_KEY en el bundle. Import removido.
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
 } from 'firebase/auth';
@@ -604,7 +605,9 @@ export default function SuperAdminPanel() {
     loadDash();
   }, [pinAuth, topTab]);
 
-  // AI chat handler
+  // AI chat handler — usa el proxy server-side /api/assistant (no expone la key
+  // de Gemini en el cliente). Requiere usuario autenticado: el endpoint valida
+  // el idToken de Firebase y rate-limita por UID.
   const sendAiMessage = async () => {
     const msg = aiInput.trim();
     if (!msg || aiLoading) return;
@@ -613,12 +616,13 @@ export default function SuperAdminPanel() {
     setAiLoading(true);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        setAiMessages(prev => [...prev, { role: 'assistant', content: 'No se encontro VITE_GEMINI_API_KEY en las variables de entorno. Agregala en .env.local y en Vercel.' }]);
+      const currentUser = getAuth().currentUser;
+      if (!currentUser) {
+        setAiMessages(prev => [...prev, { role: 'assistant', content: 'Sesión expirada. Volvé a iniciar sesión para usar el chat.' }]);
         setAiLoading(false);
         return;
       }
+      const idToken = await currentUser.getIdToken();
 
       // Build system context with live data
       const systemContext = `Eres un asistente IA interno del sistema Dualis ERP. Respondes en español.
@@ -647,23 +651,28 @@ ${dashStats.recentMovements.slice(0, 10).map(m => `- ${m.movementType} | $${m.am
 
 Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, dilo. Puedes dar recomendaciones de negocio basadas en los datos.`;
 
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: [
-          { role: 'user', parts: [{ text: systemContext }] },
-          ...aiMessages.map(m => ({
-            role: m.role === 'user' ? 'user' as const : 'model' as const,
-            parts: [{ text: m.content }],
-          })),
-          { role: 'user', parts: [{ text: msg }] },
-        ],
+      const r = await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          system: systemContext,
+          messages: [
+            ...aiMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', content: m.content })),
+            { role: 'user', content: msg },
+          ],
+          temperature: 0.4,
+          maxOutputTokens: 1024,
+        }),
       });
-
-      const reply = response.text ?? 'Sin respuesta';
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(err.error || `HTTP ${r.status}`);
+      }
+      const data = await r.json();
+      const reply = data?.result ?? 'Sin respuesta';
       setAiMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e: any) {
-      setAiMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e?.message ?? 'No se pudo conectar con Gemini'}` }]);
+      setAiMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e?.message ?? 'No se pudo conectar con el asistente'}` }]);
     }
     setAiLoading(false);
     setTimeout(() => aiChatRef.current?.scrollTo({ top: aiChatRef.current.scrollHeight, behavior: 'smooth' }), 100);
@@ -3390,7 +3399,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                   <Send size={14} />
                 </button>
               </div>
-              <p className="text-[9px] text-white/15 mt-2 text-center">Gemini 2.0 Flash -- Los datos se cargan en vivo desde Firestore -- Requiere VITE_GEMINI_API_KEY</p>
+              <p className="text-[9px] text-white/15 mt-2 text-center">Gemini (server-side proxy) — Los datos se cargan en vivo desde Firestore — Usa GOOGLE_API_KEY del backend, no expone secretos al cliente</p>
             </div>
           </div>
         )}

@@ -53,26 +53,42 @@ module.exports = async (req, res) => {
     return res.status(429).json({ error: `Rate limit: ${RATE_LIMIT_PER_MINUTE} req/min` });
   }
 
-  const { prompt, system, temperature } = req.body || {};
-  if (!prompt) {
-    return res.status(400).json({ error: 'Missing "prompt" in request body.' });
+  const { prompt, system, temperature, messages, maxOutputTokens } = req.body || {};
+
+  // Dos modos de invocación:
+  //  1) one-shot: { prompt, system?, temperature? } — legacy, lo siguen usando otros callers.
+  //  2) chat multi-turno: { system?, messages: [{ role: 'user'|'model', content: string }, ...] }
+  //     (usado por SuperAdminPanel después de migrar fuera de VITE_GEMINI_API_KEY).
+  if (!prompt && !(Array.isArray(messages) && messages.length)) {
+    return res.status(400).json({ error: 'Missing "prompt" or "messages" in request body.' });
   }
 
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
 
+    const contents = Array.isArray(messages) && messages.length
+      ? [
+          // system va como primer turno del modelo para que el chat multi-turno lo respete.
+          ...(system ? [{ role: 'user', parts: [{ text: String(system) }] }] : []),
+          ...messages.map((m) => ({
+            role: m.role === 'model' || m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: String(m.content ?? '') }],
+          })),
+        ]
+      : [
+          {
+            parts: [
+              { text: system ? String(system) : 'Responde de forma clara y breve.' },
+              { text: String(prompt) },
+            ],
+          },
+        ];
+
     const payload = {
-      contents: [
-        {
-          parts: [
-            { text: system ? String(system) : 'Responde de forma clara y breve.' },
-            { text: String(prompt) },
-          ],
-        },
-      ],
+      contents,
       generationConfig: {
         temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.2,
-        maxOutputTokens: 512,
+        maxOutputTokens: Number.isFinite(Number(maxOutputTokens)) ? Math.min(Number(maxOutputTokens), 8192) : 1024,
       },
     };
 
