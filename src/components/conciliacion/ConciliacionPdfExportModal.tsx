@@ -12,6 +12,10 @@ interface ConciliacionPdfExportModalProps {
   batches: ReconciliationBatch[];
   accountChips?: AccountChipData[];
   businessId: string;
+  /** Pre-selecciona meses (YYYY-MM). Si se pasa, arranca con ese filtro aplicado. */
+  initialSelectedMonths?: string[];
+  /** Título inicial override (ej. "Cierre Mensual — enero 2026"). */
+  initialTitle?: string;
   onClose: () => void;
 }
 
@@ -93,8 +97,12 @@ function drawGradientBarMm(pdf: any, x: number, y: number, width: number, height
   }
 }
 
-export default function ConciliacionPdfExportModal({ batches, accountChips, businessId, onClose }: ConciliacionPdfExportModalProps) {
-  const [opts, setOpts] = useState<FieldOptions>(DEFAULT_OPTS);
+export default function ConciliacionPdfExportModal({ batches, accountChips, businessId, initialSelectedMonths, initialTitle, onClose }: ConciliacionPdfExportModalProps) {
+  const [opts, setOpts] = useState<FieldOptions>(() => ({
+    ...DEFAULT_OPTS,
+    selectedMonths: initialSelectedMonths && initialSelectedMonths.length ? [...initialSelectedMonths] : [],
+    title: initialTitle || DEFAULT_OPTS.title,
+  }));
   const [busy, setBusy] = useState(false);
   const [business, setBusiness] = useState<BusinessInfo>({});
 

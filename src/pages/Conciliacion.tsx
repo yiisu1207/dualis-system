@@ -1082,20 +1082,52 @@ interface BatchTableProps {
 
 const PAGE_SIZE = 10;
 
+type BatchTab = 'active' | 'closed' | 'all';
+
+function isBatchClosedAware(b: ReconciliationBatch, closedMonthKeys: Set<string>): boolean {
+  const mk = (b.periodFrom || b.createdAt || '').slice(0, 7);
+  return !!b.closed || (!!mk && closedMonthKeys.has(mk));
+}
+
+function fmtMonthLong(mk: string): string {
+  const [y, m] = mk.split('-').map(Number);
+  if (!y || !m) return mk;
+  return new Date(y, m - 1, 1).toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+}
+
 const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChips, closedMonthKeys, onOpen, onDelete, canEdit }) => {
   const [batchQuery, setBatchQuery] = useState('');
   const [batchPage, setBatchPage] = useState(1);
   const [showPdfModal, setShowPdfModal] = useState(false);
+  const [pdfInitialMonths, setPdfInitialMonths] = useState<string[] | undefined>(undefined);
+  const [pdfInitialTitle, setPdfInitialTitle] = useState<string | undefined>(undefined);
   const [showDupModal, setShowDupModal] = useState(false);
+  const [tab, setTab] = useState<BatchTab>('active');
   const toast = useToast();
 
   const dupGroups = useMemo(() => findDuplicateBatchGroups(batches), [batches]);
 
+  // Particion activos/cerrados: un lote esta cerrado si b.closed === true o si
+  // su mes derivado (periodFrom || createdAt) esta en el set de cierres activos.
+  const { activeBatches, closedBatches } = useMemo(() => {
+    const active: ReconciliationBatch[] = [];
+    const closed: ReconciliationBatch[] = [];
+    for (const b of batches) {
+      if (isBatchClosedAware(b, closedMonthKeys)) closed.push(b);
+      else active.push(b);
+    }
+    return { activeBatches: active, closedBatches: closed };
+  }, [batches, closedMonthKeys]);
+
+  const visibleBatches = tab === 'active' ? activeBatches : tab === 'closed' ? closedBatches : batches;
+
+  useEffect(() => { setBatchPage(1); }, [tab]);
+
   const filteredBatches = useMemo(() => {
     const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const tokens = norm(batchQuery).split(/\s+/).filter(Boolean);
-    if (!tokens.length) return batches;
-    return batches.filter(b => {
+    if (!tokens.length) return visibleBatches;
+    return visibleBatches.filter(b => {
       const hay = norm([
         b.name,
         b.createdByName || '',
@@ -1105,14 +1137,41 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
       ].join(' '));
       return tokens.every(t => hay.includes(t));
     });
-  }, [batches, batchQuery]);
+  }, [visibleBatches, batchQuery]);
 
   useEffect(() => { setBatchPage(1); }, [batchQuery, batches.length]);
+
+  // Cerrados agrupados por mes (YYYY-MM). Solo usado cuando tab === 'closed'.
+  const closedByMonth = useMemo(() => {
+    if (tab !== 'closed') return [] as { monthKey: string; list: ReconciliationBatch[] }[];
+    const groups = new Map<string, ReconciliationBatch[]>();
+    for (const b of filteredBatches) {
+      const mk = (b.closedMonthKey || b.periodFrom || b.createdAt || '').slice(0, 7);
+      if (!mk) continue;
+      if (!groups.has(mk)) groups.set(mk, []);
+      groups.get(mk)!.push(b);
+    }
+    return Array.from(groups.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([monthKey, list]) => ({ monthKey, list }));
+  }, [filteredBatches, tab]);
 
   const totalPages = Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE));
   const safePage = Math.min(batchPage, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const pageItems = filteredBatches.slice(pageStart, pageStart + PAGE_SIZE);
+
+  const openPdfForMonth = (monthKey: string) => {
+    setPdfInitialMonths([monthKey]);
+    setPdfInitialTitle(`Cierre Mensual — ${fmtMonthLong(monthKey)}`);
+    setShowPdfModal(true);
+  };
+
+  const openPdfGeneral = () => {
+    setPdfInitialMonths(undefined);
+    setPdfInitialTitle(undefined);
+    setShowPdfModal(true);
+  };
 
   if (batches.length === 0) {
     return (
@@ -1129,8 +1188,10 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
       <div className="flex items-center justify-between gap-2 flex-wrap p-3 border-b border-slate-100 dark:border-slate-700">
-        <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 inline-flex items-center gap-1.5">
-          <Layers size={13} /> Lotes ({batchQuery.trim() ? `${filteredBatches.length}/${batches.length}` : batches.length})
+        <div className="inline-flex rounded-lg bg-slate-100 dark:bg-white/[0.04] p-0.5 gap-0.5">
+          <TabButton active={tab === 'active'} onClick={() => setTab('active')} label="Activos" count={activeBatches.length} tone="indigo" />
+          <TabButton active={tab === 'closed'} onClick={() => setTab('closed')} label="Cerrados" count={closedBatches.length} tone="slate" icon={<Lock size={10} />} />
+          <TabButton active={tab === 'all'} onClick={() => setTab('all')} label="Todos" count={batches.length} tone="slate" />
         </div>
         <div className="flex items-center gap-2">
           {canEdit && dupGroups.length > 0 && (
@@ -1143,7 +1204,7 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
             </button>
           )}
           <button
-            onClick={() => setShowPdfModal(true)}
+            onClick={openPdfGeneral}
             className="text-[11px] px-2 py-1 rounded border border-indigo-300 dark:border-indigo-600/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 inline-flex items-center gap-1"
             title="Exportar PDF del estado actual de la conciliación"
           >
@@ -1172,7 +1233,90 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
       </div>
 
       {filteredBatches.length === 0 ? (
-        <div className="text-xs text-slate-400 py-8 text-center">Ningún lote coincide con "{batchQuery}".</div>
+        <div className="text-xs text-slate-400 py-8 text-center">
+          {tab === 'active' && !batchQuery.trim()
+            ? 'No hay lotes activos. Los lotes de meses cerrados están en la pestaña "Cerrados".'
+            : tab === 'closed' && !batchQuery.trim()
+              ? 'Aún no hay lotes cerrados. Usa "Cerrar mes" para hacer el cierre contable mensual.'
+              : `Ningún lote coincide con "${batchQuery}".`}
+        </div>
+      ) : tab === 'closed' ? (
+        <div className="divide-y divide-slate-100 dark:divide-slate-700">
+          {closedByMonth.map(({ monthKey, list }) => {
+            const totals = list.reduce((acc, b) => {
+              const s = b.stats || { total: 0, confirmed: 0, review: 0, notFound: 0, duplicates: 0, manual: 0 };
+              acc.total += s.total;
+              acc.confirmed += s.confirmed;
+              acc.review += s.review;
+              acc.notFound += s.notFound;
+              return acc;
+            }, { total: 0, confirmed: 0, review: 0, notFound: 0 });
+            return (
+              <div key={monthKey} className="p-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+                      <Lock size={13} className="text-indigo-700 dark:text-indigo-300" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 capitalize">
+                        {fmtMonthLong(monthKey)}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {list.length} lote{list.length === 1 ? '' : 's'} · {totals.total} abonos · {totals.confirmed} conciliados
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => openPdfForMonth(monthKey)}
+                    className="text-[11px] px-3 py-1.5 rounded border border-indigo-300 dark:border-indigo-600/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 inline-flex items-center gap-1 font-medium"
+                    title={`Exportar PDF del cierre de ${fmtMonthLong(monthKey)}`}
+                  >
+                    <Download size={12} /> PDF del cierre
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[640px]">
+                    <tbody>
+                      {list.map(b => (
+                        <tr key={b.id} className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/30">
+                          <td className="px-3 py-1.5 font-medium text-slate-700 dark:text-slate-200 max-w-[200px] truncate">
+                            <div className="flex items-center gap-1.5">
+                              <Lock size={10} className="text-indigo-500 dark:text-indigo-400 flex-shrink-0" />
+                              <span className="truncate">{b.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap hidden md:table-cell">
+                            {b.periodFrom && b.periodTo
+                              ? (b.periodFrom === b.periodTo ? b.periodFrom : `${b.periodFrom} → ${b.periodTo}`)
+                              : '—'}
+                          </td>
+                          <td className="px-2 py-1.5 text-center font-mono text-xs text-slate-600 dark:text-slate-300" title="Total">
+                            {b.stats?.total ?? 0}
+                          </td>
+                          <td className="px-2 py-1.5 text-center font-mono text-xs text-emerald-600" title="Confirmados">
+                            {b.stats?.confirmed ?? 0}
+                          </td>
+                          <td className="px-3 py-1.5 text-xs text-slate-400 hidden lg:table-cell whitespace-nowrap">
+                            {b.createdByName || '—'}
+                          </td>
+                          <td className="px-3 py-1.5 text-right">
+                            <button
+                              onClick={() => onOpen(b.id)}
+                              className="text-xs px-3 py-1 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded hover:bg-slate-50 dark:hover:bg-slate-700"
+                            >
+                              Abrir
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <>
           <div className="overflow-x-auto">
@@ -1309,7 +1453,13 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
           batches={batches}
           accountChips={accountChips}
           businessId={businessId}
-          onClose={() => setShowPdfModal(false)}
+          initialSelectedMonths={pdfInitialMonths}
+          initialTitle={pdfInitialTitle}
+          onClose={() => {
+            setShowPdfModal(false);
+            setPdfInitialMonths(undefined);
+            setPdfInitialTitle(undefined);
+          }}
         />
       )}
 
@@ -1328,6 +1478,37 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
         />
       )}
     </div>
+  );
+};
+
+const TabButton: React.FC<{
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  tone: 'indigo' | 'slate';
+  icon?: React.ReactNode;
+}> = ({ active, onClick, label, count, tone, icon }) => {
+  const activeText = tone === 'indigo' ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200';
+  const badgeBg = tone === 'indigo' ? 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-300' : 'bg-slate-500/20 text-slate-600 dark:text-slate-300';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider transition-all inline-flex items-center gap-1.5 ${
+        active
+          ? `bg-white dark:bg-slate-800 shadow-sm ${activeText}`
+          : 'text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60'
+      }`}
+    >
+      {icon}
+      {label}
+      {count > 0 && (
+        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${active ? badgeBg : 'bg-slate-300/30 text-slate-500 dark:text-slate-400'}`}>
+          {count}
+        </span>
+      )}
+    </button>
   );
 };
 
