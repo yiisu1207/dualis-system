@@ -17,6 +17,27 @@ interface State {
   copied: boolean;
 }
 
+// Heurística: detecta errores causados por un deploy nuevo donde el index viejo
+// (cacheado en el navegador del usuario) intenta importar un chunk con hash que
+// ya no existe en el servidor. Vercel responde el index.html como fallback SPA,
+// lo que dispara un MIME mismatch o un "Failed to fetch dynamically imported
+// module". Patrones observados en Chrome/Firefox/Safari.
+function isStaleChunkError(err: Error): boolean {
+  const m = (err?.message || '').toLowerCase();
+  return (
+    m.includes('failed to fetch dynamically imported module') ||
+    m.includes('failed to load module script') ||
+    m.includes('importing a module script failed') ||
+    m.includes("expected a javascript-or-wasm module script") ||
+    // Chunk loading failures de webpack/vite también caen aquí
+    (m.includes('chunkloadError'.toLowerCase())) ||
+    m.includes('loading chunk') ||
+    m.includes('loading css chunk')
+  );
+}
+
+const RELOAD_FLAG_KEY = '__dualis_stale_chunk_reload_at';
+
 /**
  * ErrorBoundary global. Montar en el root — envuelve <App />.
  *
@@ -47,6 +68,28 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     this.setState({ errorInfo });
+
+    // Auto-reload si el error es un chunk obsoleto tras un deploy.
+    // Guardamos timestamp en sessionStorage — si ya reloadeamos en los últimos
+    // 30s, NO volvemos a hacerlo (evita loop infinito si el chunk realmente
+    // no existe y no es un deploy reciente).
+    if (isStaleChunkError(error)) {
+      try {
+        const last = Number(sessionStorage.getItem(RELOAD_FLAG_KEY) || 0);
+        const now = Date.now();
+        if (!last || now - last > 30_000) {
+          sessionStorage.setItem(RELOAD_FLAG_KEY, String(now));
+          // Log best-effort antes de recargar (fire-and-forget)
+          void this.logToFirestore(error, errorInfo);
+          // Pequeño delay para no interrumpir el log; el usuario ve el fallback
+          // por <200ms y luego la página se recarga limpia.
+          setTimeout(() => window.location.reload(), 150);
+          return;
+        }
+      } catch {
+        // sessionStorage podría estar bloqueado — seguimos con el flujo normal
+      }
+    }
 
     // Best-effort log a Firestore — NO bloquear la UI si falla
     void this.logToFirestore(error, errorInfo);

@@ -12,6 +12,47 @@ import './index.css'; // 👈 ¡ESTA ES LA LÍNEA QUE TE FALTABA!
 // Se dispara sin await para no bloquear el first paint.
 void initSentry();
 
+// Auto-reload en chunk obsoleto tras deploy nuevo. El navegador del usuario
+// tiene cacheado el index viejo con referencias a hashes de chunks que ya no
+// existen en el servidor. Vercel responde con index.html → MIME mismatch.
+// Esto cubre el caso donde el error ocurre fuera del ciclo de React (antes del
+// primer render, o en un lazy import que no pasa por Suspense/ErrorBoundary).
+(function wireStaleChunkReload() {
+  const KEY = '__dualis_stale_chunk_reload_at';
+  const PATTERNS = [
+    'failed to fetch dynamically imported module',
+    'failed to load module script',
+    'importing a module script failed',
+    'expected a javascript-or-wasm module script',
+    'loading chunk',
+    'loading css chunk',
+  ];
+  const looksLikeStaleChunk = (msg: string) => {
+    const m = (msg || '').toLowerCase();
+    return PATTERNS.some(p => m.includes(p));
+  };
+  const tryReload = (msg: string) => {
+    if (!looksLikeStaleChunk(msg)) return;
+    try {
+      const last = Number(sessionStorage.getItem(KEY) || 0);
+      const now = Date.now();
+      if (!last || now - last > 30_000) {
+        sessionStorage.setItem(KEY, String(now));
+        setTimeout(() => window.location.reload(), 150);
+      }
+    } catch {
+      // sessionStorage bloqueado (modo incógnito con cookies off): no hacemos nada
+    }
+  };
+  window.addEventListener('error', (ev) => {
+    tryReload(ev?.message || String(ev?.error?.message || ''));
+  });
+  window.addEventListener('unhandledrejection', (ev) => {
+    const reason: any = ev?.reason;
+    tryReload(reason?.message || String(reason || ''));
+  });
+})();
+
 // Apply saved UI preferences on boot — sync, before render, to avoid FOUC
 try {
   const savedFont = localStorage.getItem('dualis_font_size');
