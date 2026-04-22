@@ -863,6 +863,48 @@ export interface ReconciliationBatch {
   status: ReconciliationBatchStatus;
   stats: ReconciliationBatchStats;
   source: ReconciliationBatchSource;
+  /** Heredado del cierre del mes (monthKey derivado del período).
+   *  Cuando true, el lote queda read-only: no se puede editar, agregar abonos,
+   *  confirmar/rechazar candidatos ni borrar. Se marca atómicamente al cerrar
+   *  el mes y se revierte al re-abrir. */
+  closed?: boolean;
+  closedAt?: string;                  // ISO
+  closedBy?: string;                  // uid
+  closedByName?: string;
+  closedMonthKey?: string;            // YYYY-MM que disparó el cierre
+}
+
+/**
+ * Registro inmutable del cierre de un mes contable. Doc id = `{monthKey}` (YYYY-MM).
+ * Escribir este doc es el gesto "cerré el mes": marca todos los EdeC y lotes del
+ * mes como `closed: true` en cascada (dentro del mismo writeBatch).
+ *
+ * Reabrir un mes = borrar este doc + revertir los flags. Sólo admin/owner.
+ */
+export interface MonthlyClosure {
+  monthKey: string;                   // YYYY-MM (también es el doc id)
+  closedAt: string;                   // ISO
+  closedBy: string;                   // uid
+  closedByName?: string;
+  /** Snapshot de KPIs al momento de cerrar — sirve para auditar después y para
+   *  mostrar en UI sin recomputar. */
+  snapshot: {
+    accountCount: number;             // EdeC cerrados
+    batchCount: number;               // lotes cerrados
+    confirmed: number;                // abonos confirmados en el mes
+    review: number;                   // abonos aún en revisar al cerrar
+    notFound: number;                 // abonos sin match al cerrar
+    usedReferenceCount: number;       // refs quemadas con monthKey == este
+  };
+  /** Nota libre del operador al cerrar (ej. "cerrado con 3 pagos sin investigar"). */
+  note?: string;
+  /** Si se re-abre después: historial completo para auditoría. Append-only. */
+  reopens?: Array<{
+    at: string;
+    by: string;
+    byName?: string;
+    reason: string;
+  }>;
 }
 
 /**

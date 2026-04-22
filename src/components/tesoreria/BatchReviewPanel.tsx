@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronRight, RefreshCw,
   Loader2, Image as ImageIcon, ArrowLeft, Download, Plus, ExternalLink, Copy,
-  Upload, Search, X, Trash2,
+  Upload, Search, X, Trash2, Lock,
 } from 'lucide-react';
 import {
   collection, doc, onSnapshot, query, where, setDoc, getDoc, getDocs, collectionGroup, updateDoc, deleteDoc,
@@ -26,6 +26,7 @@ interface BatchReviewPanelProps {
   currentUserId: string;
   currentUserName?: string;
   highlightAbonoId?: string;
+  closedMonthKeys?: Set<string>;
   onOpenAccountRow?: (accountAlias: string, rowId: string) => void;
   onOpenBatch?: (batchId: string, abonoId?: string) => void;
   onBack: () => void;
@@ -36,7 +37,7 @@ interface AbonoEntry extends SessionAbono {
 }
 
 export default function BatchReviewPanel({
-  businessId, batchId, currentUserId, currentUserName, highlightAbonoId, onOpenAccountRow, onOpenBatch, onBack,
+  businessId, batchId, currentUserId, currentUserName, highlightAbonoId, closedMonthKeys, onOpenAccountRow, onOpenBatch, onBack,
 }: BatchReviewPanelProps) {
   const [batch, setBatch] = useState<ReconciliationBatch | null>(null);
   const [abonos, setAbonos] = useState<AbonoEntry[]>([]);
@@ -88,6 +89,12 @@ export default function BatchReviewPanel({
 
   const handleAppendManual = useCallback(async (_name: string, item: ManualBatchItem) => {
     if (!batch) return;
+    const mk = (batch.periodFrom || batch.createdAt || '').slice(0, 7);
+    if (batch.closed || (batch.closedMonthKey && closedMonthKeys?.has(batch.closedMonthKey)) || (mk && closedMonthKeys?.has(mk))) {
+      setError('Este lote está en un mes cerrado. Re-abre el mes para editarlo.');
+      setShowManualAppend(false);
+      return;
+    }
     setShowManualAppend(false);
     setError(null);
     setAppending({ done: 0, total: 1 });
@@ -108,7 +115,7 @@ export default function BatchReviewPanel({
     } finally {
       setAppending(null);
     }
-  }, [batch, businessId, currentUserId, currentUserName]);
+  }, [batch, businessId, currentUserId, currentUserName, closedMonthKeys]);
 
   // Cargar abonos del batch (collectionGroup query)
   // Skip si el batch existe pero stats.total === 0 (lote vacío — sin OCR exitoso)
@@ -266,7 +273,26 @@ export default function BatchReviewPanel({
     await setDoc(ref, stripUndefined(patch), { merge: true });
   };
 
+  const batchMonthKey = useMemo(() => {
+    if (!batch) return null;
+    const src = batch.periodFrom || batch.createdAt || '';
+    return src.slice(0, 7) || null;
+  }, [batch]);
+
+  const isBatchClosed = !!(
+    batch?.closed ||
+    (batch?.closedMonthKey && closedMonthKeys?.has(batch.closedMonthKey)) ||
+    (batchMonthKey && closedMonthKeys?.has(batchMonthKey))
+  );
+
+  const guardClosed = useCallback((): boolean => {
+    if (!isBatchClosed) return false;
+    setError('Este lote está en un mes cerrado. Re-abre el mes para editarlo.');
+    return true;
+  }, [isBatchClosed]);
+
   const handleConfirmCandidate = async (entry: AbonoEntry, cand: SessionAbonoCandidate) => {
+    if (guardClosed()) return;
     setError(null);
     setBusyId(entry.id);
     try {
@@ -378,6 +404,7 @@ export default function BatchReviewPanel({
   };
 
   const handleRejectAll = async (entry: AbonoEntry) => {
+    if (guardClosed()) return;
     setBusyId(entry.id);
     try {
       await updateAbono(entry, { status: 'no_encontrado', matchRowId: null });
@@ -387,6 +414,7 @@ export default function BatchReviewPanel({
   // Para abonos viejos que quedaron en revisar tras chocar con un claim ajeno
   // (típico antes del fix automático): permite archivarlos manualmente.
   const handleArchiveDuplicate = async (entry: AbonoEntry) => {
+    if (guardClosed()) return;
     setBusyId(entry.id);
     try {
       await updateAbono(entry, {
@@ -399,6 +427,7 @@ export default function BatchReviewPanel({
   };
 
   const handleDeleteAbono = async (entry: AbonoEntry) => {
+    if (guardClosed()) return;
     if (!confirm(`¿Eliminar esta captura del lote?\n\n${entry.clientName || entry.reference || 'Bs ' + entry.amount.toFixed(2)}\n\nSi estaba confirmada, la referencia quedará liberada para re-uso.`)) return;
     setBusyId(entry.id);
     try {
@@ -423,6 +452,7 @@ export default function BatchReviewPanel({
   };
 
   const handleRebuscar = async (entry: AbonoEntry) => {
+    if (guardClosed()) return;
     setBusyId(entry.id);
     setError(null);
     try {
@@ -482,6 +512,7 @@ export default function BatchReviewPanel({
   };
 
   const handleConfirmAllHigh = async () => {
+    if (guardClosed()) return;
     const targets = revisar.filter(a => {
       const top = (a.candidateMatches || [])[0];
       return top && (top.confidence === 'high' || top.confidence === 'exact');
@@ -505,6 +536,11 @@ export default function BatchReviewPanel({
 
   const handleAppendFiles = useCallback(async (rawFiles: File[] | FileList) => {
     if (!batch || appending) return;
+    const mk = (batch.periodFrom || batch.createdAt || '').slice(0, 7);
+    if (batch.closed || (batch.closedMonthKey && closedMonthKeys?.has(batch.closedMonthKey)) || (mk && closedMonthKeys?.has(mk))) {
+      setError('Este lote está en un mes cerrado. Re-abre el mes para editarlo.');
+      return;
+    }
     const arr = Array.from(rawFiles || []);
     const valid: File[] = [];
     let rejected = 0;
@@ -536,7 +572,7 @@ export default function BatchReviewPanel({
     } finally {
       setAppending(null);
     }
-  }, [batch, appending, businessId, currentUserId, currentUserName]);
+  }, [batch, appending, businessId, currentUserId, currentUserName, closedMonthKeys]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -568,7 +604,8 @@ export default function BatchReviewPanel({
         <div className="flex items-center gap-2">
           <button
             onClick={handleConfirmAllHigh}
-            disabled={!revisar.some(a => (a.candidateMatches || [])[0]?.confidence === 'high' || (a.candidateMatches || [])[0]?.confidence === 'exact')}
+            disabled={isBatchClosed || !revisar.some(a => (a.candidateMatches || [])[0]?.confidence === 'high' || (a.candidateMatches || [])[0]?.confidence === 'exact')}
+            title={isBatchClosed ? 'Mes cerrado — re-abrir para editar' : undefined}
             className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-40"
           >
             Confirmar todos los high+
@@ -579,15 +616,36 @@ export default function BatchReviewPanel({
         </div>
       </div>
 
+      {isBatchClosed && (
+        <div className="bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-300 dark:border-indigo-700/50 rounded-xl p-3 text-sm flex items-start gap-2">
+          <Lock size={16} className="text-indigo-600 dark:text-indigo-300 flex-shrink-0 mt-0.5" />
+          <div className="text-indigo-800 dark:text-indigo-200">
+            <div className="font-semibold">Mes cerrado — lote en modo sólo lectura</div>
+            <div className="text-xs text-indigo-700 dark:text-indigo-300 mt-0.5">
+              Este lote pertenece a un mes contable cerrado. No se pueden confirmar, rechazar, re-buscar ni agregar capturas. Re-abre el mes con justificación desde <strong>Cerrar mes → Re-abrir</strong> en la lista de lotes.
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{batch.name}</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              {isBatchClosed && <Lock size={14} className="text-indigo-600 dark:text-indigo-400" />}
+              {batch.name}
+            </h2>
             <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {batch.periodFrom && batch.periodTo ? `${batch.periodFrom} → ${batch.periodTo}` : 'Sin período definido'} · creado {new Date(batch.createdAt).toLocaleString()} por {batch.createdByName || batch.createdBy}
             </div>
           </div>
-          <span className={`text-xs px-2 py-0.5 rounded ${batch.status === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{batch.status}</span>
+          {isBatchClosed ? (
+            <span className="text-xs px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 inline-flex items-center gap-1">
+              <Lock size={10} /> Cerrado
+            </span>
+          ) : (
+            <span className={`text-xs px-2 py-0.5 rounded ${batch.status === 'done' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{batch.status}</span>
+          )}
         </div>
         <div className="grid grid-cols-5 gap-2 mt-3 text-center text-xs">
           <Stat color="emerald" label="Confirmados" value={abonos.filter(a => a.status === 'confirmado').length} />
@@ -625,7 +683,7 @@ export default function BatchReviewPanel({
           )}
         </div>
 
-        <div
+        {!isBatchClosed && <div
           onDragEnter={(e) => { e.preventDefault(); if (!appending) setDragActive(true); }}
           onDragOver={(e) => e.preventDefault()}
           onDragLeave={() => setDragActive(false)}
@@ -668,7 +726,7 @@ export default function BatchReviewPanel({
               </button>
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
       {error && (

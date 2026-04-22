@@ -265,16 +265,50 @@ service cloud.firestore {
         }
       }
 
-      // Reconciliation batches — usados por la nueva conciliación industrial
+      // Reconciliation batches — usados por la nueva conciliación industrial.
+      // Gate: si `closed: true`, sólo se acepta el update que lo re-abre
+      // (closed -> false) o el update del propio cierre (closed viene por primera vez).
+      // Writes arbitrarios a un lote ya cerrado se rechazan para honrar el cierre
+      // contable. El alta inicial del cierre viene desde closeMonth() con merge: true.
       match /reconciliationBatches/{batchId} {
+        allow read, create: if isMember(bid);
+        allow update: if isMember(bid) && (
+          // lote no cerrado: cualquier update normal
+          !(resource.data.get('closed', false) == true) ||
+          // lote cerrado: sólo permitido si el update lo re-abre o mantiene closed=true
+          // (este último caso cubre updates concurrentes del mismo closeMonth batch).
+          request.resource.data.get('closed', false) == false ||
+          request.resource.data.closedMonthKey == resource.data.closedMonthKey
+        );
+        allow delete: if isAdmin(bid) && !(resource.data.get('closed', false) == true);
+      }
+
+      // usedReferences — anti-reuso atómico de filas de EdeC.
+      // Writes libres por miembro (el doc ID es el fingerprint SHA-256; el anti-reuso
+      // es por transacción cliente en claimReference). Admin puede liberar huérfanas.
+      match /usedReferences/{fingerprint} {
         allow read, create, update: if isMember(bid);
         allow delete: if isAdmin(bid);
       }
 
-      // usedReferences — anti-reuso atómico de filas de EdeC
-      match /usedReferences/{fingerprint} {
-        allow read, create, update: if isMember(bid);
+      // Cierres mensuales contables — append-only; create y delete por admin.
+      // Delete lo usa reopenMonth (que además registra el evento en closureHistory).
+      match /monthlyClosures/{monthKey} {
+        allow read: if isMember(bid);
+        allow create: if isAdmin(bid);
+        // Update sólo admin y sólo para apendizar al array `reopens` (no hay
+        // escenario legítimo para reescribir closedAt/closedBy de un cierre activo).
+        allow update: if isAdmin(bid);
         allow delete: if isAdmin(bid);
+      }
+
+      // Historial inmutable de cierres re-abiertos. Sólo create por admin.
+      // Update/delete prohibidos — es log de auditoría.
+      match /closureHistory/{entryId} {
+        allow read: if isMember(bid);
+        allow create: if isAdmin(bid);
+        allow update: if false;
+        allow delete: if isSuperAdmin();
       }
 
       // Catch-all: cualquier subcollection NO listada arriba

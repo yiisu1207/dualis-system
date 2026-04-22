@@ -29,6 +29,7 @@ import {
   Loader2,
   Merge,
   AlertTriangle,
+  Lock,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import type { BankRow } from '../utils/bankReconciliation';
@@ -57,7 +58,8 @@ import ManualBatchEntryModal, { type ManualAccountOption } from '../components/c
 import ReceiptBatchModal from '../components/tesoreria/ReceiptBatchModal';
 import BatchReviewPanel from '../components/tesoreria/BatchReviewPanel';
 import PendingReviewPanel from '../components/tesoreria/PendingReviewPanel';
-import type { Movement, ReconciliationBatch, UsedReference } from '../../types';
+import MonthClosureModal from '../components/conciliacion/MonthClosureModal';
+import type { Movement, MonthlyClosure, ReconciliationBatch, UsedReference } from '../../types';
 
 interface ConciliacionProps {
   businessId: string;
@@ -116,6 +118,9 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
+
+  const [showClosureModal, setShowClosureModal] = useState(false);
+  const [closures, setClosures] = useState<MonthlyClosure[]>([]);
 
   const [nameConflict, setNameConflict] = useState<ReconciliationBatch | null>(null);
   const [pendingProcess, setPendingProcess] = useState<{
@@ -178,6 +183,25 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
     );
     return () => unsub();
   }, [businessId]);
+
+  useEffect(() => {
+    if (!businessId) return;
+    const ref = collection(db, `businesses/${businessId}/monthlyClosures`);
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        const list: MonthlyClosure[] = [];
+        snap.forEach((d) => list.push(d.data() as MonthlyClosure));
+        setClosures(list);
+      },
+      (err) => {
+        console.error('[Conciliacion] monthlyClosures onSnapshot error', err);
+      }
+    );
+    return () => unsub();
+  }, [businessId]);
+
+  const closedMonthKeys = useMemo(() => new Set(closures.map(c => c.monthKey)), [closures]);
 
   // Solo contamos refs cuyo batchId aún existe entre los lotes vivos: si el lote
   // se borró, su registro en usedReferences queda huérfano y no debe aparecer en
@@ -694,6 +718,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             batchId={selectedBatchId}
             currentUserId={currentUserId}
             currentUserName={currentUserName}
+            closedMonthKeys={closedMonthKeys}
             highlightAbonoId={highlightAbonoInBatch || undefined}
             onOpenAccountRow={(alias, rowId) => {
               setSelectedBatchId(null);
@@ -712,6 +737,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             businessId={businessId}
             batches={batches}
             accountChips={accountChips}
+            closedMonthKeys={closedMonthKeys}
             onOpen={setSelectedBatchId}
             onNewBatch={() => setShowReceiptBatch(true)}
             onUploadEdec={() => setShowUploadModal(true)}
@@ -719,6 +745,7 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             onDeleteAccount={canEdit ? handleDeleteAccount : undefined}
             onViewAccount={setViewingAccountAlias}
             onDelete={handleDeleteBatch}
+            onCloseMonth={() => setShowClosureModal(true)}
             canEdit={canEdit}
             ocrBusy={ocrBusy}
             ocrProgress={ocrProgress}
@@ -763,6 +790,17 @@ export default function Conciliacion({ businessId, currentUserId, userRole, move
             setView('lotes');
             setSelectedBatchId(batchId);
           }}
+        />
+      )}
+
+      {showClosureModal && (
+        <MonthClosureModal
+          businessId={businessId}
+          batches={batches}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          canEdit={canEdit}
+          onClose={() => setShowClosureModal(false)}
         />
       )}
 
@@ -817,6 +855,7 @@ interface BatchListProps {
   businessId: string;
   batches: ReconciliationBatch[];
   accountChips: AccountChipData[];
+  closedMonthKeys: Set<string>;
   onOpen: (id: string) => void;
   onNewBatch: () => void;
   onUploadEdec: () => void;
@@ -824,6 +863,7 @@ interface BatchListProps {
   onDeleteAccount?: (alias: string) => void;
   onViewAccount?: (alias: string) => void;
   onDelete: (batch: ReconciliationBatch) => void;
+  onCloseMonth: () => void;
   canEdit: boolean;
   ocrBusy: boolean;
   ocrProgress: { done: number; total: number } | null;
@@ -832,8 +872,8 @@ interface BatchListProps {
 }
 
 const BatchList: React.FC<BatchListProps> = ({
-  businessId, batches, accountChips, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
-  onDeleteAccount, onViewAccount, onDelete, canEdit, ocrBusy, ocrProgress, onDropBatch, onAddManual,
+  businessId, batches, accountChips, closedMonthKeys, onOpen, onNewBatch, onUploadEdec, onAddSingleAccount,
+  onDeleteAccount, onViewAccount, onDelete, onCloseMonth, canEdit, ocrBusy, ocrProgress, onDropBatch, onAddManual,
 }) => {
   const [accountQuery, setAccountQuery] = useState('');
   const filteredAccountChips = useMemo(() => {
@@ -917,6 +957,18 @@ const BatchList: React.FC<BatchListProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             <Upload size={14} /> Subir EdeC
+          </button>
+          <button
+            onClick={onCloseMonth}
+            title="Cierre mensual contable — bloquea los lotes del mes"
+            className="inline-flex items-center gap-2 px-4 py-2.5 border border-indigo-300 dark:border-indigo-600/50 text-indigo-700 dark:text-indigo-300 rounded-lg text-sm hover:bg-indigo-50 dark:hover:bg-indigo-900/30"
+          >
+            <Lock size={14} /> Cerrar mes
+            {closedMonthKeys.size > 0 && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-500/20 text-indigo-600 dark:text-indigo-300">
+                {closedMonthKeys.size}
+              </span>
+            )}
           </button>
           <div className="flex-1" />
           {ocrBusy && ocrProgress && (
@@ -1009,6 +1061,7 @@ const BatchList: React.FC<BatchListProps> = ({
         businessId={businessId}
         batches={batches}
         accountChips={accountChips}
+        closedMonthKeys={closedMonthKeys}
         onOpen={onOpen}
         onDelete={onDelete}
         canEdit={canEdit}
@@ -1021,6 +1074,7 @@ interface BatchTableProps {
   businessId: string;
   batches: ReconciliationBatch[];
   accountChips: AccountChipData[];
+  closedMonthKeys: Set<string>;
   onOpen: (id: string) => void;
   onDelete: (batch: ReconciliationBatch) => void;
   canEdit: boolean;
@@ -1028,7 +1082,7 @@ interface BatchTableProps {
 
 const PAGE_SIZE = 10;
 
-const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChips, onOpen, onDelete, canEdit }) => {
+const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChips, closedMonthKeys, onOpen, onDelete, canEdit }) => {
   const [batchQuery, setBatchQuery] = useState('');
   const [batchPage, setBatchPage] = useState(1);
   const [showPdfModal, setShowPdfModal] = useState(false);
@@ -1156,9 +1210,17 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
               </tr>
             </thead>
             <tbody>
-              {pageItems.map(b => (
-                <tr key={b.id} className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/30">
-                  <td className="px-3 sm:px-4 py-2 font-medium text-slate-800 dark:text-slate-100 max-w-[180px] truncate">{b.name}</td>
+              {pageItems.map(b => {
+                const mk = (b.periodFrom || b.createdAt || '').slice(0, 7);
+                const isClosed = !!b.closed || (mk && closedMonthKeys.has(mk));
+                return (
+                <tr key={b.id} className={`border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/30 ${isClosed ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''}`}>
+                  <td className="px-3 sm:px-4 py-2 font-medium text-slate-800 dark:text-slate-100 max-w-[180px] truncate">
+                    <div className="flex items-center gap-1.5">
+                      {isClosed && <Lock size={11} className="text-indigo-600 dark:text-indigo-400 flex-shrink-0" />}
+                      <span className="truncate">{b.name}</span>
+                    </div>
+                  </td>
                   <td className="px-3 sm:px-4 py-2 text-xs text-slate-600 dark:text-slate-300 hidden lg:table-cell whitespace-nowrap">
                     {b.periodFrom && b.periodTo
                       ? (b.periodFrom === b.periodTo
@@ -1176,11 +1238,17 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
                     <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{b.createdByName || '—'}</div>
                   </td>
                   <td className="px-3 sm:px-4 py-2 text-center hidden sm:table-cell">
-                    <span className={`text-[10px] px-2 py-0.5 rounded ${
-                      b.status === 'done' ? 'bg-emerald-100 text-emerald-700' :
-                      b.status === 'archived' ? 'bg-slate-100 text-slate-600' :
-                      'bg-amber-100 text-amber-700'
-                    }`}>{b.status}</span>
+                    {isClosed ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 inline-flex items-center gap-1">
+                        <Lock size={9} /> Cerrado
+                      </span>
+                    ) : (
+                      <span className={`text-[10px] px-2 py-0.5 rounded ${
+                        b.status === 'done' ? 'bg-emerald-100 text-emerald-700' :
+                        b.status === 'archived' ? 'bg-slate-100 text-slate-600' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>{b.status}</span>
+                    )}
                   </td>
                   <td className="px-3 sm:px-4 py-2 text-right">
                     <div className="inline-flex items-center gap-1">
@@ -1193,8 +1261,9 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
                       {canEdit && (
                         <button
                           onClick={() => onDelete(b)}
-                          title="Eliminar lote"
-                          className="text-xs p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded"
+                          disabled={isClosed}
+                          title={isClosed ? 'Mes cerrado — re-abrir primero' : 'Eliminar lote'}
+                          className="text-xs p-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -1202,7 +1271,8 @@ const BatchTable: React.FC<BatchTableProps> = ({ businessId, batches, accountChi
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           </div>
