@@ -1728,6 +1728,7 @@ const AccountingSection: React.FC<AccountingSectionProps> = ({
           movements={movements}
           rates={rates}
           customRates={customRates}
+          businessId={derivedBusinessId}
           onBack={() => setViewMode('DIRECTORY')}
           onViewLedger={() => setViewMode('DETAIL')}
           onRegisterPago={() => { setViewMode('DETAIL'); setShowAbonoModal(true); }}

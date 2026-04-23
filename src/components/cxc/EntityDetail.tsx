@@ -577,8 +577,8 @@ export function EntityDetail({
   const [pendingTab, setPendingTab] = useState<'inbox' | 'mine' | 'history'>('inbox');
 
   const accountBalances = useMemo(
-    () => calcAccountBalances(entityMovements, bcvRate, customRates, rates),
-    [entityMovements, bcvRate, customRates, rates]
+    () => calcAccountBalances(entityMovements, bcvRate, customRates, rates, effectiveCreditMode),
+    [entityMovements, bcvRate, customRates, rates, effectiveCreditMode]
   );
 
   const totalBalance = useMemo(
@@ -587,11 +587,11 @@ export function EntityDetail({
   );
 
   const aging = useMemo(
-    () => isCxC ? calculateAgingBuckets(entityMovements, rates) : null,
-    [entityMovements, rates, isCxC]
+    () => isCxC ? calculateAgingBuckets(entityMovements, rates, effectiveCreditMode) : null,
+    [entityMovements, rates, isCxC, effectiveCreditMode]
   );
 
-  const score = useMemo(() => isCxC ? calcCreditScore(entityMovements) : null, [entityMovements, isCxC]);
+  const score = useMemo(() => isCxC ? calcCreditScore(entityMovements, effectiveCreditMode) : null, [entityMovements, isCxC, effectiveCreditMode]);
 
   // 6-month trend data
   const trendData = useMemo(() => {

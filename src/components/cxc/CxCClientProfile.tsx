@@ -53,8 +53,9 @@ import {
   buildAccountLabels,
   calcCreditScore,
   hasActiveDiscount,
+  getEffectiveCreditMode,
 } from './cxcHelpers';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { useSubdomain } from '../../context/SubdomainContext';
 import CommunicationModal from './CommunicationModal';
 
@@ -218,10 +219,7 @@ export default function CxCClientProfile({
     finally { setBirthdaySaving(false); }
   };
 
-  // Credit score
-  const creditScore = useMemo(() => calcCreditScore(
-    movements.filter(m => m.entityId === entityId)
-  ), [movements, entityId]);
+  // Credit score — declaracion abajo, despues de effectiveCreditMode.
 
   // Communications
   const [commModalOpen, setCommModalOpen] = useState(false);
@@ -296,10 +294,28 @@ export default function CxCClientProfile({
   const distinctAccounts = useMemo(() => getDistinctAccounts(entityMovs), [entityMovs]);
   const accountLabels = useMemo(() => buildAccountLabels(distinctAccounts, customRates), [distinctAccounts, customRates]);
 
+  // Modo de saldo (acumulado vs por factura). Override por cliente > global del
+  // negocio (businessConfigs/{bid}.creditMode) > 'accumulated'.
+  const [businessCreditMode, setBusinessCreditMode] = useState<'accumulated' | 'invoiceLinked' | null>(null);
+  useEffect(() => {
+    if (!businessId) return;
+    getDoc(doc(db, 'businessConfigs', businessId)).then((snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data() as any;
+      if (d.creditMode === 'invoiceLinked' || d.creditMode === 'accumulated') {
+        setBusinessCreditMode(d.creditMode);
+      }
+    }).catch(() => {});
+  }, [businessId]);
+  const effectiveCreditMode = useMemo(
+    () => getEffectiveCreditMode(customer, { creditMode: businessCreditMode ?? undefined }),
+    [customer, businessCreditMode]
+  );
+
   const balances = useMemo(() => {
     const byAccount: Record<string, number> = {};
     distinctAccounts.forEach((acc) => {
-      byAccount[acc] = sumByAccount(entityMovs, acc as AccountType, rates);
+      byAccount[acc] = sumByAccount(entityMovs, acc as AccountType, rates, effectiveCreditMode);
     });
     // Keep legacy named fields for backward compat
     const bcv = byAccount[AccountType.BCV] ?? 0;
@@ -307,11 +323,16 @@ export default function CxCClientProfile({
     const divisa = byAccount[AccountType.DIVISA] ?? 0;
     const total = Object.values(byAccount).reduce((s, v) => s + v, 0);
     return { ...byAccount, bcv, grupo, divisa, total };
-  }, [entityMovs, rates, distinctAccounts]);
+  }, [entityMovs, rates, distinctAccounts, effectiveCreditMode]);
 
   const aging = useMemo(
-    () => calculateAgingBuckets(entityMovs, rates),
-    [entityMovs, rates]
+    () => calculateAgingBuckets(entityMovs, rates, effectiveCreditMode),
+    [entityMovs, rates, effectiveCreditMode]
+  );
+
+  const creditScore = useMemo(
+    () => calcCreditScore(entityMovs, effectiveCreditMode),
+    [entityMovs, effectiveCreditMode]
   );
 
   const kpis = useMemo(() => {

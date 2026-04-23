@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Movement,
   MovementType,
@@ -7,6 +7,8 @@ import {
   CustomRate,
 } from '../../../types';
 import { formatCurrency, getMovementUsdAmount } from '../../utils/formatters';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 import {
   ArrowLeft,
   FileText,
@@ -34,6 +36,7 @@ interface Props {
   movements: Movement[];
   rates: ExchangeRates;
   customRates?: CustomRate[];
+  businessId?: string;
   onBack: () => void;
   onViewLedger: () => void;
   onRegisterPago: () => void;
@@ -45,10 +48,24 @@ export default function CxPSupplierProfile({
   movements,
   rates,
   customRates = [],
+  businessId,
   onBack,
   onViewLedger,
   onRegisterPago,
 }: Props) {
+  // Modo de saldo del negocio (accumulated | invoiceLinked). Los proveedores
+  // no tienen override per-supplier, asi que usamos directo el del negocio.
+  const [businessCreditMode, setBusinessCreditMode] = useState<'accumulated' | 'invoiceLinked'>('accumulated');
+  useEffect(() => {
+    if (!businessId) return;
+    getDoc(doc(db, 'businessConfigs', businessId)).then((snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data() as any;
+      if (d.creditMode === 'invoiceLinked' || d.creditMode === 'accumulated') {
+        setBusinessCreditMode(d.creditMode);
+      }
+    }).catch(() => {});
+  }, [businessId]);
   const entityMovs = useMemo(
     () => movements.filter((m) => m.entityId === entityId),
     [movements, entityId]
@@ -64,11 +81,11 @@ export default function CxPSupplierProfile({
   const balances = useMemo(() => {
     const r: Record<string, number> = {};
     distinctAccounts.forEach((acc) => {
-      r[acc] = sumByAccount(entityMovs, acc as any, rates);
+      r[acc] = sumByAccount(entityMovs, acc as any, rates, businessCreditMode);
     });
     r.total = Object.values(r).reduce((s, v) => s + v, 0);
     return r;
-  }, [entityMovs, rates, distinctAccounts]);
+  }, [entityMovs, rates, distinctAccounts, businessCreditMode]);
 
   const totalDebt = balances.total; // Positivo = debemos al proveedor
   const lastMov = entityMovs.sort(
