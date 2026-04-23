@@ -9,7 +9,6 @@ import {
   PaymentCurrency,
 } from '../../types';
 import { formatCurrency, getMovementUsdAmount } from '../utils/formatters';
-import { scanInvoiceImage } from '../lib/ai-scanner';
 import EmptyState from './EmptyState';
 import { useToast } from '../context/ToastContext';
 
@@ -94,12 +93,11 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
   // Edit Movement State
   const [editingMovement, setEditingMovement] = useState<Movement | null>(null);
   const [editForm, setEditForm] = useState<{ amount: string }>({ amount: '' });
-  const [ocrLoading, setOcrLoading] = useState(false);
+  // ocrLoading eliminado (2026-04-22) — dependia de Gemini.
   const [successFlash, setSuccessFlash] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const montoRef = useRef<HTMLInputElement | null>(null);
   const conceptoRef = useRef<HTMLInputElement | null>(null);
-  const ocrInputRef = useRef<HTMLInputElement | null>(null);
   const invoiceInputRef = useRef<HTMLInputElement | null>(null);
   const invoiceUpdateRef = useRef<HTMLInputElement | null>(null);
   const [invoiceTargetId, setInvoiceTargetId] = useState<string | null>(null);
@@ -889,40 +887,6 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                 <div className="p-4 flex flex-col gap-3">
                   {/* Hidden file inputs */}
                   <input
-                    ref={ocrInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      setOcrLoading(true);
-                      try {
-                        const result = await scanInvoiceImage(file, 'SUPPLIER');
-                        const resolvedAccount =
-                          result?.accountType === 'BCV' ? AccountType.BCV :
-                          result?.accountType === 'GRUPO' ? AccountType.GRUPO :
-                          result?.currency === 'BS' ? AccountType.BCV : AccountType.DIVISA;
-                        if (result?.entityName) setSelectedSupplierId(String(result.entityName).toUpperCase());
-                        if (result?.amount != null) setMovData(prev => ({ ...prev, amount: String(Number(result.amount) || 0) }));
-                        if (result?.concept) setMovData(prev => ({ ...prev, concept: String(result.concept) }));
-                        if (result?.movementType === 'ABONO') setMovData(prev => ({ ...prev, type: MovementType.ABONO }));
-                        if (result?.movementType === 'FACTURA') setMovData(prev => ({ ...prev, type: MovementType.FACTURA }));
-                        setMovData(prev => ({
-                          ...prev,
-                          accountType: resolvedAccount,
-                          rate: resolvedAccount === AccountType.DIVISA ? '1' :
-                            String(resolvedAccount === AccountType.BCV ? rates.bcv || 1 : rates.grupo || 1),
-                        }));
-                      } catch (err) {
-                        console.error(err);
-                      } finally {
-                        setOcrLoading(false);
-                        if (ocrInputRef.current) ocrInputRef.current.value = '';
-                      }
-                    }}
-                  />
-                  <input
                     ref={invoiceInputRef}
                     type="file"
                     accept="image/*"
@@ -990,13 +954,6 @@ const SupplierSection: React.FC<SupplierSectionProps> = ({
                       ))}
 
                       <div className="ml-auto flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => ocrInputRef.current?.click()}
-                          className="px-2.5 py-1.5 text-[10px] font-black uppercase bg-slate-100 dark:bg-white/[0.07] hover:bg-slate-200 rounded-lg border border-slate-200 dark:border-white/10 transition-colors"
-                        >
-                          {ocrLoading ? '...' : 'OCR'}
-                        </button>
                         <button
                           type="button"
                           onClick={() => invoiceInputRef.current?.click()}

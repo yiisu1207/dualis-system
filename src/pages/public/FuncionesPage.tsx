@@ -65,11 +65,6 @@ const MODULES = [
     keywords: ['nómina Venezuela', 'RRHH Venezuela', 'gestión empleados', 'adelanto sueldo'],
   },
   {
-    icon: Sparkles, label: 'VisionLab IA', color: 'text-violet-400', bg: 'bg-violet-500/10',
-    desc: 'Inteligencia artificial powered by Google Gemini que analiza tu negocio en tiempo real. Responde preguntas sobre ventas, inventario, clientes y finanzas en lenguaje natural.',
-    keywords: ['IA para negocios Venezuela', 'inteligencia artificial ERP', 'Gemini AI negocio'],
-  },
-  {
     icon: BarChart3, label: 'Dashboard BI', color: 'text-violet-400', bg: 'bg-violet-500/10',
     desc: 'Panel de control con KPIs en tiempo real: ventas del día, producto estrella, alertas predictivas, gráficos de tendencias y estado de resultados (P&L) integrado.',
     keywords: ['dashboard Venezuela', 'KPIs negocio', 'business intelligence Venezuela'],
@@ -121,7 +116,7 @@ export default function FuncionesPage() {
     <>
       <SEO
         title="Funciones y Módulos — Dualis ERP | 19+ módulos para Venezuela"
-        description="Conoce todos los módulos de Dualis ERP: POS Detal y Mayor, inventario, CxC, CxP, RRHH, contabilidad, tasas BCV, VisionLab IA y más. Sistema diseñado para empresas venezolanas."
+        description="Conoce todos los módulos de Dualis ERP: POS Detal y Mayor, inventario, CxC, CxP, RRHH, contabilidad, tasas BCV y más. Sistema diseñado para empresas venezolanas."
         url="https://dualis.online/funciones"
         jsonLd={funcsSchema}
       />
@@ -152,7 +147,7 @@ export default function FuncionesPage() {
               Todo lo que tu negocio<br />venezolano necesita
             </h1>
             <p className="text-white/50 text-lg max-w-2xl mx-auto">
-              19+ módulos integrados en un solo sistema. Desde el POS hasta la nómina, pasando por contabilidad, tasas BCV y VisionLab IA.
+              19+ módulos integrados en un solo sistema. Desde el POS hasta la nómina, pasando por contabilidad y tasas BCV.
             </p>
           </div>
 

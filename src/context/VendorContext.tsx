@@ -130,7 +130,6 @@ export const HIDEABLE_ELEMENTS: { id: string; label: string; location: string }[
   { id: 'card-kpi-cxc',          label: 'KPI Cuentas por Cobrar',      location: 'Dashboard' },
   { id: 'section-comisiones',     label: 'Sección Comisiones',          location: 'Reportes' },
   { id: 'section-pl',             label: 'Estado de Resultados (P&L)',  location: 'Reportes' },
-  { id: 'section-vision-lab',     label: 'VisionLab IA completo',       location: 'VisionLab' },
 ];
 
 // ─── Context ──────────────────────────────────────────────────────────────────

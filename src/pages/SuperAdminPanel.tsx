@@ -97,7 +97,7 @@ interface Subscription { plan?:string; status?:string; trialEndsAt?:any; current
 interface BizRecord { id:string; companyName?:string; ownerEmail?:string; ownerName?:string; ownerCedula?:string; ownerPhone?:string; ownerId?:string; createdAt?:any; subscription?:Subscription; }
 
 // ─── Top-level panel sections ──────────────────────────────────────────────
-type TopTab = 'dashboard' | 'negocios' | 'tenants' | 'roadmap' | 'feedback' | 'ia';
+type TopTab = 'dashboard' | 'negocios' | 'tenants' | 'roadmap' | 'feedback';
 
 // ─── Feedback types ─────────────────────────────────────────────────────────
 interface FeedbackItem {
@@ -241,7 +241,6 @@ const SIDEBAR_GROUPS = [
     items: [
       { id: 'roadmap' as TopTab, icon: Rocket, label: 'Roadmap' },
       { id: 'feedback' as TopTab, icon: MessageSquare, label: 'Feedback' },
-      { id: 'ia' as TopTab, icon: Brain, label: 'IA Asistente' },
     ],
   },
 ];
@@ -400,10 +399,8 @@ export default function SuperAdminPanel() {
   const [dashLoading, setDashLoading] = useState(true);
 
   // AI Chat
-  const [aiMessages, setAiMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
-  const [aiInput, setAiInput] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const aiChatRef = useRef<HTMLDivElement>(null);
+  // Chat IA del super admin eliminado (2026-04-22): usaba Gemini via /api/assistant.
+  // Si se reactiva, restaurar aiMessages/aiInput/aiLoading/aiChatRef + sendAiMessage.
 
   // Vendor overrides per business
   const [vendorOverride, setVendorOverride] = useState<VendorOverride>(VENDOR_DEFAULTS);
@@ -605,78 +602,7 @@ export default function SuperAdminPanel() {
     loadDash();
   }, [pinAuth, topTab]);
 
-  // AI chat handler — usa el proxy server-side /api/assistant (no expone la key
-  // de Gemini en el cliente). Requiere usuario autenticado: el endpoint valida
-  // el idToken de Firebase y rate-limita por UID.
-  const sendAiMessage = async () => {
-    const msg = aiInput.trim();
-    if (!msg || aiLoading) return;
-    setAiInput('');
-    setAiMessages(prev => [...prev, { role: 'user', content: msg }]);
-    setAiLoading(true);
-
-    try {
-      const currentUser = getAuth().currentUser;
-      if (!currentUser) {
-        setAiMessages(prev => [...prev, { role: 'assistant', content: 'Sesión expirada. Volvé a iniciar sesión para usar el chat.' }]);
-        setAiLoading(false);
-        return;
-      }
-      const idToken = await currentUser.getIdToken();
-
-      // Build system context with live data
-      const systemContext = `Eres un asistente IA interno del sistema Dualis ERP. Respondes en español.
-Tu rol es ayudar al superadmin (Jesus Salazar) a entender el estado del sistema y tomar decisiones.
-
-DATOS EN VIVO DEL SISTEMA:
-- Total negocios registrados: ${businesses.length}
-- Negocios activos (pagando): ${kpis.active}
-- En periodo de prueba: ${kpis.trial}
-- Expirados: ${kpis.expired}
-- MRR estimado: $${kpis.mrr.toFixed(2)}
-- Total usuarios registrados: ${dashStats.totalUsers}
-- Usuarios activos: ${dashStats.activeUsers}
-- Total movimientos (ventas, abonos, etc): ${dashStats.totalMovements}
-- Revenue total generado: $${dashStats.totalRevenue.toFixed(2)}
-- Movimientos por tipo: ${JSON.stringify(dashStats.movementsByType)}
-- Feedback pendiente (nuevos): ${feedbackItems.filter(f => f.status === 'nuevo').length}
-- Feedback total: ${feedbackItems.length}
-- Progreso roadmap: ${Object.values(roadmapData).filter(Boolean).length}/${ROADMAP_PHASES.reduce((a, p) => a + p.items.length, 0)} tareas completadas
-
-NEGOCIOS:
-${businesses.slice(0, 20).map(b => `- ${b.companyName ?? b.id} | Plan: ${b.subscription?.plan ?? 'N/A'} | Status: ${b.subscription?.status ?? 'N/A'} | Owner: ${b.ownerEmail ?? 'N/A'}`).join('\n')}
-
-ÚLTIMOS 10 MOVIMIENTOS:
-${dashStats.recentMovements.slice(0, 10).map(m => `- ${m.movementType} | $${m.amount} ${m.currency} | ${m.concept} | ${m.entityId}`).join('\n')}
-
-Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, dilo. Puedes dar recomendaciones de negocio basadas en los datos.`;
-
-      const r = await fetch('/api/assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({
-          system: systemContext,
-          messages: [
-            ...aiMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', content: m.content })),
-            { role: 'user', content: msg },
-          ],
-          temperature: 0.4,
-          maxOutputTokens: 1024,
-        }),
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ error: r.statusText }));
-        throw new Error(err.error || `HTTP ${r.status}`);
-      }
-      const data = await r.json();
-      const reply = data?.result ?? 'Sin respuesta';
-      setAiMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-    } catch (e: any) {
-      setAiMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e?.message ?? 'No se pudo conectar con el asistente'}` }]);
-    }
-    setAiLoading(false);
-    setTimeout(() => aiChatRef.current?.scrollTo({ top: aiChatRef.current.scrollHeight, behavior: 'smooth' }), 100);
-  };
+  // sendAiMessage eliminado (2026-04-22) — dependía de /api/assistant (Gemini).
 
   // Save roadmap toggle
   const toggleRoadmapItem = async (key: string) => {
@@ -2012,7 +1938,6 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                       </div>
                     ))}
                     {[
-                      { label:'VisionLab IA (+$24)',       val:actVision,  set:setActVision  },
                       { label:'Conciliacion (+$12)',       val:actConcil,  set:setActConcil  },
                       { label:'RRHH Pro (+$15)',           val:actRrhh,    set:setActRrhh    },
                     ].map(t => (
@@ -2569,7 +2494,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
                       <p className="text-[9px] font-black uppercase tracking-[0.25em] text-white/25 mb-2">Modulos forzados activos</p>
                       <p className="text-[9px] text-white/20 mb-3">Accesibles independiente del plan de suscripcion.</p>
                       <div className="flex flex-wrap gap-2 mb-2">
-                        {['resumen','inventario','cajas','rrhh','sucursales','clientes','proveedores','contabilidad','fiscal','tasas','conciliacion','reportes','vision','comparar','widgets','config'].map(mod => {
+                        {['resumen','inventario','cajas','rrhh','sucursales','clientes','proveedores','contabilidad','fiscal','tasas','conciliacion','reportes','comparar','widgets','config'].map(mod => {
                           const active = vendorOverride.forcedModules.includes(mod);
                           return (
                             <button key={mod} onClick={() => toggleForcedModule(mod)}
@@ -3308,101 +3233,7 @@ Responde de forma concisa, útil y directa. Si te preguntan algo que no sabes, d
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            TAB: IA ASISTENTE
-            ═══════════════════════════════════════════════════════════════════ */}
-        {topTab === 'ia' && (
-          <div className="flex-1 flex flex-col min-w-0">
-            {/* Chat header */}
-            <div className="px-6 py-4 border-b border-white/[0.07] flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-indigo-500/25 flex items-center justify-center">
-                <Brain size={18} className="text-indigo-400" />
-              </div>
-              <div>
-                <h2 className="text-sm font-black text-white">Asistente IA — Dualis</h2>
-                <p className="text-[10px] text-white/25">Gemini 2.0 Flash -- Datos en vivo del sistema -- Preguntame lo que quieras</p>
-              </div>
-              {aiMessages.length > 0 && (
-                <button onClick={() => setAiMessages([])} className="ml-auto text-[9px] font-black uppercase tracking-widest text-white/20 hover:text-white/50 px-3 py-1.5 rounded-lg border border-white/[0.06] hover:bg-white/[0.04] transition-all">
-                  Limpiar chat
-                </button>
-              )}
-            </div>
-
-            {/* Chat messages */}
-            <div ref={aiChatRef} className="flex-1 overflow-y-auto p-6 space-y-4">
-              {aiMessages.length === 0 && (
-                <div className="flex-1 flex items-center justify-center min-h-[400px]">
-                  <div className="text-center max-w-md">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-violet-500/15 border border-indigo-500/20 flex items-center justify-center mx-auto mb-4">
-                      <Sparkles size={28} className="text-indigo-400/60" />
-                    </div>
-                    <h3 className="text-lg font-black text-white mb-2">Hola Jesus</h3>
-                    <p className="text-sm text-white/30 mb-6">Soy tu asistente IA. Tengo acceso a todos los datos del sistema en tiempo real. Preguntame cualquier cosa.</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        'Como va el sistema hoy?',
-                        'Cuantos negocios estan activos?',
-                        'Dame un resumen del revenue',
-                        'Que deberia priorizar ahora?',
-                        'Analiza el feedback pendiente',
-                        'Como puedo conseguir mas clientes?',
-                      ].map(q => (
-                        <button key={q} onClick={() => { setAiInput(q); }}
-                          className="px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-[10px] text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-all text-left">
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {aiMessages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-2xl px-5 py-3.5 ${
-                    msg.role === 'user'
-                      ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
-                      : 'bg-white/[0.04] border border-white/[0.07] text-white/70'
-                  }`}>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                  </div>
-                </div>
-              ))}
-
-              {aiLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-white/[0.04] border border-white/[0.07] rounded-2xl px-5 py-3.5 flex items-center gap-2">
-                    <Loader2 size={14} className="animate-spin text-indigo-400" />
-                    <span className="text-sm text-white/30">Pensando...</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Chat input */}
-            <div className="px-6 py-4 border-t border-white/[0.07] bg-[#080d1b]">
-              <div className="flex gap-3">
-                <input
-                  value={aiInput}
-                  onChange={e => setAiInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiMessage(); } }}
-                  placeholder="Pregunta sobre tu sistema, datos, estrategia..."
-                  className="flex-1 px-5 py-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-white/15 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <button
-                  onClick={sendAiMessage}
-                  disabled={!aiInput.trim() || aiLoading}
-                  className="px-5 py-3 rounded-xl text-sm font-black text-white transition-all hover:-translate-y-0.5 disabled:opacity-40 flex items-center gap-2"
-                  style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
-                >
-                  <Send size={14} />
-                </button>
-              </div>
-              <p className="text-[9px] text-white/15 mt-2 text-center">Gemini (server-side proxy) — Los datos se cargan en vivo desde Firestore — Usa GOOGLE_API_KEY del backend, no expone secretos al cliente</p>
-            </div>
-          </div>
-        )}
+        {/* Tab IA Asistente eliminada (2026-04-22) — dependia de Gemini. */}
 
       </main>
     </div>

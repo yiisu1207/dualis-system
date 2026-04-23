@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 
 import { AccountType, MovementType, PaymentCurrency, Customer } from '../../types';
-import { scanInvoiceImage } from '../lib/ai-scanner';
 import Autocomplete from './Autocomplete';
 
 interface ParsedRow {
@@ -41,8 +40,6 @@ const DataImporter: React.FC<DataImporterProps> = ({
 }) => {
   const [rawCsv, setRawCsv] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [image, setImage] = useState<File | null>(null);
-  const [ocrLoading, setOcrLoading] = useState(false);
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [excelLoading, setExcelLoading] = useState(false);
   const [movementPaste, setMovementPaste] = useState('');
@@ -117,10 +114,6 @@ const DataImporter: React.FC<DataImporterProps> = ({
       console.error(e);
       setError('No se pudo procesar el CSV. Revisa el formato.');
     }
-  };
-
-  const handleFile = (f: File | null) => {
-    setImage(f);
   };
 
   const getCellValue = (value: any) => {
@@ -413,31 +406,7 @@ const DataImporter: React.FC<DataImporterProps> = ({
     }
   };
 
-  const handleOCR = async () => {
-    if (!image) return setError('Selecciona una imagen primero');
-    setOcrLoading(true);
-    setError(null);
-    try {
-      const result = await scanInvoiceImage(image, 'CUSTOMER');
-
-      if (!result) throw new Error('No se pudieron extraer datos de la imagen.');
-
-      const invoice: any = {
-        ...result,
-        source: 'AI_SCAN',
-        raw: JSON.stringify(result),
-      };
-
-      onImport(invoice);
-      setImage(null);
-      onClose();
-    } catch (e: any) {
-      console.error(e);
-      setError(e?.message || 'Error en OCR con IA.');
-    } finally {
-      setOcrLoading(false);
-    }
-  };
+  // handleOCR eliminado (2026-04-22) — dependia de scanInvoiceImage/Gemini.
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
@@ -446,7 +415,7 @@ const DataImporter: React.FC<DataImporterProps> = ({
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Importar Clientes / Movimientos</h2>
             <p className="text-xs text-slate-500">
-              Pega CSV, pega movimientos, sube Excel o usa OCR.
+              Pega CSV, pega movimientos o sube Excel.
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg">
@@ -620,18 +589,6 @@ const DataImporter: React.FC<DataImporterProps> = ({
 
           <div className="border-t pt-3">
             <label className="block text-sm font-medium text-slate-700 mb-2">
-              Subir imagen (factura / abono)
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => handleFile(e.target.files?.[0] || null)}
-            />
-            {image && <p className="text-xs text-slate-500 mt-2">Imagen seleccionada: {image.name}</p>}
-          </div>
-
-          <div className="border-t pt-3">
-            <label className="block text-sm font-medium text-slate-700 mb-2">
               Subir Excel (movimientos clientes)
             </label>
             <input
@@ -676,13 +633,6 @@ const DataImporter: React.FC<DataImporterProps> = ({
             className="px-4 py-2 text-[10px] app-btn app-btn-primary"
           >
             {excelLoading ? 'Importando...' : 'Procesar Excel'}
-          </button>
-          <button
-            onClick={handleOCR}
-            disabled={ocrLoading}
-            className="px-4 py-2 text-[10px] app-btn app-btn-primary"
-          >
-            {ocrLoading ? 'Analizando...' : 'Analizar Imagen (OCR)'}
           </button>
         </div>
       </div>

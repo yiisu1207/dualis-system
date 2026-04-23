@@ -1857,14 +1857,6 @@ const Configuracion: React.FC = () => {
                         color: 'text-emerald-400',
                       },
                       {
-                        key: 'aiVision',
-                        icon: Sparkles,
-                        title: 'VisionLab IA (Gemini)',
-                        desc: 'Análisis inteligente de P&L, flujo de caja, alertas y predicciones con Google Gemini.',
-                        phase: null,
-                        color: 'text-violet-400',
-                      },
-                      {
                         key: 'personalBooks',
                         icon: Globe,
                         title: 'Libros Individuales por Usuario',

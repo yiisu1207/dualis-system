@@ -131,7 +131,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'estadisticas', label: 'Estadísticas',     Icon: BarChart3,       path: 'estadisticas' },
       { id: 'pareto',       label: 'Pareto 80/20',     Icon: BarChart3,       path: 'pareto'       },
       { id: 'rentabilidad', label: 'Rentabilidad',     Icon: TrendingUp,      path: 'rentabilidad' },
-      { id: 'vision',       label: 'Auditoría IA',     Icon: ClipboardList,   path: 'vision'       },
       { id: 'comparar',     label: 'Comparar Libros',  Icon: ArrowLeftRight,  path: 'comparar'     },
     ],
   },
@@ -160,7 +159,6 @@ const moduleMap: Record<string, string> = {
   contabilidad: 'ledger',
   conciliacion: 'reconciliation',
   rrhh:         'nomina',
-  vision:       'vision',
 };
 
 // Accent colors per group index for icons

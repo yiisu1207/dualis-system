@@ -639,39 +639,11 @@ const HELP_CATEGORIES: HelpCategory[] = [
     ],
   },
   {
-    id: 'vision',
-    label: 'VisionLab IA',
+    id: 'auditoria',
+    label: 'Auditoría',
     icon: <Eye size={14} />,
     color: 'text-purple-400',
     articles: [
-      {
-        id: 'vision-overview',
-        title: 'VisionLab — Auditoría con IA',
-        subtitle: 'Análisis inteligente de tu negocio',
-        emoji: '🤖',
-        content: {
-          purpose: 'VisionLab usa Inteligencia Artificial para analizar tus datos y detectar anomalías, tendencias y oportunidades. Puede revisar si hay ventas inusuales, días de bajo rendimiento, productos sin movimiento o inconsistencias en los pagos.',
-          buttons: [
-            { name: 'Analizar', what: 'Inicia el análisis IA de tus datos del período seleccionado. Puede tardar unos segundos.', tip: 'Selecciona el período antes de analizar: última semana, último mes, o rango personalizado.' },
-            { name: 'Ver reporte completo', what: 'Muestra los hallazgos de la IA con explicaciones en español. Cada hallazgo incluye por qué es relevante y qué puedes hacer.' },
-            { name: 'Exportar análisis', what: 'Descarga el reporte de la IA en PDF para compartir con tu contador o socio.' },
-            { name: 'Chat con IA (💬)', what: 'Escríbele preguntas en español directamente: "¿Cuál fue mi mejor día de ventas?" o "¿Qué producto se mueve más?".' },
-          ],
-          emptyState: {
-            why: 'VisionLab necesita al menos 7 días de ventas para generar análisis significativos. Con menos datos, la IA no puede detectar tendencias.',
-            fix: 'Continúa usando el sistema normalmente. Después de una semana de ventas, regresa aquí y haz clic en "Analizar".',
-          },
-          tips: [
-            'VisionLab es más preciso con más datos. Después de un mes de uso, los análisis serán muy detallados.',
-            'Puedes hacerle preguntas específicas en el chat. Ejemplos: "¿Quién es mi cliente más frecuente?", "¿En qué horario vendo más?"',
-            'Los hallazgos de la IA son sugerencias — siempre usa tu criterio de negocio.',
-          ],
-          faq: [
-            { q: '¿La IA tiene acceso a datos sensibles de mis clientes?', a: 'La IA solo analiza datos agregados (totales, tendencias). No envía datos a terceros — el análisis ocurre dentro de tu sesión.' },
-            { q: '¿Por qué el análisis tardó mucho?', a: 'Depende de cuántos datos tienes. Si tienes meses de ventas, puede tardar hasta 30 segundos. Es normal.' },
-          ],
-        },
-      },
       {
         id: 'auditoria-log',
         title: 'Auditoría — Log de Acciones',

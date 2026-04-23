@@ -37,7 +37,6 @@ import RecursosHumanos from './pages/RecursosHumanos';
 const ComisionesReporte = lazy(() => import('./pages/ComisionesReporte'));
 const Tesoreria = lazy(() => import('./pages/Tesoreria'));
 import Inventario from './pages/Inventario';
-const VisionLab = lazy(() => import('./components/VisionLab'));
 const BooksComparePanel = lazy(() => import('./components/BooksComparePanel'));
 import UserProfileModalComp from './components/UserProfileModal';
 import CxCPage from './pages/CxCPage';
@@ -435,7 +434,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     comisiones:    `${adminBase}/comisiones`,
     inventario:    `${adminBase}/inventario`,
     reportes:      `${adminBase}/reportes`,
-    vision:        `${adminBase}/vision`,
     widgets:       `${adminBase}/widgets`,
     comparar:      `${adminBase}/comparar`,
     tasas:         `${adminBase}/tasas`,
@@ -1232,7 +1230,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     portalchat: 'Finanzas', contabilidad: 'Finanzas', conciliacion: 'Finanzas',
     rrhh: 'Equipo', comisiones: 'Equipo', sucursales: 'Equipo',
     reportes: 'Inteligencia', estadisticas: 'Inteligencia', pareto: 'Inteligencia',
-    rentabilidad: 'Inteligencia', vision: 'Inteligencia', comparar: 'Inteligencia',
+    rentabilidad: 'Inteligencia', comparar: 'Inteligencia',
     config: 'Sistema', help: 'Sistema',
   }), []);
 
@@ -1240,7 +1238,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     resumen: 'Resumen', clientes: 'Clientes', contabilidad: 'Contabilidad',
     proveedores: 'Proveedores', rrhh: 'RRHH',
     inventario: 'Inventario',
-    reportes: 'Reportes', vision: 'VisionLab', widgets: 'Herramientas',
+    reportes: 'Reportes', widgets: 'Herramientas',
     comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
     cajas: 'Cajas', despacho: 'Panel Despacho', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Reporte de Ventas',
     tesoreria: 'Tesorería', comisiones: 'Reporte de Comisiones',
@@ -1455,12 +1453,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
                     canVerify={canCapability('aprobarPagos' as any)}
                   />
                 : <LockedModule moduleName="Conciliación Bancaria" requiredPlan="negocio" isAddon />
-            )}
-            {activeTab === 'vision' && (
-              !canView('vision') ? <NoAccess /> :
-              canAccess('vision')
-                ? <VisionLab movements={movements} inventory={inventoryItems as any} rates={legacyRates as any} customers={customers} />
-                : <LockedModule moduleName="VisionLab IA" requiredPlan="enterprise" isAddon />
             )}
             {activeTab === 'comparar' && (
               !canView('comparar') ? <NoAccess /> :
