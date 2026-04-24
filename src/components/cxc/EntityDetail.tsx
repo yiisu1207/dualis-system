@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, User, Phone, MapPin, Hash, Calendar, Shield, Star, Clock, CheckCircle2, XCircle, Ban, AlertCircle, Share2, TrendingUp, TrendingDown, Activity, Tag, Hourglass, CalendarClock } from 'lucide-react';
+import { ArrowLeft, FileText, CreditCard, MessageCircle, ChevronLeft, ArrowLeftRight, Loader2, ShieldCheck, Repeat, Trash2, Globe, Copy, Check, MessageSquare, Mail, ExternalLink, Pencil, User, Phone, MapPin, Hash, Calendar, Shield, Star, Clock, CheckCircle2, XCircle, Ban, AlertCircle, Share2, TrendingUp, TrendingDown, Activity, Tag, Hourglass, CalendarClock, Plus, ChevronDown, MoreHorizontal, Settings } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Customer, Supplier, Movement, CustomRate, ExchangeRates, CreditScore, PendingMovement, PortalAccessToken } from '../../../types';
 import { getMovementUsdAmount } from '../../utils/formatters';
@@ -59,7 +59,13 @@ interface EntityDetailProps {
   allCustomers?: Customer[];
 }
 
-type Tab = 'resumen' | 'datos' | 'movimientos' | 'pendientes' | 'config';
+// Rediseño 2026-04-24: landing ES el resumen (patrón Stripe/Linear). Los tabs
+// ahora solo dividen contenido profundo, no ofrecen dos resúmenes paralelos.
+// 'resumen' y 'config' dejaron de ser tabs del bar público — resumen se disolvió
+// en el hero, y config ahora abre como modal desde ⋯ Más. Se mantienen en el
+// union type para que los bloques legacy compilen sin error (dead code hasta
+// que los inline-eemos al hero o al modal).
+type Tab = 'movimientos' | 'pendientes' | 'datos' | 'resumen' | 'config';
 
 /* ── Helpers para panel de aprobaciones inline ────────────────────────── */
 const fmtDateApproval = (iso?: string) => {
@@ -371,7 +377,14 @@ export function EntityDetail({
   businessName,
   allCustomers = [],
 }: EntityDetailProps) {
-  const [tab, setTab] = useState<Tab>('resumen');
+  const [tab, setTab] = useState<Tab>('movimientos');
+  // Modal "Configuración del cliente" (antes era tab 'config'). Se abre desde
+  // el menú ⋯ Más del header. Solo relevante en CxC.
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  // Menú "⋯ Más" del header (acciones secundarias).
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  // Menú "+ Nuevo" del header (split-button de Cargo/Abono).
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [compOpen, setCompOpen] = useState(false);
   const [compFrom, setCompFrom] = useState('');
   const [crossCompOpen, setCrossCompOpen] = useState(false);
@@ -783,237 +796,230 @@ export function EntityDetail({
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-5 pt-4 pb-0 border-b border-slate-100 dark:border-white/[0.06]">
-        <div className="flex items-start gap-4 mb-4">
+        {/* ─── Identidad + Acciones ─────────────────────────────────────── */}
+        <div className="flex items-start gap-4 mb-5">
           {onBack && (
             <button onClick={onBack} className="mt-1 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-all lg:hidden">
               <ChevronLeft size={16} className="text-slate-400" />
             </button>
           )}
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-sm font-black shrink-0 ${
-            totalBalance > 0.01 ? 'bg-indigo-500/10 text-indigo-400' : 'bg-slate-100 dark:bg-white/[0.04] text-slate-300 dark:text-white/20'
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-sm font-semibold shrink-0 ${
+            totalBalance > 0.01 ? 'bg-indigo-500/10 text-indigo-500 dark:text-indigo-400' : 'bg-slate-100 dark:bg-white/[0.04] text-slate-400 dark:text-white/30'
           }`}>
             {getInitials(entityName)}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base font-black text-slate-900 dark:text-white truncate">{entityName}</h2>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white truncate">{entityName}</h2>
               {score && (
-                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black ${SCORE_STYLES[score]?.bg} ${SCORE_STYLES[score]?.text}`}>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${SCORE_STYLES[score]?.bg} ${SCORE_STYLES[score]?.text}`}>
                   {score}
                 </span>
               )}
-              {isCxC && (customer?.tags || []).slice(0, 4).map((tag) => (
+              {isCxC && (customer?.tags || []).slice(0, 3).map((tag) => (
                 <span
                   key={tag}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-violet-500/10 text-violet-400 border border-violet-500/20"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-white/50"
                 >
-                  <Tag size={8} /> {tag}
+                  <Tag size={9} /> {tag}
                 </span>
               ))}
             </div>
-            <p className="text-[11px] font-bold text-slate-400 dark:text-white/30 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-white/40 mt-1">
               {entityDoc}
               {(entity as Customer).telefono && ` · ${(entity as Customer).telefono}`}
               {(entity as Customer).email && ` · ${(entity as Customer).email}`}
             </p>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <button
-              onClick={() => onRegisterMovement('FACTURA')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 text-rose-400 text-[10px] font-black uppercase tracking-wider hover:bg-rose-500/20 transition-all"
-            >
-              <FileText size={12} /> {isCxC ? 'Cargo' : 'Factura'}
-            </button>
-            <button
-              onClick={() => onRegisterMovement('ABONO')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider hover:bg-emerald-500/20 transition-all"
-            >
-              <CreditCard size={12} /> Abono
-            </button>
-            {(entity as Customer).telefono && (
-              <a
-                href={`https://wa.me/${(entity as Customer).telefono.replace(/\D/g, '')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 text-[10px] font-black uppercase tracking-wider hover:bg-emerald-500/20 transition-all"
-                title={`WhatsApp: ${(entity as Customer).telefono}`}
-              >
-                <MessageCircle size={12} /> WhatsApp
-              </a>
-            )}
-            <button
-              onClick={() => setExportOpen(true)}
-              disabled={entityMovements.length === 0}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 text-[10px] font-black uppercase tracking-wider hover:bg-indigo-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Exportar estado de cuenta"
-            >
-              <Share2 size={12} /> Exportar
-            </button>
-            {canEdit && onUpdateEntity && isCxC && (
+
+          {/* Acciones: 1 primario split-button + 1 menú ⋯ Más */}
+          <div className="flex gap-2 shrink-0 relative">
+            {/* Split-button: + Nuevo ▾ */}
+            <div className="relative">
               <button
-                onClick={() => setEditModalOpen(true)}
-                className="p-2 rounded-xl text-slate-400 dark:text-white/20 hover:bg-indigo-500/10 hover:text-indigo-400 transition-all"
-                title="Editar cliente"
+                onClick={() => setNewMenuOpen(v => !v)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-sm transition-all"
               >
-                <Pencil size={14} />
+                <Plus size={15} /> Nuevo <ChevronDown size={13} className={`transition-transform ${newMenuOpen ? 'rotate-180' : ''}`} />
               </button>
-            )}
-            {onDeleteEntity && (
+              {newMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setNewMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 min-w-[180px] rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
+                    <button
+                      onClick={() => { setNewMenuOpen(false); onRegisterMovement('FACTURA'); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-white/70 hover:bg-slate-50 dark:hover:bg-white/[0.04] text-left"
+                    >
+                      <FileText size={14} className="text-rose-500" /> {isCxC ? 'Nuevo cargo' : 'Nueva factura'}
+                    </button>
+                    <button
+                      onClick={() => { setNewMenuOpen(false); onRegisterMovement('ABONO'); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-white/70 hover:bg-slate-50 dark:hover:bg-white/[0.04] text-left"
+                    >
+                      <CreditCard size={14} className="text-emerald-500" /> {isCxC ? 'Nuevo abono' : 'Nuevo pago'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Menú ⋯ Más */}
+            <div className="relative">
               <button
-                onClick={() => setDeleteConfirm(true)}
-                className="p-2 rounded-xl text-slate-400 dark:text-white/20 hover:bg-rose-500/10 hover:text-rose-400 transition-all"
-                title="Eliminar cliente"
+                onClick={() => setMoreMenuOpen(v => !v)}
+                className="p-2 rounded-lg text-slate-500 dark:text-white/40 border border-slate-200 dark:border-white/[0.08] hover:bg-slate-50 dark:hover:bg-white/[0.04] hover:text-slate-700 dark:hover:text-white/70 transition-all"
+                title="Más acciones"
               >
-                <Trash2 size={14} />
+                <MoreHorizontal size={16} />
               </button>
-            )}
+              {moreMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 min-w-[200px] rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
+                    {(entity as Customer).telefono && (
+                      <a
+                        href={`https://wa.me/${(entity as Customer).telefono.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setMoreMenuOpen(false)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-white/70 hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+                      >
+                        <MessageCircle size={14} className="text-emerald-500" /> WhatsApp
+                      </a>
+                    )}
+                    <button
+                      onClick={() => { setMoreMenuOpen(false); setExportOpen(true); }}
+                      disabled={entityMovements.length === 0}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-white/70 hover:bg-slate-50 dark:hover:bg-white/[0.04] text-left disabled:opacity-40"
+                    >
+                      <Share2 size={14} className="text-indigo-500" /> Exportar estado
+                    </button>
+                    {canEdit && onUpdateEntity && isCxC && (
+                      <button
+                        onClick={() => { setMoreMenuOpen(false); setEditModalOpen(true); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-white/70 hover:bg-slate-50 dark:hover:bg-white/[0.04] text-left"
+                      >
+                        <Pencil size={14} className="text-slate-400" /> Editar datos
+                      </button>
+                    )}
+                    {isCxC && customer && (
+                      <button
+                        onClick={() => { setMoreMenuOpen(false); setConfigModalOpen(true); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-white/70 hover:bg-slate-50 dark:hover:bg-white/[0.04] text-left"
+                      >
+                        <Settings size={14} className="text-slate-400" /> Configuración
+                      </button>
+                    )}
+                    {onDeleteEntity && (
+                      <>
+                        <div className="border-t border-slate-200 dark:border-white/[0.08]" />
+                        <button
+                          onClick={() => { setMoreMenuOpen(false); setDeleteConfirm(true); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-left"
+                        >
+                          <Trash2 size={14} /> Eliminar {isCxC ? 'cliente' : 'proveedor'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Quick stats strip */}
-        <div className="flex flex-wrap items-stretch gap-2 mb-3">
-          <div className={`flex-1 min-w-[120px] rounded-xl border px-3 py-2 ${
+        {/* ─── Hero: 3 KPIs (patrón Stripe/QuickBooks/Xero) ───────────────
+            Antes eran 7-8 cards compitiendo. Ahora: Saldo (hero), Vencido
+            (rojo solo si >0), Actividad. El resto se movió a secciones dentro
+            del tab Movimientos o al modal Config. */}
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          {/* Saldo — el KPI dominante */}
+          <div className={`rounded-xl border px-4 py-3 ${
             totalBalance > 0.01
-              ? 'bg-amber-500/[0.06] border-amber-500/20'
+              ? 'bg-white dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]'
               : totalBalance < -0.01
-                ? 'bg-emerald-500/[0.06] border-emerald-500/20'
-                : 'bg-slate-100 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]'
+                ? 'bg-emerald-500/[0.04] border-emerald-500/20'
+                : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]'
           }`}>
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30">
+            <p className="text-[11px] font-semibold text-slate-500 dark:text-white/40">
               {totalBalance > 0.01 ? (isCxC ? 'Te debe' : 'Le debes') : totalBalance < -0.01 ? 'A favor' : 'Al día'}
             </p>
-            <p className={`text-sm font-black mt-0.5 ${
-              totalBalance > 0.01 ? 'text-amber-500' : totalBalance < -0.01 ? 'text-emerald-500' : 'text-slate-500 dark:text-white/40'
+            <p className={`text-2xl font-semibold tabular-nums mt-1 ${
+              totalBalance > 0.01
+                ? 'text-slate-900 dark:text-white'
+                : totalBalance < -0.01
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-slate-400 dark:text-white/30'
             }`}>
               ${Math.abs(totalBalance).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
-          </div>
-          <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
-              <TrendingUp size={9} /> Cargos del mes
-            </p>
-            <p className="text-sm font-black text-rose-500 mt-0.5">
-              ${headerStats.monthCargos.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">
+              {accountBalances.length > 1
+                ? `${accountBalances.length} cuentas`
+                : accountBalances[0]?.label || '—'}
             </p>
           </div>
-          <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
-              <TrendingDown size={9} /> Abonos del mes
+
+          {/* Vencido — rojo solo si hay, sino muted */}
+          <div className={`rounded-xl border px-4 py-3 ${
+            headerStats.overdueCount > 0 || (headerStats.nextDueDays !== null && headerStats.nextDueDays < 0)
+              ? 'bg-rose-500/[0.04] border-rose-500/25'
+              : 'bg-white dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]'
+          }`}>
+            <p className={`text-[11px] font-semibold ${
+              headerStats.overdueCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-white/40'
+            }`}>
+              Vencido
             </p>
-            <p className="text-sm font-black text-emerald-500 mt-0.5">
-              ${headerStats.monthAbonos.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <p className={`text-2xl font-semibold tabular-nums mt-1 ${
+              headerStats.overdueCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400 dark:text-white/30'
+            }`}>
+              {headerStats.overdueCount > 0 ? headerStats.overdueCount : '0'}
+              {headerStats.overdueCount > 0 && (
+                <span className="text-sm font-medium ml-1 opacity-70">
+                  {headerStats.overdueCount === 1 ? 'factura' : 'facturas'}
+                </span>
+              )}
+            </p>
+            <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">
+              {headerStats.nextDueDays === null
+                ? 'Sin próximos vencimientos'
+                : headerStats.nextDueDays < 0
+                  ? `Vencido hace ${Math.abs(headerStats.nextDueDays)}d`
+                  : headerStats.nextDueDays === 0
+                    ? 'Vence hoy'
+                    : `Próximo vence en ${headerStats.nextDueDays}d`}
             </p>
           </div>
-          <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
-              <Activity size={9} /> Última actividad
-            </p>
-            <p className="text-sm font-black text-slate-700 dark:text-white/70 mt-0.5">
+
+          {/* Actividad reciente */}
+          <div className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-4 py-3">
+            <p className="text-[11px] font-semibold text-slate-500 dark:text-white/40">Actividad</p>
+            <p className="text-2xl font-semibold tabular-nums mt-1 text-slate-900 dark:text-white">
               {headerStats.daysSinceActivity === null
                 ? '—'
                 : headerStats.daysSinceActivity === 0
                   ? 'Hoy'
                   : headerStats.daysSinceActivity === 1
                     ? 'Ayer'
-                    : `${headerStats.daysSinceActivity}d`}
+                    : (
+                      <>
+                        {headerStats.daysSinceActivity}
+                        <span className="text-sm font-medium ml-0.5 opacity-70">d</span>
+                      </>
+                    )}
             </p>
-          </div>
-          {headerStats.pendingInvoices > 0 && (
-            <div className="flex-1 min-w-[120px] rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-3 py-2">
-              <p className="text-[9px] font-black uppercase tracking-wider text-rose-400">
-                {isCxC ? 'Facturas pendientes' : 'Facturas por pagar'}
-              </p>
-              <p className="text-sm font-black text-rose-500 mt-0.5">
-                {headerStats.pendingInvoices}
-                {headerStats.overdueCount > 0 && (
-                  <span className="ml-1 text-[9px] font-black uppercase text-rose-300">
-                    · {headerStats.overdueCount} vencida{headerStats.overdueCount === 1 ? '' : 's'}
-                  </span>
-                )}
-              </p>
-            </div>
-          )}
-          {headerStats.avgPayDays !== null && (
-            <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
-                <Hourglass size={9} /> Paga en promedio
-              </p>
-              <p className={`text-sm font-black mt-0.5 ${
-                headerStats.avgPayDays <= 15 ? 'text-emerald-500'
-                  : headerStats.avgPayDays <= 30 ? 'text-amber-500'
-                    : 'text-rose-500'
-              }`}>
-                {headerStats.avgPayDays}d
-              </p>
-            </div>
-          )}
-          {headerStats.nextDueDays !== null && headerStats.nextDue && (
-            <div className={`flex-1 min-w-[140px] rounded-xl border px-3 py-2 ${
-              headerStats.nextDueDays < 0
-                ? 'bg-rose-500/[0.08] border-rose-500/30'
-                : headerStats.nextDueDays <= 7
-                  ? 'bg-amber-500/[0.06] border-amber-500/20'
-                  : 'bg-white dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]'
-            }`}>
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 flex items-center gap-1">
-                <CalendarClock size={9} /> Próximo vencimiento
-              </p>
-              <p className={`text-sm font-black mt-0.5 ${
-                headerStats.nextDueDays < 0 ? 'text-rose-500'
-                  : headerStats.nextDueDays <= 7 ? 'text-amber-500'
-                    : 'text-slate-700 dark:text-white/70'
-              }`}>
-                {headerStats.nextDueDays < 0
-                  ? `Vencido ${Math.abs(headerStats.nextDueDays)}d`
-                  : headerStats.nextDueDays === 0
-                    ? 'Hoy'
-                    : `En ${headerStats.nextDueDays}d`}
-              </p>
-            </div>
-          )}
-          <div className="flex-1 min-w-[140px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1">
-              Tendencia 6 meses
-            </p>
-            <div className="flex items-end gap-[2px] h-6">
-              {(() => {
-                const maxVal = Math.max(1, ...trendData.map(d => Math.max(d.facturas, d.abonos)));
-                return trendData.map((d) => {
-                  const hF = Math.max(2, Math.round((d.facturas / maxVal) * 22));
-                  const hA = Math.max(2, Math.round((d.abonos / maxVal) * 22));
-                  return (
-                    <div key={d.key} className="flex-1 flex items-end gap-[1px] group relative" title={`${d.label}: Cargos ${d.facturas.toFixed(0)} · Abonos ${d.abonos.toFixed(0)}`}>
-                      <div
-                        className="flex-1 rounded-sm bg-rose-400/70 group-hover:bg-rose-500 transition-all"
-                        style={{ height: `${hF}px` }}
-                      />
-                      <div
-                        className="flex-1 rounded-sm bg-emerald-400/70 group-hover:bg-emerald-500 transition-all"
-                        style={{ height: `${hA}px` }}
-                      />
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-          <div className="flex-1 min-w-[120px] rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-white/30">
-              Total movs.
-            </p>
-            <p className="text-sm font-black text-slate-700 dark:text-white/70 mt-0.5">
-              {entityMovements.length}
+            <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">
+              {entityMovements.length} {entityMovements.length === 1 ? 'movimiento total' : 'movimientos totales'}
             </p>
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* ─── Tabs: 3 categorías solamente ─── */}
         <div className="flex gap-0">
-          {tabBtn('resumen', 'Resumen')}
-          {isCxC && tabBtn('datos', 'Datos')}
           {tabBtn('movimientos', 'Movimientos')}
-          {tabBtn('pendientes', `Pendientes${entityPendings.length ? ` (${entityPendings.length})` : ''}`)}
-          {isCxC && tabBtn('config', 'Config')}
+          {tabBtn('pendientes', `Pendientes${entityPendings.length ? ` · ${entityPendings.length}` : ''}`)}
+          {isCxC && tabBtn('datos', 'Datos')}
         </div>
       </div>
 
@@ -1978,9 +1984,31 @@ export function EntityDetail({
           </div>
         )}
 
-        {/* ═══ TAB: CONFIG (CxC only) ═══ */}
-        {tab === 'config' && isCxC && customer && (
-          <div className="p-5 space-y-5">
+        {/* ═══ MODAL: CONFIGURACIÓN (antes tab 'config', ahora ⋯ Más → Config) ═══ */}
+        {configModalOpen && isCxC && customer && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setConfigModalOpen(false)}>
+            <div
+              className="w-full max-w-2xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/[0.08] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.08]">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                    <Settings size={15} className="text-indigo-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Configuración del cliente</h3>
+                    <p className="text-xs text-slate-500 dark:text-white/40">Crédito, modo de saldo, notas internas</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setConfigModalOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06] hover:text-slate-600 dark:hover:text-white/70"
+                >
+                  <XCircle size={18} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={lbl}>Limite de credito (USD)</label>
@@ -2106,13 +2134,23 @@ export function EntityDetail({
               />
             </div>
 
-            <button
-              onClick={handleSaveConfig}
-              disabled={savingConfig}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 text-white text-xs font-black uppercase tracking-wider hover:from-indigo-400 hover:to-violet-400 transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-40"
-            >
-              {savingConfig ? 'Guardando...' : 'Guardar configuracion'}
-            </button>
+              </div>
+              <div className="px-5 py-4 border-t border-slate-200 dark:border-white/[0.08] flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setConfigModalOpen(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 dark:text-white/60 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-all"
+                >
+                  Cerrar
+                </button>
+                <button
+                  onClick={async () => { await handleSaveConfig(); setConfigModalOpen(false); }}
+                  disabled={savingConfig}
+                  className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all disabled:opacity-40"
+                >
+                  {savingConfig ? 'Guardando…' : 'Guardar cambios'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
