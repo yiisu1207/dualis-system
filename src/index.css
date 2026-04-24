@@ -369,6 +369,19 @@
   border-radius: 10px;
 }
 
+/* hide-scrollbar: oculta la scrollbar nativa conservando el scroll. Util para
+   strips horizontales (filter pills, tabs) donde la barra blanca choca con
+   los fondos oscuros del dark mode. */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* ── MOBILE / RESPONSIVE ──────────────────────────────────────────────── */
 
 /* Safe area inset variables (iOS notch, Dynamic Island, home indicator) */

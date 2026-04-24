@@ -207,18 +207,29 @@ export function CxPSupplierList({
     return { totalOwed, totalCredit, overdueTotal, creditorCount };
   }, [filtered]);
 
-  const filterPill = (key: QuickFilter, label: string, count: number, Icon: any, accent: string) => (
-    <button
-      onClick={() => setFilter(filter === key ? 'ALL' : key)}
-      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border whitespace-nowrap ${
-        filter === key
-          ? `${accent} border-current`
-          : 'border-transparent text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-white/[0.04]'
-      }`}
-    >
-      <Icon size={10} /> {label} {count > 0 && <span className="opacity-70">{count}</span>}
-    </button>
-  );
+  const filterPill = (key: QuickFilter, label: string, count: number, Icon: any, accent: string) => {
+    const active = filter === key;
+    return (
+      <button
+        onClick={() => setFilter(active ? 'ALL' : key)}
+        className={`group relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border whitespace-nowrap ${
+          active
+            ? `${accent} border-current shadow-sm ring-1 ring-current/20`
+            : 'border-slate-200/60 dark:border-white/[0.06] text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-white/[0.04] hover:text-slate-600 dark:hover:text-white/50'
+        }`}
+      >
+        <Icon size={10} />
+        {label}
+        {count > 0 && (
+          <span className={`min-w-[14px] h-[14px] px-1 rounded-full flex items-center justify-center text-[9px] font-black tabular-nums ${
+            active ? 'bg-current/15' : 'bg-slate-200/80 dark:bg-white/[0.08] text-slate-500 dark:text-white/40 group-hover:bg-slate-300/80'
+          }`}>
+            {count}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -293,27 +304,38 @@ export function CxPSupplierList({
         )}
 
         {/* Quick filters */}
-        <div className="flex gap-1 overflow-x-auto -mx-1 px-1">
-          {filterPill('PENDING', 'Pendientes', counts.pending, ShieldCheck, 'bg-amber-500/15 text-amber-400')}
-          {filterPill('OVERDUE', 'Vencidos', counts.overdue, AlertTriangle, 'bg-rose-500/15 text-rose-400')}
-          {filterPill('WITH_DEBT', 'Con deuda', counts.withDebt, Clock, 'bg-amber-500/15 text-amber-400')}
-          {filterPill('ZERO', 'Al día', counts.zero, CheckCircle, 'bg-emerald-500/15 text-emerald-400')}
+        <div className="flex gap-1.5 overflow-x-auto hide-scrollbar -mx-1 px-1 pb-0.5">
+          {filterPill('PENDING', 'Pendientes', counts.pending, ShieldCheck, 'bg-amber-500/15 text-amber-500 dark:text-amber-400')}
+          {filterPill('OVERDUE', 'Vencidos', counts.overdue, AlertTriangle, 'bg-rose-500/15 text-rose-500 dark:text-rose-400')}
+          {filterPill('WITH_DEBT', 'Con deuda', counts.withDebt, Clock, 'bg-amber-500/15 text-amber-500 dark:text-amber-400')}
+          {filterPill('ZERO', 'Al día', counts.zero, CheckCircle, 'bg-emerald-500/15 text-emerald-500 dark:text-emerald-400')}
         </div>
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto custom-scroll">
         {filtered.length === 0 ? (
-          <div className="px-4 py-12 text-center">
-            <p className="text-xs font-black uppercase tracking-widest text-slate-300 dark:text-white/15">
+          <div className="px-4 py-16 flex flex-col items-center text-center">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/[0.05] flex items-center justify-center mb-3">
+              {filter === 'OVERDUE' ? <AlertTriangle size={22} className="text-rose-400/60" />
+                : filter === 'WITH_DEBT' ? <Clock size={22} className="text-amber-400/60" />
+                : filter === 'ZERO' ? <CheckCircle size={22} className="text-emerald-400/60" />
+                : filter === 'PENDING' ? <ShieldCheck size={22} className="text-amber-400/60" />
+                : search ? <Search size={22} className="text-slate-300 dark:text-white/20" />
+                : <Building2 size={22} className="text-slate-300 dark:text-white/20" />}
+            </div>
+            <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 dark:text-white/40">
               {filter === 'OVERDUE' ? 'Sin proveedores vencidos'
                 : filter === 'WITH_DEBT' ? 'Sin deudas pendientes'
                 : filter === 'ZERO' ? 'Todos los proveedores con deuda'
                 : filter === 'PENDING' ? 'Sin aprobaciones pendientes'
-                : 'Sin resultados'}
+                : search ? 'Sin resultados'
+                : 'Aún no hay proveedores'}
             </p>
-            <p className="text-[10px] font-bold text-slate-300 dark:text-white/10 mt-1">
-              {search ? 'Prueba con otro término' : 'Cambia el filtro o crea un proveedor'}
+            <p className="text-[10px] font-bold text-slate-400 dark:text-white/20 mt-1.5 max-w-[200px]">
+              {search ? `Nada coincide con "${search}". Prueba con otro término.`
+                : filter !== 'ALL' ? 'Todo bajo control aquí. Cambia el filtro o vuelve a todos.'
+                : 'Crea el primero con el botón + arriba.'}
             </p>
           </div>
         ) : filtered.map(s => {
