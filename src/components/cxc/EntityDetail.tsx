@@ -385,6 +385,13 @@ export function EntityDetail({
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   // Menú "+ Nuevo" del header (split-button de Cargo/Abono).
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  // Secciones colapsables dentro del tab Movimientos (antes vivían en el tab
+  // Resumen y eran siempre visibles). Default: 'quickview' abierta (cuentas +
+  // aging), las demás cerradas — densidad mínima por default.
+  const [quickviewOpen, setQuickviewOpen] = useState(true);
+  const [trendOpen, setTrendOpen] = useState(false);
+  const [openInvoicesOpen, setOpenInvoicesOpen] = useState(false);
+  const [compensateOpen, setCompensateOpen] = useState(false);
   const [compOpen, setCompOpen] = useState(false);
   const [compFrom, setCompFrom] = useState('');
   const [crossCompOpen, setCrossCompOpen] = useState(false);
@@ -1025,8 +1032,19 @@ export function EntityDetail({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
-        {/* ═══ TAB: RESUMEN ═══ */}
-        {tab === 'resumen' && (
+        {/* ═══ TAB: RESUMEN (DEAD CODE — rediseño 2026-04-24) ═══
+            Se removió del tab-bar. Contenido redistribuido:
+              · Cuentas activas + Aging → Movimientos > Vista rápida
+              · Facturas abiertas → Movimientos > Facturas abiertas
+              · Tendencia 6m → Movimientos > Tendencia 6 meses
+              · Últimos movimientos → redundante con el libro mayor
+              · Línea de crédito + Portal widget → Datos (al inicio)
+              · Notas internas → ya estaba duplicada en Datos
+              · Compensaciones → Movimientos > Compensaciones
+            Nunca se renderiza porque 'resumen' ya no está en el tab state.
+            Pendiente de borrar físicamente en próximo paso cuando confirmemos
+            que nada se perdió en el rediseño. */}
+        {false && tab === 'resumen' && (
           <div className="p-5 space-y-5">
             {/* ── Section: Cuentas activas ───────────────────────────── */}
             {accountBalances.length > 0 ? (
@@ -1660,6 +1678,144 @@ export function EntityDetail({
         {/* ═══ TAB: DATOS ═══ */}
         {tab === 'datos' && isCxC && customer && (
           <div className="p-5 space-y-5">
+            {/* ── Línea de crédito (gauge visual, antes en tab Resumen) ── */}
+            {customer.creditLimit && customer.creditLimit > 0 && (() => {
+              const usage = Math.max(0, totalBalance);
+              const ratio = Math.min(1, usage / customer.creditLimit);
+              const available = Math.max(0, customer.creditLimit - usage);
+              const tone = ratio > 0.9 ? { text: 'text-rose-600 dark:text-rose-400', ring: 'stroke-rose-500', badge: 'bg-rose-500/10 text-rose-600 dark:text-rose-400', label: 'Crítico' }
+                         : ratio > 0.7 ? { text: 'text-amber-600 dark:text-amber-400', ring: 'stroke-amber-500', badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', label: 'Alto' }
+                         : { text: 'text-emerald-600 dark:text-emerald-400', ring: 'stroke-emerald-500', badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', label: 'Saludable' };
+              const C = 2 * Math.PI * 36;
+              return (
+                <section className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Shield size={13} className="text-indigo-500" />
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-white/60">Línea de crédito</h3>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${tone.badge}`}>{tone.label}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="relative w-[86px] h-[86px] shrink-0">
+                      <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
+                        <circle cx="40" cy="40" r="36" className="stroke-slate-200 dark:stroke-white/[0.06]" strokeWidth="7" fill="none" />
+                        <circle cx="40" cy="40" r="36" className={tone.ring} strokeWidth="7" fill="none" strokeLinecap="round"
+                          strokeDasharray={C} strokeDashoffset={C * (1 - ratio)} style={{ transition: 'stroke-dashoffset 0.6s' }}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className={`text-base font-semibold ${tone.text}`}>{Math.round(ratio * 100)}%</span>
+                        <span className="text-[10px] text-slate-400 dark:text-white/30">usado</span>
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">Límite</p>
+                        <p className="text-base font-semibold tabular-nums text-slate-900 dark:text-white">${customer.creditLimit.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">Disponible</p>
+                        <p className={`text-base font-semibold tabular-nums ${tone.text}`}>${available.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              );
+            })()}
+
+            {/* ── Portal del cliente (widget visual enlace + OTP + share) ── */}
+            {businessId && (
+              <section className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Globe size={13} className="text-indigo-500" />
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-white/60">Portal del cliente</h3>
+                  {portalLink && (
+                    <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activo
+                    </span>
+                  )}
+                </div>
+                {portalLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-white/30 py-3">
+                    <Loader2 size={14} className="animate-spin" /> Verificando acceso…
+                  </div>
+                ) : portalLink ? (
+                  <div className="space-y-3">
+                    <div className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] px-3 py-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-0.5">Enlace</p>
+                      <p className="text-[11px] font-mono text-slate-700 dark:text-slate-300 truncate">{portalLink}</p>
+                      {portalPin && (
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                          PIN <span className="text-indigo-600 dark:text-indigo-400 tracking-widest font-mono ml-1 font-semibold">{portalPin}</span>
+                        </p>
+                      )}
+                    </div>
+                    {pendingOTP && (
+                      <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-500/[0.06] border border-amber-200 dark:border-amber-500/20 rounded-lg px-3 py-2">
+                        <Key size={14} className="text-amber-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">OTP solicitado</p>
+                          <p className="text-sm font-semibold font-mono tracking-[0.25em] text-amber-700 dark:text-amber-300">{pendingOTP}</p>
+                        </div>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(pendingOTP); setOtpCopied(true); setTimeout(() => setOtpCopied(false), 2000); }}
+                          className="p-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-all shrink-0"
+                        >
+                          {otpCopied ? <Check size={11} /> : <Copy size={11} />}
+                        </button>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={copyPortalLink} className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-indigo-600 text-white text-[11px] font-semibold hover:bg-indigo-700 transition-all">
+                        {portalCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar enlace</>}
+                      </button>
+                      <a href={portalLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-white/60 text-[11px] font-semibold hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all">
+                        <ExternalLink size={12} /> Abrir portal
+                      </a>
+                      {(entity as Customer).telefono && (
+                        <button
+                          onClick={() => shareViaWhatsApp(
+                            (entity as Customer).telefono!,
+                            messageTemplates.portalAccess(businessName || 'tu negocio', entityName, portalLink!, portalPin || undefined),
+                          )}
+                          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 transition-all"
+                        >
+                          <MessageSquare size={12} /> WhatsApp
+                        </button>
+                      )}
+                      {(entity as Customer).email && (
+                        <button
+                          onClick={() => shareViaEmail(
+                            (entity as Customer).email!,
+                            `Acceso a tu portal — ${businessName || 'tu negocio'}`,
+                            messageTemplates.portalAccess(businessName || 'tu negocio', entityName, portalLink!, portalPin || undefined),
+                          )}
+                          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-white/60 text-[11px] font-semibold hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-all"
+                        >
+                          <Mail size={12} /> Email
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center space-y-3 py-3">
+                    <Globe size={22} className="mx-auto text-slate-300 dark:text-white/15" />
+                    <p className="text-xs text-slate-500 dark:text-white/40 leading-relaxed">
+                      Crea un portal para que el cliente consulte facturas y haga abonos.
+                    </p>
+                    <button
+                      onClick={handleCreatePortalAccess}
+                      disabled={portalGenerating}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-all disabled:opacity-40"
+                    >
+                      {portalGenerating ? <><Loader2 size={12} className="animate-spin" /> Generando…</> : <><Globe size={12} /> Crear portal</>}
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
+
             {/* ── Identificación ── */}
             <div>
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-3">Identificación</p>
@@ -1891,7 +2047,344 @@ export function EntityDetail({
 
         {/* ═══ TAB: MOVIMIENTOS ═══ */}
         {tab === 'movimientos' && (
-          <div className="p-5">
+          <div className="p-5 space-y-4">
+            {/* ── Vista rápida: cuentas por tipo + antigüedad (colapsable) ──
+                Antes vivían en el tab Resumen. Al default viene abierta la
+                primera vez — el usuario la cierra si no la necesita. */}
+            {accountBalances.length > 0 && (
+              <section className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] overflow-hidden">
+                <button
+                  onClick={() => setQuickviewOpen(v => !v)}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
+                >
+                  <Activity size={13} className="text-indigo-500" />
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-white/60">
+                    Vista rápida
+                  </h3>
+                  <span className="text-[10px] text-slate-400 dark:text-white/30">
+                    · {accountBalances.length} {accountBalances.length === 1 ? 'cuenta' : 'cuentas'}
+                    {isCxC && aging && (aging.current + aging.d31_60 + aging.d61_90 + aging.d90plus) > 0 && ' · antigüedad'}
+                  </span>
+                  <ChevronDown size={14} className={`ml-auto text-slate-400 transition-transform ${quickviewOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {quickviewOpen && (
+                  <div className="px-4 pb-4 pt-1 space-y-4 border-t border-slate-100 dark:border-white/[0.04]">
+                    {/* Cuentas por tipo */}
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-2">Saldos por cuenta</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                        {accountBalances.map(acc => (
+                          <AccountCard
+                            key={acc.accountType}
+                            accountType={acc.accountType}
+                            label={acc.label}
+                            color={acc.color}
+                            balanceUSD={acc.balance}
+                            overdueUSD={acc.overdue}
+                            lastMovementDate={acc.lastDate}
+                            onRegisterAbono={() => onRegisterMovement('ABONO', acc.accountType)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Antigüedad de deuda (CxC, modo invoiceLinked o con deuda real) */}
+                    {isCxC && aging && (aging.current + aging.d31_60 + aging.d61_90 + aging.d90plus) > 0 && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-2">Antigüedad de deuda</p>
+                        {(() => {
+                          const total = aging.current + aging.d31_60 + aging.d61_90 + aging.d90plus;
+                          // Paleta simplificada: solo 3 tonos reales (verde, amber, rose).
+                          // Antes había 4 con naranja/orange también — simplificamos.
+                          const buckets = [
+                            { label: '0-30d',  value: aging.current, tone: 'emerald', bar: 'bg-emerald-500' },
+                            { label: '31-60d', value: aging.d31_60,  tone: 'amber',   bar: 'bg-amber-500' },
+                            { label: '61-90d', value: aging.d61_90,  tone: 'amber',   bar: 'bg-amber-600' },
+                            { label: '90+d',   value: aging.d90plus, tone: 'rose',    bar: 'bg-rose-500' },
+                          ];
+                          return (
+                            <>
+                              <div className="grid grid-cols-4 gap-2 mb-2">
+                                {buckets.map(b => {
+                                  const pct = total > 0 ? (b.value / total) * 100 : 0;
+                                  const textCls = b.tone === 'emerald' ? 'text-emerald-600 dark:text-emerald-400'
+                                    : b.tone === 'amber' ? 'text-amber-600 dark:text-amber-400'
+                                    : 'text-rose-600 dark:text-rose-400';
+                                  return (
+                                    <div key={b.label} className="rounded-lg border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2 text-center">
+                                      <p className="text-[10px] font-semibold text-slate-500 dark:text-white/40">{b.label}</p>
+                                      <p className={`text-sm font-semibold tabular-nums mt-0.5 ${textCls}`}>${b.value.toFixed(2)}</p>
+                                      <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5">{pct.toFixed(0)}%</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="flex w-full h-1.5 rounded-full overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
+                                {buckets.map(b => {
+                                  const pct = total > 0 ? (b.value / total) * 100 : 0;
+                                  if (pct === 0) return null;
+                                  return <div key={b.label} className={b.bar} style={{ width: `${pct}%` }} title={`${b.label}: $${b.value.toFixed(2)}`} />;
+                                })}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* ── Tendencia 6 meses (colapsable, cerrado por default) ── */}
+            {trendData.some(m => m.facturas > 0 || m.abonos > 0) && (
+              <section className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] overflow-hidden">
+                <button
+                  onClick={() => setTrendOpen(v => !v)}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
+                >
+                  <TrendingUp size={13} className="text-slate-400" />
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-white/60">
+                    Tendencia 6 meses
+                  </h3>
+                  <div className="flex items-center gap-3 text-[10px] ml-auto mr-1">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-sm bg-rose-400/80" />
+                      <span className="text-slate-500 dark:text-white/40">{isCxC ? 'Ventas' : 'Facturas'}</span>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-sm bg-emerald-400/80" />
+                      <span className="text-slate-500 dark:text-white/40">Abonos</span>
+                    </span>
+                  </div>
+                  <ChevronDown size={14} className={`text-slate-400 transition-transform ${trendOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {trendOpen && (
+                  <div className="px-4 pb-4 pt-2 border-t border-slate-100 dark:border-white/[0.04]">
+                    <div className="h-44">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={trendData} barGap={2} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                          <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 500 }} axisLine={false} tickLine={false} />
+                          <Tooltip
+                            cursor={{ fill: 'rgba(148,163,184,0.08)' }}
+                            contentStyle={{ background: 'rgba(15,23,42,0.96)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, fontSize: 11, fontWeight: 600, color: '#ffffff' }}
+                            labelStyle={{ color: '#ffffff', fontWeight: 700, marginBottom: 4 }}
+                            itemStyle={{ color: '#ffffff', padding: 0 }}
+                            formatter={(value: number, name: string) => [`$${value.toFixed(2)}`, name === 'facturas' ? (isCxC ? 'Ventas' : 'Facturas') : 'Abonos']}
+                          />
+                          <Bar dataKey="facturas" radius={[4, 4, 0, 0]} maxBarSize={22}>
+                            {trendData.map((_, i) => <Cell key={i} fill="rgba(244,63,94,0.7)" />)}
+                          </Bar>
+                          <Bar dataKey="abonos" radius={[4, 4, 0, 0]} maxBarSize={22}>
+                            {trendData.map((_, i) => <Cell key={i} fill="rgba(16,185,129,0.7)" />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* ── Facturas abiertas (solo modo invoiceLinked, colapsable) ── */}
+            {isCxC && effectiveCreditMode === 'invoiceLinked' && (() => {
+              const openInvs = entityMovements
+                .filter(m => m.movementType === 'FACTURA' && !m.anulada)
+                .map(m => {
+                  const original = m.amountInUSD ?? 0;
+                  const allocated = m.allocatedTotal ?? (m.pagado ? original : 0);
+                  const status = m.invoiceStatus ?? (m.pagado ? 'PAID' : 'OPEN');
+                  const remaining = status === 'PAID' ? 0 : Math.max(0, original - allocated);
+                  return { m, original, allocated, status, remaining };
+                })
+                .filter(x => x.status !== 'PAID' && x.remaining > 0.009)
+                .sort((a, b) => new Date(a.m.date).getTime() - new Date(b.m.date).getTime());
+
+              if (openInvs.length === 0) return null;
+              const totalOpen = openInvs.reduce((s, x) => s + x.remaining, 0);
+
+              return (
+                <section className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] overflow-hidden">
+                  <button onClick={() => setOpenInvoicesOpen(v => !v)} className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
+                    <FileText size={13} className="text-rose-500" />
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-white/60">Facturas abiertas</h3>
+                    <span className="text-[10px] text-slate-400 dark:text-white/30">· {openInvs.length}</span>
+                    <span className="ml-auto text-[11px] font-semibold text-rose-600 dark:text-rose-400 tabular-nums">${totalOpen.toFixed(2)}</span>
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${openInvoicesOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {openInvoicesOpen && (
+                    <div className="divide-y divide-slate-100 dark:divide-white/[0.04] border-t border-slate-100 dark:border-white/[0.04]">
+                      {openInvs.slice(0, 8).map(({ m, original, allocated, status, remaining }) => {
+                        const ref = m.nroControl || m.concept || m.id.slice(0, 6);
+                        const pct = original > 0 ? Math.round((allocated / original) * 100) : 0;
+                        const overdue = m.dueDate && m.dueDate < new Date().toISOString().split('T')[0];
+                        return (
+                          <div key={m.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-white/[0.02]">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-slate-700 dark:text-white/70 truncate">{ref}</span>
+                                <span className={`text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                  status === 'PARTIAL' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-slate-500/15 text-slate-500 dark:text-white/40'
+                                }`}>
+                                  {status === 'PARTIAL' ? `${status} · ${pct}%` : status}
+                                </span>
+                                {overdue && <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400">Vencida</span>}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400 dark:text-white/25">
+                                <span>{m.date}</span>
+                                {m.dueDate && <span>· vence {m.dueDate}</span>}
+                                {allocated > 0.009 && <span>· pagado ${allocated.toFixed(2)} de ${original.toFixed(2)}</span>}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-[10px] text-slate-400 dark:text-white/25">Restante</p>
+                              <p className="text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400">${remaining.toFixed(2)}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {openInvs.length > 8 && (
+                        <div className="px-4 py-2 text-center text-[10px] text-slate-400 dark:text-white/30">
+                          + {openInvs.length - 8} factura(s) más abajo en el libro mayor
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
+
+            {/* ── Compensaciones (colapsable) ── */}
+            {((canEdit && onCompensate && accountBalances.length >= 2) || (canEdit && onCrossCompensate && linkedCounterpartName)) && (
+              <section className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] overflow-hidden">
+                <button onClick={() => setCompensateOpen(v => !v)} className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
+                  <ArrowLeftRight size={13} className="text-indigo-500" />
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-white/60">Compensaciones</h3>
+                  <span className="text-[10px] text-slate-400 dark:text-white/30">
+                    · {accountBalances.length >= 2 ? 'entre cuentas' : ''}{accountBalances.length >= 2 && linkedCounterpartName ? ' / ' : ''}{linkedCounterpartName ? (isCxC ? 'con CxP' : 'con CxC') : ''}
+                  </span>
+                  <ChevronDown size={14} className={`ml-auto text-slate-400 transition-transform ${compensateOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {compensateOpen && (
+                  <div className="p-4 border-t border-slate-100 dark:border-white/[0.04] space-y-3">
+                    {!compOpen && !crossCompOpen && (
+                      <div className="flex flex-wrap gap-2">
+                        {canEdit && onCompensate && accountBalances.length >= 2 && (
+                          <button
+                            onClick={() => {
+                              setCompFrom(accountBalances[0]?.accountType || '');
+                              setCompTo(accountBalances[1]?.accountType || '');
+                              setCompAmount('');
+                              setCompOpen(true);
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-semibold hover:bg-indigo-500/20 border border-indigo-500/20 transition-all"
+                          >
+                            <ArrowLeftRight size={12} /> Compensar entre cuentas
+                          </button>
+                        )}
+                        {canEdit && onCrossCompensate && linkedCounterpartName && (
+                          <button
+                            onClick={() => {
+                              setCrossCompAmount('');
+                              setCrossCompDirection(isCxC ? 'cxc-to-cxp' : 'cxp-to-cxc');
+                              setCrossCompOpen(true);
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-semibold hover:bg-amber-500/20 border border-amber-500/20 transition-all"
+                          >
+                            <Repeat size={12} /> Compensar con {isCxC ? 'CxP' : 'CxC'} · {linkedCounterpartName}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {compOpen && (
+                      <div className="rounded-lg bg-indigo-500/[0.04] border border-indigo-500/20 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Entre cuentas</p>
+                          <button onClick={() => setCompOpen(false)} className="text-slate-400 dark:text-white/30 hover:text-slate-600 dark:hover:text-white/60"><ChevronLeft size={14} /></button>
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-white/40">Transfiere saldo a favor de una cuenta para cubrir deuda en otra.</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-semibold uppercase text-slate-500 dark:text-white/40 block mb-1">Desde (saldo a favor)</label>
+                            <select value={compFrom} onChange={(e) => setCompFrom(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-xs dark:text-white outline-none">
+                              {accountBalances.map((a) => <option key={a.accountType} value={a.accountType}>{a.label} (${a.balance.toFixed(2)})</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-semibold uppercase text-slate-500 dark:text-white/40 block mb-1">Hacia (deuda)</label>
+                            <select value={compTo} onChange={(e) => setCompTo(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-xs dark:text-white outline-none">
+                              {accountBalances.filter((a) => a.accountType !== compFrom).map((a) => <option key={a.accountType} value={a.accountType}>{a.label} (${a.balance.toFixed(2)})</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-semibold uppercase text-slate-500 dark:text-white/40 block mb-1">Monto USD</label>
+                          <input type="number" min="0.01" step="0.01" value={compAmount} onChange={(e) => setCompAmount(e.target.value)} placeholder="0.00" className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-xs dark:text-white outline-none font-mono" />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setCompOpen(false)} className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60">Cancelar</button>
+                          <button
+                            disabled={compSaving || !compFrom || !compTo || compFrom === compTo || !(parseFloat(compAmount) > 0)}
+                            onClick={async () => {
+                              setCompSaving(true);
+                              try { await onCompensate(compFrom, compTo, parseFloat(compAmount)); setCompOpen(false); }
+                              catch (err) { console.error(err); }
+                              finally { setCompSaving(false); }
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 disabled:opacity-40 transition-all"
+                          >
+                            {compSaving ? <Loader2 size={12} className="animate-spin" /> : <ArrowLeftRight size={12} />} Compensar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {crossCompOpen && (
+                      <div className="rounded-lg bg-amber-500/[0.04] border border-amber-500/20 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">Cruzada {isCxC ? 'CxC → CxP' : 'CxP → CxC'}</p>
+                          <button onClick={() => setCrossCompOpen(false)} className="text-slate-400 dark:text-white/30 hover:text-slate-600 dark:hover:text-white/60"><ChevronLeft size={14} /></button>
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-white/40">
+                          {isCxC
+                            ? `Usa saldo a favor del cliente para pagar deuda con el proveedor "${linkedCounterpartName}", o viceversa.`
+                            : `Usa crédito del proveedor para cubrir deuda del cliente "${linkedCounterpartName}", o viceversa.`}
+                        </p>
+                        <div>
+                          <label className="text-[10px] font-semibold uppercase text-slate-500 dark:text-white/40 block mb-1">Dirección</label>
+                          <select value={crossCompDirection} onChange={(e) => setCrossCompDirection(e.target.value as 'cxc-to-cxp' | 'cxp-to-cxc')} className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-xs dark:text-white outline-none">
+                            <option value="cxc-to-cxp">CxC → CxP</option>
+                            <option value="cxp-to-cxc">CxP → CxC</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-semibold uppercase text-slate-500 dark:text-white/40 block mb-1">Monto USD</label>
+                          <input type="number" min="0.01" step="0.01" value={crossCompAmount} onChange={(e) => setCrossCompAmount(e.target.value)} placeholder="0.00" className="w-full px-3 py-2 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-xs dark:text-white outline-none font-mono" />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setCrossCompOpen(false)} className="px-3 py-2 text-xs font-semibold text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/60">Cancelar</button>
+                          <button
+                            disabled={crossCompSaving || !(parseFloat(crossCompAmount) > 0)}
+                            onClick={async () => {
+                              setCrossCompSaving(true);
+                              try { await onCrossCompensate(parseFloat(crossCompAmount), crossCompDirection); setCrossCompOpen(false); }
+                              catch (err) { console.error(err); }
+                              finally { setCrossCompSaving(false); }
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-amber-700 disabled:opacity-40 transition-all"
+                          >
+                            {crossCompSaving ? <Loader2 size={12} className="animate-spin" /> : <Repeat size={12} />} Compensar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Libro mayor del cliente */}
             <LedgerView
               movements={movements}
               entityId={entity.id}
