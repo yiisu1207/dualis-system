@@ -304,7 +304,7 @@ export function CxPSupplierList({
         )}
 
         {/* Quick filters */}
-        <div className="flex gap-1.5 overflow-x-auto hide-scrollbar -mx-1 px-1 pb-0.5">
+        <div className="flex flex-wrap gap-1.5 -mx-0.5">
           {filterPill('PENDING', 'Pendientes', counts.pending, ShieldCheck, 'bg-amber-500/15 text-amber-500 dark:text-amber-400')}
           {filterPill('OVERDUE', 'Vencidos', counts.overdue, AlertTriangle, 'bg-rose-500/15 text-rose-500 dark:text-rose-400')}
           {filterPill('WITH_DEBT', 'Con deuda', counts.withDebt, Clock, 'bg-amber-500/15 text-amber-500 dark:text-amber-400')}
