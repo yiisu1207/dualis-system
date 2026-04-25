@@ -464,26 +464,34 @@ export default function ReportesContables({
           <section className="lg:col-span-3 rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] p-4">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-white/60">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-white/80">
                   Ingresos vs Gastos
                 </h3>
-                <p className="text-[11px] text-slate-400 dark:text-white/30 mt-0.5">Últimos 6 meses</p>
+                <p className="text-xs text-slate-500 dark:text-white/50 mt-0.5">Últimos 6 meses</p>
               </div>
-              <div className="flex items-center gap-3 text-[10px]">
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-sm bg-emerald-500" />
-                  <span className="text-slate-500 dark:text-white/40">Ingresos</span>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
+                  <span className="text-slate-700 dark:text-white/80 font-medium">Ingresos</span>
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-sm bg-rose-500" />
-                  <span className="text-slate-500 dark:text-white/40">Gastos</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-rose-500" />
+                  <span className="text-slate-700 dark:text-white/80 font-medium">Gastos</span>
                 </span>
               </div>
             </div>
-            <div className="h-56">
+            <div className="h-60">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={plStats.months} barGap={2} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 500 }} axisLine={false} tickLine={false} />
+                <BarChart data={plStats.months} barGap={4} margin={{ top: 8, right: 8, bottom: 4, left: 4 }}>
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 12, fill: 'currentColor', fontWeight: 600, opacity: 0.85 }}
+                    axisLine={false}
+                    tickLine={false}
+                    className="text-slate-700 dark:text-white/80"
+                    interval={0}
+                    height={28}
+                  />
                   <Tooltip
                     cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                     contentStyle={{ background: 'rgba(15,23,42,0.96)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, fontSize: 11, fontWeight: 600, color: '#ffffff' }}
