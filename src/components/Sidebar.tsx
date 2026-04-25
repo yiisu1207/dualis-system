@@ -110,7 +110,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'flujocaja',    label: 'Flujo de Caja',    Icon: TrendingUp,      path: 'flujocaja'    },
       { id: 'reclamos',     label: 'Reclamos',         Icon: ClipboardCheck,  path: 'reclamos'     },
       { id: 'portalchat',   label: 'Chat Portal',      Icon: MessageCircle,   path: 'portalchat'   },
-      { id: 'contabilidad', label: 'Contabilidad',     Icon: BookOpen,        path: 'contabilidad' },
+      { id: 'contabilidad', label: 'Reportes',         Icon: BookOpen,        path: 'contabilidad' },
       { id: 'conciliacion', label: 'Conciliación',     Icon: Landmark,        path: 'conciliacion' },
     ],
   },

@@ -8,6 +8,17 @@ export function getEffectiveCreditMode(
   return customer?.creditMode ?? businessConfig?.creditMode ?? 'accumulated';
 }
 
+/** Etiqueta en español de un invoiceStatus. Los valores OPEN/PARTIAL/PAID se
+ *  mantienen como literales en Firestore — esto es solo para mostrarlos en UI. */
+export function invoiceStatusLabel(status?: string | null): string {
+  switch (status) {
+    case 'PAID': return 'Pagada';
+    case 'PARTIAL': return 'Parcial';
+    case 'OPEN':
+    default: return 'Abierta';
+  }
+}
+
 export type TabFilter = 'ALL' | string;
 
 export function getDistinctAccounts(movements: Movement[]): string[] {

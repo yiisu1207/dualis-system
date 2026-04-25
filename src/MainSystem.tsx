@@ -31,7 +31,10 @@ import { useWidgetManager } from './context/WidgetContext';
 import Sidebar from './components/Sidebar';
 import AdminDashboard from './features/admin/AdminDashboard';
 import Configuracion from './pages/Configuracion';
-const AccountingSection = lazy(() => import('./components/AccountingSection'));
+// AccountingSection (legacy, ~2400 líneas) reemplazado por ReportesContables
+// 2026-04-24. El tab 'contabilidad' ahora abre el dashboard ejecutivo nuevo
+// (P&L 6m, semáforos, alertas, aging, top deudores, nómina próxima, etc.).
+const ReportesContables = lazy(() => import('./pages/ReportesContables'));
 import SupplierSection from './components/SupplierSection';
 import RecursosHumanos from './pages/RecursosHumanos';
 const ComisionesReporte = lazy(() => import('./pages/ComisionesReporte'));
@@ -1235,7 +1238,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   }), []);
 
   const tabTitles: Record<string, string> = useMemo(() => ({
-    resumen: 'Resumen', clientes: 'Clientes', contabilidad: 'Contabilidad',
+    resumen: 'Resumen', clientes: 'Clientes', contabilidad: 'Reportes',
     proveedores: 'Proveedores', rrhh: 'RRHH',
     inventario: 'Inventario',
     reportes: 'Reportes', widgets: 'Herramientas',
@@ -1526,18 +1529,16 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
             {activeTab === 'contabilidad' && (
               canAccess('contabilidad') ? (
-                <AccountingSection
+                <ReportesContables
                   movements={movements}
                   customers={customers}
                   suppliers={suppliers}
                   employees={employees}
+                  inventoryItems={inventoryItems}
                   rates={legacyRates as any}
-                  config={{} as any}
                   businessName={(userProfile as any)?.businessName}
-                  onUpdateMovement={updateMovement}
-                  onDeleteMovement={deleteMovement}
                 />
-              ) : <LockedModule moduleName="Contabilidad" requiredPlan="starter" />
+              ) : <LockedModule moduleName="Reportes contables" requiredPlan="starter" />
             )}
 
             {activeTab === 'proveedores' && (

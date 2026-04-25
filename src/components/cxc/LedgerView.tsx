@@ -11,6 +11,7 @@ import {
   getDistinctAccounts,
   formatDateTime,
   hasActiveDiscount,
+  invoiceStatusLabel,
 } from './cxcHelpers';
 import VerificationBadge from '../VerificationBadge';
 import InlineVerifyControl from '../InlineVerifyControl';
@@ -316,16 +317,16 @@ export function LedgerView({
                             : 'bg-slate-500/15 text-slate-500 dark:text-white/40';
                           return (
                             <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${style}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold ${style}`}
                               title={`$${allocated.toFixed(2)} de $${amount.toFixed(2)} pagado`}
                             >
-                              {status}
+                              {invoiceStatusLabel(status)}
                               {status === 'PARTIAL' && <span className="opacity-70">· {pct}%</span>}
                             </span>
                           );
                         })() : m.movementType === 'ABONO' && Array.isArray(m.allocations) && m.allocations.length > 0 ? (
                           <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-400"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-500/15 text-indigo-600 dark:text-indigo-400"
                             title={m.allocations.map(a => `${a.invoiceRef || a.invoiceId.slice(0,6)}: $${a.amount.toFixed(2)}`).join(' · ')}
                           >
                             → {m.allocations.length} fact.
@@ -334,7 +335,7 @@ export function LedgerView({
                             )}
                           </span>
                         ) : m.movementType === 'ABONO' ? (
-                          <span className="text-[9px] font-bold text-slate-300 dark:text-white/20">—</span>
+                          <span className="text-[10px] text-slate-300 dark:text-white/20">—</span>
                         ) : null}
                       </td>
                     )}
