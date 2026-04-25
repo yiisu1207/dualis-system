@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Pencil, Trash2, ChevronLeft, ChevronRight, SlidersHorizontal, X } from 'lucide-react';
 import type { Movement, CustomRate, ExchangeRates, CreditMode } from '../../../types';
 import {
   type TabFilter,
@@ -36,12 +36,10 @@ const PAGE_SIZE_OPTIONS = [25, 50, 100, 250];
 type TypeFilter = 'ALL' | 'FACTURA' | 'ABONO';
 type StatusFilter = 'ALL' | 'PENDIENTE' | 'PAGADO';
 
-const pill = (active: boolean, color?: string) =>
-  `px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
-    active
-      ? `bg-${color ?? 'indigo'}-500/20 border-${color ?? 'indigo'}-500/30 text-${color ?? 'indigo'}-400`
-      : 'bg-transparent border-slate-200 dark:border-white/[0.06] text-slate-400 dark:text-white/30 hover:border-slate-300 dark:hover:border-white/[0.12]'
-  }`;
+// Estilo unificado de selects/inputs en la fila de filtros — alineado con el
+// resto del rediseño (rounded-lg, bordes slate, text-xs semibold).
+const selectCls = "px-2.5 py-1.5 rounded-lg bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] text-xs font-medium text-slate-700 dark:text-white/70 outline-none focus:border-indigo-400 dark:focus:border-indigo-400 transition-colors cursor-pointer";
+const dateCls = "px-2.5 py-1.5 rounded-lg bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] text-xs font-medium text-slate-700 dark:text-white/70 outline-none focus:border-indigo-400 transition-colors";
 
 export function LedgerView({
   movements,
@@ -66,6 +64,24 @@ export function LedgerView({
   const [toDate, setToDate] = useState('');
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(0);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  // Cuántos filtros activos (≠ default) — para mostrar badge en el botón
+  // "Filtros avanzados" y un chip "Limpiar todo" cuando hay alguno aplicado.
+  const activeFilterCount =
+    (accountFilter !== 'ALL' ? 1 : 0) +
+    (typeFilter !== 'ALL' ? 1 : 0) +
+    (statusFilter !== 'ALL' ? 1 : 0) +
+    (rangeFilter !== 'ALL' ? 1 : 0);
+
+  const clearAllFilters = () => {
+    setAccountFilter('ALL');
+    setTypeFilter('ALL');
+    setStatusFilter('ALL');
+    setRangeFilter('ALL');
+    setFromDate('');
+    setToDate('');
+  };
 
   const entityMovements = useMemo(
     () => movements.filter(m => m.entityId === entityId),
@@ -95,56 +111,120 @@ export function LedgerView({
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        {/* Account pills */}
-        <div className="flex flex-wrap gap-1.5">
-          <button onClick={() => setAccountFilter('ALL')} className={pill(accountFilter === 'ALL')}>Todas</button>
-          <button onClick={() => setAccountFilter('BCV')} className={pill(accountFilter === 'BCV', 'indigo')}>BCV</button>
-          {accounts.filter(a => a !== 'BCV').map(acc => {
-            const color = resolveAccountColor(acc, customRates);
-            return (
-              <button key={acc} onClick={() => setAccountFilter(acc)} className={pill(accountFilter === acc, color)}>
-                {resolveAccountLabel(acc, customRates)}
-              </button>
-            );
-          })}
-        </div>
-        <div className="w-px h-6 bg-slate-200 dark:bg-white/[0.06] self-center" />
-        {/* Type pills */}
-        <div className="flex gap-1.5">
-          <button onClick={() => setTypeFilter('ALL')} className={pill(typeFilter === 'ALL')}>Todos</button>
-          <button onClick={() => setTypeFilter('FACTURA')} className={pill(typeFilter === 'FACTURA', 'rose')}>Cargos</button>
-          <button onClick={() => setTypeFilter('ABONO')} className={pill(typeFilter === 'ABONO', 'emerald')}>Abonos</button>
-        </div>
-        <div className="w-px h-6 bg-slate-200 dark:bg-white/[0.06] self-center" />
-        {/* Status pills */}
-        <div className="flex gap-1.5">
-          <button onClick={() => setStatusFilter('ALL')} className={pill(statusFilter === 'ALL')}>Todos</button>
-          <button onClick={() => setStatusFilter('PENDIENTE')} className={pill(statusFilter === 'PENDIENTE', 'amber')}>Pendiente</button>
-          <button onClick={() => setStatusFilter('PAGADO')} className={pill(statusFilter === 'PAGADO', 'emerald')}>Pagado</button>
-        </div>
+      {/* ─── Filtros: 1 fila slim + panel avanzado plegable ───────────────
+          Antes había 4 filas de pills (~20 botones simultáneos). Ahora 3
+          dropdowns compactos + un único botón que abre filtros adicionales.
+          La densidad cae ~60% sin perder ninguna capacidad. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Tipo de movimiento */}
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
+          className={selectCls}
+          title="Tipo de movimiento"
+        >
+          <option value="ALL">Todos los tipos</option>
+          <option value="FACTURA">Cargos</option>
+          <option value="ABONO">Abonos</option>
+        </select>
+
+        {/* Cuenta — solo aparece si hay >1 cuenta distinta */}
+        {(accounts.length > 1 || accountFilter !== 'ALL') && (
+          <select
+            value={accountFilter}
+            onChange={(e) => setAccountFilter(e.target.value)}
+            className={selectCls}
+            title="Cuenta"
+          >
+            <option value="ALL">Todas las cuentas</option>
+            {accounts.map((acc) => (
+              <option key={acc} value={acc}>{resolveAccountLabel(acc, customRates)}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Rango temporal */}
+        <select
+          value={rangeFilter}
+          onChange={(e) => setRangeFilter(e.target.value as RangeFilter)}
+          className={selectCls}
+          title="Rango temporal"
+        >
+          <option value="ALL">Todo el historial</option>
+          <option value="SINCE_ZERO">Desde último saldo cero</option>
+          <option value="SINCE_LAST_DEBT">Desde la última factura</option>
+          <option value="CUSTOM">Rango personalizado…</option>
+        </select>
+
+        {/* Botón filtros avanzados — abre/cierra panel inline */}
+        <button
+          onClick={() => setAdvancedOpen(v => !v)}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+            advancedOpen || statusFilter !== 'ALL' || rangeFilter === 'CUSTOM'
+              ? 'border-indigo-300 dark:border-indigo-500/40 bg-indigo-50 dark:bg-indigo-500/[0.08] text-indigo-700 dark:text-indigo-300'
+              : 'border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03] text-slate-600 dark:text-white/50 hover:border-slate-300 dark:hover:border-white/[0.16]'
+          }`}
+        >
+          <SlidersHorizontal size={12} />
+          Filtros
+          {(statusFilter !== 'ALL' || rangeFilter === 'CUSTOM') && (
+            <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-indigo-500 text-white">
+              {(statusFilter !== 'ALL' ? 1 : 0) + (rangeFilter === 'CUSTOM' ? 1 : 0)}
+            </span>
+          )}
+        </button>
+
+        {/* Limpiar todo — solo si hay filtros activos */}
+        {activeFilterCount > 0 && (
+          <button
+            onClick={clearAllFilters}
+            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-white/40 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+            title="Limpiar todos los filtros"
+          >
+            <X size={12} /> Limpiar
+          </button>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Contador de resultados */}
+        <p className="text-[11px] text-slate-400 dark:text-white/30">
+          {chronoData.length === entityMovements.length
+            ? `${chronoData.length} ${chronoData.length === 1 ? 'movimiento' : 'movimientos'}`
+            : `${chronoData.length} de ${entityMovements.length}`}
+        </p>
       </div>
 
-      {/* Range & Export */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex gap-1.5">
-          {(['ALL', 'SINCE_ZERO', 'SINCE_LAST_DEBT', 'CUSTOM'] as RangeFilter[]).map(r => (
-            <button key={r} onClick={() => setRangeFilter(r)} className={pill(rangeFilter === r)}>
-              {r === 'ALL' ? 'Todo' : r === 'SINCE_ZERO' ? 'Desde cero' : r === 'SINCE_LAST_DEBT' ? 'Ult. factura' : 'Rango'}
-            </button>
-          ))}
-        </div>
-        {rangeFilter === 'CUSTOM' && (
-          <div className="flex items-center gap-2">
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-              className="px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-xs font-bold text-slate-700 dark:text-white/70 outline-none" />
-            <span className="text-[10px] text-slate-400">a</span>
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-              className="px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-xs font-bold text-slate-700 dark:text-white/70 outline-none" />
+      {/* Panel avanzado: estado pago + rango personalizado */}
+      {advancedOpen && (
+        <div className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-slate-50/60 dark:bg-white/[0.02] p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Estado de pago */}
+          <div>
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-1">Estado de pago</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              className={selectCls + ' w-full'}
+            >
+              <option value="ALL">Todos</option>
+              <option value="PENDIENTE">Pendientes (no pagados)</option>
+              <option value="PAGADO">Pagados</option>
+            </select>
           </div>
-        )}
-      </div>
+
+          {/* Rango personalizado */}
+          {rangeFilter === 'CUSTOM' && (
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-1">Rango personalizado</label>
+              <div className="flex items-center gap-2">
+                <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className={dateCls + ' flex-1'} />
+                <span className="text-[10px] text-slate-400">a</span>
+                <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className={dateCls + ' flex-1'} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       <div className="rounded-xl border border-slate-200 dark:border-white/[0.06] overflow-hidden">
@@ -152,15 +232,15 @@ export function LedgerView({
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50 dark:bg-white/[0.02]">
-                <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Fecha</th>
-                <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">NroCtrl</th>
-                <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Concepto</th>
-                <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Cuenta</th>
-                <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 text-right">Tasa</th>
-                <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 text-right">Debe</th>
-                <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 text-right">Haber</th>
-                <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 text-right">Saldo</th>
-                {showInvoiceCol && <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Estado</th>}
+                <th className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">Fecha</th>
+                <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">NroCtrl</th>
+                <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">Concepto</th>
+                <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">Cuenta</th>
+                <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 text-right">Tasa</th>
+                <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 text-right">Debe</th>
+                <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 text-right">Haber</th>
+                <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 text-right">Saldo</th>
+                {showInvoiceCol && <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">Estado</th>}
                 {canEdit && <th className="px-2 py-2.5 w-16" />}
               </tr>
             </thead>
@@ -321,25 +401,22 @@ export function LedgerView({
         </div>
       )}
 
-      {/* Summary */}
+      {/* Resumen del set filtrado */}
       {chronoData.length > 0 && (
-        <div className="flex items-center gap-6 px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04]">
+        <div className="flex items-center gap-5 px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06]">
           <div>
-            <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30">Total Debe</p>
-            <p className="text-sm font-black text-rose-500">${chronoData.reduce((s, m) => s + m.debe, 0).toFixed(2)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">Total cargos</p>
+            <p className="text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400">${chronoData.reduce((s, m) => s + m.debe, 0).toFixed(2)}</p>
           </div>
           <div>
-            <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30">Total Haber</p>
-            <p className="text-sm font-black text-emerald-500">${chronoData.reduce((s, m) => s + m.haber, 0).toFixed(2)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">Total abonos</p>
+            <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">${chronoData.reduce((s, m) => s + m.haber, 0).toFixed(2)}</p>
           </div>
           <div>
-            <p className="text-[9px] font-black uppercase text-slate-400 dark:text-white/30">Saldo Final</p>
-            <p className="text-sm font-black text-slate-900 dark:text-white">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">Saldo final</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-900 dark:text-white">
               ${chronoData[chronoData.length - 1]?.runningBalance.toFixed(2) ?? '0.00'}
             </p>
-          </div>
-          <div className="text-[10px] text-slate-400 dark:text-white/25 font-bold ml-auto">
-            {chronoData.length} movimientos
           </div>
         </div>
       )}
