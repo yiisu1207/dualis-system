@@ -199,6 +199,7 @@ export function exportStatementCSV(
     summaryLines.push('Referencia,Fecha,Vencimiento,Total,Pagado,Restante,Estado,% Pagado');
     openInvoices.forEach(inv => {
       const pct = inv.total > 0 ? Math.round((inv.paid / inv.total) * 100) : 0;
+      const statusEs = inv.status === 'PARTIAL' ? 'Parcial' : 'Abierta';
       summaryLines.push([
         `"${inv.ref.replace(/"/g, '""')}"`,
         inv.date,
@@ -206,7 +207,7 @@ export function exportStatementCSV(
         inv.total.toFixed(2),
         inv.paid.toFixed(2),
         inv.remaining.toFixed(2),
-        inv.status,
+        statusEs,
         `${pct}%`,
       ].join(','));
     });

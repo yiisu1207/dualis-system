@@ -11,6 +11,7 @@ import {
   getInitials,
   resolveAccountLabel,
   formatDateTime,
+  invoiceStatusLabel,
 } from './cxcHelpers';
 import { AccountCard } from './AccountCard';
 import VerificationBadge from '../VerificationBadge';
@@ -1121,7 +1122,7 @@ export function EntityDetail({
                                   ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                                   : 'bg-slate-500/15 text-slate-500 dark:text-white/40'
                               }`}>
-                                {status === 'PARTIAL' ? `${status} · ${pct}%` : status}
+                                {status === 'PARTIAL' ? `${invoiceStatusLabel(status)} · ${pct}%` : invoiceStatusLabel(status)}
                               </span>
                               {overdue && (
                                 <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400">Vencida</span>
@@ -2226,7 +2227,7 @@ export function EntityDetail({
                                 <span className={`text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                                   status === 'PARTIAL' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-slate-500/15 text-slate-500 dark:text-white/40'
                                 }`}>
-                                  {status === 'PARTIAL' ? `${status} · ${pct}%` : status}
+                                  {status === 'PARTIAL' ? `${invoiceStatusLabel(status)} · ${pct}%` : invoiceStatusLabel(status)}
                                 </span>
                                 {overdue && <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400">Vencida</span>}
                               </div>
