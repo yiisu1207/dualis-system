@@ -31,8 +31,10 @@ interface ProductSnap {
   stock?: number;
   stockMinimo?: number;
   costoUSD?: number;
-  precioUSD?: number;
-  precioMayorUSD?: number;
+  /** Precio de venta detal (campo canónico en Firestore). Es el que se
+   *  edita en ProductoEditPage. NO existe `precioUSD` en el schema. */
+  precioDetal?: number;
+  precioMayor?: number;
   categoria?: string;
   stockByAlmacen?: Record<string, number>;
   updatedAt?: any;
@@ -118,7 +120,10 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
     for (const p of products) {
       const s = Number(p.stock || 0);
       const cost = Number(p.costoUSD || 0);
-      const price = Number(p.precioUSD || 0);
+      // Si el producto no tiene precio detal configurado, usamos costo como
+      // fallback para no inflar artificialmente el "valor a precio detal"
+      // con productos que aún no tienen pricing definido.
+      const price = Number(p.precioDetal || 0) || cost;
       const min = Number(p.stockMinimo || 0);
       totalUnits += s;
       totalValueCost += s * cost;
