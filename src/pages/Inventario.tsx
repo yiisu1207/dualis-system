@@ -127,6 +127,11 @@ type Product = {
   hasVariants?: boolean;
   variantAttributes?: string[];  // ej: ['Talla','Color']
   variants?: ProductVariant[];
+  // Fase H — POS quick-wins
+  favorito?: boolean;            // marca producto frecuente → grid en POS
+  permitirPrecioCero?: boolean;  // permite vender en $0 (regalos, granel, promos)
+  stockMaximo?: number;          // punto de reorden tope para sugerencias de compra
+  esServicio?: boolean;          // no descuenta stock al vender
 };
 
 type ProductVariant = {
@@ -225,6 +230,10 @@ const FIELD_ALIASES: Record<keyof Omit<Product, 'id' | 'ivaTipo' | 'preciosCuent
   margenMayor:  ['margen mayor','margenmayor','margin wholesale','margen_mayor'],
   margenDetal:  ['margen detal','margendetal','margin retail','margen_detal'],
   margen:       ['margen','margin','%margen','markup','ganancia','margen %','utilidad'],
+  favorito:     ['favorito','favorite','favoritos','starred','pinned'],
+  permitirPrecioCero: ['precio cero','permitir precio 0','sin precio','price0','permite_precio_cero'],
+  stockMaximo:  ['stock maximo','máximo','maximo','max stock','stock max','stockmaximo'],
+  esServicio:   ['servicio','es servicio','service','tipo servicio','isservice'],
 };
 
 function scoreMatch(header: string, aliases: string[]): number {
@@ -301,7 +310,7 @@ const KPICard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
       <Icon size={22} />
     </div>
     <div>
-      <p className="text-[10px] font-black uppercase text-slate-400 dark:text-white/40 tracking-[0.2em] mb-0.5">{title}</p>
+      <p className="text-[11px] font-semibold uppercase text-slate-500 dark:text-white/40 tracking-wider mb-0.5">{title}</p>
       <p className="text-xl font-black text-slate-900 dark:text-white tracking-tight">{value}</p>
       {subtext && <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 mt-0.5 uppercase tracking-widest">{subtext}</p>}
     </div>
@@ -309,7 +318,16 @@ const KPICard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
 );
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
-export default function Inventario() {
+interface InventarioProps {
+  /** Cuando se renderiza dentro del nuevo InventarioModule, ocultamos el
+   *  dashboard de KPIs (lo dan otras pestañas), las tabs propias (Movimientos
+   *  / Almacenes / Herramientas viven en el sidebar del orquestador) y los
+   *  botones flotantes de "Recibir mercancía / Conteo físico" (esos abren
+   *  pantallas dedicadas en Entradas / Conteo físico). Solo queda el catálogo. */
+  embedded?: boolean;
+}
+
+export default function Inventario({ embedded = false }: InventarioProps = {}) {
   const { userProfile } = useAuth();
   const { rates, customRates, zoherEnabled } = useRates();
   const tenantId = userProfile?.businessId;
@@ -328,7 +346,13 @@ export default function Inventario() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const codigoRef = useRef<HTMLInputElement>(null);
 
+  // Cuando está embebido en el orquestador, fijamos en 'catalog' (las demás
+  // tabs viven como secciones del orquestador). El setter sigue disponible
+  // por compatibilidad con el modo standalone.
   const [activeTab, setActiveTab] = useState<TabType>('catalog');
+  useEffect(() => {
+    if (embedded && activeTab !== 'catalog') setActiveTab('catalog');
+  }, [embedded, activeTab]);
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1314,10 +1338,14 @@ export default function Inventario() {
   };
 
   return (
-    <div className="min-h-full bg-slate-50 dark:bg-slate-800/50 p-4 sm:p-6 pb-10 font-inter">
-      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-10">
+    <div className={embedded
+      ? 'font-inter'
+      : 'min-h-full bg-slate-50 dark:bg-slate-800/50 p-4 sm:p-6 pb-10 font-inter'}
+    >
+      <div className={embedded ? 'space-y-4' : 'max-w-7xl mx-auto space-y-6 sm:space-y-10'}>
 
-        {/* DASHBOARD */}
+        {/* DASHBOARD — oculto cuando está embebido (el orquestador da su propio header) */}
+        {!embedded && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="relative">
             <KPICard title="Capital en Stock" value={`$${metrics.totalCapital.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} subtext={`${metrics.totalItems} unidades en bodega`} icon={BadgeDollarSign} colorClass="bg-emerald-50 text-emerald-600 shadow-emerald-100" />
@@ -1331,7 +1359,7 @@ export default function Inventario() {
           <KPICard title="Alertas Críticas" value={metrics.lowStockCount} subtext="Revisiones de stock urgentes" icon={AlertTriangle} colorClass="bg-rose-50 text-rose-600 shadow-rose-100" />
           <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-white/[0.07] shadow-lg shadow-black/10 flex flex-col group h-full min-h-[140px]">
             <div className="flex justify-between items-center mb-4 px-2">
-              <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.2em]">Inversión por Rama</p>
+              <p className="text-[11px] font-semibold uppercase text-slate-500 dark:text-white/40 tracking-wider">Inversión por Rama</p>
               <TrendingUp size={16} className="text-slate-300" />
             </div>
             <div className="flex-1 w-full min-h-0">
@@ -1346,9 +1374,11 @@ export default function Inventario() {
             </div>
           </div>
         </div>
+        )}
 
-        {/* NAV */}
+        {/* NAV — cuando está embebido, solo mostramos el botón "Nuevo producto" + Transferir, no las tabs (el sidebar del orquestador ya navega) */}
         <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+          {!embedded && (
           <div className="flex gap-1 sm:gap-1.5 p-1 sm:p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/[0.07] rounded-xl shadow-sm overflow-x-auto">
             {[
               { id: 'catalog', label: 'Catálogo', icon: Package },
@@ -1357,39 +1387,45 @@ export default function Inventario() {
               { id: 'tools', label: 'Herramientas', icon: Settings2 },
             ].map((tab) => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as TabType)}
-                className={`flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                className={`flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg text-[11px] font-semibold uppercase tracking-wider transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
                 <tab.icon size={13} /> {tab.label}
               </button>
             ))}
           </div>
+          )}
+          {embedded && <div />}
           {canRegisterNew && (
-          <div className="flex items-center gap-2">
-            {almacenes.filter(a => a.activo !== false).length >= 2 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Transferir / Conteo / Recibir mercancía: ocultos cuando está embebido
+                porque el orquestador ya provee Entradas/Salidas/Conteo dedicados. */}
+            {!embedded && almacenes.filter(a => a.activo !== false).length >= 2 && (
               <button onClick={() => setShowTransfer(true)}
-                className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-sky-600 to-cyan-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-sky-500/25 active:scale-95">
-                <ArrowRightLeft size={16} /> Transferir
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-lg font-semibold text-xs hover:bg-sky-700 transition-all shadow-sm">
+                <ArrowRightLeft size={14} /> Transferir
               </button>
             )}
-            <button onClick={() => setShowPhysicalCount(true)}
-              className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-amber-500/25 active:scale-95">
-              <ClipboardCheck size={16} /> Conteo Físico
-            </button>
-            {recepcionEnabled ? (
+            {!embedded && (
+              <button onClick={() => setShowPhysicalCount(true)}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg font-semibold text-xs hover:bg-amber-700 transition-all shadow-sm">
+                <ClipboardCheck size={14} /> Conteo Físico
+              </button>
+            )}
+            {!embedded && (recepcionEnabled ? (
               <button onClick={() => setShowRecepcion(true)}
-                className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-emerald-500/25 active:scale-95">
-                <Truck size={16} /> Recibir Mercancía
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold text-xs hover:bg-emerald-700 transition-all shadow-sm">
+                <Truck size={14} /> Recibir Mercancía
               </button>
             ) : (
               <button
                 disabled
-                title="Módulo en construcción. Actívalo desde Configuración → Inventario si quieres probar la beta."
-                className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-slate-200 dark:bg-white/[0.04] text-slate-400 dark:text-white/30 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] cursor-not-allowed border border-dashed border-slate-300 dark:border-white/10">
-                <Truck size={16} /> Recibir Mercancía · Próximamente
+                title="Módulo en construcción."
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-200 dark:bg-white/[0.04] text-slate-400 dark:text-white/30 rounded-lg font-semibold text-xs cursor-not-allowed border border-dashed border-slate-300 dark:border-white/10">
+                <Truck size={14} /> Recibir Mercancía · Próximamente
               </button>
-            )}
+            ))}
             <button onClick={() => { setEditingId(null); setForm(initialProduct); setQuickMode(true); setMayorManual(false); setCustomMarginDetal(''); setCustomMarginMayor(''); setBulkCalc({ costoBulto: 0, unidades: 0 }); setModalOpen(true); }}
-              className="flex items-center justify-center gap-2.5 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] hover:opacity-90 transition-all shadow-md shadow-indigo-500/25 active:scale-95">
-              <Plus size={16} /> Nuevo Producto
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold text-xs hover:bg-indigo-700 transition-all shadow-sm">
+              <Plus size={14} /> Nuevo Producto
             </button>
           </div>
           )}
@@ -1459,7 +1495,7 @@ export default function Inventario() {
                     )}
                     <div className="ml-auto px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl text-white flex items-center gap-2 shadow-md shadow-indigo-500/25 shrink-0">
                       <Tags size={13} className="text-white/70" />
-                      <span className="text-[10px] font-black uppercase tracking-widest">{rates.tasaBCV.toFixed(2)} BS / USD</span>
+                      <span className="text-[11px] font-semibold uppercase tracking-wider">{rates.tasaBCV.toFixed(2)} BS / USD</span>
                     </div>
                   </div>
                 </div>
@@ -1471,7 +1507,7 @@ export default function Inventario() {
                       {pendingProducts.length} producto{pendingProducts.length > 1 ? 's' : ''} pendiente{pendingProducts.length > 1 ? 's' : ''} de revisión — registrados por un almacenista sin precio asignado
                     </span>
                     <button onClick={() => { setFilterCategoria('all'); setFilterStock('all'); setFilterAlmacen('all'); setSearchTerm(''); }}
-                      className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest hover:bg-amber-500/30 transition-all">
+                      className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[11px] font-semibold uppercase tracking-wider hover:bg-amber-500/30 transition-all">
                       Ver pendientes
                     </button>
                   </div>
@@ -1499,7 +1535,7 @@ export default function Inventario() {
               {/* ── MASTER CONTROLS BAR ──────────────────────────────────────── */}
               {canBulkEdit && (
               <div className="px-5 py-2.5 border-b border-slate-100 dark:border-white/[0.06] bg-slate-50/30 dark:bg-white/[0.01] flex flex-wrap items-center gap-2 mt-3">
-                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mr-1">Ajuste Masivo:</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mr-1">Ajuste Masivo:</span>
 
                 {/* MARGEN BUTTON */}
                 <div className="relative">
@@ -1509,7 +1545,7 @@ export default function Inventario() {
                   </button>
                   {masterPanel === 'margin' && (
                     <div className="absolute left-0 top-full mt-2 z-50 w-72 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40">
                         Aplicar Margen de Ganancia
                       </p>
                       <div className="space-y-1.5">
@@ -1540,7 +1576,7 @@ export default function Inventario() {
                         {selectedIds.size > 0 ? `Aplicará a ${selectedIds.size} seleccionados` : `Aplicará a ${filteredProducts.length} producto(s) ${searchTerm ? 'filtrados' : 'en total'}`}
                       </div>
                       <button onClick={handleMasterMargin} disabled={masterApplying}
-                        className="w-full py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50">
+                        className="w-full py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[11px] font-semibold uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50">
                         {masterApplying ? <Loader2 size={11} className="animate-spin" /> : <CheckCheck size={11} />}
                         Aplicar
                       </button>
@@ -1556,7 +1592,7 @@ export default function Inventario() {
                   </button>
                   {masterPanel === 'iva' && (
                     <div className="absolute left-0 top-full mt-2 z-50 w-64 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Tipo de IVA</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40">Tipo de IVA</p>
                       {([['GENERAL','16% General','16'],['REDUCIDO','8% Reducido','8'],['EXENTO','0% Exento','0']] as [string,string,string][]).map(([type,label,val]) => (
                         <button key={type} onClick={() => { setMasterIvaType(type as any); setMasterIvaValue(val); }}
                           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[11px] font-black border transition-all ${masterIvaType === type ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-white/70 border-slate-100 dark:border-white/[0.07] hover:border-emerald-400'}`}>
@@ -1568,7 +1604,7 @@ export default function Inventario() {
                         {selectedIds.size > 0 ? `Aplicará a ${selectedIds.size} seleccionados` : `Aplicará a ${filteredProducts.length} producto(s)`}
                       </div>
                       <button onClick={handleMasterIva} disabled={masterApplying}
-                        className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50">
+                        className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-[11px] font-semibold uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50">
                         {masterApplying ? <Loader2 size={11} className="animate-spin" /> : <CheckCheck size={11} />}
                         Aplicar IVA
                       </button>
@@ -1584,7 +1620,7 @@ export default function Inventario() {
                   </button>
                   {masterPanel === 'category' && (
                     <div className="absolute left-0 top-full mt-2 z-50 w-60 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/[0.1] rounded-2xl shadow-2xl shadow-black/20 p-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40">Cambiar Categoría</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40">Cambiar Categoría</p>
                       <input value={masterCategory} onChange={e => setMasterCategory(e.target.value)} placeholder="Nueva categoría..."
                         list="cat-list"
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/[0.1] bg-slate-50 dark:bg-white/[0.06] text-slate-900 dark:text-white text-sm font-bold focus:ring-1 focus:ring-violet-500 outline-none" />
@@ -1601,7 +1637,7 @@ export default function Inventario() {
                         {selectedIds.size > 0 ? `Aplicará a ${selectedIds.size} seleccionados` : `Aplicará a ${filteredProducts.length} producto(s)`}
                       </div>
                       <button onClick={handleMasterCategory} disabled={masterApplying || !masterCategory.trim()}
-                        className="w-full py-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50">
+                        className="w-full py-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl text-[11px] font-semibold uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-50">
                         {masterApplying ? <Loader2 size={11} className="animate-spin" /> : <CheckCheck size={11} />}
                         Cambiar
                       </button>
@@ -1648,7 +1684,7 @@ export default function Inventario() {
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                  <thead className="bg-slate-50/50 dark:bg-white/[0.02] text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 border-b border-slate-100 dark:border-white/[0.07]">
+                  <thead className="bg-slate-50/50 dark:bg-white/[0.02] text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40 border-b border-slate-100 dark:border-white/[0.07]">
                     <tr>
                       {canBulkEdit && (
                       <th className="px-3 py-3.5">
@@ -1724,7 +1760,7 @@ export default function Inventario() {
                           </div>
                         </td>
                         <td className="px-5 py-4 hidden sm:table-cell">
-                          <span className="px-3 py-1 bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/50 rounded-lg text-[9px] font-black uppercase tracking-widest border border-slate-200 dark:border-white/[0.08]">{p.categoria}</span>
+                          <span className="px-3 py-1 bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/50 rounded-lg text-[10px] font-semibold uppercase tracking-wider border border-slate-200 dark:border-white/[0.08]">{p.categoria}</span>
                         </td>
                         {!isReadOnlyRole && (
                         <td className="px-5 py-4 text-right hidden md:table-cell">
@@ -1812,7 +1848,7 @@ export default function Inventario() {
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="px-5 py-3 border-t border-slate-100 dark:border-white/[0.07] bg-slate-50/50 dark:bg-white/[0.02] flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">
                     {filteredProducts.length} productos · Página {currentPage} de {totalPages}
                   </span>
                   <div className="flex items-center gap-1.5">
@@ -1846,7 +1882,7 @@ export default function Inventario() {
           {activeTab === 'kardex' && (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50/50 dark:bg-white/[0.02] text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/40 border-b border-slate-100 dark:border-white/[0.07]">
+                <thead className="bg-slate-50/50 dark:bg-white/[0.02] text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40 border-b border-slate-100 dark:border-white/[0.07]">
                   <tr>
                     <th className="px-5 py-3.5">Fecha / Hora</th>
                     <th className="px-5 py-3.5">Producto</th>
@@ -1864,7 +1900,7 @@ export default function Inventario() {
                       </td>
                       <td className="px-5 py-4 text-slate-900 dark:text-white font-black">{m.productName}</td>
                       <td className="px-5 py-4">
-                        <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${m.type === 'VENTA' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 border-amber-100 dark:border-amber-500/20' : m.type === 'COMPRA' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 border-emerald-100 dark:border-emerald-500/20' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/40 border-slate-200 dark:border-white/[0.08]'}`}>{m.type}</span>
+                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wider border ${m.type === 'VENTA' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 border-amber-100 dark:border-amber-500/20' : m.type === 'COMPRA' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 border-emerald-100 dark:border-emerald-500/20' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-white/40 border-slate-200 dark:border-white/[0.08]'}`}>{m.type}</span>
                       </td>
                       <td className={`px-5 py-4 text-center font-black text-sm ${m.quantity > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
@@ -1903,7 +1939,7 @@ export default function Inventario() {
                     <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center group-hover:rotate-6 transition-transform">
                       <Download className="text-emerald-600" size={20} />
                     </div>
-                    <span className="px-2.5 py-0.5 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-lg text-[9px] font-black uppercase tracking-widest">{products.length} productos</span>
+                    <span className="px-2.5 py-0.5 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-lg text-[10px] font-semibold uppercase tracking-wider">{products.length} productos</span>
                   </div>
                   <div>
                     <h4 className="text-sm font-black text-slate-900 dark:text-white tracking-tight">Exportar Excel</h4>
@@ -1939,7 +1975,7 @@ export default function Inventario() {
                     <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center group-hover:-rotate-6 transition-transform">
                       <Upload className="text-indigo-600" size={20} />
                     </div>
-                    <span className="px-2.5 py-0.5 bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 rounded-lg text-[9px] font-black uppercase tracking-widest">CSV · XLSX</span>
+                    <span className="px-2.5 py-0.5 bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 rounded-lg text-[10px] font-semibold uppercase tracking-wider">CSV · XLSX</span>
                   </div>
                   <div>
                     <h4 className="text-sm font-black text-slate-900 dark:text-white tracking-tight">Importar Carga</h4>
@@ -1971,7 +2007,7 @@ export default function Inventario() {
                     <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.06] flex items-center justify-center group-hover:scale-110 transition-transform">
                       <Printer className="text-slate-700 dark:text-white/70" size={20} />
                     </div>
-                    <span className="px-2.5 py-0.5 bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-white/50 rounded-lg text-[9px] font-black uppercase tracking-widest">PDF · A4</span>
+                    <span className="px-2.5 py-0.5 bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-white/50 rounded-lg text-[10px] font-semibold uppercase tracking-wider">PDF · A4</span>
                   </div>
                   <div>
                     <h4 className="text-sm font-black text-slate-900 dark:text-white tracking-tight">Imprimir Barras</h4>
@@ -2046,17 +2082,17 @@ export default function Inventario() {
                               {almacen.descripcion && <p className="text-[10px] text-slate-400 dark:text-white/40 font-medium">{almacen.descripcion}</p>}
                             </div>
                           </div>
-                          <span className={`shrink-0 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${almacen.activo ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/30'}`}>
+                          <span className={`shrink-0 px-2 py-0.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider ${almacen.activo ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-white/30'}`}>
                             {almacen.activo ? 'Activo' : 'Inactivo'}
                           </span>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div className="p-2.5 bg-slate-50 dark:bg-white/[0.03] rounded-xl border border-slate-100 dark:border-white/[0.05]">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Stock Total</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">Stock Total</p>
                             <p className="text-lg font-black text-slate-900 dark:text-white mt-0.5">{totalStock}</p>
                           </div>
                           <div className="p-2.5 bg-slate-50 dark:bg-white/[0.03] rounded-xl border border-slate-100 dark:border-white/[0.05]">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Productos</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">Productos</p>
                             <p className="text-lg font-black text-slate-900 dark:text-white mt-0.5">{productCount}</p>
                           </div>
                         </div>
@@ -2105,13 +2141,13 @@ export default function Inventario() {
             </div>
             <div className="p-5 space-y-4">
               <div>
-                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Nombre *</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Nombre *</label>
                 <input value={almacenForm.nombre} onChange={e => setAlmacenForm(f => ({ ...f, nombre: e.target.value }))}
                   placeholder="Ej: Almacén Principal, Depósito B..."
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white dark:placeholder:text-white/20 focus:ring-2 focus:ring-indigo-500 outline-none" />
               </div>
               <div>
-                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Descripción (opcional)</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Descripción (opcional)</label>
                 <input value={almacenForm.descripcion} onChange={e => setAlmacenForm(f => ({ ...f, descripcion: e.target.value }))}
                   placeholder="Notas sobre este almacén..."
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-medium text-slate-900 dark:text-white dark:placeholder:text-white/20 focus:ring-2 focus:ring-indigo-500 outline-none" />
@@ -2161,7 +2197,7 @@ export default function Inventario() {
                   <button
                     type="button"
                     onClick={() => { setQuickMode(q => !q); setShowExtras(quickMode); }}
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${quickMode ? 'border-indigo-300 dark:border-indigo-500/40 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.05]'}`}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all border ${quickMode ? 'border-indigo-300 dark:border-indigo-500/40 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/[0.05]'}`}
                   >
                     {quickMode ? '⚡ Rápido' : '📋 Completo'}
                   </button>
@@ -2175,7 +2211,7 @@ export default function Inventario() {
               {/* ── ROW 1: CÓDIGO + NOMBRE ── */}
               <div className="grid grid-cols-1 md:grid-cols-[1fr_1.6fr] gap-3">
                 <div>
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Código / SKU</label>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Código / SKU</label>
                   <div className="relative">
                     <input
                       ref={codigoRef}
@@ -2192,7 +2228,7 @@ export default function Inventario() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Nombre del Producto</label>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Nombre del Producto</label>
                   <input
                     required
                     value={form.nombre}
@@ -2338,7 +2374,7 @@ export default function Inventario() {
                 {/* Bulk pricing calculator */}
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-1 block">Costo Bulto ($) <span className="font-medium text-amber-400/40 normal-case tracking-normal">precio total del paquete</span></label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-amber-400/60 mb-1 block">Costo Bulto ($) <span className="font-medium text-amber-400/40 normal-case tracking-normal">precio total del paquete</span></label>
                     <input type="number" step="0.01" min="0" value={bulkCalc.costoBulto || ''}
                       onChange={e => {
                         const c = Number(e.target.value);
@@ -2350,7 +2386,7 @@ export default function Inventario() {
                   </div>
                   <div className="w-12 text-center text-white/20 text-lg font-black pb-2">/</div>
                   <div className="flex-1">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-1 block">Unidades <span className="font-medium text-amber-400/40 normal-case tracking-normal">piezas por paquete</span></label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-amber-400/60 mb-1 block">Unidades <span className="font-medium text-amber-400/40 normal-case tracking-normal">piezas por paquete</span></label>
                     <input type="number" step="1" min="1" value={bulkCalc.unidades || ''}
                       onChange={e => {
                         const u = Number(e.target.value);
@@ -2372,7 +2408,7 @@ export default function Inventario() {
                 {/* ── SELECTOR TIPO DE TASA (solo si zoherEnabled) ── */}
                 {hasDynamicPricing && zoherEnabled && customRates.filter(r => r.enabled).length > 0 && (
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1.5 flex items-center gap-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-white/30 mb-1.5 flex items-center gap-1.5">
                       Tipo de Tasa
                       <span className="relative group cursor-help">
                         <Info size={10} className="text-white/20" />
@@ -2384,7 +2420,7 @@ export default function Inventario() {
                     <div className="flex gap-1 bg-white/[0.04] rounded-xl p-1 border border-white/[0.07]">
                       <button type="button"
                         onClick={() => setForm(f => ({ ...f, tipoTasa: 'BCV' }))}
-                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                        className={`flex-1 py-2 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all ${
                           (!form.tipoTasa || form.tipoTasa === 'BCV')
                             ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
                             : 'text-white/30 hover:text-white/50'
@@ -2394,7 +2430,7 @@ export default function Inventario() {
                       {customRates.filter(r => r.enabled).map(rate => (
                         <button type="button" key={rate.id}
                           onClick={() => setForm(f => ({ ...f, tipoTasa: rate.id }))}
-                          className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                          className={`flex-1 py-2 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all ${
                             form.tipoTasa === rate.id
                               ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                               : 'text-white/30 hover:text-white/50'
@@ -2412,7 +2448,7 @@ export default function Inventario() {
                     {/* Costo + Márgenes */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-white/30 mb-1.5 block">
                           Costo ($) <span className="text-amber-400">ref. {customRates.find(r => r.id === form.tipoTasa)?.name || form.tipoTasa}</span>
                         </label>
                         <input type="number" step="0.01" min="0" value={form.costoUSD || ''}
@@ -2421,14 +2457,14 @@ export default function Inventario() {
                           className="w-full px-3 py-2.5 bg-white/[0.06] border border-white/10 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-amber-400 outline-none transition-all placeholder:text-white/20" />
                       </div>
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-emerald-400/70 mb-1.5 block">Margen Detal (%)</label>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/70 mb-1.5 block">Margen Detal (%)</label>
                         <input type="number" step="0.1" min="0" value={form.margenDetal || ''}
                           onChange={e => setForm(f => ({ ...f, margenDetal: Number(e.target.value) }))}
                           placeholder="0"
                           className="w-full px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder:text-white/20" />
                       </div>
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-violet-400/70 mb-1.5 block">Margen Mayor (%)</label>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-violet-400/70 mb-1.5 block">Margen Mayor (%)</label>
                         <input type="number" step="0.1" min="0" value={form.margenMayor || ''}
                           onChange={e => setForm(f => ({ ...f, margenMayor: Number(e.target.value) }))}
                           placeholder="0"
@@ -2468,14 +2504,14 @@ export default function Inventario() {
                     {/* Precios estáticos (flujo original) */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1.5 block">Costo ($)</label>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-white/30 mb-1.5 block">Costo ($)</label>
                         <input type="number" step="0.01" min="0" value={form.costoUSD || ''}
                           onChange={e => handleCostoChange(Number(e.target.value))}
                           placeholder="0.00"
                           className="w-full px-3 py-2.5 bg-white/[0.06] border border-white/10 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-indigo-400 outline-none transition-all placeholder:text-white/20" />
                       </div>
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-emerald-400/70 mb-1.5 block">
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/70 mb-1.5 block">
                           Detal ($) {form.costoUSD > 0 && form.precioDetal > 0 && (
                             <span className="text-emerald-400 ml-1">{(((form.precioDetal - form.costoUSD) / form.costoUSD) * 100).toFixed(0)}%↑</span>
                           )}
@@ -2486,7 +2522,7 @@ export default function Inventario() {
                           className="w-full px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-sm font-black text-white focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder:text-white/20" />
                       </div>
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-violet-400/70 mb-1.5 block">Mayor ($)</label>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-violet-400/70 mb-1.5 block">Mayor ($)</label>
                         <input type="number" step="0.01" min="0" value={form.precioMayor || ''}
                           onChange={e => { setMayorManual(true); setForm(f => ({ ...f, precioMayor: Number(e.target.value) })); }}
                           placeholder="0.00"
@@ -2519,7 +2555,7 @@ export default function Inventario() {
                       return (
                         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] px-3.5 py-3 space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400/70">Rentabilidad</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/70">Rentabilidad</span>
                             <span className={`text-[9px] font-black uppercase tracking-wider ${healthColor}`}>
                               {healthLabel}
                             </span>
@@ -2553,11 +2589,11 @@ export default function Inventario() {
                     {/* ── PRECIOS POR CUENTA (MAYOR) — siempre visible si hay cuentas ── */}
                     {hasDynamicPricing && customRates.length > 0 && (
                       <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] px-3.5 pb-3.5 pt-3 space-y-3">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-violet-400/70">Precios por Cuenta (Mayor)</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-400/70">Precios por Cuenta (Mayor)</p>
                         <div className={`grid gap-3 ${customRates.length <= 3 ? `grid-cols-${customRates.length}` : 'grid-cols-2 sm:grid-cols-3'}`}>
                           {customRates.map(rate => (
                             <div key={rate.id}>
-                              <label className="text-[9px] font-black uppercase tracking-widest text-violet-400/70 mb-1.5 block">
+                              <label className="text-[10px] font-semibold uppercase tracking-wider text-violet-400/70 mb-1.5 block">
                                 Precio {rate.name} ($)
                               </label>
                               <input type="number" step="0.01" min="0"
@@ -2595,7 +2631,7 @@ export default function Inventario() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Sugerencia Dualis</span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Sugerencia Dualis</span>
                         <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
                           smartAdvisor.level === 'high' ? 'bg-amber-500/20 text-amber-400' : smartAdvisor.level === 'low' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-400'
                         }`}>{smartAdvisor.reason}</span>
@@ -2624,7 +2660,7 @@ export default function Inventario() {
               {/* ── ROW 3: CATEGORÍA + STOCK ── */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Categoría</label>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Categoría</label>
                   <input
                     value={form.categoria}
                     onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))}
@@ -2649,7 +2685,7 @@ export default function Inventario() {
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30">Stock Inicial <span className="font-medium normal-case tracking-normal">unidades disponibles al registrar</span></label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">Stock Inicial <span className="font-medium normal-case tracking-normal">unidades disponibles al registrar</span></label>
                     {/* Almacén selector — solo si hay almacenes configurados */}
                     {almacenes.length > 0 && (
                       <div className="flex items-center gap-1.5">
@@ -2689,7 +2725,7 @@ export default function Inventario() {
                   onClick={() => setShowExtras(v => !v)}
                   className="w-full flex items-center justify-between py-2 group"
                 >
-                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 group-hover:text-slate-600 dark:group-hover:text-white/50 transition-colors">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 group-hover:text-slate-600 dark:group-hover:text-white/50 transition-colors">
                     Campos adicionales — marca, unidad, IVA, proveedor, ubicación
                   </span>
                   <ChevronDown size={14} className={`text-slate-400 dark:text-white/30 transition-transform duration-200 ${showExtras ? 'rotate-180' : ''}`} />
@@ -2697,12 +2733,12 @@ export default function Inventario() {
                 {showExtras && <div className="space-y-3 pt-1 animate-in fade-in zoom-in-95 duration-200">
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Marca</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Marca</label>
                     <input value={form.marca} onChange={e => setForm(f => ({ ...f, marca: e.target.value }))} placeholder="Nike, Sony..."
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Unidad</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Unidad</label>
                     <select value={form.unidad} onChange={e => setForm(f => ({ ...f, unidad: e.target.value }))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
                       <option value="UND">UND</option>
@@ -2713,7 +2749,7 @@ export default function Inventario() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Unidad de Venta</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Unidad de Venta</label>
                     <select value={form.unitType ?? 'unidad'} onChange={e => setForm(f => ({ ...f, unitType: e.target.value as Product['unitType'] }))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
                       <option value="unidad">Unidad (piezas)</option>
@@ -2729,7 +2765,7 @@ export default function Inventario() {
                     )}
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">IVA</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">IVA</label>
                     <select value={form.ivaTipo} onChange={e => {
                       const tipo = e.target.value as Product['ivaTipo'];
                       const tasa = tipo === 'GENERAL' ? 16 : tipo === 'REDUCIDO' ? 8 : 0;
@@ -2743,24 +2779,24 @@ export default function Inventario() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Proveedor</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Proveedor</label>
                     <input value={form.proveedor} onChange={e => setForm(f => ({ ...f, proveedor: e.target.value }))} placeholder="Nombre proveedor"
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Ubicación <span className="font-medium normal-case tracking-normal text-slate-400/60">Ej: Pasillo A-4, Estante 2</span></label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Ubicación <span className="font-medium normal-case tracking-normal text-slate-400/60">Ej: Pasillo A-4, Estante 2</span></label>
                     <input value={form.ubicacion} onChange={e => setForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Pasillo A-4, Estante 2"
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Stock Mínimo <span className="font-medium normal-case tracking-normal text-slate-400/60">alerta cuando baje de este número</span></label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Stock Mínimo <span className="font-medium normal-case tracking-normal text-slate-400/60">alerta cuando baje de este número</span></label>
                     <input type="number" min="0" value={form.stockMinimo} onChange={e => setForm(f => ({ ...f, stockMinimo: Number(e.target.value) }))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Peso (KG)</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Peso (KG)</label>
                     <input type="number" step="0.001" min="0" value={form.peso || ''} onChange={e => setForm(f => ({ ...f, peso: Number(e.target.value) }))} placeholder="0.000"
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
@@ -2769,12 +2805,12 @@ export default function Inventario() {
                 {/* Vencimiento y Lote */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Fecha Vencimiento</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Fecha Vencimiento</label>
                     <input type="date" value={(form as any).fechaVencimiento || ''} onChange={e => setForm(f => ({ ...f, fechaVencimiento: e.target.value || undefined }))}
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">Lote</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">Lote</label>
                     <input type="text" value={(form as any).lote || ''} onChange={e => setForm(f => ({ ...f, lote: e.target.value || undefined }))} placeholder="LOT-001"
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
@@ -2783,7 +2819,7 @@ export default function Inventario() {
                 {/* Fase B: Unidades por Bulto + Código de Barras */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">
                       Unidades por Bulto <span className="font-medium normal-case tracking-normal text-slate-400/60">ej: 12 = 1 bulto trae 12 unid.</span>
                     </label>
                     <input type="number" min="1" step="1" value={form.unidadesPorBulto ?? 1}
@@ -2792,7 +2828,7 @@ export default function Inventario() {
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-white/30 mb-1.5 block">
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30 mb-1.5 block">
                       Código de Barras <span className="font-medium normal-case tracking-normal text-slate-400/60">escanea o pega</span>
                     </label>
                     <input type="text" value={form.barcode || ''}
@@ -2813,7 +2849,7 @@ export default function Inventario() {
                       disabled={!!form.hasVariants}
                       className="w-4 h-4 rounded accent-violet-600 disabled:opacity-40"
                     />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-white/60 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-white/60 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
                       Producto compuesto / Combo
                     </span>
                     <span className="text-[9px] font-medium normal-case tracking-normal text-slate-400/60">al vender se descuentan los componentes</span>
@@ -2879,7 +2915,7 @@ export default function Inventario() {
                       <button
                         type="button"
                         onClick={() => setForm(f => ({ ...f, kitComponents: [...(f.kitComponents || []), { productId: '', qty: 1 }] }))}
-                        className="w-full py-2 rounded-lg border border-dashed border-violet-300 dark:border-violet-500/40 text-[10px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400 hover:bg-violet-100/50 dark:hover:bg-violet-500/10 transition-colors"
+                        className="w-full py-2 rounded-lg border border-dashed border-violet-300 dark:border-violet-500/40 text-[11px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400 hover:bg-violet-100/50 dark:hover:bg-violet-500/10 transition-colors"
                       >
                         + Agregar componente
                       </button>
@@ -2902,7 +2938,7 @@ export default function Inventario() {
                       }))}
                       className="w-4 h-4 rounded accent-sky-600"
                     />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-white/60 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-white/60 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
                       Producto con variantes
                     </span>
                     <span className="text-[9px] font-medium normal-case tracking-normal text-slate-400/60">talla, color, medida, etc.</span>
@@ -2912,7 +2948,7 @@ export default function Inventario() {
                     <div className="mt-3 p-3 rounded-xl bg-sky-50/50 dark:bg-sky-500/[0.04] border border-sky-200/60 dark:border-sky-500/20 space-y-3">
                       {/* Attribute names */}
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-1.5 block">Atributos</label>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400 mb-1.5 block">Atributos</label>
                         <div className="flex flex-wrap gap-2">
                           {(form.variantAttributes || []).map((attr, i) => (
                             <div key={i} className="flex items-center gap-1 bg-white dark:bg-white/[0.06] border border-sky-200 dark:border-sky-500/20 rounded-lg px-2 py-1.5">
@@ -2948,7 +2984,7 @@ export default function Inventario() {
                       {/* Variants list */}
                       {(form.variantAttributes || []).filter(a => a.trim()).length > 0 && (
                         <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-1.5 block">
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400 mb-1.5 block">
                             Variantes ({(form.variants || []).length})
                           </label>
                           <div className="space-y-1.5 max-h-48 overflow-y-auto">
@@ -3017,7 +3053,7 @@ export default function Inventario() {
                               ...f,
                               variants: [...(f.variants || []), { id, sku: '', values, stock: 0 }],
                             }));
-                          }} className="mt-2 w-full py-2 rounded-lg border border-dashed border-sky-300 dark:border-sky-500/40 text-[10px] font-black uppercase tracking-widest text-sky-600 dark:text-sky-400 hover:bg-sky-100/50 dark:hover:bg-sky-500/10 transition-colors">
+                          }} className="mt-2 w-full py-2 rounded-lg border border-dashed border-sky-300 dark:border-sky-500/40 text-[11px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400 hover:bg-sky-100/50 dark:hover:bg-sky-500/10 transition-colors">
                             + Agregar variante
                           </button>
                         </div>
@@ -3068,18 +3104,18 @@ export default function Inventario() {
               </div>
               <div className="space-y-5">
                 <div className="flex p-2 bg-slate-100 dark:bg-white/[0.07] rounded-xl shadow-inner">
-                  <button onClick={() => { setAdjData({ ...adjData, type: 'AJUSTE' }); }} className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${adjData.type === 'AJUSTE' ? 'bg-white dark:bg-white/[0.1] text-slate-900 dark:text-white shadow-lg' : 'text-slate-400'}`}>Entrada / Ajuste</button>
-                  <button onClick={() => { setAdjData({ ...adjData, type: 'MERMA' }); setAdjUpdatePrices(false); }} className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${adjData.type === 'MERMA' ? 'bg-white dark:bg-white/[0.1] text-rose-600 shadow-xl' : 'text-slate-400'}`}>Salida / Merma</button>
+                  <button onClick={() => { setAdjData({ ...adjData, type: 'AJUSTE' }); }} className={`flex-1 py-3.5 rounded-2xl text-[11px] font-semibold uppercase tracking-wider transition-all ${adjData.type === 'AJUSTE' ? 'bg-white dark:bg-white/[0.1] text-slate-900 dark:text-white shadow-lg' : 'text-slate-400'}`}>Entrada / Ajuste</button>
+                  <button onClick={() => { setAdjData({ ...adjData, type: 'MERMA' }); setAdjUpdatePrices(false); }} className={`flex-1 py-3.5 rounded-2xl text-[11px] font-semibold uppercase tracking-wider transition-all ${adjData.type === 'MERMA' ? 'bg-white dark:bg-white/[0.1] text-rose-600 shadow-xl' : 'text-slate-400'}`}>Salida / Merma</button>
                 </div>
                 <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cantidad de Unidades</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 ml-2">Cantidad de Unidades</label>
                   <input type="number" value={adjData.quantity} onChange={e => setAdjData({ ...adjData, quantity: Number(e.target.value) })} className="w-full px-6 py-6 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl text-3xl font-black text-center focus:ring-4 focus:ring-slate-900 shadow-inner" placeholder="0" />
                 </div>
                 {adjData.type === 'AJUSTE' && !isAlmacenista && (
                   <div className="space-y-3">
                     {/* Proveedor — siempre visible */}
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Proveedor</label>
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 ml-2">Proveedor</label>
                       <select
                         value={adjSupplierId}
                         onChange={e => setAdjSupplierId(e.target.value)}
@@ -3093,7 +3129,7 @@ export default function Inventario() {
                     </div>
                     {/* Nuevo Costo USD — siempre visible (costo ponderado automático) */}
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nuevo Costo USD</label>
+                      <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 ml-2">Nuevo Costo USD</label>
                       <input
                         type="number"
                         step="0.01"
@@ -3107,7 +3143,7 @@ export default function Inventario() {
                     {/* Costo promedio ponderado preview — siempre visible */}
                     {selectedProduct && adjCostoUSD > 0 && Number(adjData.quantity) > 0 && (
                       <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/[0.08] border border-indigo-200 dark:border-indigo-500/20">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-1.5">Costo Promedio Ponderado</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500 dark:text-indigo-400 mb-1.5">Costo Promedio Ponderado</p>
                         <div className="flex items-center gap-3 text-xs flex-wrap">
                           <span className="text-slate-500 dark:text-white/40">({selectedProduct.stock} × ${(selectedProduct.costoUSD || 0).toFixed(2)}) + ({Number(adjData.quantity)} × ${adjCostoUSD.toFixed(2)}) ÷ {selectedProduct.stock + Number(adjData.quantity)}</span>
                           <span className="font-black text-indigo-600 dark:text-indigo-400">
@@ -3139,7 +3175,7 @@ export default function Inventario() {
                       className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-all"
                     >
                       <div className="text-left">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300">Actualizar precios de venta</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-300">Actualizar precios de venta</p>
                         <p className="text-[9px] text-slate-400 mt-0.5">Opcional: modifica detal, mayor y precios por cuenta</p>
                       </div>
                       <ChevronDown size={14} className={`text-slate-400 transition-transform duration-300 ${adjUpdatePrices ? 'rotate-180' : ''}`} />
@@ -3153,7 +3189,7 @@ export default function Inventario() {
                             ...(hasDynamicPricing ? customRates.map(r => ({ key: `cuenta_${r.id}`, label: `Precio ${r.name}` })) : []),
                           ]).map(f => (
                             <div key={f.key} className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">{f.label}</label>
+                              <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 ml-1">{f.label}</label>
                               <input
                                 type="number"
                                 step="0.01"
@@ -3170,12 +3206,12 @@ export default function Inventario() {
                   </div>
                 )}
                 <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Razón de la Auditoría</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 ml-2">Razón de la Auditoría</label>
                   <textarea rows={3} value={adjData.reason} onChange={e => setAdjData({ ...adjData, reason: e.target.value })} className="w-full px-6 py-3 bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl text-sm font-bold focus:ring-2 focus:ring-slate-900 shadow-inner resize-none" placeholder="Explique el motivo del cambio..." />
                 </div>
               </div>
               <div className="flex gap-4">
-                <button onClick={() => { setAdjModalOpen(false); setAdjUpdatePrices(false); setAdjCostoUSD(0); setAdjSupplierId(''); }} className="flex-1 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:text-slate-400 transition-colors">Cerrar</button>
+                <button onClick={() => { setAdjModalOpen(false); setAdjUpdatePrices(false); setAdjCostoUSD(0); setAdjSupplierId(''); }} className="flex-1 py-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-600 dark:text-slate-400 transition-colors">Cerrar</button>
                 <button onClick={handleAdjustStock} className="flex-[2] py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-md shadow-indigo-500/25 active:scale-95">Ejecutar Ajuste</button>
               </div>
             </div>
@@ -3198,7 +3234,7 @@ export default function Inventario() {
                 <div className="flex items-center gap-2 mt-2">
                   {['Archivo', 'Mapear', 'Vista Previa', 'Resultado'].map((s, i) => (
                     <React.Fragment key={i}>
-                      <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${importStep === i ? 'bg-indigo-600 text-white' : importStep > i ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400'}`}>{s}</span>
+                      <span className={`text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full ${importStep === i ? 'bg-indigo-600 text-white' : importStep > i ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 dark:bg-white/[0.07] text-slate-400'}`}>{s}</span>
                       {i < 3 && <ArrowRight size={10} className="text-slate-300" />}
                     </React.Fragment>
                   ))}
@@ -3235,7 +3271,7 @@ export default function Inventario() {
                   {/* ── PASTE FROM EXCEL ─────────────────────────── */}
                   <div className="relative flex items-center gap-4">
                     <div className="flex-1 border-t border-slate-200 dark:border-white/10" />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 shrink-0">o pega texto directamente</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 shrink-0">o pega texto directamente</span>
                     <div className="flex-1 border-t border-slate-200 dark:border-white/10" />
                   </div>
                   <div className="space-y-3">
@@ -3257,7 +3293,7 @@ export default function Inventario() {
                   </div>
 
                   <div className="bg-slate-50 dark:bg-white/[0.06] rounded-xl p-6 space-y-3">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Campos reconocidos automáticamente</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Campos reconocidos automáticamente</p>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(FIELD_LABELS_DISPLAY).map(([k, v]) => (
                         <span key={k} className="px-3 py-1 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg text-[9px] font-bold text-slate-600 dark:text-slate-400">{v}</span>
@@ -3274,11 +3310,11 @@ export default function Inventario() {
                   {/* Options */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-5 bg-slate-50 dark:bg-white/[0.06] rounded-2xl space-y-2">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Modo de Importación</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Modo de Importación</p>
                       <div className="flex gap-2">
                         {([{ v: 'flexible', l: 'Flexible', d: 'Solo requiere nombre' }, { v: 'strict', l: 'Estricto', d: 'Requiere código, costo y stock' }] as const).map(m => (
                           <button key={m.v} onClick={() => setImportMode(m.v)}
-                            className={`flex-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${importMode === m.v ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40'}`}>
+                            className={`flex-1 py-2.5 rounded-xl text-[10px] font-semibold uppercase tracking-wider transition-all ${importMode === m.v ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40'}`}>
                             {m.l}
                           </button>
                         ))}
@@ -3286,11 +3322,11 @@ export default function Inventario() {
                       <p className="text-[9px] text-slate-400">{importMode === 'flexible' ? 'Solo requiere nombre.' : 'Requiere código, costo y stock.'}</p>
                     </div>
                     <div className="p-5 bg-slate-50 dark:bg-white/[0.06] rounded-2xl space-y-2">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Productos Duplicados</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Productos Duplicados</p>
                       <div className="flex gap-2">
                         {([{ v: 'skip', l: 'Omitir' }, { v: 'overwrite', l: 'Sobreescribir' }] as const).map(m => (
                           <button key={m.v} onClick={() => setDupMode(m.v)}
-                            className={`flex-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${dupMode === m.v ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40'}`}>
+                            className={`flex-1 py-2.5 rounded-xl text-[10px] font-semibold uppercase tracking-wider transition-all ${dupMode === m.v ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-white/40'}`}>
                             {m.l}
                           </button>
                         ))}
@@ -3302,11 +3338,11 @@ export default function Inventario() {
                   {/* Mapping table */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mapeo de Columnas ({importHeaders.length} detectadas)</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Mapeo de Columnas ({importHeaders.length} detectadas)</p>
                       <span className="text-[9px] text-slate-400">{Object.values(userMap).filter(Boolean).length} mapeadas</span>
                     </div>
                     <div className="border border-slate-100 dark:border-white/[0.07] rounded-2xl overflow-hidden">
-                      <div className="grid grid-cols-3 gap-0 bg-slate-50 dark:bg-white/[0.06] px-5 py-3 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <div className="grid grid-cols-3 gap-0 bg-slate-50 dark:bg-white/[0.06] px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                         <span>Columna del Archivo</span>
                         <span>Campo Detectado</span>
                         <span>Campo Final</span>
@@ -3399,21 +3435,21 @@ export default function Inventario() {
                     <div className="flex justify-center gap-8 mt-6">
                       <div className="text-center">
                         <p className="text-4xl font-black text-emerald-600">{importResult.ok}</p>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Importados</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mt-1">Importados</p>
                       </div>
                       <div className="text-center">
                         <p className="text-4xl font-black text-amber-500">{importResult.skip}</p>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Omitidos</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mt-1">Omitidos</p>
                       </div>
                       <div className="text-center">
                         <p className="text-4xl font-black text-rose-600">{importResult.errors.length}</p>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">Errores</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mt-1">Errores</p>
                       </div>
                     </div>
                   </div>
                   {importResult.errors.length > 0 && (
                     <div className="bg-rose-50 border border-rose-100 rounded-2xl p-5 text-left space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-rose-600 mb-2">Errores encontrados</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-600 mb-2">Errores encontrados</p>
                       {importResult.errors.map((e, i) => <p key={i} className="text-xs text-rose-700 font-mono">{e}</p>)}
                     </div>
                   )}
@@ -3425,7 +3461,7 @@ export default function Inventario() {
             <div className="px-10 py-7 border-t border-slate-100 dark:border-white/[0.07] flex justify-between items-center shrink-0 bg-slate-50 dark:bg-white/[0.02]">
               <button
                 onClick={() => { if (importStep === 0) { setImportModal(false); } else if (importStep === 3) { resetImport(); } else { setImportStep(s => s - 1); } }}
-                className="px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.08] dark:bg-white/[0.07] transition-all flex items-center gap-2">
+                className="px-8 py-3.5 rounded-2xl text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.08] dark:bg-white/[0.07] transition-all flex items-center gap-2">
                 {importStep === 3 ? <><RotateCcw size={14} /> Nueva Importación</> : importStep === 0 ? 'Cerrar' : '← Atrás'}
               </button>
               {importStep < 3 && (
@@ -3472,10 +3508,10 @@ export default function Inventario() {
               {/* Left: product selector */}
               <div className="w-[55%] border-r border-slate-100 dark:border-white/[0.07] flex flex-col">
                 <div className="p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50 dark:bg-white/[0.02]">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{barSelected.size} de {products.length} seleccionados</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{barSelected.size} de {products.length} seleccionados</p>
                   <div className="flex gap-2">
-                    <button onClick={() => setBarSelected(new Set(products.map(p => p.id)))} className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition-all">Todos</button>
-                    <button onClick={() => setBarSelected(new Set())} className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest bg-slate-100 dark:bg-white/[0.07] text-slate-500 rounded-lg hover:bg-slate-200 transition-all">Ninguno</button>
+                    <button onClick={() => setBarSelected(new Set(products.map(p => p.id)))} className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition-all">Todos</button>
+                    <button onClick={() => setBarSelected(new Set())} className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-slate-100 dark:bg-white/[0.07] text-slate-500 rounded-lg hover:bg-slate-200 transition-all">Ninguno</button>
                   </div>
                 </div>
                 <div className="flex-1 overflow-y-auto custom-scroll divide-y divide-slate-50">
@@ -3507,7 +3543,7 @@ export default function Inventario() {
 
                   {/* Label size preset */}
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Tamaño de Etiqueta</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Tamaño de Etiqueta</p>
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         { l: '30×20 mm', w: 30, h: 20 },
@@ -3525,11 +3561,11 @@ export default function Inventario() {
 
                   {/* Cols per row */}
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Columnas por Página</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Columnas por Página</p>
                     <div className="flex gap-2">
                       {[2, 3, 4].map(n => (
                         <button key={n} onClick={() => setBarOpts(o => ({ ...o, cols: n }))}
-                          className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${barOpts.cols === n ? 'bg-slate-900 text-white' : 'bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-slate-500 hover:border-slate-400'}`}>
+                          className={`flex-1 py-2.5 rounded-xl text-[11px] font-semibold uppercase tracking-wider transition-all ${barOpts.cols === n ? 'bg-slate-900 text-white' : 'bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-slate-500 hover:border-slate-400'}`}>
                           {n}
                         </button>
                       ))}
@@ -3538,7 +3574,7 @@ export default function Inventario() {
 
                   {/* Show options */}
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Contenido de la Etiqueta</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Contenido de la Etiqueta</p>
                     <div className="space-y-2">
                       {[
                         { key: 'showName', label: 'Nombre del producto' },
@@ -3557,11 +3593,11 @@ export default function Inventario() {
                   {/* Price type */}
                   {barOpts.showPrice && (
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Tipo de Precio</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Tipo de Precio</p>
                       <div className="flex gap-2">
                         {[{ v: 'detal', l: 'Detal' }, { v: 'mayor', l: 'Mayor' }, { v: 'both', l: 'Ambos' }].map(t => (
                           <button key={t.v} onClick={() => setBarOpts(o => ({ ...o, priceType: t.v as any }))}
-                            className={`flex-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${barOpts.priceType === t.v ? 'bg-slate-900 text-white' : 'bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-slate-500 hover:border-slate-400'}`}>
+                            className={`flex-1 py-2.5 rounded-xl text-[10px] font-semibold uppercase tracking-wider transition-all ${barOpts.priceType === t.v ? 'bg-slate-900 text-white' : 'bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-slate-500 hover:border-slate-400'}`}>
                             {t.l}
                           </button>
                         ))}
@@ -3571,11 +3607,11 @@ export default function Inventario() {
 
                   {/* Copies */}
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Copias por Producto</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Copias por Producto</p>
                     <div className="flex gap-2 items-center">
                       {[1, 2, 3].map(n => (
                         <button key={n} onClick={() => setBarOpts(o => ({ ...o, copies: n }))}
-                          className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${barOpts.copies === n ? 'bg-slate-900 text-white' : 'bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-slate-500 hover:border-slate-400'}`}>
+                          className={`flex-1 py-2.5 rounded-xl text-[11px] font-semibold uppercase tracking-wider transition-all ${barOpts.copies === n ? 'bg-slate-900 text-white' : 'bg-slate-50 dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-slate-500 hover:border-slate-400'}`}>
                           {n}
                         </button>
                       ))}
@@ -3586,7 +3622,7 @@ export default function Inventario() {
 
                   {/* Label preview */}
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Vista Previa de Etiqueta</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Vista Previa de Etiqueta</p>
                     <div className="bg-slate-100 dark:bg-white/[0.07] rounded-2xl p-6 flex items-center justify-center">
                       <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-white/15 rounded shadow-lg flex flex-col items-center justify-center gap-1 p-2"
                         style={{ width: `${barOpts.labelW * 1.8}px`, height: `${barOpts.labelH * 1.8}px`, minWidth: 120, minHeight: 70 }}>
@@ -3611,7 +3647,7 @@ export default function Inventario() {
 
             {/* Footer */}
             <div className="px-10 py-7 border-t border-slate-100 dark:border-white/[0.07] flex justify-between items-center shrink-0">
-              <button onClick={() => setBarcodeModal(false)} className="px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.08] dark:bg-white/[0.07] transition-all">Cancelar</button>
+              <button onClick={() => setBarcodeModal(false)} className="px-8 py-3.5 rounded-2xl text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.08] dark:bg-white/[0.07] transition-all">Cancelar</button>
               <button
                 onClick={handleGenerateBarcodes}
                 disabled={generatingPdf || barSelected.size === 0}

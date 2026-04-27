@@ -113,6 +113,13 @@ export interface InventoryItem {
   salePrice: number;
   stock: number;
   minStock: number;
+  // Campos opcionales agregados (Plade-parity + UX)
+  /** Categoría de segundo nivel para clasificación más fina. */
+  subcategoria?: string;
+  /** Stock máximo recomendado — usado por punto de reorden y reportes ABC. */
+  stockMaximo?: number;
+  /** Marca el ítem como SERVICIO (no descuenta stock, no entra al kardex). */
+  esServicio?: boolean;
 }
 
 export type UnitType = 'unidad' | 'kg' | 'g' | 'ton' | 'lt' | 'ml' | 'lb';

@@ -39,7 +39,7 @@ import SupplierSection from './components/SupplierSection';
 import RecursosHumanos from './pages/RecursosHumanos';
 const ComisionesReporte = lazy(() => import('./pages/ComisionesReporte'));
 const Tesoreria = lazy(() => import('./pages/Tesoreria'));
-import Inventario from './pages/Inventario';
+import InventarioModule from './pages/inventario/InventarioModule';
 const BooksComparePanel = lazy(() => import('./components/BooksComparePanel'));
 import UserProfileModalComp from './components/UserProfileModal';
 import CxCPage from './pages/CxCPage';
@@ -1353,7 +1353,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               </>
             ) : <NoAccess />)}
             {activeTab === 'widgets'    && (canView('widgets')    ? <WidgetLaunchpad /> : <NoAccess />)}
-            {activeTab === 'inventario' && (canView('inventario') ? <Inventario /> : <NoAccess />)}
+            {activeTab === 'inventario' && (canView('inventario') ? <InventarioModule /> : <NoAccess />)}
             {activeTab === 'config'     && (canView('config')     ? <Configuracion /> : <NoAccess />)}
             {activeTab === 'help'       && <HelpCenter />}
             {activeTab === 'tasas' && <ExchangeRatesSection />}

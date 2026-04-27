@@ -49,11 +49,80 @@ const PortalChat       = lazy(() => import('../portal/PortalChat'));
 const PreciosPage      = lazy(() => import('../pages/public/PreciosPage'));
 const FuncionesPage    = lazy(() => import('../pages/public/FuncionesPage'));
 
-// ─── Spinner universal para Suspense ─────────────────────────────────────────────
+// ─── Loader universal para Suspense ──────────────────────────────────────
+// Branded loader con marca Dualis, glow sutil y mensaje rotativo. Si tarda
+// más de 8s, sugiere recargar (cubre casos de chunk inválido tras deploy).
 function PageSpinner() {
+  const messages = React.useMemo(() => [
+    'Sincronizando con Firebase…',
+    'Cargando tu negocio…',
+    'Calculando tasas BCV…',
+    'Preparando tu inventario…',
+    'Listo en un momento…',
+  ], []);
+  const [msgIdx, setMsgIdx] = React.useState(0);
+  const [showStuck, setShowStuck] = React.useState(false);
+
+  React.useEffect(() => {
+    const rot = setInterval(() => setMsgIdx(i => (i + 1) % messages.length), 1800);
+    const stuck = setTimeout(() => setShowStuck(true), 8000);
+    return () => { clearInterval(rot); clearTimeout(stuck); };
+  }, [messages.length]);
+
   return (
-    <div className="h-screen flex items-center justify-center bg-[#070b14]">
-      <div className="w-6 h-6 border-2 border-indigo-500/40 border-t-indigo-500 rounded-full animate-spin" />
+    <div className="h-screen w-screen flex items-center justify-center bg-gradient-to-br from-[#070b14] via-[#0a1024] to-[#070b14] relative overflow-hidden">
+      {/* Glow ambiente */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-indigo-500/10 blur-3xl" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] rounded-full bg-violet-500/10 blur-2xl" />
+      </div>
+
+      <div className="relative flex flex-col items-center gap-5">
+        {/* Logo / marca */}
+        <div className="relative">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-pink-500 flex items-center justify-center shadow-2xl shadow-indigo-500/30">
+            <span className="text-white text-2xl font-black tracking-tight">D</span>
+          </div>
+          {/* Anillo girando alrededor del logo */}
+          <div className="absolute inset-0 -m-2 rounded-2xl border-2 border-indigo-400/30 border-t-indigo-400 animate-spin" style={{ animationDuration: '1.2s' }} />
+        </div>
+
+        {/* Wordmark */}
+        <div className="text-center">
+          <p className="text-white text-lg font-black tracking-[0.25em]">DUALIS</p>
+          <p className="text-white/30 text-[10px] font-bold uppercase tracking-[0.3em] mt-0.5">Sistema ERP</p>
+        </div>
+
+        {/* Mensaje rotativo */}
+        <div className="h-5 flex items-center">
+          <p className="text-[11px] font-medium text-white/50 tabular-nums transition-opacity">
+            {messages[msgIdx]}
+          </p>
+        </div>
+
+        {/* Barra de progreso indeterminada */}
+        <div className="w-48 h-0.5 rounded-full bg-white/[0.05] overflow-hidden">
+          <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-indigo-400 to-transparent animate-[loading-slide_1.6s_ease-in-out_infinite]" />
+        </div>
+
+        {/* Sugerencia si tarda mucho */}
+        {showStuck && (
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 text-[10px] font-bold uppercase tracking-widest text-white/40 hover:text-white/80 transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/30"
+          >
+            ¿Tarda demasiado? Recargar
+          </button>
+        )}
+      </div>
+
+      {/* Animación local sin tocar tailwind config */}
+      <style>{`
+        @keyframes loading-slide {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(400%); }
+        }
+      `}</style>
     </div>
   );
 }

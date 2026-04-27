@@ -19,7 +19,7 @@ import {
   Package, CheckCircle2, AlertTriangle, LogOut, X, Banknote,
   Smartphone, Layers, ArrowLeftRight, User, Clock, Camera, History,
   Tag, MessageCircle, Printer, WifiOff, Pause, Play, CreditCard, FileText, Hash,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, Keyboard,
 } from 'lucide-react';
 import ReceiptModal from '../../components/ReceiptModal';
 import { getNextNroControl } from '../../utils/facturaUtils';
@@ -30,6 +30,11 @@ import QuickSaleGrid, { type QuickSaleProduct } from '../../components/pos/Quick
 import NumericKeypad from '../../components/pos/NumericKeypad';
 import TurnKpiBar from '../../components/pos/TurnKpiBar';
 import { auth } from '../../firebase/config';
+import { getEffectiveCreditMode, sumByAccount, getDistinctAccounts } from '../../components/cxc/cxcHelpers';
+import { applyAbonoAllocations, computeFifoAllocations, getInvoiceRemaining } from '../../utils/invoiceAllocations';
+import { fuzzyFilter } from '../../utils/fuzzySearch';
+import { type HotkeyDef, loadHotkeys, hasOnboarded } from '../../utils/posHotkeys';
+import HotkeysModal from '../../components/pos/HotkeysModal';
 // Dynamic pricing imports removed — detal uses simple product.price
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -58,6 +63,7 @@ type QuickProduct = {
   variantAttributes?: string[];
   variants?: ProductVariant[];
   pricesByTier?: Record<string, { precioDetal?: number; precioMayor?: number }>;
+  favorito?: boolean;
 };
 
 type PaymentMethod = 'efectivo_usd' | 'efectivo_bs' | 'transferencia' | 'pago_movil' | 'punto' | 'mixto';
@@ -445,13 +451,33 @@ const PosContent = () => {
   // Product grid
   const [products, setProducts] = useState<QuickProduct[]>([]);
   const [productFilter, setProductFilter] = useState('');
-  const [stockFilter, setStockFilter] = useState<'all' | 'inStock' | 'noStock'>('all');
+  // Debounce: el filtro real (que dispara recálculo del array de 800+) se
+  // actualiza 200ms después de que el usuario para de tipear. Evita el lag
+  // visible al teclear rápido.
+  const [productFilterDebounced, setProductFilterDebounced] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setProductFilterDebounced(productFilter), 200);
+    return () => clearTimeout(t);
+  }, [productFilter]);
+  const [stockFilter, setStockFilter] = useState<'all' | 'inStock' | 'noStock' | 'favoritos'>('all');
   const [loading, setLoading] = useState(true);
   // Fase 9.4 — variant picker
   const [variantPickerProduct, setVariantPickerProduct] = useState<QuickProduct | null>(null);
 
   // Client
   const [clientQuery, setClientQuery] = useState('');
+  // Hotkeys configurables por terminal
+  const [hotkeys, setHotkeys] = useState<HotkeyDef[]>([]);
+  const [showHotkeysModal, setShowHotkeysModal] = useState(false);
+  const [hotkeysOnboarding, setHotkeysOnboarding] = useState(false);
+
+  // Modal para crear cliente nuevo desde el POS sin salir del flujo de venta
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientCedula, setNewClientCedula] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [newClientError, setNewClientError] = useState<string | null>(null);
   const [customer, setCustomer] = useState<any>(null);
   const [clients, setClients] = useState<any[]>([]);
   const [consumidorFinal, setConsumidorFinal] = useState(false);
@@ -466,6 +492,22 @@ const PosContent = () => {
   const [abonoNote, setAbonoNote] = useState('');
   const [submittingAbono, setSubmittingAbono] = useState(false);
   const [abonoFeedback, setAbonoFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Venta a CRÉDITO: cobra el carrito actual generando una factura en CxC
+  // (movementType=FACTURA, pagado=false) en lugar de venta de contado.
+  const [showCreditModal, setShowCreditModal] = useState(false);
+  const [creditDays, setCreditDays] = useState(30);
+  const [creditNote, setCreditNote] = useState('');
+  const [submittingCredit, setSubmittingCredit] = useState(false);
+  const [creditFeedback, setCreditFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Modo de crédito del negocio (override por cliente arriba). Determina si el
+  // form de "Abonar" expone selección por factura o solo monto acumulado.
+  const [businessCreditMode, setBusinessCreditMode] = useState<'accumulated' | 'invoiceLinked' | null>(null);
+  // Facturas abiertas del cliente seleccionado (para modo invoiceLinked).
+  const [openInvoices, setOpenInvoices] = useState<any[]>([]);
+  // Allocations manuales que escribe el usuario (invoiceId → monto string).
+  const [allocInputs, setAllocInputs] = useState<Record<string, string>>({});
 
   // Fiscal config (read from localStorage, set by Configuración → Fiscal/POS)
   const [fiscalConfig] = useState(() => ({
@@ -668,6 +710,7 @@ const PosContent = () => {
             variantAttributes: data.variantAttributes || [],
             variants: data.variants || [],
             pricesByTier: data.pricesByTier || undefined,
+            favorito: !!data.favorito,
           };
         }));
       setLoading(false);
@@ -689,10 +732,13 @@ const PosContent = () => {
     return () => unsub();
   }, [empresa_id]);
 
-  // Saldo pendiente del cliente seleccionado — sum(FACTURAS sin pagar) − sum(ABONOS).
-  // Se recalcula en vivo cuando se crea un abono desde el POS o una factura desde Mayor/CxC.
+  // Movements del cliente seleccionado — fuente de verdad para balance,
+  // facturas abiertas y allocations. Se mantienen aquí para que la lógica
+  // del balance, lista de facturas y abonos use el MISMO snapshot que CxC.
+  const [customerMovs, setCustomerMovs] = useState<any[]>([]);
   useEffect(() => {
     if (!customer?.id || !empresa_id) {
+      setCustomerMovs([]);
       setCustomerBalance(null);
       return;
     }
@@ -702,31 +748,75 @@ const PosContent = () => {
       where('entityId', '==', customer.id),
     );
     const unsub = onSnapshot(movQ, snap => {
-      let total = 0;
-      snap.docs.forEach(d => {
-        const m: any = d.data();
-        if (m.anulada) return;
-        if (m.movementType === 'FACTURA' && !m.pagado) {
-          total += Number(m.amountInUSD || m.amount || 0);
-        } else if (m.movementType === 'ABONO') {
-          total -= Number(m.amountInUSD || m.amount || 0);
-        }
-      });
-      setCustomerBalance(total);
+      const arr = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      setCustomerMovs(arr);
     }, err => {
-      console.error('[pos detal] balance listener', err);
+      console.error('[pos detal] movements listener', err);
+      setCustomerMovs([]);
       setCustomerBalance(null);
     });
     return () => unsub();
   }, [customer, empresa_id]);
 
-  // Al cambiar de cliente, reset del form de abono
+  // Modo de crédito global del negocio (override por cliente cuando aplica).
+  // Se carga una sola vez por empresa. Si no existe doc, queda en null y el
+  // efectivo cae a 'accumulated' por default.
+  useEffect(() => {
+    if (!empresa_id) return;
+    getDoc(doc(db, 'businessConfigs', empresa_id)).then((snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data() as any;
+      if (d.creditMode === 'invoiceLinked' || d.creditMode === 'accumulated') {
+        setBusinessCreditMode(d.creditMode);
+      }
+    }).catch(() => {});
+  }, [empresa_id]);
+
+  // Modo efectivo: override del cliente > config del negocio > 'accumulated'
+  const effectiveCreditMode = useMemo(
+    () => getEffectiveCreditMode(customer as any, { creditMode: businessCreditMode ?? undefined }),
+    [customer, businessCreditMode]
+  );
+
+  // Balance del cliente — usa `sumByAccount` (la misma función que CxC) sumando
+  // TODAS las cuentas del cliente. Respeta `effectiveCreditMode` y la tasa de
+  // cambio de cada cuenta. Antes el POS hacía un cálculo simplista que no
+  // contemplaba conversión de monedas ni allocations.
+  useEffect(() => {
+    if (!customer?.id) { setCustomerBalance(null); return; }
+    if (customerMovs.length === 0) { setCustomerBalance(0); return; }
+    try {
+      const accounts = getDistinctAccounts(customerMovs as any);
+      let total = 0;
+      for (const acc of accounts) {
+        total += sumByAccount(customerMovs as any, acc as any, rates as any, effectiveCreditMode);
+      }
+      setCustomerBalance(total);
+    } catch (e) {
+      console.warn('[pos detal] balance calc failed', e);
+      setCustomerBalance(null);
+    }
+  }, [customerMovs, customer?.id, rates, effectiveCreditMode]);
+
+  // Facturas abiertas del cliente (derivadas del snapshot global de movements).
+  useEffect(() => {
+    if (!customer?.id) { setOpenInvoices([]); return; }
+    const arr = customerMovs
+      .filter((m: any) => m.movementType === 'FACTURA' && !m.anulada && !m.pagado && getInvoiceRemaining(m as any) > 0.009)
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    setOpenInvoices(arr);
+  }, [customerMovs, customer?.id]);
+
+  // Al cambiar de cliente, reset del form de abono y allocations
   useEffect(() => {
     setShowAbonoForm(false);
     setAbonoAmount('');
     setAbonoReference('');
     setAbonoNote('');
     setAbonoFeedback(null);
+    setAllocInputs({});
+    setShowCreditModal(false);
+    setCreditFeedback(null);
   }, [customer?.id]);
 
   const filteredClients = useMemo(() => {
@@ -738,28 +828,49 @@ const PosContent = () => {
     );
   }, [clientQuery, clients]);
 
-  const displayProducts = useMemo(() => {
+  // Filtrado completo (sin paginar) — base para count y para slice de visibles.
+  // Usa el filtro DEBOUNCED + fuzzy match con tolerancia a typos (cocacola →
+  // Coca Cola, pepss → Pepsi). El fuzzy ordena por relevancia.
+  const filteredProducts = useMemo(() => {
     let filtered = products;
     if (stockFilter === 'inStock') filtered = filtered.filter(p => p.stock > 0);
     if (stockFilter === 'noStock') filtered = filtered.filter(p => p.stock === 0);
-    const q = (productFilter || searchQuery).trim().toLowerCase();
+    if (stockFilter === 'favoritos') filtered = filtered.filter(p => p.favorito);
+    const q = (productFilterDebounced || searchQuery).trim();
     if (!q) return filtered;
-    return filtered.filter(p =>
-      (p.name || '').toLowerCase().includes(q) ||
-      (p.codigo || '').toLowerCase().includes(q) ||
-      (p.marca || '').toLowerCase().includes(q)
+    return fuzzyFilter(
+      filtered,
+      q,
+      p => `${p.name || ''} ${p.codigo || ''} ${p.marca || ''}`,
+      { minScore: 40 },
     );
-  }, [products, productFilter, searchQuery, stockFilter]);
+  }, [products, productFilterDebounced, searchQuery, stockFilter]);
+
+  // Render virtualizado simple: solo mostramos los primeros N productos para
+  // evitar montar 800+ <button> al mismo tiempo (causaba lag al teclear y al
+  // hacer scroll). El usuario hace click en "Ver más" para cargar más.
+  const [visibleCount, setVisibleCount] = useState(60);
+  // Reset del contador cuando cambia el filtro/búsqueda
+  useEffect(() => { setVisibleCount(60); }, [productFilterDebounced, searchQuery, stockFilter]);
+  const displayProducts = useMemo(
+    () => filteredProducts.slice(0, visibleCount),
+    [filteredProducts, visibleCount]
+  );
 
   const noStockCount = useMemo(() => products.filter(p => p.stock === 0).length, [products]);
 
-  // Quick Sale Grid products (map local shape → grid shape)
-  const quickGridProducts = useMemo<QuickSaleProduct[]>(() =>
-    products.filter(p => p.stock > 0).map(p => ({
+  // Quick Sale Grid products: prioriza FAVORITOS marcados; si hay <8 favoritos
+  // con stock, complementa con los demás productos con stock para no quedar
+  // vacío al inicio.
+  const quickGridProducts = useMemo<QuickSaleProduct[]>(() => {
+    const conStock = products.filter(p => p.stock > 0);
+    const favs = conStock.filter(p => p.favorito);
+    const resto = conStock.filter(p => !p.favorito);
+    const ordered = [...favs, ...resto];
+    return ordered.map(p => ({
       id: p.id, codigo: p.codigo, name: p.name, price: p.price, stock: p.stock,
-    })),
-    [products]
-  );
+    }));
+  }, [products]);
 
   // ── Loyalty tier pricing helper ─────────────────────────────────
   const getDetalTierPrice = useCallback((product: QuickProduct): { price: number; tierLabel: string | null } => {
@@ -911,6 +1022,19 @@ const PosContent = () => {
     return () => window.removeEventListener('keydown', handler);
   }, [addProductByBarcode, playBeep]);
 
+  // Carga las hotkeys del terminal y dispara onboarding la primera vez
+  useEffect(() => {
+    if (!cajaId) return;
+    const loaded = loadHotkeys(cajaId);
+    setHotkeys(loaded);
+    if (!hasOnboarded(cajaId)) {
+      setTimeout(() => {
+        setHotkeysOnboarding(true);
+        setShowHotkeysModal(true);
+      }, 600);
+    }
+  }, [cajaId]);
+
   const holdCart = useCallback(() => {
     if (items.length === 0) return;
     setHeldCarts(prev => [...prev, {
@@ -936,6 +1060,71 @@ const PosContent = () => {
     setHeldCarts(prev => prev.filter(h => h.id !== held.id));
     setShowHeld(false);
   }, [loadCart]);
+
+  // Listener global de hotkeys configuradas
+  useEffect(() => {
+    if (hotkeys.length === 0) return;
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isTyping = target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      );
+      if (isTyping && e.key !== 'Escape') return;
+      const parts: string[] = [];
+      if (e.ctrlKey || e.metaKey) parts.push('ctrl');
+      if (e.shiftKey && e.key.length > 1) parts.push('shift');
+      if (e.altKey) parts.push('alt');
+      let key = e.key;
+      if (key.length === 1) key = key.toLowerCase();
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return;
+      parts.push(key);
+      const combo = parts.join('+');
+
+      const hk = hotkeys.find(h => h.combo === combo);
+      if (!hk) return;
+      e.preventDefault();
+      switch (hk.action) {
+        case 'cobrar':
+          if (items.length > 0 && (customer || consumidorFinal)) setShowPaymentModal(true);
+          break;
+        case 'credito':
+          if (items.length > 0 && customer && !consumidorFinal) setShowCreditModal(true);
+          break;
+        case 'cliente':
+          (document.querySelector('input[placeholder*="Buscar cliente"]') as HTMLInputElement | null)?.focus();
+          break;
+        case 'descuento':
+          alert('Atajo: Aplicar descuento (próximamente)');
+          break;
+        case 'retener':
+          if (items.length > 0) holdCart();
+          break;
+        case 'nuevoCliente':
+          setShowNewClientModal(true);
+          break;
+        case 'limpiarCarrito':
+          if (items.length > 0 && confirm('¿Vaciar el carrito?')) clearCart();
+          break;
+        case 'consumidorFinal':
+          setConsumidorFinal(v => !v);
+          if (!consumidorFinal) { setCustomer(null); setClientQuery(''); }
+          break;
+        case 'verHistorial':
+          setShowHistory(true);
+          break;
+        case 'escanear':
+          setShowCameraScanner(true);
+          break;
+        case 'repetirVenta':
+          alert('Atajo: Repetir última venta (próximamente)');
+          break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [hotkeys, items, customer, consumidorFinal, holdCart, clearCart]);
 
   const handleCharge = async (
     method: PaymentMethod,
@@ -1227,11 +1416,47 @@ const PosContent = () => {
         origen: 'pos_detal_abono',
       };
       if (abonoMethod === 'efectivo_usd') payload.bankAccountId = 'efectivo_usd_default';
-      await addDoc(collection(db, 'movements'), payload);
-      setAbonoFeedback({ ok: true, msg: `Abono de $${amountNum.toFixed(2)} registrado` });
+
+      // Si el cliente está en modo invoiceLinked, calculamos las allocations
+      // ANTES de crear el ABONO para guardar el snapshot inicial en el doc.
+      let allocsForAbono: { invoiceId: string; invoiceRef?: string; amount: number }[] = [];
+      if (effectiveCreditMode === 'invoiceLinked') {
+        const manual: { invoiceId: string; invoiceRef?: string; amount: number }[] = [];
+        for (const [invoiceId, v] of Object.entries(allocInputs)) {
+          const n = parseFloat(String(v).replace(',', '.')) || 0;
+          const inv = openInvoices.find(i => i.id === invoiceId);
+          if (n > 0 && inv) {
+            manual.push({
+              invoiceId,
+              invoiceRef: inv.nroControl || inv.concept || undefined,
+              amount: Number(n.toFixed(2)),
+            });
+          }
+        }
+        allocsForAbono = manual.length > 0
+          ? manual
+          : computeFifoAllocations(openInvoices as any, amountNum);
+      }
+
+      const movRef = await addDoc(collection(db, 'movements'), payload);
+
+      // Aplicamos las allocations: actualiza el ABONO + cada FACTURA afectada.
+      if (effectiveCreditMode === 'invoiceLinked' && allocsForAbono.length > 0) {
+        try {
+          await applyAbonoAllocations(db, movRef.id, amountNum, allocsForAbono);
+        } catch (e) {
+          console.warn('[pos detal] applyAbonoAllocations failed', e);
+        }
+      }
+
+      const allocMsg = effectiveCreditMode === 'invoiceLinked' && allocsForAbono.length > 0
+        ? ` (aplicado a ${allocsForAbono.length} factura${allocsForAbono.length > 1 ? 's' : ''})`
+        : '';
+      setAbonoFeedback({ ok: true, msg: `Abono de $${amountNum.toFixed(2)} registrado${allocMsg}` });
       setAbonoAmount('');
       setAbonoReference('');
       setAbonoNote('');
+      setAllocInputs({});
       setShowAbonoForm(false);
       setTimeout(() => setAbonoFeedback(null), 4000);
     } catch (err: any) {
@@ -1239,6 +1464,141 @@ const PosContent = () => {
       setAbonoFeedback({ ok: false, msg: `Error: ${err?.message || 'no se pudo registrar'}` });
     } finally {
       setSubmittingAbono(false);
+    }
+  };
+
+  // Crea un cliente nuevo en root collection `customers` y lo selecciona
+  // automáticamente en el POS para no romper el flujo de venta del cajero.
+  const handleCreateClient = async () => {
+    const name = newClientName.trim();
+    if (!name || name.length < 2) {
+      setNewClientError('Nombre obligatorio (mínimo 2 caracteres)');
+      return;
+    }
+    setCreatingClient(true);
+    setNewClientError(null);
+    try {
+      const ced = newClientCedula.trim();
+      const ref = await addDoc(collection(db, 'customers'), {
+        businessId: empresa_id,
+        fullName: name,
+        cedula: ced || null,
+        rif: ced || null,
+        telefono: newClientPhone.trim() || null,
+        createdAt: new Date().toISOString(),
+        createdBy: userProfile?.uid || 'sistema',
+        defaultAccountType: 'BCV',
+        creditMode: null,
+        origen: 'pos_detal',
+      });
+      // Seleccionar inmediatamente el cliente recién creado
+      setCustomer({ id: ref.id, fullName: name, cedula: ced, rif: ced, telefono: newClientPhone.trim() });
+      setClientQuery('');
+      setNewClientName('');
+      setNewClientCedula('');
+      setNewClientPhone('');
+      setShowNewClientModal(false);
+    } catch (err: any) {
+      console.error('[pos detal] create client fail', err);
+      setNewClientError(err?.message || 'No se pudo crear el cliente');
+    } finally {
+      setCreatingClient(false);
+    }
+  };
+
+  // Venta a CRÉDITO: cobra el carrito completo generando una FACTURA con
+  // `pagado: false` y `paymentDays`/`dueDate` para que aparezca en CxC del
+  // cliente. Espejo simplificado de handleCharge pero sin tocar caja, sin
+  // método de pago, sin generar abono.
+  const handleCreditSale = async () => {
+    if (!customer?.id) {
+      setCreditFeedback({ ok: false, msg: 'Selecciona un cliente para vender a crédito' });
+      return;
+    }
+    if (items.length === 0) {
+      setCreditFeedback({ ok: false, msg: 'Carrito vacío' });
+      return;
+    }
+    const days = Math.max(0, Math.floor(creditDays || 0));
+    setSubmittingCredit(true);
+    setCreditFeedback(null);
+    try {
+      const now = new Date();
+      const isoDate = now.toISOString();
+      const simpleDate = isoDate.split('T')[0];
+      const dueDate = days > 0
+        ? new Date(now.getTime() + days * 86400000).toISOString().slice(0, 10)
+        : simpleDate;
+
+      const { formatted: nroControl } = await getNextNroControl(empresa_id, cajaId || undefined);
+      const entityLabel = customer.fullName || customer.nombre || 'Cliente';
+      const grandTotal = totals.totalUsd;
+      const grandTotalBs = totals.totalBs;
+
+      const movementPayload: any = {
+        businessId: empresa_id,
+        nroControl,
+        entityId: customer.id,
+        entityName: entityLabel,
+        concept: `Venta a crédito POS Detal — ${entityLabel}${creditNote ? ` (${creditNote})` : ''}`,
+        amount: grandTotal,
+        originalAmount: grandTotalBs,
+        amountInUSD: grandTotal,
+        subtotalUSD: totals.subtotalUsd,
+        ivaAmount: totals.taxUsd > 0 ? totals.taxUsd : null,
+        discountAmount: totals.discountUsd > 0 ? totals.discountUsd : null,
+        currency: 'USD',
+        date: simpleDate,
+        createdAt: isoDate,
+        movementType: 'FACTURA',
+        accountType: customer.defaultAccountType || 'BCV',
+        rateUsed: rateValue,
+        items: items.map(i => {
+          const realQty = effectiveStockQty(i);
+          return { id: i.id, nombre: i.nombre, qty: realQty, price: i.priceUsd, subtotal: realQty * i.priceUsd, sellMode: i.sellMode || 'unidad', unidadesPorBulto: i.unidadesPorBulto || 1, ...(i.note ? { note: i.note } : {}) };
+        }),
+        cajaId: cajaId || 'principal',
+        cajaName: terminalLabel,
+        vendedorId: userProfile?.uid || 'sistema',
+        vendedorNombre: userProfile?.fullName || 'Vendedor',
+        startedAt: startedAt?.toISOString() || isoDate,
+        // Marca de venta a crédito — abre saldo en CxC, sin descontar caja
+        pagado: false,
+        estadoPago: 'PENDIENTE',
+        esVentaContado: false,
+        paymentCondition: days === 0 ? 'CONTADO' : `CREDITO${days}`,
+        paymentDays: days,
+        dueDate,
+        invoiceStatus: 'OPEN',
+        allocations: [],
+        allocatedTotal: 0,
+        origen: 'pos_detal_credito',
+      };
+
+      // Descontar stock igual que una venta normal (la mercancía sale del almacén
+      // aunque no se cobre todavía).
+      const movRef = await addDoc(collection(db, 'movements'), movementPayload);
+      for (const item of items) {
+        const realProductId = item.id.includes('__v_') ? item.id.split('__v_')[0] : item.id;
+        const realQty = effectiveStockQty(item);
+        try {
+          const ref = doc(db, `businesses/${empresa_id}/products`, realProductId);
+          await updateDoc(ref, { stock: increment(-realQty) });
+        } catch (e) {
+          console.warn('[pos detal] no se pudo descontar stock', item.id, e);
+        }
+      }
+
+      setCreditFeedback({ ok: true, msg: `Factura ${nroControl} a crédito ($${grandTotal.toFixed(2)}, vence ${dueDate}) creada en CxC` });
+      clearCart();
+      setShowCreditModal(false);
+      setCreditNote('');
+      setTimeout(() => setCreditFeedback(null), 5000);
+    } catch (err: any) {
+      console.error('[pos detal] credit sale fail', err);
+      setCreditFeedback({ ok: false, msg: `Error: ${err?.message || 'no se pudo registrar la venta a crédito'}` });
+    } finally {
+      setSubmittingCredit(false);
     }
   };
 
@@ -1339,6 +1699,14 @@ const PosContent = () => {
               className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-900 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200 dark:border-white/10"
             >
               <History size={16} />
+            </button>
+          </HelpTooltip>
+          <HelpTooltip title="Atajos de teclado" text="Configura las teclas rápidas para vender más rápido. Cada terminal tiene su propio set." side="bottom">
+            <button
+              onClick={() => { setHotkeysOnboarding(false); setShowHotkeysModal(true); }}
+              className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-900 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200 dark:border-white/10"
+            >
+              <Keyboard size={16} />
             </button>
           </HelpTooltip>
         </div>
@@ -1464,14 +1832,19 @@ const PosContent = () => {
             </div>
             <div className="flex items-center justify-between mt-2 px-0.5 gap-1">
               <div className="flex items-center gap-1">
-                {(['all', 'inStock', 'noStock'] as const).map(f => (
-                  <button key={f} onClick={() => setStockFilter(f)}
-                    className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${stockFilter === f ? 'bg-slate-900 dark:bg-white/[0.15] text-white' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
-                    {f === 'all' ? 'Todos' : f === 'inStock' ? 'Con Stock' : `Sin Stock (${noStockCount})`}
-                  </button>
-                ))}
+                {(['all', 'inStock', 'noStock', 'favoritos'] as const).map(f => {
+                  const favCount = products.filter(p => p.favorito).length;
+                  return (
+                    <button key={f} onClick={() => setStockFilter(f)}
+                      className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${stockFilter === f ? 'bg-slate-900 dark:bg-white/[0.15] text-white' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+                      {f === 'all' ? 'Todos' : f === 'inStock' ? 'Con Stock' : f === 'noStock' ? `Sin Stock (${noStockCount})` : `★ Fav (${favCount})`}
+                    </button>
+                  );
+                })}
               </div>
-              <span className="text-[9px] font-bold text-slate-300 shrink-0">{displayProducts.length}</span>
+              <span className="text-[9px] font-bold text-slate-300 shrink-0 tabular-nums">
+                {filteredProducts.length > visibleCount ? `${displayProducts.length}/${filteredProducts.length}` : filteredProducts.length}
+              </span>
             </div>
           </div>
 
@@ -1524,6 +1897,15 @@ const PosContent = () => {
                     </button>
                   );
                 })}
+                {/* Cargar más: aparece solo si quedan productos por mostrar */}
+                {filteredProducts.length > visibleCount && (
+                  <button
+                    onClick={() => setVisibleCount(c => c + 60)}
+                    className="col-span-full mt-2 py-2 rounded-xl bg-slate-100 dark:bg-white/[0.04] text-slate-600 dark:text-white/70 text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06]"
+                  >
+                    Ver {Math.min(60, filteredProducts.length - visibleCount)} más ({filteredProducts.length - visibleCount} restantes)
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1544,7 +1926,7 @@ const PosContent = () => {
                   <th className="px-2 sm:px-5 py-3 sm:py-3.5 border-b border-slate-100 dark:border-white/[0.07] w-8 sm:w-auto" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody className="divide-y divide-slate-100/60 dark:divide-white/[0.04]">
                 {items.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-5 py-16 sm:py-24 text-center pointer-events-none select-none">
@@ -1609,24 +1991,42 @@ const PosContent = () => {
                           <span className="text-[9px] font-bold text-slate-400 dark:text-white/30 uppercase">{item.unitType}</span>
                         </div>
                       ) : (
-                      <div className="flex items-center justify-center gap-1 sm:gap-2">
-                        <button onClick={() => updateQty(item.id, item.qty - 1)}
-                          className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors">
+                      <div className="flex items-center justify-center gap-1 sm:gap-1.5">
+                        <button
+                          onClick={() => updateQty(item.id, item.qty - 1)}
+                          className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200 dark:hover:bg-white/[0.12] flex items-center justify-center transition-colors"
+                        >
                           <Minus size={12} strokeWidth={3} />
                         </button>
-                        <span className="w-5 text-center text-sm font-black text-slate-900 dark:text-white">{item.qty}</span>
-                        <button onClick={() => updateQty(item.id, item.qty + 1)}
-                          className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={item.qty}
+                          onChange={e => {
+                            const v = parseInt(e.target.value, 10);
+                            if (!isNaN(v) && v > 0) updateQty(item.id, v);
+                          }}
+                          onFocus={e => e.target.select()}
+                          className="w-12 text-center text-sm font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-md py-0.5 outline-none focus:ring-2 focus:ring-indigo-400/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          title="Edita la cantidad directamente"
+                        />
+                        <button
+                          onClick={() => updateQty(item.id, item.qty + 1)}
+                          className="h-7 w-7 rounded-lg bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-200 dark:hover:bg-white/[0.12] flex items-center justify-center transition-colors"
+                        >
                           <Plus size={12} strokeWidth={3} />
                         </button>
                       </div>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 text-right text-sm font-bold text-slate-500 dark:text-white/50 hidden sm:table-cell">
-                      ${effectivePrice.toFixed(2)}
+                    <td className="px-5 py-3.5 text-right hidden sm:table-cell">
+                      <p className="text-sm font-bold text-slate-700 dark:text-white/70 tabular-nums">${effectivePrice.toFixed(2)}</p>
+                      <p className="text-[10px] font-medium text-slate-400 dark:text-white/30 tabular-nums">Bs {(effectivePrice * rateValue).toLocaleString('es-VE', { maximumFractionDigits: 2 })}</p>
                     </td>
-                    <td className="px-3 sm:px-5 py-2.5 sm:py-3.5 text-right text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                      ${(item.qty * effectivePrice).toFixed(2)}
+                    <td className="px-3 sm:px-5 py-2.5 sm:py-3.5 text-right">
+                      <p className="text-sm sm:text-base font-black text-slate-900 dark:text-white tabular-nums">${(item.qty * effectivePrice).toFixed(2)}</p>
+                      <p className="text-[10px] font-medium text-slate-400 dark:text-white/30 tabular-nums">Bs {(item.qty * effectivePrice * rateValue).toLocaleString('es-VE', { maximumFractionDigits: 2 })}</p>
                     </td>
                     <td className="px-2 sm:px-5 py-2.5 sm:py-3.5 text-center">
                       <button onClick={() => removeItem(item.id)}
@@ -1669,28 +2069,41 @@ const PosContent = () => {
                   </div>
                 </div>
               ) : !customer ? (
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-3.5 w-3.5" />
-                  <input
-                    value={clientQuery}
-                    onChange={e => setClientQuery(e.target.value)}
-                    placeholder="Buscar cliente (nombre, RIF, cédula)..."
-                    className="w-full pl-9 pr-4 py-3 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30 focus:ring-2 focus:ring-slate-900 dark:focus:ring-indigo-500 outline-none shadow-sm transition-all"
-                  />
-                  {filteredClients.length > 0 && (
-                    <div className="absolute bottom-full left-0 right-0 mb-2 max-h-36 overflow-y-auto bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-white/[0.07] z-50 p-1">
-                      {filteredClients.map(c => (
-                        <button key={c.id} onClick={() => { setCustomer(c); setClientQuery(''); }}
-                          className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 rounded-lg flex justify-between items-center group">
-                          <div>
-                            <p className="text-xs font-black text-slate-800 dark:text-slate-200">{c.fullName || c.nombre || 'Sin Nombre'}</p>
-                            <p className="text-[10px] font-bold text-slate-400">{c.rif || c.cedula}</p>
-                          </div>
-                          <CheckCircle2 size={13} className="text-emerald-500 opacity-0 group-hover:opacity-100" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-3.5 w-3.5" />
+                    <input
+                      value={clientQuery}
+                      onChange={e => setClientQuery(e.target.value)}
+                      placeholder="Buscar cliente (nombre, RIF, cédula)..."
+                      className="w-full pl-9 pr-4 py-3 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30 focus:ring-2 focus:ring-slate-900 dark:focus:ring-indigo-500 outline-none shadow-sm transition-all"
+                    />
+                    {filteredClients.length > 0 && (
+                      <div className="absolute bottom-full left-0 right-0 mb-2 max-h-36 overflow-y-auto bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-white/[0.07] z-50 p-1">
+                        {filteredClients.map(c => (
+                          <button key={c.id} onClick={() => { setCustomer(c); setClientQuery(''); }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 rounded-lg flex justify-between items-center group">
+                            <div>
+                              <p className="text-xs font-black text-slate-800 dark:text-slate-200">{c.fullName || c.nombre || 'Sin Nombre'}</p>
+                              <p className="text-[10px] font-bold text-slate-400">{c.rif || c.cedula}</p>
+                            </div>
+                            <CheckCircle2 size={13} className="text-emerald-500 opacity-0 group-hover:opacity-100" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      // Si el usuario tipeó algo en el buscador, lo pasamos al form
+                      if (clientQuery.trim()) setNewClientName(clientQuery.trim());
+                      setShowNewClientModal(true);
+                    }}
+                    title="Crear cliente nuevo"
+                    className="shrink-0 h-[42px] w-[42px] rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-sm transition-colors"
+                  >
+                    <Plus size={16} strokeWidth={3} />
+                  </button>
                 </div>
               ) : (
                 <div className="bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.1] rounded-xl p-3.5 flex items-center gap-3 shadow-sm">
@@ -1719,9 +2132,17 @@ const PosContent = () => {
                 }`}>
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-white/50">
-                        {customerBalance > 0.01 ? 'Debe' : customerBalance < -0.01 ? 'Crédito a favor' : 'Al día'}
-                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-white/50">
+                          {customerBalance > 0.01 ? 'Debe' : customerBalance < -0.01 ? 'Crédito a favor' : 'Al día'}
+                        </p>
+                        {effectiveCreditMode === 'invoiceLinked' && (
+                          <span className="px-1 py-0 rounded bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-[8px] font-black uppercase tracking-widest">por factura</span>
+                        )}
+                        {openInvoices.length > 0 && (
+                          <span className="px-1 py-0 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[8px] font-black uppercase tracking-widest">{openInvoices.length} fact.</span>
+                        )}
+                      </div>
                       <p className={`text-lg font-black ${
                         customerBalance > 0.01
                           ? 'text-rose-600 dark:text-rose-300'
@@ -1803,6 +2224,74 @@ const PosContent = () => {
                           className="w-full px-2 py-1.5 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
                         />
                       </div>
+
+                      {/* Distribución por factura: solo cuando el modo del cliente es invoiceLinked */}
+                      {effectiveCreditMode === 'invoiceLinked' && (
+                        <div className="rounded-md border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/40 dark:bg-indigo-500/[0.05] p-2">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <p className="text-[10px] font-black uppercase text-indigo-700 dark:text-indigo-300 tracking-widest">Aplicar a facturas</p>
+                            {openInvoices.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  // Auto-FIFO: distribuye el monto del abono sobre las facturas más viejas
+                                  const amt = parseFloat(abonoAmount.replace(',', '.')) || 0;
+                                  if (amt <= 0) return;
+                                  const fifo = computeFifoAllocations(openInvoices as any, amt);
+                                  const next: Record<string, string> = {};
+                                  fifo.forEach(a => { next[a.invoiceId] = a.amount.toFixed(2); });
+                                  setAllocInputs(next);
+                                }}
+                                className="text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-300 hover:underline"
+                              >
+                                Auto FIFO
+                              </button>
+                            )}
+                          </div>
+                          {openInvoices.length === 0 ? (
+                            <p className="text-[10px] text-slate-400 italic">Sin facturas abiertas. El abono quedará como saldo a favor.</p>
+                          ) : (
+                            <div className="max-h-32 overflow-y-auto space-y-1">
+                              {openInvoices.map((inv) => {
+                                const remaining = getInvoiceRemaining(inv as any);
+                                const v = allocInputs[inv.id] || '';
+                                return (
+                                  <div key={inv.id} className="flex items-center gap-1.5 text-[10px]">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-bold text-slate-700 dark:text-white/80 truncate">
+                                        {inv.nroControl || `#${inv.id.slice(0, 6)}`}
+                                      </p>
+                                      <p className="text-[9px] text-slate-400 tabular-nums">
+                                        {inv.date} · saldo ${remaining.toFixed(2)}
+                                      </p>
+                                    </div>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      max={remaining}
+                                      value={v}
+                                      onChange={e => setAllocInputs(prev => ({ ...prev, [inv.id]: e.target.value }))}
+                                      placeholder="0.00"
+                                      className="w-16 px-1.5 py-1 rounded border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60 text-[10px] font-bold text-right tabular-nums outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                );
+                              })}
+                              <div className="border-t border-indigo-200 dark:border-indigo-500/20 mt-1 pt-1 flex items-center justify-between text-[10px]">
+                                <span className="text-slate-500 dark:text-white/50">Distribuido:</span>
+                                <span className="font-bold tabular-nums text-indigo-700 dark:text-indigo-300">
+                                  ${Object.values(allocInputs).reduce((s, v) => s + (parseFloat(String(v).replace(',', '.')) || 0), 0).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          <p className="text-[9px] text-slate-400 mt-1">
+                            Si dejas vacío, el sistema usa <span className="font-bold">FIFO</span> (paga las más viejas primero).
+                          </p>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 pt-1">
                         <button
                           type="button"
@@ -1921,6 +2410,33 @@ const PosContent = () => {
                 className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canCharge ? 'bg-white text-slate-900 hover:bg-emerald-400 hover:text-white shadow-xl hover:scale-[1.02]' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
                 <Receipt size={16} />Cobrar
               </button>
+              {/* Botón Crédito: solo cuando hay cliente seleccionado (consumidor final no aplica) */}
+              {(() => {
+                const canCredit = items.length > 0 && !!customer && !consumidorFinal;
+                const reasonDisabled = items.length === 0
+                  ? 'Agrega productos al carrito'
+                  : consumidorFinal
+                    ? 'Quita "Consumidor Final" y elige un cliente'
+                    : !customer
+                      ? 'Selecciona un cliente para vender a crédito'
+                      : '';
+                return (
+                  <button
+                    disabled={!canCredit}
+                    onClick={() => setShowCreditModal(true)}
+                    title={canCredit ? 'Vender a crédito (genera factura en CxC)' : reasonDisabled}
+                    className={`w-full mt-2 py-3 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-all ${canCredit ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-white border border-amber-500/40' : 'bg-white/[0.03] text-white/20 cursor-not-allowed border border-white/[0.06]'}`}
+                  >
+                    <CreditCard size={13} />
+                    {canCredit ? 'Crédito' : `Crédito · ${reasonDisabled}`}
+                  </button>
+                );
+              })()}
+              {creditFeedback && (
+                <div className={`mt-2 text-[10px] font-bold px-3 py-2 rounded-lg ${creditFeedback.ok ? 'bg-emerald-500/20 text-emerald-200' : 'bg-rose-500/20 text-rose-200'}`}>
+                  {creditFeedback.msg}
+                </div>
+              )}
               {items.length > 0 && (
                 <button
                   onClick={holdCart}
@@ -1972,6 +2488,184 @@ const PosContent = () => {
           onClose={() => setShowPaymentModal(false)}
           onConfirm={handleCharge}
         />
+      )}
+
+      {/* ── CREDIT SALE MODAL — venta a crédito (factura abierta en CxC) ─────── */}
+      {/* ── HOTKEYS MODAL — onboarding/configuración ─────────────────────── */}
+      {showHotkeysModal && cajaId && (
+        <HotkeysModal
+          cajaId={cajaId}
+          initial={hotkeys}
+          isOnboarding={hotkeysOnboarding}
+          onSaved={(next) => setHotkeys(next)}
+          onClose={() => { setShowHotkeysModal(false); setHotkeysOnboarding(false); }}
+        />
+      )}
+
+      {/* ── NEW CLIENT MODAL — crear cliente sin salir del POS ─────────────── */}
+      {showNewClientModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => { if (e.target === e.currentTarget) setShowNewClientModal(false); }}>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full max-w-md flex flex-col overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-lg bg-indigo-500/15 flex items-center justify-center">
+                  <User size={16} className="text-indigo-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Nuevo cliente</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-white/50">Se selecciona automáticamente al crearlo</p>
+                </div>
+              </div>
+              <button onClick={() => setShowNewClientModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06]">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-1">Nombre completo *</label>
+                <input
+                  autoFocus
+                  value={newClientName}
+                  onChange={e => setNewClientName(e.target.value)}
+                  placeholder="Ej: Juan Pérez"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-1">Cédula / RIF</label>
+                  <input
+                    value={newClientCedula}
+                    onChange={e => setNewClientCedula(e.target.value)}
+                    placeholder="V-12345678"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-sm font-mono text-slate-800 dark:text-white/90 outline-none focus:border-indigo-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-1">Teléfono</label>
+                  <input
+                    value={newClientPhone}
+                    onChange={e => setNewClientPhone(e.target.value)}
+                    placeholder="+58 412..."
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-sm text-slate-800 dark:text-white/90 outline-none focus:border-indigo-400"
+                  />
+                </div>
+              </div>
+              {newClientError && (
+                <div className="rounded-lg border border-rose-300 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 text-xs p-2 flex items-center gap-1.5">
+                  <AlertTriangle size={12} /> {newClientError}
+                </div>
+              )}
+              <p className="text-[11px] text-slate-500 dark:text-white/40">
+                Después podrás completar más datos desde <span className="font-bold">Deudores / CxC</span>.
+              </p>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-white/10 flex justify-end gap-2">
+              <button
+                onClick={() => setShowNewClientModal(false)}
+                disabled={creatingClient}
+                className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 dark:text-white/60 hover:bg-slate-100 dark:hover:bg-white/[0.04] disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCreateClient}
+                disabled={creatingClient || newClientName.trim().length < 2}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-50"
+              >
+                {creatingClient ? 'Creando…' : (<><CheckCircle2 size={12} /> Crear y seleccionar</>)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreditModal && customer && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => { if (e.target === e.currentTarget) setShowCreditModal(false); }}>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full max-w-md flex flex-col overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center">
+                  <CreditCard size={16} className="text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Venta a crédito</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-white/50">Genera factura abierta en CxC del cliente</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCreditModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06]">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">Cliente</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{customer.fullName || customer.nombre}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">Total</p>
+                  <p className="text-lg font-bold tabular-nums text-amber-600 dark:text-amber-400">${totals.totalUsd.toFixed(2)}</p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-1">Días de crédito</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[15, 30, 45, 60, 90].map(d => (
+                    <button
+                      key={d}
+                      onClick={() => setCreditDays(d)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${creditDays === d ? 'bg-amber-500 text-white' : 'bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-white/70 hover:bg-amber-100 dark:hover:bg-amber-500/20'}`}
+                    >
+                      {d}d
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min="0"
+                    value={creditDays}
+                    onChange={e => setCreditDays(parseInt(e.target.value) || 0)}
+                    className="w-20 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-xs font-bold tabular-nums text-right outline-none focus:border-amber-400"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Vence el <span className="font-bold tabular-nums text-slate-600 dark:text-white/60">
+                    {new Date(Date.now() + creditDays * 86400000).toISOString().slice(0, 10)}
+                  </span>
+                </p>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-1">Nota (opcional)</label>
+                <input
+                  value={creditNote}
+                  onChange={e => setCreditNote(e.target.value)}
+                  placeholder="Ej: pedido para boda, paga el sábado"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-sm outline-none focus:border-amber-400"
+                />
+              </div>
+              <div className="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/5 p-3 text-[11px] text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                <span>El stock se descuenta inmediatamente. La factura queda <span className="font-bold">PENDIENTE</span> en CxC hasta que el cliente abone.</span>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-white/10 flex justify-end gap-2">
+              <button
+                onClick={() => setShowCreditModal(false)}
+                disabled={submittingCredit}
+                className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 dark:text-white/60 hover:bg-slate-100 dark:hover:bg-white/[0.04] disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCreditSale}
+                disabled={submittingCredit}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold disabled:opacity-50"
+              >
+                {submittingCredit ? 'Generando…' : (<><CheckCircle2 size={12} /> Confirmar crédito</>)}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── RECEIPT MODAL ──────────────────────────────────────────────────── */}

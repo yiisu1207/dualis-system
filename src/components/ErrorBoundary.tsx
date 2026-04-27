@@ -167,68 +167,144 @@ export default class ErrorBoundary extends Component<Props, State> {
     }
   };
 
+  /** Heurística amigable: traduce un error técnico a una causa probable
+   *  legible para el usuario, con una acción sugerida. */
+  private diagnose(message: string): { title: string; hint: string; suggested: 'retry' | 'reload' | 'home' } {
+    const m = message.toLowerCase();
+    if (m.includes('useState') && m.includes('null')) {
+      return {
+        title: 'Conflicto de carga del módulo',
+        hint: 'Probablemente quedó una versión vieja en caché. Recarga la página para que el sistema cargue limpio.',
+        suggested: 'reload',
+      };
+    }
+    if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('network request failed')) {
+      return {
+        title: 'Sin conexión',
+        hint: 'No pudimos contactar al servidor. Revisa tu internet y reintenta.',
+        suggested: 'retry',
+      };
+    }
+    if (m.includes('permission-denied') || m.includes('insufficient permissions')) {
+      return {
+        title: 'Permisos insuficientes',
+        hint: 'Tu cuenta no tiene acceso a ese recurso. Contacta al administrador del negocio.',
+        suggested: 'home',
+      };
+    }
+    if (m.includes('quota') || m.includes('rate limit')) {
+      return {
+        title: 'Límite alcanzado',
+        hint: 'Tu negocio alcanzó un límite de uso. Espera unos minutos o contacta a soporte.',
+        suggested: 'retry',
+      };
+    }
+    if (m.includes('cannot read') || m.includes('undefined') || m.includes('null')) {
+      return {
+        title: 'Dato inesperado',
+        hint: 'Encontramos un valor faltante donde esperábamos uno. Reintentar suele resolverlo.',
+        suggested: 'retry',
+      };
+    }
+    return {
+      title: 'Error inesperado',
+      hint: 'Algo salió mal pero tus datos están a salvo. Reintenta o copia el error para reportarlo.',
+      suggested: 'retry',
+    };
+  }
+
   render() {
     if (!this.state.hasError) return this.props.children;
     if (this.props.fallback) return this.props.fallback;
 
     const { error, errorId, copied } = this.state;
     const message = error?.message || 'Error desconocido';
+    const diag = this.diagnose(message);
+    const ts = new Date().toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'medium' });
 
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-        <div className="w-full max-w-xl bg-slate-900 border border-red-500/30 rounded-2xl shadow-2xl overflow-hidden">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-red-600/20 to-rose-600/10 border-b border-red-500/20 px-6 py-5 flex items-center gap-3">
-            <div className="h-11 w-11 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center shrink-0">
-              <AlertTriangle size={22} className="text-red-400" />
+      <div className="min-h-screen bg-gradient-to-br from-[#070b14] via-[#0a1024] to-[#070b14] text-slate-100 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Glow ambiente */}
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-rose-500/[0.08] blur-3xl" />
+        </div>
+
+        <div className="relative w-full max-w-2xl bg-slate-900/80 backdrop-blur-xl border border-rose-500/25 rounded-2xl shadow-2xl shadow-rose-500/10 overflow-hidden">
+          {/* Header con marca */}
+          <div className="bg-gradient-to-r from-rose-600/15 via-rose-500/10 to-transparent border-b border-rose-500/20 px-6 py-5 flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center shrink-0 shadow-lg shadow-rose-500/30">
+              <AlertTriangle size={24} className="text-white" strokeWidth={2.5} />
             </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-red-400 mb-0.5">
-                Ocurrió un error inesperado
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-300/80 mb-0.5">
+                Dualis ERP · {ts}
               </p>
-              <h2 className="text-base font-black">Dualis ERP detectó un problema</h2>
+              <h2 className="text-lg font-black text-white">{diag.title}</h2>
             </div>
           </div>
 
           {/* Body */}
           <div className="px-6 py-5 space-y-4">
-            <p className="text-sm text-slate-300 leading-relaxed">
-              Algo salió mal al renderizar la pantalla. Tu información está a salvo — no perdiste nada.
-              Puedes reintentar, recargar la página, o copiar el error para reportarlo al soporte.
-            </p>
-
-            <div className="bg-slate-950/60 border border-red-500/20 rounded-xl p-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-red-400/70 mb-1.5">
-                Mensaje
+            {/* Hint legible */}
+            <div className="rounded-xl bg-rose-500/[0.08] border border-rose-500/20 px-4 py-3 flex items-start gap-3">
+              <div className="w-7 h-7 rounded-lg bg-rose-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-rose-300 text-sm font-black">i</span>
+              </div>
+              <p className="text-sm text-rose-100/90 leading-relaxed">
+                {diag.hint}
               </p>
-              <pre className="text-xs text-red-300 font-mono break-words whitespace-pre-wrap max-h-32 overflow-y-auto">
-                {message}
-              </pre>
             </div>
 
-            {errorId && (
-              <div className="text-[10px] text-slate-500">
-                ID del error: <span className="font-mono text-slate-400">{errorId}</span>
+            <p className="text-[12px] text-slate-400 leading-relaxed">
+              <span className="font-bold text-slate-300">Tu información está a salvo</span> — no perdiste nada.
+              Puedes reintentar (mantiene tu sesión), recargar la página, o copiar el error para reportarlo al soporte.
+            </p>
+
+            {/* Detalle técnico colapsable */}
+            <details className="group rounded-xl bg-slate-950/60 border border-slate-800/80 overflow-hidden">
+              <summary className="cursor-pointer px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-200 hover:bg-slate-900/50 flex items-center justify-between">
+                <span>Detalle técnico</span>
+                <span className="text-[10px] text-slate-500 group-open:hidden">click para expandir</span>
+              </summary>
+              <div className="border-t border-slate-800/80 px-4 py-3 space-y-2">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Mensaje</p>
+                  <pre className="text-[11px] text-rose-300 font-mono break-words whitespace-pre-wrap max-h-32 overflow-y-auto">
+                    {message}
+                  </pre>
+                </div>
+                {errorId && (
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">ID del error</p>
+                    <p className="font-mono text-[11px] text-slate-400 select-all">{errorId}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">URL</p>
+                  <p className="font-mono text-[11px] text-slate-400 break-all">{typeof window !== 'undefined' ? window.location.href : '—'}</p>
+                </div>
               </div>
-            )}
+            </details>
           </div>
 
-          {/* Actions */}
+          {/* Actions — orden adaptado al diagnóstico */}
           <div className="px-6 pb-6 flex flex-col sm:flex-row gap-2">
             <button
-              onClick={this.handleReset}
-              className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+              onClick={diag.suggested === 'reload' ? this.handleReload : this.handleReset}
+              className="flex-1 py-3 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2"
             >
               <RefreshCw size={14} />
-              Reintentar
+              {diag.suggested === 'reload' ? 'Recargar página' : 'Reintentar'}
             </button>
-            <button
-              onClick={this.handleReload}
-              className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
-            >
-              <Home size={14} />
-              Recargar
-            </button>
+            {diag.suggested !== 'reload' && (
+              <button
+                onClick={this.handleReload}
+                className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+              >
+                <Home size={14} />
+                Recargar
+              </button>
+            )}
             <button
               onClick={this.handleCopy}
               className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
@@ -236,6 +312,17 @@ export default class ErrorBoundary extends Component<Props, State> {
               <Copy size={14} />
               {copied ? 'Copiado ✓' : 'Copiar error'}
             </button>
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 py-3 bg-slate-950/50 border-t border-slate-800/50 flex items-center justify-between text-[10px] text-slate-500">
+            <span className="font-mono">Dualis ERP</span>
+            <a
+              href="mailto:soporte@dualisystem.com?subject=Error en Dualis ERP"
+              className="text-slate-400 hover:text-indigo-400 font-semibold uppercase tracking-wider"
+            >
+              Contactar soporte →
+            </a>
           </div>
         </div>
       </div>
