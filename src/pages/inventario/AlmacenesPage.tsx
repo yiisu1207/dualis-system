@@ -206,6 +206,28 @@ export default function AlmacenesPage() {
         </button>
       </div>
 
+      {/* Banner explicativo: solo cuando el único almacén es el virtual.
+          Aclara qué significa "Materializar" antes de que el usuario lo
+          presione sin entender. */}
+      {virtualPrincipal && almacenes.length === 0 && (
+        <div className="rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/60 dark:bg-indigo-500/[0.06] p-4 flex items-start gap-3">
+          <div className="w-9 h-9 rounded-lg bg-indigo-500 text-white flex items-center justify-center shrink-0">
+            <Building2 size={15} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-indigo-900 dark:text-indigo-200">
+              Tienes un solo almacén virtual — todo está bien
+            </p>
+            <p className="text-[12px] text-indigo-700/80 dark:text-indigo-300/80 mt-1 leading-relaxed">
+              Tu inventario actual vive en un almacén virtual llamado <strong>Principal</strong>. Si tienes una sola tienda, <strong>NO necesitas hacer nada</strong> — funciona perfectamente así.
+            </p>
+            <p className="text-[12px] text-indigo-700/80 dark:text-indigo-300/80 mt-1.5 leading-relaxed">
+              <strong>¿Cuándo materializar?</strong> Solo si vas a tener 2 o más almacenes (sucursales, bodegas, etc.). Es 100% seguro, no toca tu stock — solo crea el registro en la base de datos para que puedas crear más almacenes después.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Lista de almacenes */}
       <div className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] overflow-hidden">
         {loading ? (
@@ -281,7 +303,16 @@ export default function AlmacenesPage() {
                       <button
                         onClick={() => { setEditing(null); setShowModal(true); }}
                         className="px-2.5 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[11px] font-semibold hover:bg-indigo-500/20"
-                        title="Crear almacén real para reemplazar el virtual"
+                        title={
+                          'Materializar = convertir tu almacén virtual en uno real.\n\n'
+                          + '• NO mueve ni toca tu inventario actual.\n'
+                          + '• Solo crea un registro de almacén "real" en la base de datos.\n'
+                          + '• Te permite empezar a usar multi-almacén (crear sucursales / bodegas).\n\n'
+                          + 'Si tienes UN solo punto de venta físico, NO necesitas materializar — '
+                          + 'tu almacén virtual ya funciona perfectamente. Solo hazlo si vas a tener '
+                          + '2 o más almacenes.\n\n'
+                          + 'Es 100% seguro y reversible.'
+                        }
                       >
                         Materializar
                       </button>

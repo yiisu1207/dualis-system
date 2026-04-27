@@ -199,25 +199,53 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
 
   // Predicción de ruptura: cruzamos los moves de salida con los productos
   // para estimar cuándo se agota cada uno al ritmo actual.
-  const ruptureRisks = useMemo((): RuptureRisk[] => {
-    if (products.length === 0 || moves.length === 0) return [];
+  //
+  // Requisitos mínimos para mostrar predicción confiable:
+  //   - El negocio debe tener >= 7 días de historial de ventas (medido como
+  //     spread entre el primer y último movimiento de salida).
+  //   - Cada producto necesita >= 3 eventos de venta para que su predicción
+  //     individual sea confiable. Con 1-2 ventas la velocidad es ruido.
+  // Si no se cumple lo primero, se oculta el panel completo y se muestra
+  // un mensaje de "recopilando datos" (ver render). Si no se cumple lo
+  // segundo a nivel SKU, ese SKU específico se omite.
+  const MIN_HISTORY_DAYS = 7;
+  const MIN_EVENTS_PER_SKU = 3;
+
+  const { ruptureRisks, hasEnoughHistory, daysOfHistory } = useMemo(() => {
+    if (products.length === 0 || moves.length === 0) {
+      return { ruptureRisks: [] as RuptureRisk[], hasEnoughHistory: false, daysOfHistory: 0 };
+    }
     // Agrupar movements de salida por productId
     const salesByProduct = new Map<string, Array<{ date: string; quantity: number }>>();
+    let firstSaleMs = Infinity;
+    let lastSaleMs = 0;
     for (const m of moves) {
       if (!m.productId) continue;
       if (!isEntrada(m.type, m.quantity)) {
+        const ms = tsMillis(m.createdAt);
+        if (ms > 0) {
+          if (ms < firstSaleMs) firstSaleMs = ms;
+          if (ms > lastSaleMs) lastSaleMs = ms;
+        }
         const date = typeof m.createdAt === 'string'
           ? m.createdAt
-          : (m.createdAt?.toDate?.()?.toISOString?.() ?? new Date(tsMillis(m.createdAt)).toISOString());
+          : (m.createdAt?.toDate?.()?.toISOString?.() ?? new Date(ms).toISOString());
         const arr = salesByProduct.get(m.productId) || [];
         arr.push({ date, quantity: Math.abs(Number(m.quantity || 0)) });
         salesByProduct.set(m.productId, arr);
       }
     }
+    const days = firstSaleMs === Infinity ? 0 : Math.max(0, (lastSaleMs - firstSaleMs) / 86_400_000);
+    const enough = days >= MIN_HISTORY_DAYS;
+    if (!enough) {
+      return { ruptureRisks: [] as RuptureRisk[], hasEnoughHistory: false, daysOfHistory: days };
+    }
     const risks: RuptureRisk[] = [];
     for (const p of products) {
       const events = salesByProduct.get(p.id);
-      if (!events || events.length === 0) continue;
+      // Filtro a nivel SKU: necesitamos >=3 eventos para que la velocidad
+      // promedio no sea ruido (1 venta no dice nada de la tendencia).
+      if (!events || events.length < MIN_EVENTS_PER_SKU) continue;
       const r = predictRupture({
         productId: p.id,
         productName: p.nombre,
@@ -228,7 +256,11 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
       // Solo nos interesan los que se agotan en <14 días
       if (r && r.daysToRupture <= 14) risks.push(r);
     }
-    return sortByUrgency(risks).slice(0, 10);
+    return {
+      ruptureRisks: sortByUrgency(risks).slice(0, 10),
+      hasEnoughHistory: true,
+      daysOfHistory: days,
+    };
   }, [products, moves]);
 
   const handleSendWhatsApp = () => {
@@ -361,9 +393,9 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
         </div>
       </div>
 
-      {/* Acciones rápidas */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div data-tour="inv-quick-recepcion">
+      {/* Acciones rápidas — contents en wrappers para no romper el grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 auto-rows-fr">
+        <div data-tour="inv-quick-recepcion" className="block w-full">
           <QuickAction
             icon={<ArrowDownToLine size={16} />}
             label="Recepción"
@@ -372,7 +404,7 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
             onClick={() => onNavigate('recepcion')}
           />
         </div>
-        <div data-tour="inv-quick-salida">
+        <div data-tour="inv-quick-salida" className="block w-full">
           <QuickAction
             icon={<ArrowUpFromLine size={16} />}
             label="Nueva salida"
@@ -381,7 +413,7 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
             onClick={() => onNavigate('salidas')}
           />
         </div>
-        <div data-tour="inv-quick-conteo">
+        <div data-tour="inv-quick-conteo" className="block w-full">
           <QuickAction
             icon={<ClipboardList size={16} />}
             label="Iniciar conteo"
@@ -390,7 +422,7 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
             onClick={() => onNavigate('conteo')}
           />
         </div>
-        <div data-tour="inv-quick-kardex">
+        <div data-tour="inv-quick-kardex" className="block w-full">
           <QuickAction
             icon={<Activity size={16} />}
             label="Ver kardex"
@@ -402,7 +434,7 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
       </div>
 
       {/* Stats secundarios */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 auto-rows-fr">
         <StatChip
           icon={<Package size={13} />}
           label="Productos"
@@ -486,8 +518,29 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
         </div>
       )}
 
+      {/* Panel informativo cuando aún no hay suficiente histórico para
+          predecir con precisión (< 7 días de ventas). Evita mostrar números
+          alarmistas basados en 1-2 días de operación. */}
+      {!hasEnoughHistory && moves.length > 0 && (
+        <div className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-slate-50 dark:bg-white/[0.02] p-4 flex items-center gap-3" data-tour="inv-prediccion">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+            <Timer size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Recopilando datos para predicción</h3>
+            <p className="text-[11px] text-slate-500 dark:text-white/50 mt-0.5">
+              Necesitamos al menos <strong>7 días de ventas</strong> para predecir con precisión cuándo se agota cada producto.
+              {daysOfHistory > 0 && (
+                <> Llevas <strong className="tabular-nums">{Math.floor(daysOfHistory)} día{Math.floor(daysOfHistory) !== 1 ? 's' : ''}</strong> de historial — sigue vendiendo y la predicción se activará sola.</>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Panel "Predicción de ruptura" — usa velocidad histórica de venta para
-          estimar cuándo se agotan los productos. Botón → mensaje pre-armado WA. */}
+          estimar cuándo se agotan los productos. Botón → mensaje pre-armado WA.
+          Solo aparece si hay >=7 días de histórico (ver hasEnoughHistory). */}
       {ruptureRisks.length > 0 && (
         <div className="rounded-xl border border-rose-200 dark:border-rose-500/30 bg-gradient-to-br from-rose-50/60 via-white to-rose-50/30 dark:from-rose-500/[0.06] dark:via-white/[0.02] dark:to-rose-500/[0.04] overflow-hidden" data-tour="inv-prediccion">
           <div className="px-4 py-3 border-b border-rose-200/60 dark:border-rose-500/20 flex items-center justify-between flex-wrap gap-2">
@@ -691,16 +744,18 @@ function QuickAction({ icon, label, sub, tone, onClick }: {
   return (
     <button
       onClick={onClick}
-      className={`group relative overflow-hidden bg-gradient-to-br ${toneMap[tone]} border rounded-xl p-3 text-left transition-all hover:shadow-md hover:-translate-y-0.5`}
+      className={`group relative w-full h-full overflow-hidden bg-gradient-to-br ${toneMap[tone]} border rounded-xl p-4 text-left transition-all hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-between min-h-[92px]`}
     >
-      <div className="flex items-center gap-2 mb-1">
-        <div className="w-7 h-7 rounded-lg bg-white/60 dark:bg-white/[0.08] flex items-center justify-center">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-lg bg-white/60 dark:bg-white/[0.08] flex items-center justify-center shrink-0">
           {icon}
         </div>
-        <Plus size={11} className="opacity-40 ml-auto group-hover:opacity-100 transition-opacity" />
+        <Plus size={12} className="opacity-40 ml-auto group-hover:opacity-100 transition-opacity shrink-0" />
       </div>
-      <p className="text-sm font-bold leading-tight">{label}</p>
-      <p className="text-[10px] opacity-60 mt-0.5">{sub}</p>
+      <div className="mt-2.5">
+        <p className="text-sm font-bold leading-tight">{label}</p>
+        <p className="text-[10px] opacity-60 mt-1 leading-snug">{sub}</p>
+      </div>
     </button>
   );
 }
@@ -720,16 +775,18 @@ function StatChip({ icon, label, value, sub, tone, onClick }: {
     <button
       onClick={onClick}
       disabled={!onClick}
-      className={`text-left rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] p-3 transition-all ${
+      className={`text-left w-full h-full rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] p-4 transition-all flex flex-col justify-between min-h-[92px] ${
         onClick ? 'hover:border-indigo-300 dark:hover:border-indigo-500/30 hover:shadow-sm cursor-pointer' : 'cursor-default'
       }`}
     >
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-1">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">
         {icon}
         {label}
       </div>
-      <p className={`text-xl font-bold tabular-nums ${valueColor}`}>{value}</p>
-      <p className="text-[10px] text-slate-400 dark:text-white/30 mt-0.5">{sub}</p>
+      <div className="mt-2.5">
+        <p className={`text-xl font-bold tabular-nums leading-tight ${valueColor}`}>{value}</p>
+        <p className="text-[10px] text-slate-400 dark:text-white/30 mt-1 leading-snug">{sub}</p>
+      </div>
     </button>
   );
 }

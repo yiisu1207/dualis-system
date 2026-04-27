@@ -197,16 +197,22 @@ export default function ProductosPage() {
   }, [products]);
 
   const kpis = useMemo(() => {
-    let value = 0, units = 0, low = 0, out = 0;
+    let valueCost = 0, valueRetail = 0, units = 0, low = 0, out = 0;
     for (const p of products) {
       const s = Number(p.stock || 0);
       units += s;
-      value += s * Number(p.costoUSD || 0);
+      valueCost += s * Number(p.costoUSD || 0);
+      // Valor a precio de venta detal — si el producto no tiene precio detal,
+      // usamos costoUSD como fallback (no inflamos el número con productos
+      // que no tienen precio configurado).
+      const precioDetal = Number((p as any).precioDetal || 0) || Number(p.costoUSD || 0);
+      valueRetail += s * precioDetal;
       const min = Number(p.stockMinimo || 0);
       if (s === 0) out++;
       else if (min > 0 ? s <= min : s <= 5) low++;
     }
-    return { total: products.length, value, units, low, out };
+    const margenPct = valueCost > 0 ? ((valueRetail - valueCost) / valueCost) * 100 : 0;
+    return { total: products.length, valueCost, valueRetail, margenPct, units, low, out };
   }, [products]);
 
   const activeFilters: { key: string; label: string; clear: () => void }[] = [];
@@ -269,11 +275,16 @@ export default function ProductosPage() {
 
   return (
     <div className="space-y-3">
-      {/* Stats compactos arriba (4 chips slim) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+      {/* Stats compactos arriba — valor catálogo expandido (costo + venta + margen) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 auto-rows-fr">
         <StatChip icon={<Package size={12} />} label="Productos" value={kpis.total} />
         <StatChip icon={<Boxes size={12} />} label="Unidades" value={kpis.units.toLocaleString('es-VE')} />
-        <StatChip icon={<DollarSign size={12} />} label="Valor catálogo" value={`$${kpis.value.toFixed(0)}`} />
+        <ValueChip
+          icon={<DollarSign size={12} />}
+          costValue={kpis.valueCost}
+          retailValue={kpis.valueRetail}
+          margenPct={kpis.margenPct}
+        />
         <StatChip icon={<AlertTriangle size={12} />} label="Atención" value={kpis.low + kpis.out} sub={`${kpis.out} agotados · ${kpis.low} bajo`} tone={kpis.out > 0 ? 'rose' : 'amber'} />
       </div>
 
@@ -459,12 +470,52 @@ function StatChip({ icon, label, value, sub, tone }: {
     : tone === 'amber' ? 'text-amber-600 dark:text-amber-400'
     : 'text-slate-900 dark:text-white';
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2">
+    <div className="rounded-lg border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2.5 flex flex-col justify-between min-h-[68px]">
       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">
         {icon} {label}
       </div>
-      <p className={`text-lg font-bold tabular-nums mt-0.5 ${valColor}`}>{value}</p>
-      {sub && <p className="text-[10px] text-slate-400 dark:text-white/30 truncate">{sub}</p>}
+      <div className="mt-1">
+        <p className={`text-lg font-bold tabular-nums leading-tight ${valColor}`}>{value}</p>
+        {sub && <p className="text-[10px] text-slate-400 dark:text-white/30 truncate mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ValueChip — variante doble del StatChip que muestra valor a costo (lo
+ * que tienes invertido) y valor a precio detal (lo que harías si vendieras
+ * todo) + margen porcentual. Útil para que el dueño vea de un vistazo
+ * cuánto capital tiene en mercancía y cuánto recuperaría.
+ */
+function ValueChip({ icon, costValue, retailValue, margenPct }: {
+  icon: React.ReactNode;
+  costValue: number;
+  retailValue: number;
+  margenPct: number;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] px-3 py-2.5 flex flex-col justify-between min-h-[68px]">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40">
+          {icon} Valor catálogo
+        </div>
+        {margenPct > 0 && (
+          <span className="text-[9px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+            +{margenPct.toFixed(0)}%
+          </span>
+        )}
+      </div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <p className="text-lg font-bold tabular-nums leading-tight text-slate-900 dark:text-white">
+          ${costValue.toFixed(0)}
+        </p>
+        <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 dark:text-white/30">costo</span>
+      </div>
+      <p className="text-[10px] text-slate-500 dark:text-white/40 tabular-nums truncate mt-0.5">
+        <span className="text-emerald-600 dark:text-emerald-400 font-bold">${retailValue.toFixed(0)}</span>
+        <span className="text-slate-400 dark:text-white/30"> a precio detal</span>
+      </p>
     </div>
   );
 }

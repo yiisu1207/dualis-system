@@ -1346,6 +1346,40 @@ const PosContent = () => {
         });
       }
 
+      // ── KARDEX: registrar cada item como movimiento de salida tipo VENTA ─────
+      // Esto alimenta la vista Movimientos del módulo Inventario y permite
+      // auditar cada venta a nivel SKU. No bloquea: si falla, la venta ya
+      // está registrada en `movements` y el stock ya bajó. Best-effort.
+      try {
+        const kardexWrites = items.map(item => {
+          const isVariantItem = item.id.includes('__v_');
+          const realProductId = isVariantItem ? item.id.split('__v_')[0] : item.id;
+          const qty = effectiveStockQty(item);
+          // Buscar el costo desde la lista de productos cargada en POS
+          const prod = products.find(p => p.id === realProductId);
+          const unitCost = Number(prod?.costoUSD || 0);
+          return addDoc(collection(db, `businesses/${empresa_id}/inventoryMovements`), {
+            productId: realProductId,
+            productName: item.nombre,
+            productCode: (prod as any)?.codigo || (prod as any)?.barcode || null,
+            type: 'VENTA',
+            quantity: -qty, // negativo por convención de salidas en el schema nuevo
+            unitCostUSD: unitCost,
+            warehouseId: almacenes.length > 0 ? selectedAlmacenId : 'principal',
+            warehouseName: 'Principal',
+            reason: `Venta POS Detal #${nroControl}`,
+            sourceDocType: 'movement',
+            sourceDocId: movRef.id,
+            createdAt: isoDate,
+            createdBy: userProfile?.uid || 'sistema',
+            createdByName: userProfile?.fullName || 'Vendedor',
+          });
+        });
+        await Promise.all(kardexWrites);
+      } catch (kardexErr) {
+        console.warn('[POS Detal] kardex write failed (no-bloqueante)', kardexErr);
+      }
+
       // Update terminal stats
       if (cajaId) {
         await updateDoc(doc(db, `businesses/${empresa_id}/terminals`, cajaId), {
@@ -1606,6 +1640,36 @@ const PosContent = () => {
         } catch (e) {
           console.warn('[pos detal] no se pudo descontar stock', item.id, e);
         }
+      }
+
+      // KARDEX: registrar cada item como movimiento VENTA (best-effort).
+      try {
+        const kardexWrites = items.map(item => {
+          const isVariantItem = item.id.includes('__v_');
+          const realProductId = isVariantItem ? item.id.split('__v_')[0] : item.id;
+          const qty = effectiveStockQty(item);
+          const prod = products.find(p => p.id === realProductId);
+          const unitCost = Number(prod?.costoUSD || 0);
+          return addDoc(collection(db, `businesses/${empresa_id}/inventoryMovements`), {
+            productId: realProductId,
+            productName: item.nombre,
+            productCode: (prod as any)?.codigo || (prod as any)?.barcode || null,
+            type: 'VENTA',
+            quantity: -qty,
+            unitCostUSD: unitCost,
+            warehouseId: 'principal',
+            warehouseName: 'Principal',
+            reason: `Venta crédito #${nroControl}`,
+            sourceDocType: 'movement',
+            sourceDocId: movRef.id,
+            createdAt: isoDate,
+            createdBy: userProfile?.uid || 'sistema',
+            createdByName: userProfile?.fullName || 'Vendedor',
+          });
+        });
+        await Promise.all(kardexWrites);
+      } catch (kardexErr) {
+        console.warn('[POS Detal credit] kardex write failed (no-bloqueante)', kardexErr);
       }
 
       setCreditFeedback({ ok: true, msg: `Factura ${nroControl} a crédito ($${grandTotal.toFixed(2)}, vence ${dueDate}) creada en CxC` });
