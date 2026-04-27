@@ -181,6 +181,9 @@ export default function ReportesContables({
 
     for (const m of movements) {
       if (m.anulada) continue;
+      // Excluir saldos iniciales de migración: NO son ventas reales del negocio,
+      // son deudas heredadas de antes de usar Dualis. Sí siguen contando en CxC.
+      if ((m as any).isOpeningBalance) continue;
       const mKey = (m.date || '').slice(0, 7);
       const bucket = months.find(b => b.key === mKey);
       if (!bucket) continue;

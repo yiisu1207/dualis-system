@@ -4,11 +4,12 @@ import { CxCClientList } from '../components/cxc/CxCClientList';
 import { EntityDetail } from '../components/cxc/EntityDetail';
 import { MovementFormPanel } from '../components/cxc/MovementFormPanel';
 import NewClientModal from '../components/cxc/NewClientModal';
+import ImportCustomersModal from '../components/clientes/ImportCustomersModal';
 import ClientOnboardingWizard from '../components/cxc/ClientOnboardingWizard';
 import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useSubdomain } from '../context/SubdomainContext';
-import { Zap, Sparkles, X } from 'lucide-react';
+import { Zap, Sparkles, X, Upload } from 'lucide-react';
 import { reverseAbonoAllocations, applyAbonoAllocations, computeFifoAllocations } from '../utils/invoiceAllocations';
 import { getEffectiveCreditMode } from '../components/cxc/cxcHelpers';
 
@@ -116,7 +117,7 @@ export default function CxCPage({
   // el flujo caso por caso: "Rápido" para meter un cliente de paso,
   // "Guiado" para un cliente real que va a usar el portal.
   const [clientCreatorMode, setClientCreatorMode] =
-    useState<'closed' | 'picker' | 'quick' | 'guided'>('closed');
+    useState<'closed' | 'picker' | 'quick' | 'guided' | 'import'>('closed');
   const { slug } = useSubdomain();
 
   // In individual mode, non-admin users only see their own movements
@@ -461,10 +462,37 @@ export default function CxCPage({
                   </div>
                 </div>
               </button>
+
+              {/* Importar masivo: CSV / pegar de Excel / con saldo inicial */}
+              <button
+                onClick={() => setClientCreatorMode('import')}
+                className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.02] hover:border-emerald-400 dark:hover:border-emerald-500/50 hover:bg-emerald-50/50 dark:hover:bg-emerald-500/[0.06] transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                    <Upload size={18} className="text-emerald-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-black text-slate-900 dark:text-white">
+                      Importar varios (CSV o pegar de Excel)
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-400 dark:text-white/40 leading-tight">
+                      Migra clientes con saldo inicial — los montos antiguos no afectan tus estadísticas de ventas.
+                    </p>
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Modal de importación masiva con saldo inicial */}
+      <ImportCustomersModal
+        open={clientCreatorMode === 'import'}
+        onClose={() => setClientCreatorMode('closed')}
+      />
+
 
       {/* Flujo Rápido — NewClientModal legacy, sin cambios */}
       <NewClientModal

@@ -222,6 +222,8 @@ export default function AdminDashboard({
   const calcKpis = (mvs: Movement[]) => {
     let facturado = 0, cobrado = 0, invoiceCount = 0;
     mvs.forEach(m => {
+      // Excluir saldos iniciales: son deudas migradas, no ventas operativas
+      if ((m as any).isOpeningBalance) return;
       const amt = (m as any).amountInUSD || m.amount || 0;
       if (!m.isSupplierMovement) {
         if (m.movementType === 'FACTURA') {
@@ -304,7 +306,7 @@ export default function AdminDashboard({
   const areaData = useMemo(() =>
     days.map(day => {
       const dayMvs = movements.filter(
-        m => m.date?.startsWith(day) && !m.isSupplierMovement,
+        m => m.date?.startsWith(day) && !m.isSupplierMovement && !(m as any).isOpeningBalance,
       );
       const facturado = dayMvs
         .filter(m => m.movementType === 'FACTURA')

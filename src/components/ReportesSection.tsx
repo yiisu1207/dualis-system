@@ -105,9 +105,13 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers,
     return result;
   }, [movements, startDate, movType]);
 
-  // KPIs
+  // KPIs — excluye saldos iniciales migrados (no son ventas operativas)
   const kpis = useMemo(() => {
-    const facturas = movements.filter(m => m.movementType === MovementType.FACTURA && (!startDate || (m.date || '') >= startDate));
+    const facturas = movements.filter(m =>
+      m.movementType === MovementType.FACTURA
+      && !(m as any).isOpeningBalance
+      && (!startDate || (m.date || '') >= startDate)
+    );
     const abonos = movements.filter(m => m.movementType === MovementType.ABONO && (!startDate || (m.date || '') >= startDate));
 
     const totalFacturado = facturas.reduce((s, m) => s + convertAmount(m), 0);
@@ -129,7 +133,7 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers,
       const month = String(idx + 1).padStart(2, '0');
       const prefix = `${year}-${month}`;
       const facturas = movements
-        .filter(m => m.movementType === MovementType.FACTURA && (m.date || '').startsWith(prefix))
+        .filter(m => m.movementType === MovementType.FACTURA && !(m as any).isOpeningBalance && (m.date || '').startsWith(prefix))
         .reduce((s, m) => s + convertAmount(m), 0);
       const abonos = movements
         .filter(m => m.movementType === MovementType.ABONO && (m.date || '').startsWith(prefix))
@@ -155,20 +159,22 @@ const ReportesSection: React.FC<ReportesSectionProps> = ({ movements, customers,
       .slice(0, 5);
   }, [movements, customers, displayMode, bcvRate]);
 
-  // Estado de Resultados (P&L) del período
+  // Estado de Resultados (P&L) del período — excluye saldos iniciales migrados
   const pnl = useMemo(() => {
+    const isRealSale = (m: any) =>
+      m.movementType === MovementType.FACTURA && !m.isSupplierMovement && !m.isOpeningBalance;
     const ventas = filtered
-      .filter(m => m.movementType === MovementType.FACTURA && !m.isSupplierMovement)
+      .filter(isRealSale)
       .reduce((s, m) => s + convertAmount(m), 0);
 
     // IVA recaudado (solo movimientos POS que guardaron ivaAmount)
     const ivaRecaudado = filtered
-      .filter(m => m.movementType === MovementType.FACTURA && !m.isSupplierMovement)
+      .filter(isRealSale)
       .reduce((s, m) => s + ((m as any).ivaAmount || 0) * (displayMode === 'usd' ? 1 : displayMode === 'ves_today' ? bcvRate : ((m as any).tasaBCV || bcvRate)), 0);
 
     // IGTF recaudado
     const igtfRecaudado = filtered
-      .filter(m => m.movementType === MovementType.FACTURA && !m.isSupplierMovement)
+      .filter(isRealSale)
       .reduce((s, m) => s + ((m as any).igtfAmount || 0) * (displayMode === 'usd' ? 1 : displayMode === 'ves_today' ? bcvRate : ((m as any).tasaBCV || bcvRate)), 0);
 
     // Ventas netas (excluye impuestos recaudados)

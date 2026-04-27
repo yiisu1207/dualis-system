@@ -91,6 +91,13 @@ export interface Customer {
   tags?: string[];
   birthday?: string; // YYYY-MM-DD
   lastBirthdayGreetingYear?: number;
+  // ── Migración / saldo inicial ─────────────────────────────────────────────
+  // Cliente importado desde un sistema anterior (Excel, papel, otro ERP).
+  // El saldo inicial NO se considera "venta" en reportes — está marcado
+  // con `isOpeningBalance: true` en el Movement generado.
+  importedAt?: string;            // ISO de cuándo se importó
+  importBatchId?: string;         // ID del lote de importación (para auditoría)
+  hasOpeningBalance?: boolean;    // true si tiene movements con isOpeningBalance
   // Modo de control de crédito (override del default del negocio).
   // undefined = usa `businessConfigs/{bid}.creditMode` (default 'accumulated').
   creditMode?: CreditMode;
@@ -224,6 +231,15 @@ export interface Movement {
   approvalFlowId?: string;              // ref al pendingMovement del que nació
   approvedBy?: string[];                // uids que firmaron
   migratedFromHistorical?: boolean;     // bypass de quórum (import histórico)
+  // ── Saldo inicial migrado ─────────────────────────────────────────────────
+  // Movement creado al importar un cliente con deuda preexistente.
+  // Se trata como factura abierta en CxC (afecta saldo del cliente, aging,
+  // cobranza), pero los reportes/dashboards de operación lo EXCLUYEN para
+  // no inflar "ventas del día/mes" con dinero que el negocio nunca cobró.
+  // Filtrado: agregar `where('isOpeningBalance', '!=', true)` o filter en memoria.
+  isOpeningBalance?: boolean;
+  openingBalanceNote?: string;          // razón / origen ("Saldo de Excel", etc.)
+  importBatchId?: string;               // ID del lote de importación
   // ── Fase D.0.1 — Verificación de llegada al banco ─────────────────────────
   // Solo aplica a movements con metodoPago != Efectivo/Tarjeta.
   // Campos 100% informativos — no afectan contabilidad ni saldos.
