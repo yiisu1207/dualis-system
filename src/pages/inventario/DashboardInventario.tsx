@@ -95,7 +95,12 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
   useEffect(() => {
     if (!businessId) return;
     const u1 = onSnapshot(collection(db, `businesses/${businessId}/products`), snap => {
-      setProducts(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      // Excluir archivados (productos fusionados como duplicados, descontinuados, etc.)
+      setProducts(
+        snap.docs
+          .map(d => ({ id: d.id, ...(d.data() as any) }))
+          .filter((p: any) => !p.archived)
+      );
       setLoading(false);
     });
     const qMov = query(

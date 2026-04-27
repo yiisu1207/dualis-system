@@ -29,9 +29,10 @@ import {
   ArrowDownToLine, ArrowUpFromLine, Activity, Eye, EyeOff,
   CheckSquare, Square, MoreHorizontal, Boxes, TrendingUp, TrendingDown,
   Clock, ChevronRight, Loader2, ImageIcon, BarChart3, RotateCcw,
-  CheckCircle2, Sparkles, Percent, Star,
+  CheckCircle2, Sparkles, Percent, Star, Merge,
 } from 'lucide-react';
 import ProductoEditPage from './ProductoEditPage';
+import DuplicatesModal from '../../components/inventario/DuplicatesModal';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────
 
@@ -125,6 +126,7 @@ export default function ProductosPage() {
   const [editPageId, setEditPageId] = useState<string | null>(null);
   const [duplicateFromId, setDuplicateFromId] = useState<string | null>(null);
   const [showFullScreen, setShowFullScreen] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [editingCell, setEditingCell] = useState<{ id: string; field: 'stock' | 'costoUSD' | 'precioDetal' | 'precioMayor' } | null>(null);
 
   // Persist UI choices
@@ -136,7 +138,14 @@ export default function ProductosPage() {
     if (!businessId) return;
     setLoading(true);
     const unsub = onSnapshot(collection(db, `businesses/${businessId}/products`), snap => {
-      setProducts(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      // Filtramos productos archivados (fusiones de duplicados, descontinuados).
+      // El campo `archived: true` los marca pero NO los elimina, para preservar
+      // movimientos históricos y facturas que apunten a su id.
+      setProducts(
+        snap.docs
+          .map(d => ({ id: d.id, ...(d.data() as any) }))
+          .filter((p: any) => !p.archived)
+      );
       setLoading(false);
     });
     return () => unsub();
@@ -343,6 +352,15 @@ export default function ProductosPage() {
           ]} />
         )}
 
+        {/* Detección de duplicados — abre modal con barcode/nombre matching */}
+        <button
+          onClick={() => setShowDuplicates(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30 text-xs font-semibold transition-all"
+          title="Detectar productos duplicados por barcode o nombre similar y fusionarlos de forma segura"
+        >
+          <Merge size={13} /> Duplicados
+        </button>
+
         {/* Acción primaria */}
         <button
           onClick={() => { setEditPageId(null); setDuplicateFromId(null); setShowFullScreen(true); }}
@@ -455,7 +473,8 @@ export default function ProductosPage() {
         />
       )}
 
-      {/* Modal nuevo producto */}
+      {/* Modal de detección de duplicados — escanea catálogo y permite fusión segura */}
+      <DuplicatesModal open={showDuplicates} onClose={() => setShowDuplicates(false)} />
     </div>
   );
 }

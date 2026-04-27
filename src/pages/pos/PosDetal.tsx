@@ -693,7 +693,7 @@ const PosContent = () => {
     const qp = query(collection(db, `businesses/${empresa_id}/products`));
     const unsub = onSnapshot(qp, snap => {
       setProducts(snap.docs
-        .filter(d => d.data().status !== 'pending_review')
+        .filter(d => d.data().status !== 'pending_review' && !d.data().archived)
         .map(d => {
           const data = d.data();
           const stockByAlmacen: Record<string, number> = data.stockByAlmacen || {};
