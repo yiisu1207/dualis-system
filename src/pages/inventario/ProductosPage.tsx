@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import ProductoEditPage from './ProductoEditPage';
 import DuplicatesModal from '../../components/inventario/DuplicatesModal';
+import { findDuplicates } from '../../utils/duplicateDetection';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────
 
@@ -224,6 +225,14 @@ export default function ProductosPage() {
     return { total: products.length, valueCost, valueRetail, margenPct, units, low, out };
   }, [products]);
 
+  // Detección de duplicados en memoria — aprovecha que `products` ya está cargado.
+  // Si hay grupos, mostramos un banner prominente arriba de la tabla.
+  const duplicateGroups = useMemo(() => findDuplicates(products as any), [products]);
+  const duplicatesAffectedCount = useMemo(
+    () => duplicateGroups.reduce((s, g) => s + g.items.length, 0),
+    [duplicateGroups],
+  );
+
   const activeFilters: { key: string; label: string; clear: () => void }[] = [];
   if (categoryFilter !== 'all') activeFilters.push({ key: 'cat', label: `Categoría: ${categoryFilter}`, clear: () => setCategoryFilter('all') });
   if (stockFilter !== 'all') activeFilters.push({ key: 'stock', label: `Stock: ${STOCK_FILTER_LABELS[stockFilter]}`, clear: () => setStockFilter('all') });
@@ -297,6 +306,46 @@ export default function ProductosPage() {
         <StatChip icon={<AlertTriangle size={12} />} label="Atención" value={kpis.low + kpis.out} sub={`${kpis.out} agotados · ${kpis.low} bajo`} tone={kpis.out > 0 ? 'rose' : 'amber'} />
       </div>
 
+      {/* Banner alerta de duplicados — solo cuando se detectan. Llamativo, no se ignora. */}
+      {duplicateGroups.length > 0 && (
+        <button
+          onClick={() => setShowDuplicates(true)}
+          className="w-full group relative overflow-hidden rounded-xl border-2 border-amber-300 dark:border-amber-500/40 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 dark:from-amber-500/[0.08] dark:via-orange-500/[0.10] dark:to-amber-500/[0.08] p-4 sm:p-5 flex items-center gap-4 text-left transition-all hover:shadow-md hover:border-amber-400 dark:hover:border-amber-500/60 hover:scale-[1.005]"
+        >
+          {/* Glow animado de fondo */}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-200/20 dark:via-amber-500/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 pointer-events-none" />
+
+          <div className="shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/30">
+            <AlertTriangle size={22} strokeWidth={2.4} />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-base sm:text-lg font-black text-amber-900 dark:text-amber-200 leading-tight">
+                Detectamos {duplicateGroups.length} grupo{duplicateGroups.length !== 1 ? 's' : ''} de productos duplicados
+              </h3>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest shadow-sm">
+                <Sparkles size={9} /> Acción recomendada
+              </span>
+            </div>
+            <p className="text-[13px] text-amber-800/80 dark:text-amber-200/70 mt-1 leading-snug">
+              <strong className="tabular-nums">{duplicatesAffectedCount}</strong> productos están afectados.
+              {' '}Pueden estar inflando tu inventario y confundiendo el POS.
+              {' '}Click aquí para revisarlos y fusionarlos de forma segura — tus facturas viejas no se tocan.
+            </p>
+          </div>
+
+          <div className="shrink-0 hidden sm:flex flex-col items-center gap-1">
+            <span className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black uppercase tracking-widest shadow-md inline-flex items-center gap-1.5 group-hover:scale-105 transition-transform">
+              <Merge size={13} /> Revisar ahora
+            </span>
+            <span className="text-[10px] font-semibold text-amber-700/60 dark:text-amber-300/40">
+              Toma 30 segundos
+            </span>
+          </div>
+        </button>
+      )}
+
       {/* Toolbar única slim */}
       <div className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02] p-2.5 flex flex-wrap items-center gap-2">
         {/* Buscador grande */}
@@ -352,13 +401,23 @@ export default function ProductosPage() {
           ]} />
         )}
 
-        {/* Detección de duplicados — abre modal con barcode/nombre matching */}
+        {/* Detección de duplicados — más prominente cuando hay grupos detectados */}
         <button
           onClick={() => setShowDuplicates(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30 text-xs font-semibold transition-all"
+          className={`relative inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all border ${
+            duplicateGroups.length > 0
+              ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500 shadow-md shadow-amber-500/30'
+              : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/30'
+          }`}
           title="Detectar productos duplicados por barcode o nombre similar y fusionarlos de forma segura"
         >
-          <Merge size={13} /> Duplicados
+          <Merge size={13} />
+          Duplicados
+          {duplicateGroups.length > 0 && (
+            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-white text-amber-700 text-[10px] font-black tabular-nums shadow-sm">
+              {duplicateGroups.length}
+            </span>
+          )}
         </button>
 
         {/* Acción primaria */}
