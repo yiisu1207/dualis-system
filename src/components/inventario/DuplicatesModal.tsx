@@ -414,12 +414,12 @@ export default function DuplicatesModal({ open, onClose }: Props) {
         {/* Header */}
         <div className="shrink-0 px-6 py-4 border-b border-slate-200 dark:border-white/[0.06] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-md">
-              <Merge size={18} />
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-md">
+              <Merge size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Detección de duplicados</h2>
-              <p className="text-[12px] text-slate-500 dark:text-white/50">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Detección de duplicados</h2>
+              <p className="text-sm text-slate-500 dark:text-white/50">
                 {loading
                   ? 'Escaneando catálogo…'
                   : showIgnored
@@ -441,8 +441,8 @@ export default function DuplicatesModal({ open, onClose }: Props) {
 
         {/* Aviso seguridad */}
         <div className="shrink-0 mx-6 mt-4 px-3 py-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 flex items-start gap-2.5">
-          <Shield size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-          <div className="text-[12px] text-emerald-800 dark:text-emerald-200 leading-relaxed">
+          <Shield size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-emerald-800 dark:text-emerald-200 leading-relaxed">
             <strong className="font-bold">Fusión segura.</strong> Los duplicados se archivan, no se eliminan. Tus facturas y movimientos históricos siguen intactos. Si te equivocas, puedes recuperar el producto desde "Productos archivados".
           </div>
         </div>
@@ -451,7 +451,7 @@ export default function DuplicatesModal({ open, onClose }: Props) {
         {!loading && (
           <div className="shrink-0 px-6 mt-3 mb-2 flex items-center gap-2">
             <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
@@ -469,7 +469,7 @@ export default function DuplicatesModal({ open, onClose }: Props) {
                 }`}
                 title="Mostrar/ocultar grupos marcados como 'no son duplicados'"
               >
-                <EyeOff size={12} />
+                <EyeOff size={13} />
                 {showIgnored ? 'Ver duplicados activos' : `Ver ignorados (${ignoredCount})`}
               </button>
             )}
@@ -564,16 +564,16 @@ export default function DuplicatesModal({ open, onClose }: Props) {
                       onClick={() => toggleExpand(group.key, group)}
                       className="w-full px-4 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
                     >
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
                         group.confidence === 'high'
                           ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
                           : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                       }`}>
-                        {group.reason === 'EXACT_BARCODE' ? <Barcode size={15} /> : <Package size={15} />}
+                        {group.reason === 'EXACT_BARCODE' ? <Barcode size={17} /> : <Package size={17} />}
                       </div>
                       <div className="flex-1 min-w-0 text-left">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                          <span className={`text-[11px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                             group.confidence === 'high'
                               ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400'
                               : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
@@ -581,16 +581,16 @@ export default function DuplicatesModal({ open, onClose }: Props) {
                             {group.reason === 'EXACT_BARCODE' ? 'Mismo barcode' : 'Nombre similar'}
                           </span>
                           {group.reason === 'EXACT_BARCODE' && (
-                            <span className="text-[11px] font-mono text-slate-500 dark:text-white/40">{group.key}</span>
+                            <span className="text-xs font-mono text-slate-500 dark:text-white/40">{group.key}</span>
                           )}
                           {isDone && (
-                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1">
-                              <CheckCircle2 size={10} /> Fusionado
+                            <span className="text-[11px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1">
+                              <CheckCircle2 size={11} /> Fusionado
                             </span>
                           )}
                           {isIgnored && (
-                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-600 dark:text-slate-400 inline-flex items-center gap-1">
-                              <EyeOff size={10} /> Ignorado
+                            <span className="text-[11px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-600 dark:text-slate-400 inline-flex items-center gap-1">
+                              <EyeOff size={11} /> Ignorado
                             </span>
                           )}
                         </div>
@@ -599,7 +599,7 @@ export default function DuplicatesModal({ open, onClose }: Props) {
                           {group.items.length > 3 && ` …`}
                         </p>
                       </div>
-                      {isExpanded ? <ChevronDown size={16} className="text-slate-400 shrink-0" /> : <ChevronRight size={16} className="text-slate-400 shrink-0" />}
+                      {isExpanded ? <ChevronDown size={17} className="text-slate-400 shrink-0" /> : <ChevronRight size={17} className="text-slate-400 shrink-0" />}
                     </button>
 
                     {/* Detalle expandido */}
@@ -618,7 +618,7 @@ export default function DuplicatesModal({ open, onClose }: Props) {
                           </div>
                         )}
 
-                        <p className="text-[12px] font-semibold text-slate-700 dark:text-white/70">
+                        <p className="text-sm font-semibold text-slate-700 dark:text-white/70">
                           Elige cuál se queda como producto principal — los demás se archivan y su stock se suma.
                         </p>
 
@@ -651,7 +651,7 @@ export default function DuplicatesModal({ open, onClose }: Props) {
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{it.nombre}</p>
                                       {isCanonical && (
-                                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-500 text-white">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-500 text-white">
                                           Se queda
                                         </span>
                                       )}

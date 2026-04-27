@@ -71,7 +71,44 @@ function similarity(a: string, b: string): number {
 }
 
 /**
- * Encuentra todos los grupos de duplicados en el catálogo.
+ * Detección RÁPIDA por barcode únicamente — O(N).
+ *
+ * Ideal para usar en banners/badges que se renderizan en cada cambio del
+ * catálogo. La detección por nombre fuzzy (O(N²) Levenshtein) está en
+ * findDuplicates() y debe usarse solo cuando se abre el modal.
+ *
+ * @param products Lista de productos del catálogo (sin archivados).
+ * @returns Solo grupos con `EXACT_BARCODE` (alta confianza).
+ */
+export function findDuplicatesByBarcode(products: DuplicateProduct[]): DuplicateGroup[] {
+  const active = products.filter(p => !p.archived);
+  const groups: DuplicateGroup[] = [];
+  const byBarcode = new Map<string, DuplicateProduct[]>();
+  for (const p of active) {
+    const code = (p.barcode || p.codigo || '').trim();
+    if (!code) continue;
+    const arr = byBarcode.get(code) || [];
+    arr.push(p);
+    byBarcode.set(code, arr);
+  }
+  for (const [code, arr] of byBarcode.entries()) {
+    if (arr.length < 2) continue;
+    groups.push({
+      reason: 'EXACT_BARCODE',
+      key: code,
+      items: arr,
+      confidence: 'high',
+    });
+  }
+  return groups.sort((a, b) => b.items.length - a.items.length);
+}
+
+/**
+ * Encuentra todos los grupos de duplicados en el catálogo (completo).
+ *
+ * Combina detección por barcode (rápida) + por nombre fuzzy (O(N²),
+ * lenta para catálogos grandes). Usar solo cuando se abre el modal,
+ * no en cada render de página.
  *
  * @param products Lista de productos del catálogo (sin archivados).
  * @returns Grupos de 2+ productos sospechosos de ser el mismo SKU.

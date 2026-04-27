@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import ProductoEditPage from './ProductoEditPage';
 import DuplicatesModal from '../../components/inventario/DuplicatesModal';
-import { findDuplicates } from '../../utils/duplicateDetection';
+import { findDuplicatesByBarcode } from '../../utils/duplicateDetection';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────
 
@@ -225,9 +225,11 @@ export default function ProductosPage() {
     return { total: products.length, valueCost, valueRetail, margenPct, units, low, out };
   }, [products]);
 
-  // Detección de duplicados en memoria — aprovecha que `products` ya está cargado.
-  // Si hay grupos, mostramos un banner prominente arriba de la tabla.
-  const duplicateGroups = useMemo(() => findDuplicates(products as any), [products]);
+  // Detección RÁPIDA de duplicados por barcode (O(N)) — aprovecha que
+  // `products` ya está cargado en memoria. Solo se usa para el banner y
+  // el contador del botón. La detección completa (incluye fuzzy por nombre,
+  // O(N²) y lenta) corre solo cuando se abre el modal de duplicados.
+  const duplicateGroups = useMemo(() => findDuplicatesByBarcode(products as any), [products]);
   const duplicatesAffectedCount = useMemo(
     () => duplicateGroups.reduce((s, g) => s + g.items.length, 0),
     [duplicateGroups],
