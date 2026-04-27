@@ -38,6 +38,12 @@ import {
   AlertTriangle,
   DollarSign,
 } from 'lucide-react';
+import { WhatsNewBadge } from './WhatsNewBadge';
+
+// Items que recibieron features nuevas en el último release. Se les pinta el
+// pill "NEW" hasta que el usuario marque las novedades como vistas
+// (WhatsNewModal cierra → localStorage flag).
+const NEW_ITEMS = new Set<string>(['inventario', 'cajas']);
 
 interface SidebarKpis {
   ventasHoy: number;
@@ -918,6 +924,9 @@ const NavItemRow: React.FC<NavItemRowProps> = ({
     <span className={`text-[13px] font-medium tracking-tight truncate relative z-10 transition-colors ${collapsed ? 'lg:hidden' : ''} ${isActive ? 'text-white' : ''}`}>
       {item.label}
     </span>
+    {!collapsed && NEW_ITEMS.has(item.id) && (
+      <WhatsNewBadge className="shrink-0 relative z-10" />
+    )}
     {!collapsed && shortcutHint && (
       <span className={`shrink-0 text-[9px] font-mono font-bold ml-auto mr-0.5 px-1.5 py-0.5 rounded border transition-colors ${isActive ? 'bg-white/15 border-white/25 text-white' : 'bg-white/[0.06] border-white/10 text-white/55 group-hover:text-white/80 group-hover:border-white/20'}`}>
         {shortcutHint.replace('Alt+', '⌥')}

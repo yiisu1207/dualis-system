@@ -72,6 +72,7 @@ import ExchangeRatesSection from './components/ExchangeRatesSection';
 import GlobalSearchPalette from './components/GlobalSearchPalette';
 import KeyboardShortcutsOverlay from './components/KeyboardShortcutsOverlay';
 import QuickActionsFAB from './components/QuickActionsFAB';
+import { WhatsNewModal, useWhatsNew } from './components/WhatsNewBadge';
 
 // WIDGETS
 import RateConverterWidget from './components/RateConverterWidget';
@@ -351,6 +352,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
   const [helpOpen, setHelpOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const whatsNew = useWhatsNew();
   const [sessionLocked, setSessionLocked] = useState(false);
   // Timeout configurable (minutos). 0 = nunca. Default 15 min.
   const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState<number>(15);
@@ -1642,6 +1644,13 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
 
       {/* KEYBOARD SHORTCUTS OVERLAY (?) */}
       <KeyboardShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      {/* WHAT'S NEW — auto-disparo una vez por versión */}
+      <WhatsNewModal
+        open={whatsNew.open}
+        onClose={whatsNew.closeModal}
+        onGoToTab={(tab) => goTab(tab)}
+      />
 
       {/* MODALS */}
       <UserProfileModalComp isOpen={isProfileOpen} profile={userProfile as any} onClose={() => setIsProfileOpen(false)} onSave={handleSaveProfile} />

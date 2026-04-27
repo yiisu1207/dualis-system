@@ -15,10 +15,10 @@
 // ║    🏢 Almacenes       — multi-almacén                                    ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Package, ArrowDownToLine, ArrowUpFromLine, Activity,
-  ClipboardList, Building2, LayoutDashboard, Truck,
+  ClipboardList, Building2, LayoutDashboard, Truck, Sparkles,
 } from 'lucide-react';
 import DashboardInventario from './DashboardInventario';
 import ProductosPage from './ProductosPage';
@@ -28,6 +28,9 @@ import EntradasPage from './EntradasPage';
 import SalidasPage from './SalidasPage';
 import ConteoFisicoPage from './ConteoFisicoPage';
 import AlmacenesPage from './AlmacenesPage';
+import { runTour } from '../../components/DriverTour';
+import { INVENTARIO_TOUR_STEPS, inventarioTourSeen, markInventarioTourSeen } from '../../components/tours/inventarioTour';
+import { useTenant } from '../../context/TenantContext';
 
 export type InvSection = 'dashboard' | 'productos' | 'movimientos' | 'recepcion' | 'entradas' | 'salidas' | 'conteo' | 'almacenes';
 
@@ -65,6 +68,24 @@ export default function InventarioModule() {
   const [focus, setFocus] = useState<InvNavFocus | null>(null);
   const active = SECTIONS.find(s => s.id === section)!;
   const ActiveIcon = active.icon;
+  const { tenantId } = useTenant();
+
+  // Auto-disparar tour la primera vez que el usuario entra a Inventario.
+  // Espera 800ms para que el DOM termine de montar los data-tour targets.
+  useEffect(() => {
+    if (!tenantId) return;
+    if (inventarioTourSeen(tenantId)) return;
+    if (section !== 'dashboard') return;
+    const t = setTimeout(() => {
+      runTour(INVENTARIO_TOUR_STEPS).then(() => markInventarioTourSeen(tenantId));
+    }, 800);
+    return () => clearTimeout(t);
+  }, [tenantId, section]);
+
+  const launchTourManual = () => {
+    if (section !== 'dashboard') setSection('dashboard');
+    setTimeout(() => runTour(INVENTARIO_TOUR_STEPS), 400);
+  };
 
   /** Cambia de sección y opcionalmente aplica un filtro pre-cargado. */
   const navigate = (next: InvSection | InvNavFocus) => {
@@ -83,7 +104,7 @@ export default function InventarioModule() {
     <div className="bg-slate-50 dark:bg-slate-900 min-h-full">
       <div className="max-w-[1600px] mx-auto px-3 sm:px-5 py-4 sm:py-6">
         {/* Header compacto: título + breadcrumb */}
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex items-center gap-3" data-tour="inv-hero">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white shadow-md shrink-0">
             <ActiveIcon size={18} />
           </div>
@@ -102,11 +123,19 @@ export default function InventarioModule() {
             </h1>
             <p className="text-[11px] text-slate-500 dark:text-white/40 mt-0.5 hidden sm:block">{active.description}</p>
           </div>
+          <button
+            onClick={launchTourManual}
+            className="hidden sm:inline-flex shrink-0 items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-400 text-[11px] font-bold uppercase tracking-widest transition-all"
+            title="Ver tour de introducción"
+          >
+            <Sparkles size={12} />
+            Ver tour
+          </button>
         </div>
 
         {/* Top tabs horizontales (sticky) */}
         <div className="sticky top-0 z-20 -mx-3 sm:-mx-5 px-3 sm:px-5 mb-5 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-white/[0.06]">
-          <nav className="flex gap-0.5 overflow-x-auto hide-scrollbar -mb-px">
+          <nav className="flex gap-0.5 overflow-x-auto hide-scrollbar -mb-px" data-tour="inv-tabs">
             {SECTIONS.map(s => {
               const Icon = s.icon;
               const isActive = section === s.id;

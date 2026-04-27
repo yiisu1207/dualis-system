@@ -269,7 +269,7 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
       <div className="rounded-2xl border border-slate-200 dark:border-white/[0.06] bg-gradient-to-br from-white via-indigo-50/30 to-white dark:from-white/[0.03] dark:via-indigo-500/[0.04] dark:to-white/[0.02] p-5 sm:p-6 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* Bloque 1: Valor */}
-          <div>
+          <div data-tour="inv-kpi-valor">
             <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-2">
               <DollarSign size={12} className="text-emerald-500" />
               Valor del inventario
@@ -294,7 +294,7 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
           </div>
 
           {/* Bloque 2: Salud del catálogo */}
-          <div className="md:border-l md:border-slate-200 dark:md:border-white/[0.06] md:pl-5">
+          <div className="md:border-l md:border-slate-200 dark:md:border-white/[0.06] md:pl-5" data-tour="inv-kpi-salud">
             <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-white/40 mb-2">
               <Sparkles size={12} className="text-indigo-500" />
               Salud del catálogo
@@ -363,34 +363,42 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
 
       {/* Acciones rápidas */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <QuickAction
-          icon={<ArrowDownToLine size={16} />}
-          label="Recepción"
-          sub="Ingreso desde proveedor"
-          tone="emerald"
-          onClick={() => onNavigate('recepcion')}
-        />
-        <QuickAction
-          icon={<ArrowUpFromLine size={16} />}
-          label="Nueva salida"
-          sub="Despacho · merma"
-          tone="rose"
-          onClick={() => onNavigate('salidas')}
-        />
-        <QuickAction
-          icon={<ClipboardList size={16} />}
-          label="Iniciar conteo"
-          sub="Sesión cíclica"
-          tone="violet"
-          onClick={() => onNavigate('conteo')}
-        />
-        <QuickAction
-          icon={<Activity size={16} />}
-          label="Ver kardex"
-          sub="Historial completo"
-          tone="indigo"
-          onClick={() => onNavigate('movimientos')}
-        />
+        <div data-tour="inv-quick-recepcion">
+          <QuickAction
+            icon={<ArrowDownToLine size={16} />}
+            label="Recepción"
+            sub="Ingreso desde proveedor"
+            tone="emerald"
+            onClick={() => onNavigate('recepcion')}
+          />
+        </div>
+        <div data-tour="inv-quick-salida">
+          <QuickAction
+            icon={<ArrowUpFromLine size={16} />}
+            label="Nueva salida"
+            sub="Despacho · merma"
+            tone="rose"
+            onClick={() => onNavigate('salidas')}
+          />
+        </div>
+        <div data-tour="inv-quick-conteo">
+          <QuickAction
+            icon={<ClipboardList size={16} />}
+            label="Iniciar conteo"
+            sub="Sesión cíclica"
+            tone="violet"
+            onClick={() => onNavigate('conteo')}
+          />
+        </div>
+        <div data-tour="inv-quick-kardex">
+          <QuickAction
+            icon={<Activity size={16} />}
+            label="Ver kardex"
+            sub="Historial completo"
+            tone="indigo"
+            onClick={() => onNavigate('movimientos')}
+          />
+        </div>
       </div>
 
       {/* Stats secundarios */}
@@ -481,7 +489,7 @@ export default function DashboardInventario({ onNavigate }: DashboardInventarioP
       {/* Panel "Predicción de ruptura" — usa velocidad histórica de venta para
           estimar cuándo se agotan los productos. Botón → mensaje pre-armado WA. */}
       {ruptureRisks.length > 0 && (
-        <div className="rounded-xl border border-rose-200 dark:border-rose-500/30 bg-gradient-to-br from-rose-50/60 via-white to-rose-50/30 dark:from-rose-500/[0.06] dark:via-white/[0.02] dark:to-rose-500/[0.04] overflow-hidden">
+        <div className="rounded-xl border border-rose-200 dark:border-rose-500/30 bg-gradient-to-br from-rose-50/60 via-white to-rose-50/30 dark:from-rose-500/[0.06] dark:via-white/[0.02] dark:to-rose-500/[0.04] overflow-hidden" data-tour="inv-prediccion">
           <div className="px-4 py-3 border-b border-rose-200/60 dark:border-rose-500/20 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-rose-500 text-white flex items-center justify-center shrink-0 shadow">

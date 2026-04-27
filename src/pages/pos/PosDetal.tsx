@@ -19,7 +19,7 @@ import {
   Package, CheckCircle2, AlertTriangle, LogOut, X, Banknote,
   Smartphone, Layers, ArrowLeftRight, User, Clock, Camera, History,
   Tag, MessageCircle, Printer, WifiOff, Pause, Play, CreditCard, FileText, Hash,
-  Maximize2, Minimize2, Keyboard,
+  Maximize2, Minimize2, Keyboard, Sparkles,
 } from 'lucide-react';
 import ReceiptModal from '../../components/ReceiptModal';
 import { getNextNroControl } from '../../utils/facturaUtils';
@@ -35,6 +35,8 @@ import { applyAbonoAllocations, computeFifoAllocations, getInvoiceRemaining } fr
 import { fuzzyFilter } from '../../utils/fuzzySearch';
 import { type HotkeyDef, loadHotkeys, hasOnboarded } from '../../utils/posHotkeys';
 import HotkeysModal from '../../components/pos/HotkeysModal';
+import { runTour } from '../../components/DriverTour';
+import { POS_TOUR_STEPS, posTourSeen, markPosTourSeen } from '../../components/tours/posTour';
 // Dynamic pricing imports removed — detal uses simple product.price
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -1035,6 +1037,23 @@ const PosContent = () => {
     }
   }, [cajaId]);
 
+  // Tour de introducción del POS — primera vez por terminal.
+  // Se dispara después del onboarding de hotkeys (espera 5s para no saturar).
+  useEffect(() => {
+    if (!cajaId) return;
+    if (posTourSeen(cajaId)) return;
+    const t = setTimeout(() => {
+      // Si el modal de hotkeys está abierto, esperamos a que se cierre
+      if (showHotkeysModal) return;
+      runTour(POS_TOUR_STEPS).then(() => markPosTourSeen(cajaId));
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [cajaId, showHotkeysModal]);
+
+  const launchPosTourManual = useCallback(() => {
+    runTour(POS_TOUR_STEPS);
+  }, []);
+
   const holdCart = useCallback(() => {
     if (items.length === 0) return;
     setHeldCarts(prev => [...prev, {
@@ -1638,7 +1657,7 @@ const PosContent = () => {
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white font-inter">
 
       {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <header className="h-14 sm:h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 px-3 sm:px-5 flex items-center justify-between shrink-0 z-30 shadow-sm gap-2 sm:gap-4">
+      <header data-tour="pos-hero" className="h-14 sm:h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 px-3 sm:px-5 flex items-center justify-between shrink-0 z-30 shadow-sm gap-2 sm:gap-4">
         {/* Left: terminal info */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md">
@@ -1662,7 +1681,7 @@ const PosContent = () => {
               <WifiOff size={11} /> Offline
             </div>
           )}
-          <div className="relative flex-1">
+          <div className="relative flex-1" data-tour="pos-search">
             <input
               autoFocus
               value={searchQuery}
@@ -1704,9 +1723,19 @@ const PosContent = () => {
           <HelpTooltip title="Atajos de teclado" text="Configura las teclas rápidas para vender más rápido. Cada terminal tiene su propio set." side="bottom">
             <button
               onClick={() => { setHotkeysOnboarding(false); setShowHotkeysModal(true); }}
+              data-tour="pos-hotkeys-btn"
               className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-white/[0.07] text-slate-500 hover:bg-slate-900 hover:text-white flex items-center justify-center transition-all shrink-0 border border-slate-200 dark:border-white/10"
             >
               <Keyboard size={16} />
+            </button>
+          </HelpTooltip>
+          <HelpTooltip title="Tour del POS" text="Te muestra paso a paso cómo usar las features nuevas del POS." side="bottom">
+            <button
+              onClick={launchPosTourManual}
+              className="h-10 w-10 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center transition-all shrink-0 border border-violet-500/30"
+              title="Ver tour del POS"
+            >
+              <Sparkles size={16} />
             </button>
           </HelpTooltip>
         </div>
@@ -1912,7 +1941,7 @@ const PosContent = () => {
         </section>
 
         {/* ── RIGHT: CART + CHECKOUT ─────────────────────────────────────────── */}
-        <aside className={`${mobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex flex-col flex-1 bg-white dark:bg-slate-900`}>
+        <aside data-tour="pos-cart" className={`${mobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex flex-col flex-1 bg-white dark:bg-slate-900`}>
 
           {/* Cart items table */}
           <div className="flex-1 overflow-y-auto custom-scroll">
@@ -2048,7 +2077,7 @@ const PosContent = () => {
           <div className="border-t border-slate-100 dark:border-white/[0.07] bg-slate-50 dark:bg-slate-900 p-3 sm:p-5 flex flex-col sm:flex-row gap-3 sm:gap-5">
 
             {/* Client section */}
-            <div className="flex-1 space-y-3 min-w-0">
+            <div className="flex-1 space-y-3 min-w-0" data-tour="pos-customer">
               {/* Consumidor Final toggle */}
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest">Cliente</label>
@@ -2407,6 +2436,7 @@ const PosContent = () => {
               <button
                 disabled={!canCharge}
                 onClick={() => setShowPaymentModal(true)}
+                data-tour="pos-pay"
                 className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2.5 transition-all ${canCharge ? 'bg-white text-slate-900 hover:bg-emerald-400 hover:text-white shadow-xl hover:scale-[1.02]' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}>
                 <Receipt size={16} />Cobrar
               </button>
@@ -2424,6 +2454,7 @@ const PosContent = () => {
                   <button
                     disabled={!canCredit}
                     onClick={() => setShowCreditModal(true)}
+                    data-tour="pos-credit"
                     title={canCredit ? 'Vender a crédito (genera factura en CxC)' : reasonDisabled}
                     className={`w-full mt-2 py-3 rounded-2xl font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-all ${canCredit ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-white border border-amber-500/40' : 'bg-white/[0.03] text-white/20 cursor-not-allowed border border-white/[0.06]'}`}
                   >
