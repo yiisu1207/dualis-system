@@ -20,7 +20,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  collection, doc, getDocs, query, where, writeBatch,
+  collection, doc, getDocs, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../context/AuthContext';
@@ -53,34 +53,28 @@ export default function DuplicatesModal({ open, onClose }: Props) {
   const [error, setError] = useState('');
 
   // Carga el catálogo al abrir.
+  // IMPORTANTE: cargamos TODO y filtramos en memoria. NO usamos
+  // where('archived', '!=', true) porque Firestore excluye documentos
+  // donde el campo `archived` no existe — y como ningún producto tiene
+  // ese campo hasta que se fusiona el primer duplicado, ese query
+  // retorna 0 resultados (bug silencioso).
   useEffect(() => {
     if (!open || !businessId) return;
     setLoading(true);
     setError('');
     (async () => {
       try {
-        // Solo activos (no archivados)
-        const q = query(
-          collection(db, `businesses/${businessId}/products`),
-          where('archived', '!=', true),
-        );
-        const snap = await getDocs(q);
+        const snap = await getDocs(collection(db, `businesses/${businessId}/products`));
         const arr: DuplicateProduct[] = [];
-        snap.forEach(d => arr.push({ id: d.id, ...(d.data() as any) }));
+        snap.forEach(d => {
+          const data = d.data() as any;
+          if (data.archived === true) return; // saltar archivados
+          arr.push({ id: d.id, ...data });
+        });
         setProducts(arr);
-      } catch (e: any) {
-        // Si el query con != falla (índices), caemos a load full + filter en memoria
-        try {
-          const snap = await getDocs(collection(db, `businesses/${businessId}/products`));
-          const arr: DuplicateProduct[] = [];
-          snap.forEach(d => {
-            const data = d.data() as any;
-            if (!data.archived) arr.push({ id: d.id, ...data });
-          });
-          setProducts(arr);
-        } catch (err: any) {
-          setError(err?.message || 'No se pudo cargar el catálogo');
-        }
+      } catch (err: any) {
+        console.error('[DuplicatesModal] load error', err);
+        setError(err?.message || 'No se pudo cargar el catálogo');
       } finally {
         setLoading(false);
       }
