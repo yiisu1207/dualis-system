@@ -102,7 +102,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'recurrentes', label: 'Recurrentes',      Icon: Clock,           path: 'recurrentes'  },
       { id: 'transferencias',label: 'Transferencias',   Icon: ArrowLeftRight,  path: 'transferencias'},
       { id: 'tasas',        label: 'Tasas Cambiarias', Icon: TrendingUp,      path: 'tasas'        },
-      { id: 'historial',    label: 'Libro Movimientos',Icon: History,         path: 'historial'    },
+      { id: 'historial',    label: 'Historial de Ventas', Icon: History,      path: 'historial'    },
     ],
   },
   {
@@ -133,11 +133,13 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'inteligencia',
     label: 'Inteligencia',
     items: [
+      // Fase 1 — limpieza:
+      // S20: Rentabilidad eliminado (era placeholder vacío)
+      // S21: Comparar Libros deprecated del sidebar (módulo se mantiene en código)
+      // S18/S19: Estadísticas y Pareto se absorberán en Reportes en Fase 3
       { id: 'reportes',     label: 'Reportes',         Icon: BarChart3,       path: 'reportes'     },
       { id: 'estadisticas', label: 'Estadísticas',     Icon: BarChart3,       path: 'estadisticas' },
       { id: 'pareto',       label: 'Pareto 80/20',     Icon: BarChart3,       path: 'pareto'       },
-      { id: 'rentabilidad', label: 'Rentabilidad',     Icon: TrendingUp,      path: 'rentabilidad' },
-      { id: 'comparar',     label: 'Comparar Libros',  Icon: ArrowLeftRight,  path: 'comparar'     },
     ],
   },
   {

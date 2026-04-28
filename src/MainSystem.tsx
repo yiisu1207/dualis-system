@@ -59,7 +59,6 @@ const CashFlowPanel = lazy(() => import('./pages/CashFlowPanel'));
 const ParetoPanel = lazy(() => import('./pages/ParetoPanel'));
 const Estadisticas = lazy(() => import('./pages/Estadisticas'));
 const TransferenciasPanel = lazy(() => import('./pages/TransferenciasPanel'));
-const RentabilidadPage = lazy(() => import('./pages/RentabilidadPage'));
 const SucursalesManager = lazy(() => import('./pages/SucursalesManager'));
 import TrialBanner from './components/TrialBanner';
 import NotificationCenter from './components/NotificationCenter';
@@ -455,6 +454,16 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     verificacion:  `${adminBase}/verificacion`,
     config:        `${adminBase}/configuracion`,
     help:          `${adminBase}/help`,
+    // Fase 1 — entradas que faltaban (sidebar navegaba pero activeTab no se sincronizaba)
+    cotizaciones:  `${adminBase}/cotizaciones`,
+    recurrentes:   `${adminBase}/recurrentes`,
+    transferencias:`${adminBase}/transferencias`,
+    historial:     `${adminBase}/historial`,
+    flujocaja:     `${adminBase}/flujocaja`,
+    estadisticas:  `${adminBase}/estadisticas`,
+    pareto:        `${adminBase}/pareto`,
+    // 'rentabilidad' eliminado — S20: archivo era placeholder de 22 líneas
+    // 'comparar' permanece para retrocompatibilidad pero NO aparece en sidebar (S21)
   }), [adminBase]);
 
   useEffect(() => {
@@ -1235,7 +1244,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     portalchat: 'Finanzas', contabilidad: 'Finanzas', conciliacion: 'Finanzas',
     rrhh: 'Equipo', comisiones: 'Equipo', sucursales: 'Equipo',
     reportes: 'Inteligencia', estadisticas: 'Inteligencia', pareto: 'Inteligencia',
-    rentabilidad: 'Inteligencia', comparar: 'Inteligencia',
+    comparar: 'Inteligencia',
     config: 'Sistema', help: 'Sistema',
   }), []);
 
@@ -1246,6 +1255,7 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
     reportes: 'Reportes', widgets: 'Herramientas',
     comparar: 'Comparar', tasas: 'Tasas', conciliacion: 'Conciliación',
     cajas: 'Cajas', despacho: 'Panel Despacho', sucursales: 'Sucursales', fiscal: 'Gestión Fiscal', libroventas: 'Reporte de Ventas',
+    historial: 'Historial de Ventas',
     tesoreria: 'Tesorería', comisiones: 'Reporte de Comisiones',
     verificacion: 'Verificación',
     reclamos: 'Reclamos',
@@ -1436,9 +1446,6 @@ const MainSystem: React.FC<{ initialTab?: string }> = ({ initialTab }) => {
               canAccess('sucursales')
                 ? <SucursalesManager />
                 : <LockedModule moduleName="Sucursales" requiredPlan="negocio" />
-            )}
-            {activeTab === 'rentabilidad' && (
-              <RentabilidadPage businessId={businessId} />
             )}
             {activeTab === 'reportes' && (
               !canView('reportes') ? <NoAccess /> :
