@@ -687,6 +687,120 @@ Workflow ultra-rápido para ventas pequeñas frecuentes:
 
 ---
 
+# 🤝 Bloque CC — Cuentas Colaborativas (multi-usuario)
+
+> Decidido tras revisión del problema real: la boutique tiene 3 personas que
+> trabajan sobre UNA cuenta compartida (la misma que el cliente ve en su portal).
+> Dolor: errores y descuadres consumen tiempo en encontrarlos.
+>
+> Solución: aprovechar al cliente como auditor + freno suave en input + radar
+> predictivo. NO requiere persona adicional, NO agrega trabajo de rutina.
+
+## CC1. Pre-validación inteligente al registrar ⭐⭐⭐⭐⭐
+- Antes de guardar un movimiento, check rápido sin bloquear flujo:
+  - Monto >> deuda del cliente → "¿es correcto?"
+  - Posible duplicado en últimos 10 min
+  - Cliente equivocado (monto típico de otro cliente)
+  - Typo (10x del usual)
+- Modal solo aparece cuando hay riesgo real, ofrece [Revisar] o [Confirmar de todos modos]
+- **Sin dependencias** — empezamos por aquí
+- **Esfuerzo**: 4-5h
+
+## CC2. Cliente como auditor (botón "Reportar discrepancia") ⭐⭐⭐⭐⭐
+- En portal del cliente, botón pequeño junto a cada movimiento
+- Click → form simple → notif a equipo con detalle del reclamo
+- Cola "Reclamos abiertos" en CxC
+- Estadística por usuario: "Maria 3 reclamos válidos este mes"
+- **Requiere**: portal del cliente activo y mostrando movimientos
+- **Esfuerzo**: 5-6h
+
+## CC3. Detector predictivo de reclamos ⭐⭐⭐⭐
+- Cron en background detecta clientes con saldo "sospechoso":
+  - Abono sin allocation
+  - Factura modificada post-vista del cliente (timestamp portal)
+  - Saldo cambió de signo bruscamente
+  - 2 movs idénticos consecutivos
+- Widget "Posibles reclamos próximos (N)" en CxC
+- Te adelantas al reclamo del cliente
+- **Esfuerzo**: 5-6h
+
+## CC4. Confirmación periódica del saldo por el cliente ⭐⭐⭐⭐⭐
+- Cada fin de mes, prompt en portal: "Tu saldo es $230. ¿Confirmas?"
+- Si confirma → saldo BLOQUEADO hasta esa fecha (acota descuadres en el tiempo)
+- Timestamp + IP queda como evidencia
+- Si reporta diferencia → flujo de CC2
+- **Requiere**: portal activo
+- **Esfuerzo**: 4-5h
+
+## CC5. Reverse audit — cliente carga pagos ⭐⭐⭐⭐⭐
+- En portal: botón "Reportar pago que falta registrar"
+- Cliente sube monto + fecha + foto del comprobante
+- Cola "Pagos auto-reportados" en equipo → 1 click validar
+- Convierte al cliente en parte del input
+- **Requiere**: portal activo
+- **Esfuerzo**: 5-6h
+
+## CC6. Lock de movimientos viejos ⭐⭐⭐⭐
+- Movs >30 días → read-only por defecto
+- Editar requiere razón explícita + flag visible "🔒 editado retroactivamente"
+- Notif al admin cuando alguien edita post-cierre
+- **Esfuerzo**: 3-4h
+
+## CC7. Autoasignación inteligente ⭐⭐⭐
+- Sistema mira histórico: "¿quién registró más movs de este cliente?"
+- Auto-asigna reclamos/pagos auto-reportados a esa persona
+- "Pérez es históricamente cliente de Maria → Maria recibe la notif"
+- **Esfuerzo**: 2-3h
+
+## CC8. Modo VIP con doble registro ⭐⭐⭐
+- Para 5-10 clientes top configurables, requiere 2 personas confirmen antes de visible al cliente
+- El otro 95% sigue sin verificación → cero trabajo extra
+- Reduce riesgo solo donde duele más
+- **Esfuerzo**: 3-4h
+
+## CC9. WhatsApp confirmación instantánea ⭐⭐⭐⭐
+- Al registrar abono → WA automático al cliente: "Registramos tu abono $50. Saldo: $30. Si NO reconoces, responde NO"
+- Cliente responde NO → flag automático
+- Sin respuesta en 24h → asume OK
+- **Requiere**: WhatsApp Business API configurada
+- **Esfuerzo**: 4-5h (cuando la API esté lista)
+
+## CC10. Score de salud por cliente ⭐⭐⭐
+- Cada cliente: 🟢 100% / 🟡 80% / 🔴 40% según consistencia
+- Lista priorizada de "clientes a limpiar"
+- **Esfuerzo**: 2-3h
+
+## CC11. Histórico inmutable con hash ⭐⭐⭐
+- Cada movimiento al guardarse genera hash del estado
+- Cadena de hashes para detectar modificaciones silenciosas
+- Útil para auditoría legal/contable
+- **Esfuerzo**: 4-5h
+
+## 🎯 Orden de ejecución del Bloque CC
+
+**Sprint A — Sin dependencias** (~10h):
+1. **CC1** Pre-validación inteligente (4-5h)
+2. **CC3** Detector predictivo (5-6h)
+
+**Sprint B — Requiere portal activo** (~10-12h):
+3. **CC2** Reportar discrepancia
+4. **CC4** Confirmación periódica
+5. **CC5** Reverse audit
+
+**Sprint C — Refinamientos** (~8-10h):
+6. **CC6** Lock movs viejos
+7. **CC10** Score salud cliente
+8. **CC7** Autoasignación inteligente
+
+**Sprint D — Avanzados** (cuando esté la base):
+9. **CC8** Modo VIP doble registro
+10. **CC9** WhatsApp confirmación (cuando WA API)
+11. **CC11** Hash inmutable
+
+**Empezamos hoy con Sprint A** — sin dependencias externas, empieza dando valor inmediato.
+
+---
+
 # ⏱️ Estimación final del sprint
 
 | Fase | Esfuerzo |
